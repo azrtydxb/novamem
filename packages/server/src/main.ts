@@ -45,7 +45,7 @@ async function main() {
     });
   }, cfg.decay.intervalMs);
 
-  const app = buildHttpServer({ engine, auth: cfg.auth });
+  const app = buildHttpServer({ engine, auth: cfg.auth, rateLimitPerMinute: cfg.service.rateLimitPerMinute });
   await app.listen({ host: cfg.service.host, port: cfg.service.port });
 
   // eslint-disable-next-line no-console

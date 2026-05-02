@@ -64,22 +64,6 @@ export const memoryRelations = pgTable(
   ],
 );
 
-export const webCache = pgTable(
-  "web_cache",
-  {
-    id: text("id").primaryKey(),
-    queryHash: text("query_hash").notNull(),
-    query: text("query").notNull(),
-    payload: jsonb("payload").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("idx_webcache_hash").on(table.queryHash),
-    index("idx_webcache_expires").on(table.expiresAt),
-  ],
-);
-
 /** FTS shadow table — populated by trigger; tsv lives in raw SQL to bypass
  *  Drizzle's lack of GENERATED-column support. */
 export const memoryFts = pgTable(

@@ -6,40 +6,51 @@
 
 import { z } from "zod";
 
-export const ConfigSchema = z.object({
-  service: z.object({
-    host: z.string().default("0.0.0.0"),
-    port: z.coerce.number().int().min(1).max(65_535).default(5_000),
-  }),
-  auth: z.object({
-    mode: z.enum(["none", "bearer"]).default("none"),
-    token: z.string().optional(),
-  }),
-  warm: z.object({
-    url: z.string(),
-  }),
-  cold: z.object({
-    url: z.string(),
-    vectorSize: z.coerce.number().int().positive().default(384),
-  }),
-  graph: z
-    .object({
-      enabled: z.coerce.boolean().default(true),
-      url: z.string().optional(),
-    })
-    .default({ enabled: true }),
-  embeddings: z.object({
-    provider: z.enum(["openai-compatible", "local-transformers"]).default("local-transformers"),
-    endpoint: z.string().optional(),
-    model: z.string().optional(),
-    apiKey: z.string().optional(),
-    dimensions: z.coerce.number().int().positive().default(384),
-  }),
-  decay: z.object({
-    intervalMs: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
-    defaultEffectiveDays: z.coerce.number().positive().default(7),
-  }),
-});
+export const ConfigSchema = z
+  .object({
+    service: z.object({
+      host: z.string().default("0.0.0.0"),
+      port: z.coerce.number().int().min(1).max(65_535).default(5_000),
+      rateLimitPerMinute: z.coerce.number().int().positive().default(600),
+    }),
+    auth: z
+      .object({
+        mode: z.enum(["none", "bearer"]).default("none"),
+        token: z.string().optional(),
+      })
+      .refine((v) => v.mode !== "bearer" || !!v.token, {
+        message: "auth.mode = 'bearer' requires auth.token (NOVAMEM_AUTH_TOKEN)",
+        path: ["token"],
+      }),
+    warm: z.object({
+      url: z.string(),
+    }),
+    cold: z.object({
+      url: z.string(),
+      vectorSize: z.coerce.number().int().positive().default(384),
+    }),
+    graph: z
+      .object({
+        enabled: z.coerce.boolean().default(true),
+        url: z.string().optional(),
+      })
+      .default({ enabled: true })
+      .refine((v) => !v.enabled || !!v.url, {
+        message: "graph.enabled = true requires graph.url (NOVAMEM_GRAPH_URL)",
+        path: ["url"],
+      }),
+    embeddings: z.object({
+      provider: z.enum(["openai-compatible", "local-transformers"]).default("local-transformers"),
+      endpoint: z.string().optional(),
+      model: z.string().optional(),
+      apiKey: z.string().optional(),
+      dimensions: z.coerce.number().int().positive().default(384),
+    }),
+    decay: z.object({
+      intervalMs: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
+      defaultEffectiveDays: z.coerce.number().positive().default(7),
+    }),
+  });
 export type Config = z.infer<typeof ConfigSchema>;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -47,6 +58,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     service: {
       host: env.NOVAMEM_HOST,
       port: env.NOVAMEM_PORT,
+      rateLimitPerMinute: env.NOVAMEM_RATE_LIMIT_PER_MINUTE,
     },
     auth: {
       mode: env.NOVAMEM_AUTH_MODE,
