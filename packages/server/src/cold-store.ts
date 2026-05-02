@@ -4,6 +4,16 @@
  */
 
 import { QdrantClient } from "@qdrant/js-client-rest";
+import { createHash } from "node:crypto";
+
+/** Derive a deterministic UUIDv5-shaped string from any id. Qdrant point ids
+ *  must be unsigned ints or UUIDs — our ULIDs are neither. We hash and format
+ *  as a UUID so point ids are stable and reproducible. The original id is
+ *  preserved in the point payload as `entryId` for lookups. */
+function ulidToUuid(id: string): string {
+  const hex = createHash("sha1").update(id).digest("hex").slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
 
 export interface ColdStoreConfig {
   url: string;
@@ -46,7 +56,13 @@ export class ColdStore {
   }): Promise<void> {
     await this.ensureCollection(args.namespace);
     await this.client.upsert(this.collectionFor(args.namespace), {
-      points: [{ id: args.id, vector: args.embedding, payload: args.payload }],
+      points: [
+        {
+          id: ulidToUuid(args.id),
+          vector: args.embedding,
+          payload: { ...args.payload, entryId: args.id },
+        },
+      ],
     });
   }
 
@@ -61,16 +77,17 @@ export class ColdStore {
       limit: args.k,
       with_payload: true,
     });
-    return r.map((p) => ({
-      id: String(p.id),
-      score: p.score ?? 0,
-      payload: (p.payload ?? {}) as Record<string, unknown>,
-    }));
+    return r.map((p) => {
+      const payload = (p.payload ?? {}) as Record<string, unknown>;
+      // Prefer the ULID stashed in payload; fall back to the raw qdrant id.
+      const id = typeof payload.entryId === "string" ? payload.entryId : String(p.id);
+      return { id, score: p.score ?? 0, payload };
+    });
   }
 
   async delete(namespace: string, id: string): Promise<void> {
     await this.ensureCollection(namespace);
-    await this.client.delete(this.collectionFor(namespace), { points: [id] });
+    await this.client.delete(this.collectionFor(namespace), { points: [ulidToUuid(id)] });
   }
 
   async ping(): Promise<boolean> {
