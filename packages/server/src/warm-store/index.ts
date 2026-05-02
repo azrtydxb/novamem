@@ -1,8 +1,7 @@
 /**
- * Warm-store driver. Postgres-only for now; SQLite adapter is a follow-up.
- *
- * The store owns the SQL-level concerns (drizzle queries, FTS triggers). The
- * engine layer composes these calls into the public API surface.
+ * Warm-store driver. Owns the Postgres pool and runs the SQL for the memory
+ * primitives. The engine layer composes these calls into the public API
+ * surface.
  */
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -20,7 +19,10 @@ export interface WarmStoreConfig {
 
 export class WarmStore {
   readonly db: WarmDB;
-  private readonly pool: Pool;
+  /** Direct Postgres pool. Public so the engine can run ad-hoc SQL (e.g.
+   *  `recent()` time-window queries) without parking another driver in
+   *  this layer. */
+  readonly pool: Pool;
 
   constructor(cfg: WarmStoreConfig) {
     this.pool = new Pool({ connectionString: cfg.url });
@@ -62,16 +64,6 @@ export class WarmStore {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_id)`,
       `CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_id)`,
-      `CREATE TABLE IF NOT EXISTS web_cache (
-        id text PRIMARY KEY,
-        query_hash text NOT NULL,
-        query text NOT NULL,
-        payload jsonb NOT NULL,
-        expires_at timestamptz NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_webcache_hash ON web_cache(query_hash)`,
-      `CREATE INDEX IF NOT EXISTS idx_webcache_expires ON web_cache(expires_at)`,
       `CREATE TABLE IF NOT EXISTS memory_fts (
         id serial PRIMARY KEY,
         entry_id text NOT NULL,
@@ -121,22 +113,36 @@ export class WarmStore {
     return id;
   }
 
-  /** Full-text keyword search via Postgres tsvector. */
+  /** Full-text keyword search via Postgres tsvector. Optional `agentName`
+   *  scopes the result to one agent's entries (matches `IS NULL` if `null`
+   *  is passed explicitly; omit the field for "any agent"). */
   async ftsSearch(args: {
     query: string;
     namespace: string;
     k: number;
+    agentName?: string | null;
   }): Promise<Array<{ id: string; score: number }>> {
-    const rows = await this.pool.query<{ entry_id: string; score: number }>(
-      `SELECT entry_id,
-              ts_rank(tsv, plainto_tsquery('english', $1)) AS score
-         FROM memory_fts
-        WHERE namespace = $2
-          AND tsv @@ plainto_tsquery('english', $1)
-        ORDER BY score DESC
-        LIMIT $3`,
-      [args.query, args.namespace, args.k],
-    );
+    const useAgent = args.agentName !== undefined;
+    const sql = useAgent
+      ? `SELECT f.entry_id,
+                ts_rank(f.tsv, plainto_tsquery('english', $1)) AS score
+           FROM memory_fts f
+           JOIN memory_entries e ON e.id = f.entry_id
+          WHERE f.namespace = $2
+            AND f.tsv @@ plainto_tsquery('english', $1)
+            AND ${args.agentName === null ? "e.agent_name IS NULL" : "e.agent_name = $4"}
+          ORDER BY score DESC
+          LIMIT $3`
+      : `SELECT entry_id,
+                ts_rank(tsv, plainto_tsquery('english', $1)) AS score
+           FROM memory_fts
+          WHERE namespace = $2
+            AND tsv @@ plainto_tsquery('english', $1)
+          ORDER BY score DESC
+          LIMIT $3`;
+    const params: unknown[] = [args.query, args.namespace, args.k];
+    if (useAgent && args.agentName !== null) params.push(args.agentName);
+    const rows = await this.pool.query<{ entry_id: string; score: number }>(sql, params);
     return rows.rows.map((r) => ({ id: r.entry_id, score: Number(r.score) }));
   }
 

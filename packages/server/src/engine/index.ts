@@ -42,6 +42,14 @@ export class MemoryEngine {
     this.defaultDecayDays = cfg.defaultEffectiveDays ?? 7;
   }
 
+  private lastGraphWarn = 0;
+  private maybeWarnGraphDown(): void {
+    const now = Date.now();
+    if (now - this.lastGraphWarn < 5 * 60 * 1000) return;
+    this.lastGraphWarn = now;
+    console.warn("[engine] graph store unreachable — search degraded to keyword + vector only");
+  }
+
   async remember(req: RememberRequest): Promise<{ id: string }> {
     const namespace = req.namespace ?? "default";
     const id = await this.warm.insertEntry({
@@ -70,7 +78,12 @@ export class MemoryEngine {
 
     const [embedding] = await this.embedder.embed(req.query);
     const [keywordHits, vectorHits] = await Promise.all([
-      this.warm.ftsSearch({ query: req.query, namespace, k: k * 3 }),
+      this.warm.ftsSearch({
+        query: req.query,
+        namespace,
+        k: k * 3,
+        agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
+      }),
       embedding ? this.cold.search({ namespace, embedding, k: k * 3 }) : Promise.resolve([]),
     ]);
 
@@ -80,11 +93,14 @@ export class MemoryEngine {
       const seed = vectorHits[0]!.id;
       try {
         graphHits = await this.graph.neighbors(seed, 1, k);
-      } catch {
+      } catch (err) {
         degraded = true;
+        console.warn("[engine] graph neighbours failed:", (err as Error).message);
       }
     } else if (!this.graph || !this.graph.isConnected()) {
       degraded = true;
+      // Rate-limited: only complain once every 5 minutes.
+      this.maybeWarnGraphDown();
     }
 
     const fused = fuse(
@@ -121,6 +137,12 @@ export class MemoryEngine {
     // resist decay because their lifespan grows with use. Override the
     // default 7-day base via `effectiveDaysOverride` for one-shot passes.
     const baseDays = opts.effectiveDaysOverride ?? this.defaultDecayDays;
+    const startedAt = new Date();
+    const runRow = await this.warm.pool.query<{ id: number }>(
+      `INSERT INTO decay_runs (started_at, effective_days) VALUES ($1, $2) RETURNING id`,
+      [startedAt, baseDays],
+    );
+    const runId = runRow.rows[0]?.id;
     const candidates = await this.warm.listColdCandidates(baseDays);
     let demoted = 0;
     for (const c of candidates.rows) {
@@ -133,6 +155,12 @@ export class MemoryEngine {
         demoted++;
       }
     }
+    if (runId !== undefined) {
+      await this.warm.pool.query(
+        `UPDATE decay_runs SET finished_at = now(), demoted = $1 WHERE id = $2`,
+        [demoted, runId],
+      );
+    }
     return { demoted };
   }
 
@@ -144,7 +172,7 @@ export class MemoryEngine {
     const sinceClause = args.since ? "AND created_at >= $3" : "";
     const params: any[] = [namespace, k];
     if (args.since) params.push(args.since);
-    const rows = await (this.warm as unknown as { pool: import("pg").Pool }).pool.query(
+    const rows = await this.warm.pool.query(
       `SELECT id, content, namespace, source, metadata, cold, created_at
          FROM memory_entries
         WHERE namespace = $1 ${sinceClause}
@@ -191,15 +219,26 @@ export class MemoryEngine {
 
   /** Explicit deletion. Removes warm row, FTS shadow, cold vector, graph
    *  edges. Idempotent — missing ids are silently ignored. */
-  async forget(id: string): Promise<{ deleted: boolean }> {
+  async forget(id: string): Promise<{ deleted: boolean; coldDeleteOk: boolean }> {
     const e = await this.warm.getEntry(id);
-    if (!e) return { deleted: false };
-    const pool = (this.warm as unknown as { pool: import("pg").Pool }).pool;
+    if (!e) return { deleted: false, coldDeleteOk: true };
+    const pool = this.warm.pool;
     await pool.query("DELETE FROM memory_fts WHERE entry_id = $1", [id]);
     await pool.query("DELETE FROM memory_access WHERE entry_id = $1", [id]);
     await pool.query("DELETE FROM memory_entries WHERE id = $1", [id]);
-    try { await this.cold.delete(e.namespace, id); } catch { /* best-effort */ }
-    return { deleted: true };
+    let coldDeleteOk = true;
+    try {
+      await this.cold.delete(e.namespace, id);
+    } catch (err) {
+      // The warm row is already gone; the cold vector is now orphaned and
+      // will linger until the next sweep (TODO: orphan-vector reaper). Make
+      // sure operators see this so cold drift doesn't grow silently.
+      coldDeleteOk = false;
+      console.warn(
+        `[engine] forget(${id}): warm row deleted but cold vector survived (${(err as Error).message})`,
+      );
+    }
+    return { deleted: true, coldDeleteOk };
   }
 
   async stats(): Promise<MemoryStats> {

@@ -147,10 +147,7 @@ export class NovamemClient {
     });
   }
 
-  async promote(opts: { minHits?: number } = {}): Promise<{ promoted: number }> {
-    return this.request<{ promoted: number }>("/v1/promote", {
-      method: "POST",
-      body: JSON.stringify(opts),
-    });
-  }
+  // promote() — cold→warm promotion is not yet implemented.
+  // Track the issue: cold entries surface in search results with tier:"cold";
+  // re-promotion logic will land alongside the candidate-tracker feature.
 }
