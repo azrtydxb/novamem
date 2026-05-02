@@ -22,13 +22,23 @@ export function buildMcpServer(engine: MemoryEngine): Server {
     tools: [
       {
         name: "memory.search",
-        description: "Hybrid search across stored memories",
+        description:
+          "Hybrid search across stored memories. Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` to force exact-string match for ids/symbols, or `{ vector: 1, keyword: 0 }` to ignore literal token overlap and lean entirely on semantic similarity.",
         inputSchema: {
           type: "object",
           properties: {
             query: { type: "string" },
-            k: { type: "number" },
+            k: { type: "number", description: "Top-K to return (default 10)" },
             namespace: { type: "string" },
+            weights: {
+              type: "object",
+              description: "Per-signal weight overrides. Omit to use defaults.",
+              properties: {
+                keyword: { type: "number", description: "FTS keyword match weight" },
+                vector: { type: "number", description: "Embedding cosine weight" },
+                graph: { type: "number", description: "Graph-neighbour weight" },
+              },
+            },
           },
           required: ["query"],
         },
@@ -100,10 +110,20 @@ export function buildMcpServer(engine: MemoryEngine): Server {
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
     switch (req.params.name) {
       case "memory.search": {
+        const w = (args.weights ?? {}) as { keyword?: unknown; vector?: unknown; graph?: unknown };
+        const weights =
+          typeof w.keyword === "number" || typeof w.vector === "number" || typeof w.graph === "number"
+            ? {
+                ...(typeof w.keyword === "number" ? { keyword: w.keyword } : {}),
+                ...(typeof w.vector === "number" ? { vector: w.vector } : {}),
+                ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
+              }
+            : undefined;
         const r = await engine.search({
           query: String(args.query),
           k: typeof args.k === "number" ? args.k : undefined,
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          weights,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }

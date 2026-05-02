@@ -22,13 +22,22 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
     tools: [
       {
         name: "memory.search",
-        description: "Hybrid search across stored memories (remote novamem)",
+        description:
+          "Hybrid search across stored memories (remote novamem). Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap.",
         inputSchema: {
           type: "object",
           properties: {
             query: { type: "string" },
             k: { type: "number" },
             namespace: { type: "string" },
+            weights: {
+              type: "object",
+              properties: {
+                keyword: { type: "number" },
+                vector: { type: "number" },
+                graph: { type: "number" },
+              },
+            },
           },
           required: ["query"],
         },
@@ -97,10 +106,20 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
     try {
       switch (req.params.name) {
         case "memory.search": {
+          const w = (args.weights ?? {}) as { keyword?: unknown; vector?: unknown; graph?: unknown };
+          const weights =
+            typeof w.keyword === "number" || typeof w.vector === "number" || typeof w.graph === "number"
+              ? {
+                  ...(typeof w.keyword === "number" ? { keyword: w.keyword } : {}),
+                  ...(typeof w.vector === "number" ? { vector: w.vector } : {}),
+                  ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
+                }
+              : undefined;
           const r = await client.search({
             query: String(args.query),
             k: typeof args.k === "number" ? args.k : undefined,
             namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+            weights,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
