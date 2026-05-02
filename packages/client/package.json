@@ -1,0 +1,17 @@
+{
+  "name": "@azrty/novamem",
+  "version": "0.1.0-preview.0",
+  "description": "TypeScript client for the novamem memory service",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": "./dist/index.js" },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": { "node": ">=20" }
+}

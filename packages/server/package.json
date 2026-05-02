@@ -1,0 +1,43 @@
+{
+  "name": "@azrty/novamem-server",
+  "version": "0.1.0",
+  "description": "Standalone tiered memory service — HTTP + MCP transports",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./engine": "./dist/engine/index.js"
+  },
+  "bin": {
+    "novamem-server": "dist/main.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@qdrant/js-client-rest": "^1.12.0",
+    "drizzle-orm": "^0.36.4",
+    "falkordb": "^6.2.7",
+    "fastify": "^5.1.0",
+    "@fastify/cors": "^10.0.1",
+    "pg": "^8.13.1",
+    "better-sqlite3": "^11.5.0",
+    "ulid": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
