@@ -1,0 +1,32 @@
+# Build output (rebuilt inside the container)
+**/dist
+**/node_modules
+**/.tsbuildinfo
+
+# Test + dev artefacts
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+.full-review/
+coverage/
+data/
+
+# Editor / agent caches
+.claude/
+.kilocode/
+.vscode/
+.idea/
+
+# Secrets / local-only
+.admin-token.local
+.*-token.local
+.env
+.env.*
+
+# Misc
+**/.DS_Store
+**/.git
+**/.github
+*.md
+!README.md
+!SECURITY.md

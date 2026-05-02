@@ -20,7 +20,7 @@ import { z } from "zod";
 
 import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
-import { hashPassword, verifyPassword, SESSION_TTL_MS } from "./auth.js";
+import { hashPassword, verifyPassword, SESSION_TTL_MS, LoginThrottle } from "./auth.js";
 import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
 import { PUBLIC_TENANT, type WarmStore } from "./warm-store/index.js";
@@ -106,10 +106,30 @@ const ForgetBody = z.object({
 });
 
 // Admin bodies — kept short, slug-safe ids.
+//
+// The tenant id regex is *narrower* than a generic slug: the cold store
+// derives qdrant collection names as `novamem_<tenantId>_<namespace>` for
+// tenant-wide entries and `novamem_p_<projectId>_<namespace>` for project-
+// scoped entries. A tenant id starting with `p_` would make a tenant's
+// collections indistinguishable from project collections at prefix-scan
+// time (see review finding P0-1). Forbid `p_` prefix explicitly + the
+// bare value `p` for the same reason. Also forbid `__` (used as a
+// separator-with-margin in a future migration).
 const AdminCreateTenantBody = z.object({
-  id: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/, {
-    message: "tenant id must be lowercase alphanumeric / underscore / hyphen",
-  }),
+  id: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9][a-z0-9_-]*$/, {
+      message: "tenant id must be lowercase alphanumeric / underscore / hyphen",
+    })
+    .refine((v) => v !== "p" && !v.startsWith("p_"), {
+      message:
+        "tenant id cannot start with 'p_' or be exactly 'p' (collides with project collection naming)",
+    })
+    .refine((v) => !v.includes("__"), {
+      message: "tenant id cannot contain '__' (reserved separator)",
+    }),
   name: z.string().min(1).max(128),
 });
 
@@ -201,8 +221,68 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
   }
 
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" }, bodyLimit: 2 * 1024 * 1024 });
-  app.register(cors, { origin: true });
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? "info",
+      // P1-S2: never log Authorization headers, login passwords, or minted
+      // token plaintexts. Pino's `redact` is field-path based; cover both
+      // request-time fields and response shapes that pass through `req.log`.
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "request.headers.authorization",
+          "headers.authorization",
+          "*.authorization",
+          'req.headers["x-admin-token"]',
+          "req.body.password",
+          "req.body.token",
+          "req.body.tokenHash",
+          "*.password",
+          "*.passwordHash",
+          "*.token",
+          "*.plaintext",
+        ],
+        censor: "[REDACTED]",
+        remove: false,
+      },
+    },
+    bodyLimit: 2 * 1024 * 1024,
+  });
+
+  // P1-S3: tighten CORS. `origin: true` reflects every Origin, which makes
+  // the API a CSRF surface for any site that knows the URL. Operators can
+  // override via NOVAMEM_CORS_ORIGINS (comma-separated allowlist) or set
+  // the value `*` for the legacy permissive behaviour.
+  const corsOriginsEnv = process.env.NOVAMEM_CORS_ORIGINS ?? "";
+  const corsOrigin: boolean | string[] | RegExp =
+    corsOriginsEnv === "" || corsOriginsEnv === "self"
+      ? false // same-origin only — dashboard fetch from /admin works fine
+      : corsOriginsEnv === "*"
+        ? true
+        : corsOriginsEnv.split(",").map((s) => s.trim()).filter(Boolean);
+  app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false });
+
+  // Per-username login throttle (P0-3). In-memory; resets on restart.
+  const loginThrottle = new LoginThrottle();
+
+  // P2-1: turn ZodError into a 400 with a helpful body, instead of the
+  // default Fastify 500 with the raw error text. Other errors fall through
+  // to Fastify's default handler.
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof z.ZodError) {
+      reply.code(400).send({
+        error: "invalid request body",
+        issues: err.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+          code: i.code,
+        })),
+      });
+      return;
+    }
+    req.log.error(err);
+    reply.send(err);
+  });
 
   // ─── OpenAPI + Swagger UI ──────────────────────────────────────────────
   // Hand-written OpenAPI 3.0 doc (we don't auto-derive from Zod); served at
@@ -519,6 +599,33 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     return safeEqual(h.slice("Bearer ".length), opts.auth.adminToken);
   };
 
+  /** Write an audit entry attributed to the current request's actor.
+   *  Failures don't block the request — audit gaps are preferable to
+   *  request 500s — but they get logged so operators notice. */
+  async function audit(
+    req: { dashUser?: DashboardUser; ip?: string; headers: { authorization?: string } },
+    action: string,
+    target?: string | null,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    if (!opts.warm) return;
+    const actorLabel = req.dashUser
+      ? `user:${req.dashUser.username}`
+      : "legacy-admin-token";
+    try {
+      await opts.warm.writeAudit({
+        actorUserId: req.dashUser?.id ?? null,
+        actorLabel,
+        action,
+        target: target ?? null,
+        metadata,
+        requestIp: req.ip ?? null,
+      });
+    } catch (err) {
+      app.log.warn(`[audit] failed to record action=${action}: ${(err as Error).message}`);
+    }
+  }
+
   // ─── Dashboard auth ────────────────────────────────────────────────────
 
   app.get("/v1/auth/status", async (_req, reply) => {
@@ -533,6 +640,18 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/auth/login", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "auth disabled" });
     const body = LoginBody.parse(req.body);
+
+    // P0-3: per-username login throttle. Refuse without spending bcrypt
+    // CPU when the account is locked out.
+    const throttleState = loginThrottle.check(body.username);
+    if (!throttleState.ok) {
+      reply.header("Retry-After", String(Math.ceil(throttleState.retryAfterMs / 1000)));
+      return reply.code(429).send({
+        error: "too many failed login attempts; account temporarily locked",
+        retryAfterMs: throttleState.retryAfterMs,
+      });
+    }
+
     const user = await opts.warm.findUserByUsername(body.username);
     // Constant-ish-time: always run a verifyPassword against something to
     // avoid leaking whether the username exists. We compare against a
@@ -541,8 +660,15 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       ? await verifyPassword(body.password, user.passwordHash)
       : await verifyPassword(body.password, "$2a$10$invalidsaltinvalidsaltinvalidsaltinvalid");
     if (!user || !ok) {
+      const fail = loginThrottle.recordFailure(body.username);
+      // Sleep for the back-off interval inside the handler so a fast
+      // attacker can't out-loop the throttle.
+      if (fail.retryAfterMs > 0) {
+        await new Promise((r) => setTimeout(r, Math.min(fail.retryAfterMs, 4000)));
+      }
       return reply.code(401).send({ error: "invalid username or password" });
     }
+    loginThrottle.recordSuccess(body.username);
     const session = await opts.warm.createSession(user.id, SESSION_TTL_MS);
     reply.code(201).send({
       token: session.token,
@@ -598,6 +724,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       role: body.role,
       tenantId: body.role === "admin" ? null : (body.tenantId ?? null),
     });
+    await audit(req, "user.create", user.id, {
+      username: body.username,
+      role: body.role,
+      tenantId: body.role === "admin" ? null : body.tenantId,
+    });
     reply.code(201).send(user);
   });
 
@@ -621,6 +752,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       }
     }
     const ok = await opts.warm.deleteUser(id);
+    if (ok) await audit(req, "user.delete", id, { username: target.username });
     reply.send({ deleted: ok });
   });
 
@@ -649,6 +781,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       body.role,
       body.role === "admin" ? null : (body.tenantId ?? null),
     );
+    if (ok)
+      await audit(req, "user.role.change", id, {
+        previousRole: target.role,
+        newRole: body.role,
+        tenantId: body.role === "admin" ? null : body.tenantId,
+      });
     reply.send({ updated: ok });
   });
 
@@ -731,6 +869,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       ownerUserId: u.id,
       ownerTenantId,
     });
+    await audit(req, "project.create", body.id, { name: body.name, ownerTenantId });
     reply.code(201).send(project);
   });
 
@@ -744,6 +883,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return reply.code(403).send({ error: "only the owner can delete a project" });
     }
     const r = await opts.engine.deleteProject(id);
+    await audit(req, "project.delete", id, { entriesRemoved: r.entriesRemoved });
     reply.send(r);
   });
 
@@ -770,6 +910,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (!target) return reply.code(404).send({ error: "unknown user" });
     const ok = await opts.warm.addProjectMember(id, target.id, body.role ?? "member");
     if (!ok) return reply.code(409).send({ error: "user is already a member" });
+    await audit(req, "project.member.add", id, {
+      memberUserId: target.id,
+      memberUsername: target.username,
+      role: body.role ?? "member",
+    });
     reply.code(201).send({ added: true, userId: target.id, username: target.username });
   });
 
@@ -788,9 +933,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (userId === project.ownerUserId) {
       return reply.code(400).send({ error: "owner cannot leave; delete the project instead" });
     }
-    const ok = await opts.warm.removeProjectMember(id, userId);
-    if (!ok) return reply.code(404).send({ error: "user is not a member" });
-    reply.send({ removed: true });
+    const r = await opts.warm.removeProjectMember(id, userId);
+    if (!r.removed) return reply.code(404).send({ error: "user is not a member" });
+    await audit(req, "project.member.remove", id, {
+      memberUserId: userId,
+      tokensRevoked: r.tokensRevoked,
+    });
+    reply.send({ removed: true, tokensRevoked: r.tokensRevoked });
   });
 
   app.post("/v1/admin/tenants", async (req, reply) => {
@@ -798,6 +947,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
     const body = AdminCreateTenantBody.parse(req.body);
     const t = await opts.warm.createTenant(body.id, body.name);
+    await audit(req, "tenant.create", body.id, { name: body.name });
     reply.code(201).send(t);
   });
 
@@ -847,7 +997,16 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (!/^[a-f0-9]{64}$/i.test(hash)) return reply.code(400).send({ error: "invalid hash" });
     const ok = await opts.warm.revokeTenantTokenByHash(tenantId, hash);
     if (!ok) return reply.code(404).send({ error: "token not found or already revoked" });
+    await audit(req, "token.revoke", `${tenantId}:${hash.slice(0, 8)}`, {});
     reply.send({ revoked: true });
+  });
+
+  // Audit log read (admin only).
+  app.get("/v1/admin/audit-log", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
+    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
+    const limit = Math.min(Number((req.query as { limit?: string }).limit ?? 200), 500);
+    reply.send({ entries: await opts.warm.listAuditLog({ limit }) });
   });
 
   // Delete a tenant: warm rows + cold collections + graph nodes + tokens.
@@ -860,6 +1019,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (id === "public") return reply.code(400).send({ error: "cannot delete the public tenant" });
     const r = await opts.engine.deleteTenant(id);
     if (!r.deleted) return reply.code(404).send({ error: "unknown tenant" });
+    await audit(req, "tenant.delete", id, { entriesRemoved: r.entriesRemoved });
     reply.send(r);
   });
 

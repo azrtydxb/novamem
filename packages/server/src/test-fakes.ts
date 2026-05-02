@@ -88,22 +88,52 @@ export class FakeWarmStore {
         this.decayRunsUpdated++;
         return { rows: [] };
       }
+      // P0-6 bulk decay SQL: `WITH candidates AS (...) UPDATE memory_entries
+      // SET cold = true ...`. Replicate the demote condition in JS.
+      if (sql.includes("WITH candidates AS") && sql.includes("UPDATE memory_entries")) {
+        const baseDays = Number(params[0]);
+        const now = Date.now();
+        const rows: Array<{ id: string }> = [];
+        for (const r of this.rows.values()) {
+          if (r.cold) continue;
+          const idleDays = (now - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24);
+          // lifespan = baseDays * log2(hits + 1); demote when idle > lifespan.
+          const lifespan = baseDays * Math.log2(Math.max(r.hits, 0) + 1);
+          if (idleDays > lifespan) {
+            r.cold = true;
+            rows.push({ id: r.id });
+          }
+        }
+        // pg returns rowCount in addition to rows; the engine reads rowCount.
+        return { rows, rowCount: rows.length } as { rows: { id: string }[]; rowCount: number };
+      }
       // forget()
+      // The engine's forget builds the scope clause as either
+      // `project_id = $2` or `tenant_id = $2` depending on whether the
+      // entry is project-scoped. Inspect the SQL to know which.
       if (sql.startsWith("DELETE FROM memory_fts")) return { rows: [] };
       if (sql.startsWith("DELETE FROM memory_access")) return { rows: [] };
       if (sql.startsWith("DELETE FROM memory_relations")) {
         const id = String(params[0]);
-        const tenantId = String(params[1]);
-        this.relations = this.relations.filter(
-          (r) => !((r.fromId === id || r.toId === id) && r.tenantId === tenantId),
-        );
+        const scope = String(params[1]);
+        const isProject = sql.includes("project_id = $");
+        this.relations = this.relations.filter((r) => {
+          const isMatch = r.fromId === id || r.toId === id;
+          if (!isMatch) return true;
+          return isProject ? r.projectId !== scope : r.tenantId !== scope;
+        });
         return { rows: [] };
       }
       if (sql.startsWith("DELETE FROM memory_entries")) {
         const id = String(params[0]);
-        const tenantId = String(params[1]);
+        const scope = String(params[1]);
+        const isProject = sql.includes("project_id = $");
         const r = this.rows.get(id);
-        if (r && r.tenantId === tenantId) this.rows.delete(id);
+        if (r) {
+          if (isProject ? r.projectId === scope : r.tenantId === scope) {
+            this.rows.delete(id);
+          }
+        }
         return { rows: [] };
       }
       // addRelation()
@@ -262,9 +292,7 @@ export class FakeWarmStore {
   async getEntry(tenantId: string, id: string, opts: { projectId?: string | null } = {}) {
     const r = this.rows.get(id);
     if (!r) return undefined;
-    if (opts.projectId === "*") {
-      // bypass scoping
-    } else if (typeof opts.projectId === "string") {
+    if (typeof opts.projectId === "string") {
       // Project IS the isolation unit when set (cross-tenant members allowed).
       if (r.projectId !== opts.projectId) return undefined;
     } else {
@@ -293,6 +321,14 @@ export class FakeWarmStore {
       r.hits += 1;
       r.lastAccessed = new Date();
     }
+  }
+
+  async bumpHitsMany(ids: string[]): Promise<void> {
+    for (const id of ids) await this.bumpHits(id);
+  }
+
+  async getEntries(tenantId: string, ids: string[], opts: { projectId?: string | null } = {}) {
+    return Promise.all(ids.map((id) => this.getEntry(tenantId, id, opts)));
   }
 
   async listColdCandidates(_effectiveDays: number, _limit = 1000) {
@@ -547,6 +583,42 @@ export class FakeWarmStore {
     return this.sessions.delete(plaintext);
   }
 
+  // ─── Audit log ────────────────────────────────────────────────────────
+  auditEntries: Array<{
+    id: number;
+    ts: Date;
+    actorUserId: string | null;
+    actorLabel: string;
+    action: string;
+    target: string | null;
+    metadata: Record<string, unknown> | null;
+    requestIp: string | null;
+  }> = [];
+
+  async writeAudit(entry: {
+    actorUserId?: string | null;
+    actorLabel: string;
+    action: string;
+    target?: string | null;
+    metadata?: Record<string, unknown>;
+    requestIp?: string | null;
+  }) {
+    this.auditEntries.push({
+      id: this.auditEntries.length + 1,
+      ts: new Date(),
+      actorUserId: entry.actorUserId ?? null,
+      actorLabel: entry.actorLabel,
+      action: entry.action,
+      target: entry.target ?? null,
+      metadata: entry.metadata ?? null,
+      requestIp: entry.requestIp ?? null,
+    });
+  }
+
+  async listAuditLog(opts: { limit?: number } = {}) {
+    return [...this.auditEntries].reverse().slice(0, opts.limit ?? 200);
+  }
+
   // ─── Projects ───────────────────────────────────────────────────────────
 
   async createProject(args: { id: string; name: string; ownerUserId: string; ownerTenantId: string }) {
@@ -598,7 +670,17 @@ export class FakeWarmStore {
   }
 
   async removeProjectMember(projectId: string, userId: string) {
-    return this.projectMembers.get(projectId)?.delete(userId) ?? false;
+    const removed = this.projectMembers.get(projectId)?.delete(userId) ?? false;
+    let tokensRevoked = 0;
+    if (removed) {
+      for (const v of this.tokens.values()) {
+        if (v.projectId === projectId && v.createdByUserId === userId && !v.revoked) {
+          v.revoked = true;
+          tokensRevoked++;
+        }
+      }
+    }
+    return { removed, tokensRevoked };
   }
 
   async getProjectMembership(projectId: string, userId: string) {
@@ -751,6 +833,17 @@ export class FakeGraphStore {
     this.edges.set(k, cur);
   }
 
+  async addEdgesBatch(
+    tenantId: string,
+    from: string,
+    edges: Array<{ to: string; relation: string; strength?: number }>,
+    projectId: string | null = null,
+  ): Promise<void> {
+    for (const e of edges) {
+      await this.addEdge(tenantId, from, e.to, e.relation, e.strength ?? 1, projectId);
+    }
+  }
+
   async removeNode(tenantId: string, id: string): Promise<void> {
     for (const k of [...this.edges.keys()]) {
       if (k.startsWith(`${tenantId}:`) && k.endsWith(`:${id}`)) this.edges.delete(k);
@@ -778,18 +871,22 @@ export class FakeGraphStore {
     return n;
   }
 
-  async removeAllForTenant(tenantId: string): Promise<void> {
+  async removeAllForTenant(tenantId: string): Promise<boolean> {
+    if (!this.connected) return false;
     for (const [k, list] of [...this.edges.entries()]) {
       if (k.startsWith(`${tenantId}:`)) this.edges.delete(k);
       else this.edges.set(k, list.filter((e) => e.tenantId !== tenantId));
     }
+    return true;
   }
 
-  async removeAllForProject(projectId: string): Promise<void> {
+  async removeAllForProject(projectId: string): Promise<boolean> {
+    if (!this.connected) return false;
     for (const [k, list] of [...this.edges.entries()]) {
       if (k.includes(`:${projectId}:`)) this.edges.delete(k);
       else this.edges.set(k, list.filter((e) => e.projectId !== projectId));
     }
+    return true;
   }
 }
 

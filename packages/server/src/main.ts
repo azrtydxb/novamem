@@ -11,7 +11,7 @@ import { makeEmbedder } from "./embeddings.js";
 import { buildHttpServer } from "./http.js";
 import { loadConfig } from "./config.js";
 import { MetricsCollector } from "./admin/metrics.js";
-import { bootstrapAdmin } from "./auth.js";
+import { bootstrapAdmin, gcExpiredSessions } from "./auth.js";
 
 async function main() {
   const cfg = loadConfig();
@@ -118,6 +118,23 @@ async function main() {
     metrics,
   });
 
+  // P1-S4: daily session GC sweep. Sessions don't slide; expired rows
+  // would otherwise accumulate forever.
+  const sessionGcTimer = setInterval(async () => {
+    try {
+      const n = await gcExpiredSessions(warm);
+      if (n > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[novamem] gc-expired-sessions: ${n} rows removed`);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("session GC failed", err);
+    }
+  }, 24 * 60 * 60 * 1000);
+  // Don't keep the process alive just for the GC timer.
+  sessionGcTimer.unref?.();
+
   const decayTimer = setInterval(async () => {
     try {
       await engine.decay();
@@ -149,6 +166,7 @@ async function main() {
 
   const shutdown = async () => {
     clearInterval(decayTimer);
+    clearInterval(sessionGcTimer);
     await app.close();
     if (graph) await graph.close();
     await warm.close();

@@ -39,7 +39,17 @@ export class WarmStore {
   readonly pool: Pool;
 
   constructor(cfg: WarmStoreConfig) {
-    this.pool = new Pool({ connectionString: cfg.url });
+    // P1-P4: bound the pg connection pool so a load spike can't exhaust
+    // Postgres connections silently. Default max=20 is well below typical
+    // Postgres `max_connections` of 100 even when several server replicas
+    // share a database. Operators can override via NOVAMEM_PG_POOL_MAX.
+    const poolMax = Number(process.env.NOVAMEM_PG_POOL_MAX ?? "20");
+    this.pool = new Pool({
+      connectionString: cfg.url,
+      max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 20,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+    });
     this.db = drizzle(this.pool, { schema });
   }
 
@@ -105,15 +115,8 @@ export class WarmStore {
         UNIQUE (project_id, user_id)
       )`,
       `CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)`,
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_project ON memory_entries(project_id)`,
-      `ALTER TABLE memory_relations ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_relations_project ON memory_relations(project_id)`,
-      `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_project ON memory_fts(project_id)`,
-      `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS project_id text`,
-      `ALTER TABLE tenant_tokens ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_tokens_project ON tenant_tokens(project_id)`,
+      // NB: project_id ALTERs for memory_entries / memory_fts / memory_relations /
+      // cold_orphans are issued AFTER those tables are created — see below.
       `CREATE TABLE IF NOT EXISTS memory_entries (
         id text PRIMARY KEY,
         tenant_id text NOT NULL DEFAULT 'public',
@@ -184,6 +187,35 @@ export class WarmStore {
         promoted int NOT NULL DEFAULT 0,
         effective_days real
       )`,
+      // ─── Project-id retrofits (after all base tables exist) ─────────
+      // These ALTERs come last because they reference tables created above.
+      // The original placement (before the CREATEs) crashed on a fresh DB
+      // — see review finding P1-A7. Issued idempotently.
+      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS project_id text`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_project ON memory_entries(project_id)`,
+      `ALTER TABLE memory_relations ADD COLUMN IF NOT EXISTS project_id text`,
+      `CREATE INDEX IF NOT EXISTS idx_relations_project ON memory_relations(project_id)`,
+      `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS project_id text`,
+      `CREATE INDEX IF NOT EXISTS idx_fts_project ON memory_fts(project_id)`,
+      `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS project_id text`,
+      `ALTER TABLE tenant_tokens ADD COLUMN IF NOT EXISTS project_id text`,
+      `CREATE INDEX IF NOT EXISTS idx_tokens_project ON tenant_tokens(project_id)`,
+      // ─── Audit log of admin actions (P1-S6) ─────────────────────────
+      `CREATE TABLE IF NOT EXISTS admin_audit_log (
+        id serial PRIMARY KEY,
+        ts timestamptz NOT NULL DEFAULT now(),
+        actor_user_id text,
+        actor_label text NOT NULL,
+        action text NOT NULL,
+        target text,
+        metadata jsonb,
+        request_ip text
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor_user_id)`,
+      // ─── Performance: composite indexes flagged in review (P1-P2) ───
+      `CREATE INDEX IF NOT EXISTS idx_entries_tenant_cold ON memory_entries(tenant_id, cold)`,
+      `CREATE INDEX IF NOT EXISTS idx_orphans_attempt_lastattempt ON cold_orphans(attempts, last_attempt_at)`,
     ];
     for (const stmt of ddl) {
       await this.pool.query(stmt);
@@ -564,6 +596,68 @@ export class WarmStore {
     return (r.rowCount ?? 0) > 0;
   }
 
+  // ─── Audit log (P1-S6) ────────────────────────────────────────────────
+
+  async writeAudit(entry: {
+    actorUserId?: string | null;
+    actorLabel: string;
+    action: string;
+    target?: string | null;
+    metadata?: Record<string, unknown>;
+    requestIp?: string | null;
+  }): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO admin_audit_log (actor_user_id, actor_label, action, target, metadata, request_ip)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        entry.actorUserId ?? null,
+        entry.actorLabel,
+        entry.action,
+        entry.target ?? null,
+        entry.metadata ? JSON.stringify(entry.metadata) : null,
+        entry.requestIp ?? null,
+      ],
+    );
+  }
+
+  async listAuditLog(opts: { limit?: number } = {}): Promise<
+    Array<{
+      id: number;
+      ts: Date;
+      actorUserId: string | null;
+      actorLabel: string;
+      action: string;
+      target: string | null;
+      metadata: Record<string, unknown> | null;
+      requestIp: string | null;
+    }>
+  > {
+    const r = await this.pool.query<{
+      id: number;
+      ts: Date;
+      actor_user_id: string | null;
+      actor_label: string;
+      action: string;
+      target: string | null;
+      metadata: Record<string, unknown> | null;
+      request_ip: string | null;
+    }>(
+      `SELECT id, ts, actor_user_id, actor_label, action, target, metadata, request_ip
+         FROM admin_audit_log ORDER BY id DESC LIMIT $1`,
+      [opts.limit ?? 200],
+    );
+    return r.rows.map((row) => ({
+      id: row.id,
+      ts: row.ts,
+      actorUserId: row.actor_user_id,
+      actorLabel: row.actor_label,
+      action: row.action,
+      target: row.target,
+      metadata: row.metadata,
+      requestIp: row.request_ip,
+    }));
+  }
+
   // ─── Projects (sub-brains) ───────────────────────────────────────────────
   // Each entry can belong to at most one project; projects can span tenants
   // via `project_members`. The owner is also a member-row (role='owner').
@@ -691,12 +785,41 @@ export class WarmStore {
     return (r.rowCount ?? 0) > 0;
   }
 
-  async removeProjectMember(projectId: string, userId: string): Promise<boolean> {
-    const r = await this.pool.query(
-      `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
-      [projectId, userId],
-    );
-    return (r.rowCount ?? 0) > 0;
+  async removeProjectMember(
+    projectId: string,
+    userId: string,
+  ): Promise<{ removed: boolean; tokensRevoked: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const m = await client.query(
+        `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
+        [projectId, userId],
+      );
+      const removed = (m.rowCount ?? 0) > 0;
+      // Auth fix (P0-2): an ex-member's project-scoped tokens stay valid
+      // until explicit revoke. Revoke them at member-removal time so
+      // access ends with the membership.
+      let tokensRevoked = 0;
+      if (removed) {
+        const t = await client.query(
+          `UPDATE tenant_tokens
+              SET revoked_at = now()
+            WHERE project_id = $1
+              AND created_by_user_id = $2
+              AND revoked_at IS NULL`,
+          [projectId, userId],
+        );
+        tokensRevoked = t.rowCount ?? 0;
+      }
+      await client.query("COMMIT");
+      return { removed, tokensRevoked };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async getProjectMembership(
@@ -836,14 +959,17 @@ export class WarmStore {
     return rows.rows.map((r) => ({ id: r.entry_id, score: Number(r.score) }));
   }
 
-  /** Look up a single entry, scoped to a tenant. Cross-tenant lookups MUST
-   *  return undefined — this is the choke-point that enforces isolation on
-   *  every read path that takes an id (search, neighbors, forget).
+  /** Look up a single entry, scoped to a tenant or project. This is the
+   *  choke-point that enforces isolation on every read path that takes an
+   *  id (search, neighbors, forget).
    *
-   *  When `projectId` is supplied, the entry must also match that project
-   *  (or be tenant-wide if `projectId` is null). Use `projectId = "*"` to
-   *  bypass the project check (used internally when the caller already
-   *  enforced membership via a different path — be careful). */
+   *  - `opts.projectId` is a non-empty string → the entry must match that
+   *    project; tenant_id is decorative (cross-tenant members allowed).
+   *  - `opts.projectId` is null/undefined → tenant-wide entries only, scoped
+   *    to `tenantId`.
+   *
+   *  P0-4: the previous magic-string `"*"` bypass was removed; there is no
+   *  way for an external caller to disable both checks. */
   async getEntry(tenantId: string, id: string, opts: { projectId?: string | null } = {}) {
     const rows = await this.db
       .select()
@@ -851,11 +977,8 @@ export class WarmStore {
       .where(eq(schema.memoryEntries.id, id));
     const row = rows[0];
     if (!row) return undefined;
-    // When project is set, project IS the access boundary (members may be
-    // cross-tenant). When project is null/undefined, fall back to tenant
-    // isolation for tenant-wide entries.
-    if (opts.projectId === "*") return row;
     if (typeof opts.projectId === "string") {
+      // Project IS the access boundary when set.
       return row.projectId === opts.projectId ? row : undefined;
     }
     // No project requested → tenant-wide entries only, scoped to tenantId.
@@ -871,6 +994,76 @@ export class WarmStore {
          SET hits = memory_access.hits + 1, last_accessed = now()`,
       [id],
     );
+  }
+
+  /** Batch variant of `bumpHits` — one round-trip for the whole top-k.
+   *  Used by `engine.search` to collapse the N+1 (P1-P1). */
+  async bumpHitsMany(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.pool.query(
+      `INSERT INTO memory_access (entry_id, hits, last_accessed)
+       SELECT id, 1, now() FROM unnest($1::text[]) AS u(id)
+       ON CONFLICT (entry_id) DO UPDATE
+         SET hits = memory_access.hits + 1, last_accessed = now()`,
+      [ids],
+    );
+  }
+
+  /** Batch entry lookup. Returns rows in the same order as the input ids
+   *  (with undefined slots for missing/cross-scope). When `projectId` is
+   *  set, project IS the access boundary; otherwise tenant_id is. */
+  async getEntries(
+    tenantId: string,
+    ids: string[],
+    opts: { projectId?: string | null } = {},
+  ): Promise<Array<typeof schema.memoryEntries.$inferSelect | undefined>> {
+    if (ids.length === 0) return [];
+    const rows = await this.pool.query<{
+      id: string;
+      tenant_id: string;
+      project_id: string | null;
+      content: string;
+      namespace: string;
+      source: string;
+      agent_name: string | null;
+      metadata: Record<string, unknown> | null;
+      cold: boolean;
+      created_at: Date;
+      updated_at: Date;
+    }>(
+      `SELECT id, tenant_id, project_id, content, namespace, source, agent_name,
+              metadata, cold, created_at, updated_at
+         FROM memory_entries WHERE id = ANY($1::text[])`,
+      [ids],
+    );
+    const want = opts.projectId;
+    const byId = new Map<string, (typeof rows.rows)[number]>();
+    for (const r of rows.rows) {
+      if (typeof want === "string") {
+        if (r.project_id !== want) continue;
+      } else {
+        if (r.project_id !== null) continue;
+        if (r.tenant_id !== tenantId) continue;
+      }
+      byId.set(r.id, r);
+    }
+    return ids.map((id) => {
+      const r = byId.get(id);
+      if (!r) return undefined;
+      return {
+        id: r.id,
+        tenantId: r.tenant_id,
+        projectId: r.project_id,
+        content: r.content,
+        namespace: r.namespace,
+        source: r.source,
+        agentName: r.agent_name,
+        metadata: r.metadata,
+        cold: r.cold,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      } as typeof schema.memoryEntries.$inferSelect;
+    });
   }
 
   async listColdCandidates(_effectiveDays: number, limit = 1000) {
