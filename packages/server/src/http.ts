@@ -125,6 +125,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send(r);
   });
 
+  app.post("/v1/reap-orphans", async (_req, reply) => {
+    // Manual trigger for the cold-orphan reaper. The same pass also runs
+    // automatically inside the decay loop (main.ts).
+    reply.send(await opts.engine.reapOrphans());
+  });
+
   app.post("/v1/recent", async (req, reply) => {
     const body = RecentBody.parse(req.body ?? {});
     reply.send(await opts.engine.recent(body));

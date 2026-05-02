@@ -217,6 +217,61 @@ describe("engine.decay", () => {
   });
 });
 
+describe("engine.search: cold→warm promotion", () => {
+  it("any hit on a cold entry promotes it back to warm (reactive)", async () => {
+    const b = bench();
+    const { id } = await b.engine.remember({ content: "previously cold fact" });
+    const row = b.warm.rows.get(id)!;
+    row.cold = true;
+    row.lastAccessed = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const r = await b.engine.search({ query: "previously cold fact" });
+    expect(r.results[0]!.id).toBe(id);
+    expect(r.results[0]!.tier).toBe("warm");
+    expect(b.warm.rows.get(id)!.cold).toBe(false);
+  });
+
+  it("warm entries are unaffected by the promotion path", async () => {
+    const b = bench();
+    const { id } = await b.engine.remember({ content: "always warm" });
+    const r = await b.engine.search({ query: "always warm" });
+    expect(r.results[0]!.tier).toBe("warm");
+    expect(b.warm.rows.get(id)!.cold).toBe(false);
+  });
+});
+
+describe("engine.reapOrphans", () => {
+  it("retries failed cold deletes and clears them on success", async () => {
+    const b = bench();
+    const { id } = await b.engine.remember({ content: "soon orphan" });
+    // Fail the cold delete during forget — should park the orphan.
+    b.cold.fail = true;
+    const f = await b.engine.forget(id);
+    expect(f.coldDeleteOk).toBe(false);
+    expect(b.warm.coldOrphans.size).toBe(1);
+    // Now cold comes back; reaper clears the queue.
+    b.cold.fail = false;
+    const r = await b.engine.reapOrphans();
+    expect(r).toEqual({ attempted: 1, cleared: 1, abandoned: 0, pending: 0 });
+    expect(b.warm.coldOrphans.size).toBe(0);
+  });
+
+  it("abandons after maxAttempts and reports the count", async () => {
+    const b = bench();
+    const { id } = await b.engine.remember({ content: "stuck orphan" });
+    b.cold.fail = true;
+    await b.engine.forget(id); // attempts: 1
+    // Drive attempts up to threshold via repeated reaper passes.
+    for (let i = 0; i < 12; i++) {
+      await b.engine.reapOrphans({ maxAttempts: 5 });
+    }
+    const o = b.warm.coldOrphans.get(id)!;
+    expect(o.attempts).toBeGreaterThanOrEqual(5);
+    // Once at the cap, further passes don't pick it up.
+    const tail = await b.engine.reapOrphans({ maxAttempts: 5 });
+    expect(tail.attempted).toBe(0);
+  });
+});
+
 describe("engine.health", () => {
   it("reports ok when all deps respond", async () => {
     const b = bench();
