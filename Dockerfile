@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
@@ -13,7 +13,7 @@ FROM deps AS build
 COPY . .
 RUN pnpm -r build
 
-FROM node:20-alpine AS runtime
+FROM node:20-slim AS runtime
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 COPY --from=build /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml* ./
