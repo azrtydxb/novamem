@@ -1,5 +1,16 @@
 import { ReactNode } from "react";
-import { Activity, Database, Users, KeyRound, LogOut, Building2, ShieldCheck, FolderKanban } from "lucide-react";
+import {
+  Activity,
+  BookOpen,
+  Building2,
+  Database,
+  ExternalLink,
+  FolderKanban,
+  KeyRound,
+  LogOut,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../lib/auth-context";
 import { Badge } from "./Badge";
@@ -80,6 +91,20 @@ export function AppShell({ active, onChange, children }: Props) {
             );
           })}
         </nav>
+
+        {/* API docs — external link to Swagger UI; admin + user both see it */}
+        <div className="px-3 pb-2">
+          <a
+            href="/api-docs"
+            target="_blank"
+            rel="noreferrer"
+            className="w-full flex items-center gap-2.5 px-3 h-9 rounded-md text-sm text-text-muted hover:bg-bg-hover hover:text-text transition-colors"
+          >
+            <BookOpen className="h-4 w-4 text-text-subtle" />
+            <span className="flex-1">API docs</span>
+            <ExternalLink className="h-3 w-3 text-text-subtle" />
+          </a>
+        </div>
 
         {/* User card + sign-out */}
         <div className="p-3 border-t border-border space-y-2">

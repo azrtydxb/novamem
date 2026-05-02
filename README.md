@@ -85,6 +85,8 @@ Hosts that support SSE-MCP (e.g. some claude.ai integrations, custom agents) poi
 
 ## API surface
 
+A live OpenAPI 3.0 reference is served at **`/api-docs`** (Swagger UI, with "Try it out" enabled) and the raw spec at **`/openapi.json`**. The dashboard sidebar links straight to it.
+
 Memory data plane (also exposed as MCP tools `memory.<verb>`). Every route accepts an optional `project` field to scope to a sub-brain (see [Projects](#projects-sub-brains)):
 
 - `POST /v1/search` — hybrid search; optional `weights` override per call, optional `project`
