@@ -6,12 +6,15 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": { "novamem-mcp": "dist/bin.js" },
+  "bin": {
+    "novamem-mcp": "dist/bin.js",
+    "novamem-login": "dist/login.js"
+  },
   "exports": { ".": "./dist/index.js" },
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

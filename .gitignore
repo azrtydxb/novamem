@@ -7,3 +7,11 @@ dist
 coverage
 data/
 *.log
+
+# local-only operator artifacts (admin tokens, dev passwords)
+.admin-token.local
+.*-token.local
+
+# editor / agent caches
+.claude/
+.kilocode/

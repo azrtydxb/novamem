@@ -11,8 +11,30 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import type { MemoryEngine } from "./engine/index.js";
+import type { WarmStore } from "./warm-store/index.js";
 
-export function buildMcpServer(engine: MemoryEngine): Server {
+export interface McpContext {
+  tenantId: string;
+  /** Project the bearer/session is bound to (or null for tenant-wide). */
+  projectId?: string | null;
+  /** User id when authenticated as a dashboard user (used for project.create
+   *  ownership). Null/undefined for tenant-bearer-only callers — those can't
+   *  create projects via MCP. */
+  userId?: string | null;
+}
+
+/** Build the MCP server. `ctxOrTenant` accepts either a context object (new
+ *  shape with tenant + project + user) or a bare tenantId string for back-
+ *  compat with existing callers. */
+export function buildMcpServer(
+  engine: MemoryEngine,
+  ctxOrTenant: McpContext | string,
+  warm?: WarmStore,
+): Server {
+  const ctx: McpContext =
+    typeof ctxOrTenant === "string" ? { tenantId: ctxOrTenant } : ctxOrTenant;
+  const tenantId = ctx.tenantId;
+  const bearerProject = ctx.projectId ?? null;
   const server = new Server(
     { name: "novamem", version: "0.1.0" },
     { capabilities: { tools: {} } },
@@ -30,6 +52,10 @@ export function buildMcpServer(engine: MemoryEngine): Server {
             query: { type: "string" },
             k: { type: "number", description: "Top-K to return (default 10)" },
             namespace: { type: "string" },
+            project: {
+              type: "string",
+              description: "Optional project (sub-brain) to scope to. Omit for tenant-wide entries.",
+            },
             weights: {
               type: "object",
               description: "Per-signal weight overrides. Omit to use defaults.",
@@ -52,6 +78,10 @@ export function buildMcpServer(engine: MemoryEngine): Server {
             content: { type: "string" },
             namespace: { type: "string" },
             source: { type: "string" },
+            project: {
+              type: "string",
+              description: "Optional project (sub-brain) to scope to.",
+            },
           },
           required: ["content"],
         },
@@ -103,8 +133,55 @@ export function buildMcpServer(engine: MemoryEngine): Server {
         description: "Service-wide stats snapshot",
         inputSchema: { type: "object", properties: {} },
       },
+      {
+        name: "project.list",
+        description:
+          "List projects (sub-brains) the current caller is a member of. " +
+          "Available only when authenticated as a dashboard user.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "project.create",
+        description:
+          "Create a new project (sub-brain) and add the caller as the owner. " +
+          "Memory operations using this project as the `project` argument will " +
+          "be scoped to it. Available only when authenticated as a dashboard user.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: {
+              type: "string",
+              description:
+                "URL-safe slug, 2–64 chars, alphanumeric / dot / underscore / dash.",
+            },
+            name: { type: "string", description: "Display name" },
+          },
+          required: ["id", "name"],
+        },
+      },
     ],
   }));
+
+  /** Resolve the project to use for a memory call. Same rules as the HTTP
+   *  layer: bearer-bound project wins; tenant-wide bearer can't pass a
+   *  project; otherwise pass-through. */
+  function resolveProject(arg: unknown): string | null {
+    const requested = typeof arg === "string" && arg.length > 0 ? arg : null;
+    if (bearerProject) {
+      if (requested && requested !== bearerProject) {
+        throw new Error(
+          `bearer is scoped to project '${bearerProject}'; cannot operate on '${requested}'`,
+        );
+      }
+      return bearerProject;
+    }
+    if (requested) {
+      throw new Error(
+        "this bearer is tenant-wide; mint a project-scoped token to access a project",
+      );
+    }
+    return null;
+  }
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
@@ -119,56 +196,98 @@ export function buildMcpServer(engine: MemoryEngine): Server {
                 ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
               }
             : undefined;
-        const r = await engine.search({
+        const project = resolveProject(args.project);
+        const r = await engine.search(tenantId, {
           query: String(args.query),
           k: typeof args.k === "number" ? args.k : undefined,
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          project,
           weights,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.remember": {
-        const r = await engine.remember({
+        const project = resolveProject(args.project);
+        const r = await engine.remember(tenantId, {
           content: String(args.content),
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           source: typeof args.source === "string" ? args.source : undefined,
+          project,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.today": {
-        // Last 24h, ordered newest first. Uses recent() so the window is real;
-        // search('*') returned everything regardless of age.
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const r = await engine.recent({
+        const project = resolveProject(args.project);
+        const r = await engine.recent(tenantId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           k: typeof args.k === "number" ? args.k : 20,
           since,
+          project,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.recent": {
-        const r = await engine.recent({
+        const project = resolveProject(args.project);
+        const r = await engine.recent(tenantId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           k: typeof args.k === "number" ? args.k : undefined,
           since: typeof args.since === "string" ? args.since : undefined,
+          project,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.neighbors": {
-        const r = await engine.neighbors({
+        const project = resolveProject(args.project);
+        const r = await engine.neighbors(tenantId, {
           id: String(args.id),
           depth: typeof args.depth === "number" ? args.depth : undefined,
           k: typeof args.k === "number" ? args.k : undefined,
+          project,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.forget": {
-        const r = await engine.forget(String(args.id));
+        const project = resolveProject(args.project);
+        const r = await engine.forget(tenantId, String(args.id), { project });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.stats": {
-        const r = await engine.stats();
+        const r = await engine.stats(tenantId);
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
+      }
+      case "project.list": {
+        if (!warm || !ctx.userId) {
+          return {
+            content: [{ type: "text", text: "project.list requires dashboard-user authentication" }],
+            isError: true,
+          };
+        }
+        const projects = await warm.listProjectsForUser(ctx.userId);
+        return { content: [{ type: "text", text: JSON.stringify({ projects }) }] };
+      }
+      case "project.create": {
+        if (!warm || !ctx.userId) {
+          return {
+            content: [{ type: "text", text: "project.create requires dashboard-user authentication" }],
+            isError: true,
+          };
+        }
+        const id = String(args.id);
+        const name = String(args.name);
+        if (!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(id)) {
+          return { content: [{ type: "text", text: "invalid project id (must be a slug, 2–64 chars)" }], isError: true };
+        }
+        if (await warm.getProject(id)) {
+          return { content: [{ type: "text", text: "project id already exists" }], isError: true };
+        }
+        const project = await warm.createProject({
+          id,
+          name,
+          ownerUserId: ctx.userId,
+          ownerTenantId: tenantId,
+        });
+        return { content: [{ type: "text", text: JSON.stringify(project) }] };
       }
       default:
         return {
@@ -181,8 +300,8 @@ export function buildMcpServer(engine: MemoryEngine): Server {
   return server;
 }
 
-export async function startMcpStdio(engine: MemoryEngine): Promise<void> {
-  const server = buildMcpServer(engine);
+export async function startMcpStdio(engine: MemoryEngine, tenantId: string): Promise<void> {
+  const server = buildMcpServer(engine, tenantId);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

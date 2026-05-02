@@ -1,7 +1,7 @@
 /**
  * Real-DB integration suite. Skipped by default; flip on with:
  *
- *   NOVAMEM_INTEGRATION=1 NOVAMEM_BASE_URL=http://localhost:5050 \
+ *   NOVAMEM_INTEGRATION=1 NOVAMEM_BASE_URL=http://localhost:7778 \
  *     pnpm --filter @azrty/novamem-server test:integration
  *
  * Requires a live `docker compose up -d` from the repo root. These tests
@@ -12,7 +12,7 @@
 
 import { afterAll, describe, expect, it } from "vitest";
 
-const BASE = process.env.NOVAMEM_BASE_URL ?? "http://localhost:5050";
+const BASE = process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
 const ENABLED = process.env.NOVAMEM_INTEGRATION === "1";
 const NS = `it-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -112,6 +112,47 @@ describe("integration: live service end-to-end", () => {
       {},
     );
     expect(reap.body.pending).toBe(0);
+  });
+
+  itLive("/v1/admin/metrics reflects activity end-to-end (admin token required)", async () => {
+    const adminToken = process.env.NOVAMEM_ADMIN_TOKEN;
+    if (!adminToken) {
+      // Skip-but-pass when the live service isn't running with an admin
+      // token configured. The test still gives signal in CI where the
+      // env var is set.
+      return;
+    }
+    const auth = { authorization: `Bearer ${adminToken}` };
+
+    // Sample 1: baseline.
+    const before = await fetch(`${BASE}/v1/admin/metrics`, { headers: auth });
+    expect(before.status).toBe(200);
+    const baseSnap = await before.json() as {
+      counters: Record<string, number>;
+      gauges: Record<string, number | null>;
+      rates: Record<string, number>;
+    };
+
+    // Drive activity: a remember + a hit-producing search + a decay.
+    const remember = await api<{ id: string }>("/v1/remember", {
+      content: "metrics integration sample entry",
+      namespace: NS,
+    });
+    createdIds.push(remember.body.id);
+    await api("/v1/search", { query: "metrics integration sample", namespace: NS, k: 5 });
+    await api("/v1/decay", { effectiveDays: 0.0001 });
+
+    // Sample 2: after.
+    const after = await fetch(`${BASE}/v1/admin/metrics`, { headers: auth });
+    expect(after.status).toBe(200);
+    const snap = await after.json() as typeof baseSnap;
+
+    expect(snap.counters.remembers_total).toBeGreaterThan(baseSnap.counters.remembers_total);
+    expect(snap.counters.queries_total).toBeGreaterThan(baseSnap.counters.queries_total);
+    expect(snap.counters.decay_runs_total).toBeGreaterThan(baseSnap.counters.decay_runs_total);
+    expect(snap.gauges.last_decay_run_iso).not.toBeNull();
+    // Warm gauge should be at least 1 (we just inserted).
+    expect((snap.gauges.warm_entries ?? 0) + (snap.gauges.cold_entries ?? 0)).toBeGreaterThan(0);
   });
 
   itLive("/v1/promote endpoint is removed (was a stub)", async () => {

@@ -31,12 +31,28 @@ export class ColdStore {
     this.vectorSize = cfg.vectorSize;
   }
 
-  private collectionFor(namespace: string): string {
-    return `novamem_${namespace}`;
+  /** Collection naming embeds tenant + project so vector leakage is
+   *  structurally impossible — there's literally no shared collection to
+   *  accidentally search across either boundary.
+   *
+   *  - Tenant-wide entries (no project): `novamem_<tenant>_<namespace>`
+   *  - Project-scoped entries: `novamem_p_<project>_<namespace>`
+   *
+   *  Project names lead with `p_` so a tenant id could never collide with
+   *  a project id (tenant ids are slugs without that prefix by convention).
+   *  Project membership is cross-tenant by design, so the tenant id
+   *  intentionally does not appear in project-scoped collection names. */
+  private collectionFor(tenantId: string, namespace: string, projectId: string | null = null): string {
+    if (projectId) return `novamem_p_${projectId}_${namespace}`;
+    return `novamem_${tenantId}_${namespace}`;
   }
 
-  private async ensureCollection(namespace: string): Promise<void> {
-    const name = this.collectionFor(namespace);
+  private async ensureCollection(
+    tenantId: string,
+    namespace: string,
+    projectId: string | null = null,
+  ): Promise<void> {
+    const name = this.collectionFor(tenantId, namespace, projectId);
     if (this.seenCollections.has(name)) return;
     const existing = await this.client.getCollections();
     const exists = existing.collections.some((c) => c.name === name);
@@ -49,45 +65,104 @@ export class ColdStore {
   }
 
   async upsert(args: {
+    tenantId: string;
+    projectId?: string | null;
     id: string;
     namespace: string;
     embedding: number[];
     payload: Record<string, unknown>;
   }): Promise<void> {
-    await this.ensureCollection(args.namespace);
-    await this.client.upsert(this.collectionFor(args.namespace), {
+    const projectId = args.projectId ?? null;
+    await this.ensureCollection(args.tenantId, args.namespace, projectId);
+    await this.client.upsert(this.collectionFor(args.tenantId, args.namespace, projectId), {
       points: [
         {
           id: ulidToUuid(args.id),
           vector: args.embedding,
-          payload: { ...args.payload, entryId: args.id },
+          payload: {
+            ...args.payload,
+            entryId: args.id,
+            tenantId: args.tenantId,
+            projectId,
+          },
         },
       ],
     });
   }
 
   async search(args: {
+    tenantId: string;
+    projectId?: string | null;
     namespace: string;
     embedding: number[];
     k: number;
   }): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> {
-    await this.ensureCollection(args.namespace);
-    const r = await this.client.search(this.collectionFor(args.namespace), {
+    const projectId = args.projectId ?? null;
+    await this.ensureCollection(args.tenantId, args.namespace, projectId);
+    const r = await this.client.search(this.collectionFor(args.tenantId, args.namespace, projectId), {
       vector: args.embedding,
       limit: args.k,
       with_payload: true,
     });
     return r.map((p) => {
       const payload = (p.payload ?? {}) as Record<string, unknown>;
-      // Prefer the ULID stashed in payload; fall back to the raw qdrant id.
       const id = typeof payload.entryId === "string" ? payload.entryId : String(p.id);
       return { id, score: p.score ?? 0, payload };
     });
   }
 
-  async delete(namespace: string, id: string): Promise<void> {
-    await this.ensureCollection(namespace);
-    await this.client.delete(this.collectionFor(namespace), { points: [ulidToUuid(id)] });
+  async delete(
+    tenantId: string,
+    namespace: string,
+    id: string,
+    projectId: string | null = null,
+  ): Promise<void> {
+    await this.ensureCollection(tenantId, namespace, projectId);
+    await this.client.delete(this.collectionFor(tenantId, namespace, projectId), {
+      points: [ulidToUuid(id)],
+    });
+  }
+
+  /** Drop every collection belonging to the given tenant. Used when a
+   *  tenant is deleted — leaves the qdrant cluster clean of orphaned
+   *  vector data. Returns the names of the dropped collections so callers
+   *  can log + audit. Best-effort: a delete failure for one collection
+   *  doesn't block the others. */
+  async deleteAllForTenant(tenantId: string): Promise<string[]> {
+    const prefix = `novamem_${tenantId}_`;
+    const all = await this.client.getCollections();
+    const mine = all.collections.map((c) => c.name).filter((n) => n.startsWith(prefix));
+    const dropped: string[] = [];
+    for (const name of mine) {
+      try {
+        await this.client.deleteCollection(name);
+        this.seenCollections.delete(name);
+        dropped.push(name);
+      } catch {
+        // Swallow — caller will see the missing entries in the next listing.
+      }
+    }
+    return dropped;
+  }
+
+  /** Drop every project-scoped collection for the given project id. Used
+   *  when a project is deleted. The naming scheme `novamem_p_<project>_*`
+   *  makes this a simple prefix scan. */
+  async deleteAllForProject(projectId: string): Promise<string[]> {
+    const prefix = `novamem_p_${projectId}_`;
+    const all = await this.client.getCollections();
+    const mine = all.collections.map((c) => c.name).filter((n) => n.startsWith(prefix));
+    const dropped: string[] = [];
+    for (const name of mine) {
+      try {
+        await this.client.deleteCollection(name);
+        this.seenCollections.delete(name);
+        dropped.push(name);
+      } catch {
+        // ignore
+      }
+    }
+    return dropped;
   }
 
   async ping(): Promise<boolean> {
