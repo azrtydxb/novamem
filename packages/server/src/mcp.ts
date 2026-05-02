@@ -136,10 +136,13 @@ export function buildMcpServer(engine: MemoryEngine): Server {
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.today": {
-        const r = await engine.search({
-          query: "*",
-          k: typeof args.k === "number" ? args.k : 20,
+        // Last 24h, ordered newest first. Uses recent() so the window is real;
+        // search('*') returned everything regardless of age.
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const r = await engine.recent({
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          k: typeof args.k === "number" ? args.k : 20,
+          since,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }

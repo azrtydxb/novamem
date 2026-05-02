@@ -132,9 +132,12 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "memory.today": {
-          const r = await client.today({
+          // Real 24h window via recent() with a since cutoff.
+          const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          const r = await client.recent({
             namespace: typeof args.namespace === "string" ? args.namespace : undefined,
-            k: typeof args.k === "number" ? args.k : undefined,
+            k: typeof args.k === "number" ? args.k : 20,
+            since,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
