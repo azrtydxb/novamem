@@ -26,6 +26,10 @@ export class FakeWarmStore {
   rows = new Map<string, FakeWarmRow>();
   decayRunsInserted = 0;
   decayRunsUpdated = 0;
+  coldOrphans = new Map<
+    string,
+    { id: string; namespace: string; attempts: number; lastError: string; lastAttemptAt: Date | null }
+  >();
   pool = {
     /** Fake the pool query surface used by engine.recent + engine.forget +
      *  engine.decay. Only the queries the engine actually issues are wired —
@@ -68,6 +72,57 @@ export class FakeWarmStore {
       if (sql.startsWith("DELETE FROM memory_entries")) {
         this.rows.delete(String(params[0]));
         return { rows: [] };
+      }
+      // cold_orphans: insert / update / select / delete + count
+      if (sql.includes("INSERT INTO cold_orphans")) {
+        const id = String(params[0]);
+        const namespace = String(params[1]);
+        const lastError = String(params[2] ?? "");
+        const cur = this.coldOrphans.get(id);
+        if (cur) {
+          cur.attempts += 1;
+          cur.lastError = lastError;
+          cur.lastAttemptAt = new Date();
+        } else {
+          this.coldOrphans.set(id, { id, namespace, attempts: 1, lastError, lastAttemptAt: new Date() });
+        }
+        return { rows: [] };
+      }
+      if (sql.startsWith("SELECT id, namespace, attempts FROM cold_orphans")) {
+        const maxAttempts = Number(params[0]);
+        const limit = Number(params[1]);
+        return {
+          rows: [...this.coldOrphans.values()]
+            .filter((o) => o.attempts < maxAttempts)
+            .sort((a, b) => (a.lastAttemptAt?.getTime() ?? 0) - (b.lastAttemptAt?.getTime() ?? 0))
+            .slice(0, limit),
+        };
+      }
+      if (sql.startsWith("UPDATE cold_orphans")) {
+        const o = this.coldOrphans.get(String(params[2]));
+        if (o) {
+          o.attempts = Number(params[0]);
+          o.lastError = String(params[1] ?? "");
+          o.lastAttemptAt = new Date();
+        }
+        return { rows: [] };
+      }
+      if (sql.startsWith("DELETE FROM cold_orphans")) {
+        this.coldOrphans.delete(String(params[0]));
+        return { rows: [] };
+      }
+      if (sql.includes("SELECT COUNT(*)::text") && sql.includes("cold_orphans")) {
+        const maxAttempts = Number(params[0]);
+        const count = [...this.coldOrphans.values()].filter((o) => o.attempts < maxAttempts).length;
+        return { rows: [{ count: String(count) }] };
+      }
+      // getColdEntryStats
+      if (sql.includes("FROM memory_access") && sql.includes("WHERE a.entry_id = $1")) {
+        const id = String(params[0]);
+        const r = this.rows.get(id);
+        if (!r) return { rows: [] };
+        const idleDays = (Date.now() - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24);
+        return { rows: [{ hits: r.hits, idle_days: String(idleDays) }] };
       }
       throw new Error(`fake pool: unhandled SQL — ${sql.slice(0, 60)}`);
     },
@@ -164,6 +219,15 @@ export class FakeWarmStore {
   async markCold(id: string, cold: boolean): Promise<void> {
     const r = this.rows.get(id);
     if (r) r.cold = cold;
+  }
+
+  async getColdEntryStats(id: string): Promise<{ hits: number; idleDays: number } | null> {
+    const r = this.rows.get(id);
+    if (!r) return null;
+    return {
+      hits: r.hits,
+      idleDays: (Date.now() - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24),
+    };
   }
 
   async stats() {

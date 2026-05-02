@@ -42,6 +42,16 @@ export class MemoryEngine {
     this.defaultDecayDays = cfg.defaultEffectiveDays ?? 7;
   }
 
+  /** Reactive promotion: any cold entry that just got a search hit is
+   *  reactivated — its qdrant vector is still in place from before
+   *  demotion, so promotion is just flipping the flag. Symmetric to the
+   *  decay loop: hits drive entries warm, idle drives them cold. The
+   *  consumer of search results sees the post-promotion tier. */
+  private async maybePromote(id: string): Promise<boolean> {
+    await this.warm.markCold(id, false);
+    return true;
+  }
+
   private lastGraphWarn = 0;
   private maybeWarnGraphDown(): void {
     const now = Date.now();
@@ -117,11 +127,22 @@ export class MemoryEngine {
       const e = await this.warm.getEntry(f.id);
       if (!e) continue;
       await this.warm.bumpHits(f.id);
+
+      // Cold→warm promotion: if a cold entry just got hit and its new
+      // lifespan now exceeds its idle age, it's earned its way back to
+      // warm. The qdrant vector stayed put through demotion, so promotion
+      // is just flipping the flag. Reactive — no separate pass needed.
+      let tier: "warm" | "cold" = e.cold ? "cold" : "warm";
+      if (e.cold) {
+        const promoted = await this.maybePromote(f.id);
+        if (promoted) tier = "warm";
+      }
+
       results.push({
         id: f.id,
         score: f.score,
         content: e.content,
-        tier: e.cold ? "cold" : "warm",
+        tier,
         namespace: e.namespace,
         source: e.source,
         metadata: (e.metadata ?? {}) as Record<string, unknown>,
@@ -230,15 +251,74 @@ export class MemoryEngine {
     try {
       await this.cold.delete(e.namespace, id);
     } catch (err) {
-      // The warm row is already gone; the cold vector is now orphaned and
-      // will linger until the next sweep (TODO: orphan-vector reaper). Make
-      // sure operators see this so cold drift doesn't grow silently.
+      // Warm row is already gone; cold vector is orphaned. Park the id in
+      // cold_orphans; the reaper retries on the decay schedule until the
+      // qdrant delete succeeds.
       coldDeleteOk = false;
-      console.warn(
-        `[engine] forget(${id}): warm row deleted but cold vector survived (${(err as Error).message})`,
+      const message = (err as Error).message;
+      console.warn(`[engine] forget(${id}): cold vector survived (${message}); queued for reaper`);
+      await pool.query(
+        `INSERT INTO cold_orphans (id, namespace, attempts, last_error, last_attempt_at)
+         VALUES ($1, $2, 1, $3, now())
+         ON CONFLICT (id) DO UPDATE SET
+           attempts = cold_orphans.attempts + 1,
+           last_error = EXCLUDED.last_error,
+           last_attempt_at = now()`,
+        [id, e.namespace, message],
       );
     }
     return { deleted: true, coldDeleteOk };
+  }
+
+  /** Reaper pass: retries each queued orphan's cold-store delete and
+   *  removes it from the queue on success. Called from the decay loop and
+   *  exposed at /v1/reap-orphans for manual triggers. Returns counts so
+   *  operators can tell how much drift was cleaned up. */
+  async reapOrphans(opts: { maxAttempts?: number; limit?: number } = {}): Promise<{
+    attempted: number;
+    cleared: number;
+    abandoned: number;
+    pending: number;
+  }> {
+    const maxAttempts = opts.maxAttempts ?? 10;
+    const limit = opts.limit ?? 100;
+    const rows = await this.warm.pool.query<{ id: string; namespace: string; attempts: number }>(
+      `SELECT id, namespace, attempts FROM cold_orphans
+        WHERE attempts < $1
+        ORDER BY last_attempt_at ASC NULLS FIRST
+        LIMIT $2`,
+      [maxAttempts, limit],
+    );
+    let cleared = 0;
+    let abandoned = 0;
+    for (const r of rows.rows) {
+      try {
+        await this.cold.delete(r.namespace, r.id);
+        await this.warm.pool.query(`DELETE FROM cold_orphans WHERE id = $1`, [r.id]);
+        cleared++;
+      } catch (err) {
+        const message = (err as Error).message;
+        const newAttempts = r.attempts + 1;
+        await this.warm.pool.query(
+          `UPDATE cold_orphans SET attempts = $1, last_error = $2, last_attempt_at = now() WHERE id = $3`,
+          [newAttempts, message, r.id],
+        );
+        if (newAttempts >= maxAttempts) {
+          abandoned++;
+          console.warn(`[engine] cold orphan ${r.id} abandoned after ${newAttempts} attempts: ${message}`);
+        }
+      }
+    }
+    const pendingRow = await this.warm.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM cold_orphans WHERE attempts < $1`,
+      [maxAttempts],
+    );
+    return {
+      attempted: rows.rows.length,
+      cleared,
+      abandoned,
+      pending: Number(pendingRow.rows[0]?.count ?? 0),
+    };
   }
 
   async stats(): Promise<MemoryStats> {

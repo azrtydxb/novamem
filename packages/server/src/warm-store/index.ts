@@ -74,6 +74,15 @@ export class WarmStore {
       `CREATE INDEX IF NOT EXISTS idx_fts_tsv ON memory_fts USING gin(tsv)`,
       `CREATE INDEX IF NOT EXISTS idx_fts_namespace ON memory_fts(namespace)`,
       `CREATE INDEX IF NOT EXISTS idx_fts_entry ON memory_fts(entry_id)`,
+      `CREATE TABLE IF NOT EXISTS cold_orphans (
+        id text PRIMARY KEY,
+        namespace text NOT NULL,
+        attempts int NOT NULL DEFAULT 0,
+        last_error text,
+        first_seen timestamptz NOT NULL DEFAULT now(),
+        last_attempt_at timestamptz
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_orphans_attempts ON cold_orphans(attempts)`,
       `CREATE TABLE IF NOT EXISTS decay_runs (
         id serial PRIMARY KEY,
         started_at timestamptz NOT NULL DEFAULT now(),
@@ -177,6 +186,23 @@ export class WarmStore {
         LIMIT $1`,
       [limit],
     );
+  }
+
+  /** Read the access-count + idle-days for a single entry — used by the
+   *  cold→warm promotion path. Returns null when the entry has no access
+   *  row at all (shouldn't happen for promotion candidates). */
+  async getColdEntryStats(id: string): Promise<{ hits: number; idleDays: number } | null> {
+    const r = await this.pool.query<{ hits: number; idle_days: string }>(
+      `SELECT a.hits,
+              EXTRACT(EPOCH FROM (now() - a.last_accessed)) / 86400.0 AS idle_days
+         FROM memory_access a
+        WHERE a.entry_id = $1
+        LIMIT 1`,
+      [id],
+    );
+    const row = r.rows[0];
+    if (!row) return null;
+    return { hits: Number(row.hits), idleDays: Number(row.idle_days) };
   }
 
   async markCold(id: string, cold: boolean): Promise<void> {
