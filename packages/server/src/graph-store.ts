@@ -70,6 +70,37 @@ export class GraphStore {
     );
   }
 
+  /** Batch variant of `addEdge` — one round-trip for all neighbour links
+   *  off a single source id. Used by `engine.linkVectorNeighbors` to
+   *  collapse `graphLinkFanout` round-trips per `remember()` to one
+   *  (review finding P1-P3 / P-H4). */
+  async addEdgesBatch(
+    tenantId: string,
+    fromId: string,
+    edges: Array<{ to: string; relation: string; strength?: number }>,
+    projectId: string | null = null,
+  ): Promise<void> {
+    if (!this.graph || edges.length === 0) return;
+    const params = {
+      from: fromId,
+      tenant: tenantId,
+      project: projectId ?? "",
+      edges: edges.map((e) => ({
+        to: e.to,
+        rel: e.relation,
+        strength: e.strength ?? 1.0,
+      })),
+    };
+    await this.graph.query(
+      "MERGE (a:Memory {id: $from, tenant: $tenant, project: $project}) " +
+        "WITH a UNWIND $edges AS edge " +
+        "MERGE (b:Memory {id: edge.to, tenant: $tenant, project: $project}) " +
+        "MERGE (a)-[r:RELATES {kind: edge.rel}]->(b) " +
+        "SET r.strength = edge.strength",
+      { params },
+    );
+  }
+
   /** Drop a node and all its incident edges. Called on `forget()` so graph
    *  state stays consistent with warm/cold deletions. */
   async removeNode(tenantId: string, id: string): Promise<void> {
@@ -110,27 +141,37 @@ export class GraphStore {
    *  delete is the source of truth, and the next time the graph comes back
    *  the orphaned nodes are harmless (they're filterable by tenant anyway,
    *  but we still try to clean them now). */
-  async removeAllForTenant(tenantId: string): Promise<void> {
-    if (!this.graph || !this.connected) return;
+  /** Returns `true` only when the delete actually ran. The caller (engine)
+   *  uses this to decide whether to surface `graphCleared: true` to the
+   *  client — silently swallowing the error here used to make the engine
+   *  report `graphCleared: true` falsely (review finding P1-A6). */
+  async removeAllForTenant(tenantId: string): Promise<boolean> {
+    if (!this.graph || !this.connected) return false;
     try {
       await this.graph.query("MATCH (n:Memory {tenant: $tenant}) DETACH DELETE n", {
         params: { tenant: tenantId },
       });
-    } catch {
-      // Best-effort — the warm/cold purge already succeeded.
+      return true;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[graph-store] removeAllForTenant(${tenantId}) failed: ${(err as Error).message}`);
+      return false;
     }
   }
 
-  /** Drop every Memory node belonging to a project. Used when a project is
-   *  deleted, to keep the graph aligned with the warm + cold purges. */
-  async removeAllForProject(projectId: string): Promise<void> {
-    if (!this.graph || !this.connected) return;
+  /** Drop every Memory node belonging to a project. Returns `true` only
+   *  when the delete actually ran — see `removeAllForTenant`. */
+  async removeAllForProject(projectId: string): Promise<boolean> {
+    if (!this.graph || !this.connected) return false;
     try {
       await this.graph.query("MATCH (n:Memory {project: $project}) DETACH DELETE n", {
         params: { project: projectId },
       });
-    } catch {
-      // Best-effort.
+      return true;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[graph-store] removeAllForProject(${projectId}) failed: ${(err as Error).message}`);
+      return false;
     }
   }
 
