@@ -13,6 +13,8 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
+import fastifySwagger from "@fastify/swagger";
+import fastifySwaggerUi from "@fastify/swagger-ui";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 
@@ -20,6 +22,7 @@ import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from "./auth.js";
 import { buildMcpServer } from "./mcp.js";
+import { openapiSpec } from "./openapi.js";
 import { PUBLIC_TENANT, type WarmStore } from "./warm-store/index.js";
 
 export interface DashboardUser {
@@ -200,6 +203,40 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" }, bodyLimit: 2 * 1024 * 1024 });
   app.register(cors, { origin: true });
+
+  // ─── OpenAPI + Swagger UI ──────────────────────────────────────────────
+  // Hand-written OpenAPI 3.0 doc (we don't auto-derive from Zod); served at
+  // /openapi.json, with Swagger UI rendered at /api-docs. Both are public —
+  // they're docs, not data — so they're added to the auth-hook skip list too.
+  app.register(fastifySwagger, {
+    mode: "static",
+    specification: { document: openapiSpec() as never },
+  });
+  app.register(fastifySwaggerUi, {
+    routePrefix: "/api-docs",
+    uiConfig: {
+      docExpansion: "list",
+      deepLinking: true,
+      tryItOutEnabled: true,
+      persistAuthorization: true,
+    },
+    // Swagger UI bundles inline styles; relax style-src for this surface
+    // (the dashboard's stricter CSP is unaffected). Scripts stay 'self'.
+    staticCSP: {
+      "default-src": ["'self'"],
+      "img-src": ["'self'", "data:", "https:"],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "script-src": ["'self'"],
+      "connect-src": ["'self'"],
+      "font-src": ["'self'", "data:"],
+    },
+  });
+  // The plugin pair exposes the spec at /api-docs/json; we keep the
+  // legacy /openapi.json path live for callers (and it's what the
+  // dashboard's "API docs" link points at).
+  app.get("/openapi.json", async (_req, reply) => {
+    reply.send(app.swagger());
+  });
   app.register(rateLimit, {
     max: opts.rateLimitPerMinute ?? 600,
     timeWindow: "1 minute",
@@ -228,7 +265,14 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   //   anything else → could be the legacy NOVAMEM_ADMIN_TOKEN (used by CI
   //   scripts directly against /v1/admin/*) or `bearer` mode shared token.
   app.addHook("onRequest", async (req, reply) => {
-    if (req.url === "/health" || req.url === "/openapi.json" || req.url === "/favicon.ico") {
+    if (
+      req.url === "/health" ||
+      req.url === "/favicon.ico" ||
+      req.url === "/openapi.json" ||
+      req.url === "/api-docs" ||
+      req.url.startsWith("/api-docs/") ||
+      req.url.startsWith("/documentation/")
+    ) {
       req.tenantId = PUBLIC_TENANT;
       return;
     }
@@ -856,9 +900,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send(await opts.metrics.snapshot());
   });
 
-  app.get("/openapi.json", async (_req, reply) => {
-    reply.send(openapiSpec());
-  });
+  // /openapi.json is now served by @fastify/swagger.
 
   // ─── MCP via SSE ──────────────────────────────────────────────────
   // The same engine is exposed through buildMcpServer() — over stdio for
@@ -910,46 +952,4 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   return app;
-}
-
-function openapiSpec() {
-  return {
-    openapi: "3.1.0",
-    info: { title: "novamem", version: "0.1.0" },
-    paths: {
-      "/health": { get: { responses: { 200: { description: "ok" } } } },
-      "/v1/search": { post: { responses: { 200: { description: "ranked results" } } } },
-      "/v1/remember": { post: { responses: { 201: { description: "created" } } } },
-      "/v1/recent": { post: { responses: { 200: { description: "recent entries by namespace" } } } },
-      "/v1/neighbors": { post: { responses: { 200: { description: "graph-neighbour entries" } } } },
-      "/v1/forget": { post: { responses: { 200: { description: "deletion summary" } } } },
-      "/v1/decay": { post: { responses: { 200: { description: "decay run summary" } } } },
-      "/v1/stats": { get: { responses: { 200: { description: "stats snapshot" } } } },
-      "/mcp/sse": { get: { responses: { 200: { description: "SSE event stream for MCP transport" } } } },
-      "/mcp/messages": { post: { responses: { 200: { description: "JSON-RPC message sink for an SSE session" } } } },
-      "/v1/admin/tenants": {
-        get: { responses: { 200: { description: "list tenants (admin)" } } },
-        post: { responses: { 201: { description: "create tenant (admin)" } } },
-      },
-      "/v1/admin/tenants/{id}": {
-        delete: { responses: { 200: { description: "delete tenant + purge data (admin)" } } },
-      },
-      "/v1/admin/tenants/{id}/tokens": {
-        get: { responses: { 200: { description: "list tokens for a tenant (admin)" } } },
-        post: { responses: { 201: { description: "mint a new bearer token (admin)" } } },
-      },
-      "/v1/admin/tenants/{tenantId}/tokens/{hash}/revoke": {
-        post: { responses: { 200: { description: "revoke a token by sha256 hash (admin)" } } },
-      },
-      "/v1/admin/tokens/revoke": {
-        post: { responses: { 200: { description: "revoke a bearer token by plaintext (admin)" } } },
-      },
-      "/v1/admin/metrics": {
-        get: { responses: { 200: { description: "operational metrics snapshot (admin)" } } },
-      },
-      "/v1/me/rotate-token": {
-        post: { responses: { 201: { description: "rotate the caller's bearer token (tenant mode only)" } } },
-      },
-    },
-  };
 }
