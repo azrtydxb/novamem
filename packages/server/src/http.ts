@@ -23,6 +23,7 @@ import type { MetricsCollector } from "./admin/metrics.js";
 import { hashPassword, verifyPassword, SESSION_TTL_MS, LoginThrottle } from "./auth.js";
 import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
+import { resolveRequestProject } from "./routes/context.js";
 import { PUBLIC_TENANT, type WarmStore } from "./warm-store/index.js";
 
 export interface DashboardUser {
@@ -88,8 +89,12 @@ const DecayBody = z.object({
 const RecentBody = z.object({
   namespace: z.string().max(128).optional(),
   k: z.number().int().positive().max(200).optional(),
-  /** ISO-8601 lower bound. */
-  since: z.string().optional(),
+  /** ISO-8601 lower bound. Validated up-front so an invalid string
+   *  doesn't reach the SQL layer (review finding P2-14). */
+  since: z
+    .string()
+    .datetime({ offset: true, message: "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)" })
+    .optional(),
   project: ProjectIdRule.optional().nullable(),
 });
 
@@ -495,38 +500,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // a handler it 404s after going through the auth hook (which we already
   // skip for this URL); explicit empty-204 keeps console clean.
   app.get("/favicon.ico", async (_req, reply) => reply.code(204).send());
-
-  /** Resolve the project a request should be scoped to. Rules:
-   *   - Project-scoped bearer: forced to that project. A different `project`
-   *     in body → 403.
-   *   - Tenant-wide bearer (no project on token): tenant-wide entries only.
-   *     A `project` in body → 403 ("mint a project-scoped token").
-   *  Returns the project id (or null) on success, or undefined after
-   *  sending a 403 reply. */
-  function resolveRequestProject(
-    req: { bearerProjectId?: string | null },
-    bodyProject: string | null | undefined,
-    reply: { code: (n: number) => { send: (b: unknown) => unknown } },
-  ): string | null | undefined {
-    const bearerProject = req.bearerProjectId ?? null;
-    const requested = bodyProject === undefined ? null : bodyProject;
-    if (bearerProject) {
-      if (requested && requested !== bearerProject) {
-        reply.code(403).send({
-          error: `bearer is scoped to project '${bearerProject}'; cannot operate on '${requested}'`,
-        });
-        return undefined;
-      }
-      return bearerProject;
-    }
-    if (requested) {
-      reply.code(403).send({
-        error: "this bearer is tenant-wide; mint a project-scoped token to access a project",
-      });
-      return undefined;
-    }
-    return null;
-  }
 
   app.post("/v1/search", async (req, reply) => {
     const body = SearchBody.parse(req.body);
@@ -1060,6 +1033,19 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send(await opts.metrics.snapshot());
   });
 
+  // P2-18: Prometheus exposition format for scraping. Uses the same
+  // gauges + counters as the JSON endpoint; admin-token gated so a
+  // public scraper can't enumerate tenants/projects via the dashboard.
+  app.get("/v1/admin/metrics/prom", async (req, reply) => {
+    if (!dashboardEnabled || !opts.metrics) {
+      return reply.code(404).send({ error: "admin disabled" });
+    }
+    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
+    reply
+      .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
+      .send(await opts.metrics.renderProm());
+  });
+
   // /openapi.json is now served by @fastify/swagger.
 
   // ─── MCP via SSE ──────────────────────────────────────────────────
@@ -1078,13 +1064,29 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // the transport for the session's lifetime. Subsequent POST /mcp/messages
   // calls inherit that tenant — they're authenticated by sessionId, not
   // by a new bearer header on every JSON-RPC call.
-  const sseTransports = new Map<string, { transport: SSEServerTransport; tenantId: string }>();
+  const sseTransports = new Map<string, {
+    transport: SSEServerTransport;
+    tenantId: string;
+    mcpServer: ReturnType<typeof buildMcpServer>;
+  }>();
+
+  // P2-17: drain in-flight SSE connections on shutdown so Fastify's `close()`
+  // doesn't hang waiting for keep-alive responses to complete.
+  app.addHook("onClose", async () => {
+    for (const [sessionId, s] of [...sseTransports.entries()]) {
+      try {
+        await s.mcpServer.close();
+      } catch {
+        // ignore — best-effort drain
+      }
+      sseTransports.delete(sessionId);
+    }
+  });
 
   app.get("/mcp/sse", async (req, reply) => {
     const transport = new SSEServerTransport("/mcp/messages", reply.raw);
     const sessionId = transport.sessionId;
     const tenantId = req.tenantId;
-    sseTransports.set(sessionId, { transport, tenantId });
     const mcpServer = buildMcpServer(
       opts.engine,
       {
@@ -1094,13 +1096,18 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       },
       opts.warm,
     );
+    sseTransports.set(sessionId, { transport, tenantId, mcpServer });
     await mcpServer.connect(transport);
     req.log.info({ sessionId, tenantId }, "mcp-sse: session opened");
-    reply.raw.on("close", () => {
+    const cleanup = () => {
       sseTransports.delete(sessionId);
       mcpServer.close().catch(() => undefined);
       req.log.info({ sessionId }, "mcp-sse: session closed");
-    });
+    };
+    // Listen on both `close` and `error` — the previous version only
+    // cleaned up on `close`, so an `error` event leaked the entry.
+    reply.raw.on("close", cleanup);
+    reply.raw.on("error", cleanup);
   });
 
   app.post("/mcp/messages", async (req, reply) => {

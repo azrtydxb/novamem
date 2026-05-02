@@ -335,6 +335,27 @@ Set `NOVAMEM_ADMIN_DASHBOARD=0` (or `false` / `no` / `off`) to disable both `/ad
 
 > **Note:** metrics live in-process and **reset on every restart**. This is an operational dashboard, not a long-term SLO store — for historical metrics, scrape `/v1/admin/metrics` into Prometheus / your TSDB of choice.
 
+## Backup + restore
+
+Three stores need backing up; postgres is the only authoritative source for warm + project + audit data.
+
+```bash
+# Postgres — pg_dump on a hot DB
+docker exec novamem-1-postgres-1 pg_dump -U novamem -d novamem -Fc > novamem-warm.dump
+
+# Qdrant — snapshot endpoint per collection (or take a tarball of the volume)
+curl -X POST http://localhost:6333/collections/novamem_acme_default/snapshots
+
+# FalkorDB — RDB dump via redis-cli BGSAVE
+docker exec novamem-1-falkordb-1 redis-cli BGSAVE
+```
+
+To restore a tenant or project, restore Postgres first (it owns the foreign keys), then re-create the corresponding Qdrant collection / FalkorDB nodes from the snapshots — or accept that cold + graph will rebuild themselves on the next decay loop / `remember()` cycle.
+
+`/v1/admin/metrics` resets on every restart by design — there is nothing to back up there.
+
+Schema migrations are forward-only (`ALTER ... ADD COLUMN IF NOT EXISTS`); back up Postgres before upgrading novamem in place. There is no rollback path beyond `pg_restore`.
+
 ## Operator gotchas
 
 - **Tenant ids cannot start with `p_` or be exactly `p`.** Such ids would collide with the project-scoped collection name prefix and let an admin wipe other tenants' shared-project vector data via `DELETE /v1/admin/tenants/:id`. Enforced by Zod at create time.

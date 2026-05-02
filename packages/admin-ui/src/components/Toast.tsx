@@ -77,7 +77,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastCtx.Provider value={value}>
       {children}
       {createPortal(
-        <div className="pointer-events-none fixed top-4 right-4 z-[60] flex flex-col gap-2 w-[320px]">
+        // role=status + aria-live so screen readers announce toasts.
+        <div
+          className="pointer-events-none fixed top-4 right-4 z-[60] flex flex-col gap-2 w-[320px]"
+          role="status"
+          aria-live="polite"
+          aria-atomic="false"
+        >
           {toasts.map((t) => {
             const Icon = ICON[t.tone];
             return (
