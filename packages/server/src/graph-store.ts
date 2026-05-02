@@ -25,7 +25,7 @@ export class GraphStore {
 
   async connect(): Promise<boolean> {
     try {
-      this.db = await FalkorDB.connect({ socket: { url: this.url } });
+      this.db = await FalkorDB.connect({ url: this.url });
       this.graph = this.db.selectGraph(this.graphName);
       this.connected = true;
       return true;
