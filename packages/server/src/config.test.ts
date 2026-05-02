@@ -11,7 +11,7 @@ const baseEnv = {
 describe("config: defaults + env loading", () => {
   it("loads defaults when only required URLs are set", () => {
     const cfg = loadConfig({ ...baseEnv } as NodeJS.ProcessEnv);
-    expect(cfg.service.port).toBe(5_000);
+    expect(cfg.service.port).toBe(7_778);
     expect(cfg.auth.mode).toBe("none");
     expect(cfg.embeddings.provider).toBe("local-transformers");
     expect(cfg.decay.defaultEffectiveDays).toBe(7);
@@ -68,6 +68,32 @@ describe("config: auth.bearer requires token", () => {
       decay: {},
     });
     expect(cfg.auth.mode).toBe("none");
+  });
+});
+
+describe("config: admin.dashboard flag", () => {
+  it("defaults to enabled when env var unset", () => {
+    const cfg = loadConfig({ ...baseEnv } as NodeJS.ProcessEnv);
+    expect(cfg.admin.dashboard).toBe(true);
+  });
+
+  it("'0' disables the dashboard", () => {
+    const cfg = loadConfig({ ...baseEnv, NOVAMEM_ADMIN_DASHBOARD: "0" } as NodeJS.ProcessEnv);
+    expect(cfg.admin.dashboard).toBe(false);
+  });
+
+  it("'false' / 'no' / 'off' also disable the dashboard", () => {
+    for (const v of ["false", "no", "off", "FALSE", "Off"]) {
+      const cfg = loadConfig({ ...baseEnv, NOVAMEM_ADMIN_DASHBOARD: v } as NodeJS.ProcessEnv);
+      expect(cfg.admin.dashboard, `value=${v}`).toBe(false);
+    }
+  });
+
+  it("any other value enables the dashboard", () => {
+    for (const v of ["1", "true", "yes", "on", "anything-else"]) {
+      const cfg = loadConfig({ ...baseEnv, NOVAMEM_ADMIN_DASHBOARD: v } as NodeJS.ProcessEnv);
+      expect(cfg.admin.dashboard, `value=${v}`).toBe(true);
+    }
   });
 });
 

@@ -10,17 +10,27 @@ export const ConfigSchema = z
   .object({
     service: z.object({
       host: z.string().default("0.0.0.0"),
-      port: z.coerce.number().int().min(1).max(65_535).default(5_000),
+      port: z.coerce.number().int().min(1).max(65_535).default(7_778),
       rateLimitPerMinute: z.coerce.number().int().positive().default(600),
     }),
     auth: z
       .object({
-        mode: z.enum(["none", "bearer"]).default("none"),
+        // - "none": dev only, every request becomes the synthetic `public` tenant.
+        // - "bearer": single shared token, single implicit `public` tenant — back-compat.
+        // - "tenant": one-token-per-tenant via tenant_tokens table, real isolation.
+        mode: z.enum(["none", "bearer", "tenant"]).default("none"),
         token: z.string().optional(),
+        /** Admin token unlocks /v1/admin/* (create tenants, mint tokens).
+         *  Required when mode = "tenant" — without it, you can't bootstrap. */
+        adminToken: z.string().optional(),
       })
       .refine((v) => v.mode !== "bearer" || !!v.token, {
         message: "auth.mode = 'bearer' requires auth.token (NOVAMEM_AUTH_TOKEN)",
         path: ["token"],
+      })
+      .refine((v) => v.mode !== "tenant" || !!v.adminToken, {
+        message: "auth.mode = 'tenant' requires auth.adminToken (NOVAMEM_ADMIN_TOKEN) for tenant bootstrap",
+        path: ["adminToken"],
       }),
     warm: z.object({
       url: z.string(),
@@ -50,6 +60,19 @@ export const ConfigSchema = z
       intervalMs: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
       defaultEffectiveDays: z.coerce.number().positive().default(7),
     }),
+    admin: z.object({
+      // Master switch for the admin dashboard UI + /v1/admin/metrics route.
+      // Set NOVAMEM_ADMIN_DASHBOARD=0 (or "false") to disable the surface
+      // entirely. Anything else (or unset) → enabled.
+      dashboard: z
+        .union([z.boolean(), z.string()])
+        .default(true)
+        .transform((v) => {
+          if (typeof v === "boolean") return v;
+          const s = v.trim().toLowerCase();
+          return s !== "0" && s !== "false" && s !== "no" && s !== "off";
+        }),
+    }).default({ dashboard: true }),
   });
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -63,6 +86,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     auth: {
       mode: env.NOVAMEM_AUTH_MODE,
       token: env.NOVAMEM_AUTH_TOKEN,
+      adminToken: env.NOVAMEM_ADMIN_TOKEN,
     },
     warm: {
       url: env.NOVAMEM_WARM_URL ?? "postgres://novamem:novamem@localhost:5432/novamem",
@@ -85,6 +109,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     decay: {
       intervalMs: env.NOVAMEM_DECAY_INTERVAL_MS,
       defaultEffectiveDays: env.NOVAMEM_DECAY_DAYS,
+    },
+    admin: {
+      dashboard: env.NOVAMEM_ADMIN_DASHBOARD,
     },
   });
 }

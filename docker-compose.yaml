@@ -43,11 +43,16 @@ services:
       NOVAMEM_COLD_URL: http://qdrant:6333
       NOVAMEM_GRAPH_URL: redis://falkordb:6379
       NOVAMEM_EMBEDDINGS_PROVIDER: local-transformers
-      NOVAMEM_AUTH_MODE: none
-      NOVAMEM_PORT: "5000"
+      NOVAMEM_AUTH_MODE: ${NOVAMEM_AUTH_MODE:-tenant}
+      NOVAMEM_ADMIN_TOKEN: ${NOVAMEM_ADMIN_TOKEN}
+      NOVAMEM_ADMIN_DASHBOARD: ${NOVAMEM_ADMIN_DASHBOARD:-1}
+      NOVAMEM_BOOTSTRAP_ADMIN_USERNAME: ${NOVAMEM_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD: ${NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD}
+      NOVAMEM_PORT: "7778"
     ports:
-      # Host 5050 → container 5000. macOS AirPlay Receiver squats on 5000.
-      - "5050:5000"
+      # 7778 on both sides — same number host + container so logs and URLs
+      # match. macOS AirPlay Receiver squats on 5000, hence the off-default.
+      - "7778:7778"
 
 volumes:
   novamem_pg:
