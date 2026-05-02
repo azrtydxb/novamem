@@ -1,6 +1,7 @@
 {
   "name": "@azrty/novamem-server",
   "version": "0.1.0",
+  "private": true,
   "description": "Standalone tiered memory service — HTTP + MCP transports",
   "license": "MIT",
   "type": "module",

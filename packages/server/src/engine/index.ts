@@ -561,6 +561,9 @@ export class MemoryEngine {
       // its own error on failure). Don't claim graphCleared falsely.
       graphCleared = await this.graph.removeAllForTenant(tenantId);
     }
+    // P2-5: drop the tenant's MetricsCollector slot so the in-memory Map
+    // doesn't accumulate dead entries.
+    this.metrics?.forgetTenant(tenantId);
     return {
       deleted: true,
       entriesRemoved: warm.entriesRemoved,

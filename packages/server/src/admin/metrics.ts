@@ -203,6 +203,13 @@ export class MetricsCollector {
     this.lastDecayAt = at;
   }
 
+  /** Free a tenant's in-memory slot. Called from `engine.deleteTenant`
+   *  so the perTenant Map doesn't accumulate dead entries forever
+   *  (review finding P2-5). */
+  forgetTenant(tenantId: string): void {
+    this.perTenant.delete(tenantId);
+  }
+
   /** Aggregate per-tenant counters across all tenants. */
   private aggregate(): Record<TenantCounterName, number> {
     const out: Record<TenantCounterName, number> = { ...ZERO_TENANT_COUNTERS };
@@ -265,6 +272,48 @@ export class MetricsCollector {
       rates: { queries_per_sec_60s: qps, remembers_per_sec_60s: rps },
       uptime_ms: now - this.startedAt,
     };
+  }
+
+  /** Render the global snapshot in Prometheus exposition format. Cheap
+   *  enough to compute on every scrape — gauges resolve via the same
+   *  read-through sources as the JSON snapshot (review finding P2-18). */
+  async renderProm(): Promise<string> {
+    const s = await this.snapshot();
+    const lines: string[] = [];
+    const counter = (name: string, help: string, value: number) => {
+      lines.push(`# HELP novamem_${name} ${help}`);
+      lines.push(`# TYPE novamem_${name} counter`);
+      lines.push(`novamem_${name} ${value}`);
+    };
+    const gauge = (name: string, help: string, value: number | null) => {
+      lines.push(`# HELP novamem_${name} ${help}`);
+      lines.push(`# TYPE novamem_${name} gauge`);
+      if (value === null) {
+        // Prom doesn't model null; emit NaN per OpenMetrics convention.
+        lines.push(`novamem_${name} NaN`);
+      } else {
+        lines.push(`novamem_${name} ${value}`);
+      }
+    };
+    counter("queries_total", "Total search queries", s.counters.queries_total);
+    counter("queries_zero_hit_total", "Search queries returning no fused results", s.counters.queries_zero_hit);
+    counter("remembers_total", "Memory entries stored", s.counters.remembers_total);
+    counter("forgets_total", "Memory entries forgotten", s.counters.forgets_total);
+    counter("hits_warm_total", "Search results contributed by the warm tier", s.counters.hits_warm_total);
+    counter("hits_cold_total", "Search results contributed by the cold tier", s.counters.hits_cold_total);
+    counter("hits_graph_total", "Search results contributed by the graph tier", s.counters.hits_graph_total);
+    counter("promotions_total", "Cold→warm promotions", s.counters.promotions_total);
+    counter("demotions_total", "Warm→cold demotions", s.counters.demotions_total);
+    counter("decay_runs_total", "Decay loop ticks", s.counters.decay_runs_total);
+    counter("orphans_reaped_total", "cold_orphans rows cleared", s.counters.orphans_reaped_total);
+    gauge("warm_entries", "Current warm-tier entry count", s.gauges.warm_entries);
+    gauge("cold_entries", "Current cold-tier entry count", s.gauges.cold_entries);
+    gauge("graph_edges", "Current graph edge count (NaN if FalkorDB unreachable)", s.gauges.graph_edges);
+    gauge("orphans_pending", "Pending cold_orphans rows", s.gauges.orphans_pending);
+    gauge("queries_per_sec_60s", "Rolling 60s queries/sec", s.rates.queries_per_sec_60s);
+    gauge("remembers_per_sec_60s", "Rolling 60s remembers/sec", s.rates.remembers_per_sec_60s);
+    gauge("uptime_seconds", "Process uptime (seconds)", Math.floor(s.uptime_ms / 1000));
+    return lines.join("\n") + "\n";
   }
 
   async snapshotForTenant(tenantId: string): Promise<TenantMetricsSnapshot> {

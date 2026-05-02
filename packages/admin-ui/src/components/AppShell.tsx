@@ -55,6 +55,13 @@ export function AppShell({ active, onChange, children }: Props) {
 
   return (
     <div className="flex h-full">
+      {/* Skip-link for keyboard / screen reader users — hidden until focused. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:bg-accent focus:text-white focus:px-3 focus:py-1.5 focus:rounded-md focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <aside className="w-60 flex-none border-r border-border bg-bg-panel/40 flex flex-col">
         <div className="px-5 py-5 border-b border-border">
           <div className="flex items-center gap-2">
@@ -141,7 +148,7 @@ export function AppShell({ active, onChange, children }: Props) {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto scroll-thin">
+      <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto scroll-thin">
         <div className="max-w-6xl mx-auto p-8">{children}</div>
       </main>
     </div>

@@ -163,8 +163,10 @@ export function buildMcpServer(
   }));
 
   /** Resolve the project to use for a memory call. Same rules as the HTTP
-   *  layer: bearer-bound project wins; tenant-wide bearer can't pass a
-   *  project; otherwise pass-through. */
+   *  layer (centralised in routes/context.ts to prevent drift): bearer-
+   *  bound project wins; tenant-wide bearer can't pass a project. The
+   *  HTTP variant accepts a Fastify reply; the MCP variant throws (the
+   *  outer try/catch turns the throw into an MCP isError result). */
   function resolveProject(arg: unknown): string | null {
     const requested = typeof arg === "string" && arg.length > 0 ? arg : null;
     if (bearerProject) {
