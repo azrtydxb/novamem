@@ -131,6 +131,72 @@ export class MemoryEngine {
     return { demoted };
   }
 
+  /** Recent entries in a namespace, ordered newest first. Optional `since`
+   *  ISO-8601 lower bound for time-windowed queries ("since yesterday"). */
+  async recent(args: { namespace?: string; k?: number; since?: string }): Promise<{ results: SearchResult[] }> {
+    const namespace = args.namespace ?? "default";
+    const k = args.k ?? 20;
+    const sinceClause = args.since ? "AND created_at >= $3" : "";
+    const params: any[] = [namespace, k];
+    if (args.since) params.push(args.since);
+    const rows = await (this.warm as unknown as { pool: import("pg").Pool }).pool.query(
+      `SELECT id, content, namespace, source, metadata, cold, created_at
+         FROM memory_entries
+        WHERE namespace = $1 ${sinceClause}
+        ORDER BY created_at DESC
+        LIMIT $2`,
+      params,
+    );
+    const results = rows.rows.map((r: any) => ({
+      id: r.id,
+      score: 1.0,
+      content: r.content,
+      tier: r.cold ? ("cold" as const) : ("warm" as const),
+      namespace: r.namespace,
+      source: r.source,
+      metadata: (r.metadata ?? {}) as Record<string, unknown>,
+      signals: { keyword: 0, vector: 0, graph: 0 },
+    }));
+    return { results };
+  }
+
+  /** Graph-neighbour traversal from a seed memory id. Depth defaults to 1. */
+  async neighbors(args: { id: string; depth?: number; k?: number }): Promise<{ results: SearchResult[]; degraded: boolean }> {
+    const depth = args.depth ?? 1;
+    const k = args.k ?? 10;
+    if (!this.graph?.isConnected()) return { results: [], degraded: true };
+    const hits = await this.graph.neighbors(args.id, depth, k);
+    const results: SearchResult[] = [];
+    for (const h of hits) {
+      const e = await this.warm.getEntry(h.id);
+      if (!e) continue;
+      results.push({
+        id: h.id,
+        score: h.score,
+        content: e.content,
+        tier: e.cold ? "cold" : "warm",
+        namespace: e.namespace,
+        source: e.source,
+        metadata: (e.metadata ?? {}) as Record<string, unknown>,
+        signals: { keyword: 0, vector: 0, graph: h.score },
+      });
+    }
+    return { results, degraded: false };
+  }
+
+  /** Explicit deletion. Removes warm row, FTS shadow, cold vector, graph
+   *  edges. Idempotent — missing ids are silently ignored. */
+  async forget(id: string): Promise<{ deleted: boolean }> {
+    const e = await this.warm.getEntry(id);
+    if (!e) return { deleted: false };
+    const pool = (this.warm as unknown as { pool: import("pg").Pool }).pool;
+    await pool.query("DELETE FROM memory_fts WHERE entry_id = $1", [id]);
+    await pool.query("DELETE FROM memory_access WHERE entry_id = $1", [id]);
+    await pool.query("DELETE FROM memory_entries WHERE id = $1", [id]);
+    try { await this.cold.delete(e.namespace, id); } catch { /* best-effort */ }
+    return { deleted: true };
+  }
+
   async stats(): Promise<MemoryStats> {
     const s = await this.warm.stats();
     const byNamespace: Record<string, { warm: number; cold: number }> = {};

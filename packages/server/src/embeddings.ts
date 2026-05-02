@@ -61,10 +61,13 @@ class LocalTransformersEmbedder implements Embedder {
 
   private async getPipeline() {
     if (!this.pipelinePromise) {
-      // Lazy import — avoids loading the wasm/model at startup if unused.
-      this.pipelinePromise = import("@xenova/transformers").then((mod) =>
-        mod.pipeline("feature-extraction", this.model),
-      );
+      // Lazy + dynamic — `@xenova/transformers` is an optional peer dep so
+      // operators who don't want local embeddings don't have to install it.
+      this.pipelinePromise = (
+        import(/* @vite-ignore */ "@xenova/transformers" as string) as Promise<{
+          pipeline: (task: string, model: string) => Promise<unknown>;
+        }>
+      ).then((mod) => mod.pipeline("feature-extraction", this.model));
     }
     return this.pipelinePromise;
   }

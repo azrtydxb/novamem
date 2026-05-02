@@ -39,6 +39,23 @@ const PromoteBody = z.object({
   minHits: z.number().int().nonnegative().optional(),
 });
 
+const RecentBody = z.object({
+  namespace: z.string().optional(),
+  k: z.number().int().positive().max(200).optional(),
+  /** ISO-8601 lower bound. */
+  since: z.string().optional(),
+});
+
+const NeighborsBody = z.object({
+  id: z.string().min(1),
+  depth: z.number().int().positive().max(3).optional(),
+  k: z.number().int().positive().max(50).optional(),
+});
+
+const ForgetBody = z.object({
+  id: z.string().min(1),
+});
+
 export interface HttpOptions {
   engine: MemoryEngine;
   auth: { mode: "none" | "bearer"; token?: string };
@@ -94,6 +111,21 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send({ promoted: 0 });
   });
 
+  app.post("/v1/recent", async (req, reply) => {
+    const body = RecentBody.parse(req.body ?? {});
+    reply.send(await opts.engine.recent(body));
+  });
+
+  app.post("/v1/neighbors", async (req, reply) => {
+    const body = NeighborsBody.parse(req.body);
+    reply.send(await opts.engine.neighbors(body));
+  });
+
+  app.post("/v1/forget", async (req, reply) => {
+    const body = ForgetBody.parse(req.body);
+    reply.send(await opts.engine.forget(body.id));
+  });
+
   app.get("/v1/stats", async (_req, reply) => {
     reply.send(await opts.engine.stats());
   });
@@ -113,6 +145,9 @@ function openapiSpec() {
       "/health": { get: { responses: { 200: { description: "ok" } } } },
       "/v1/search": { post: { responses: { 200: { description: "ranked results" } } } },
       "/v1/remember": { post: { responses: { 201: { description: "created" } } } },
+      "/v1/recent": { post: { responses: { 200: { description: "recent entries by namespace" } } } },
+      "/v1/neighbors": { post: { responses: { 200: { description: "graph-neighbour entries" } } } },
+      "/v1/forget": { post: { responses: { 200: { description: "deletion summary" } } } },
       "/v1/decay": { post: { responses: { 200: { description: "decay run summary" } } } },
       "/v1/promote": { post: { responses: { 200: { description: "promote run summary" } } } },
       "/v1/stats": { get: { responses: { 200: { description: "stats snapshot" } } } },

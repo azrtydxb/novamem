@@ -111,6 +111,27 @@ export class NovamemClient {
     });
   }
 
+  async recent(opts: { namespace?: string; k?: number; since?: string } = {}): Promise<SearchResponse> {
+    return this.request<SearchResponse>("/v1/recent", {
+      method: "POST",
+      body: JSON.stringify(opts),
+    });
+  }
+
+  async neighbors(opts: { id: string; depth?: number; k?: number }): Promise<SearchResponse> {
+    return this.request<SearchResponse>("/v1/neighbors", {
+      method: "POST",
+      body: JSON.stringify(opts),
+    });
+  }
+
+  async forget(id: string): Promise<{ deleted: boolean }> {
+    return this.request<{ deleted: boolean }>("/v1/forget", {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    });
+  }
+
   async stats(): Promise<StatsResponse> {
     return this.request<StatsResponse>("/v1/stats");
   }
