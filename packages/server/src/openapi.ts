@@ -70,6 +70,11 @@ export function openapiSpec() {
               },
             },
           },
+          example: {
+            query: "coffee preference",
+            k: 5,
+            project: "phoenix",
+          },
         },
         SearchResult: {
           type: "object",
@@ -109,6 +114,11 @@ export function openapiSpec() {
             agentName: { type: "string", maxLength: 128, nullable: true },
             project: { type: "string", nullable: true },
             metadata: { type: "object", additionalProperties: true },
+          },
+          example: {
+            content: "Pascal prefers dark roast coffee",
+            namespace: "preferences",
+            project: "phoenix",
           },
         },
         RememberResponse: {
@@ -245,6 +255,7 @@ export function openapiSpec() {
             username: { type: "string" },
             password: { type: "string", format: "password" },
           },
+          example: { username: "alice", password: "********" },
         },
         LoginResponse: {
           type: "object",
@@ -317,6 +328,7 @@ export function openapiSpec() {
             id: { type: "string", description: "Slug, 2–64 chars." },
             name: { type: "string" },
           },
+          example: { id: "phoenix", name: "Phoenix Project" },
         },
         // ─── Common error ──────────────────────────────────────────────
         Error: {

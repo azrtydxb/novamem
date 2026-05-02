@@ -1,3 +1,8 @@
+> **Note (2026-05):** this change documents the *original* admin dashboard arc (metrics + tenant CRUD).
+> Subsequent work shipped on top without a corresponding OpenSpec change: dashboard sessions,
+> projects (sub-brains), Swagger UI, audit log. For the current architecture see
+> [ARCHITECTURE.md](../../../ARCHITECTURE.md) and [SECURITY.md](../../../SECURITY.md).
+
 ## Why
 
 Operators running novamem in `tenant` mode currently must manage tenants and tokens via raw `curl` calls and have no visibility into how the tiered memory system is actually performing — there is no way to see whether warm/cold tiers are healthy, how many queries are landing where, or whether decay/promotion is working as designed. A simple admin dashboard turns the existing admin API plus new operational metrics into something a human can actually use to run the service.

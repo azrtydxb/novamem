@@ -7,7 +7,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Pool } from "pg";
 import { ulid } from "ulid";
 
@@ -1161,11 +1161,4 @@ export class WarmStore {
   get schema() {
     return schema;
   }
-
-  // Helpers used by hybrid search and engine.
-  asc = asc;
-  desc = desc;
-  eq = eq;
-  and = and;
-  sql = sql;
 }
