@@ -694,6 +694,35 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
   });
 });
 
+describe("http: OpenAPI + Swagger UI", () => {
+  it("/openapi.json returns the structured spec", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({ method: "GET", url: "/openapi.json" });
+    expect(r.statusCode).toBe(200);
+    const body = r.json();
+    expect(body.openapi).toMatch(/^3\./);
+    expect(body.info.title).toBe("novamem");
+    expect(body.paths).toBeDefined();
+    expect(body.paths["/v1/search"]).toBeDefined();
+    expect(body.paths["/v1/me/projects"]).toBeDefined();
+    expect(body.components.securitySchemes.TenantBearer).toBeDefined();
+  });
+
+  it("/api-docs serves Swagger UI HTML", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({ method: "GET", url: "/api-docs/static/index.html" });
+    // The plugin serves both /api-docs and /api-docs/static/* by default;
+    // the static asset path always exists once the plugin is mounted.
+    expect([200, 301, 302]).toContain(r.statusCode);
+  });
+
+  it("/api-docs is reachable in tenant mode without a bearer", async () => {
+    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const r = await app.inject({ method: "GET", url: "/api-docs/static/index.html" });
+    expect([200, 301, 302]).toContain(r.statusCode);
+  });
+});
+
 describe("http: dashboard auth + RBAC", () => {
   async function setupWithAdmin(adminPwd = "supersecret") {
     const { app, warm } = makeApp({ authMode: "tenant", adminToken: "legacy-admin" });
