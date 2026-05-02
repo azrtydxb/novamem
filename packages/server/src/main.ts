@@ -38,11 +38,20 @@ async function main() {
     defaultEffectiveDays: cfg.decay.defaultEffectiveDays,
   });
 
-  const decayTimer = setInterval(() => {
-    engine.decay().catch((err) => {
+  const decayTimer = setInterval(async () => {
+    try {
+      await engine.decay();
+      // Run the cold-orphan reaper on the same cadence — both touch cold
+      // storage and there's no value in running them at different rates.
+      const reap = await engine.reapOrphans();
+      if (reap.attempted > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[novamem] reaped orphans:`, reap);
+      }
+    } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("decay loop error", err);
-    });
+      console.error("decay/reap loop error", err);
+    }
   }, cfg.decay.intervalMs);
 
   const app = buildHttpServer({ engine, auth: cfg.auth, rateLimitPerMinute: cfg.service.rateLimitPerMinute });
