@@ -106,7 +106,7 @@ Three modes, picked via `NOVAMEM_AUTH_MODE`:
 |---|---|---|---|
 | `none` (default) | none — single shared `public` tenant | n/a | local dev only; logs a loud startup warning |
 | `bearer` | none — single shared `public` tenant | one shared `NOVAMEM_AUTH_TOKEN` | single-team / single-app deployments |
-| `tenant` | **per-tenant**, enforced server-side at every read & write | one or more bearer tokens minted per tenant via admin API | multi-tenant SaaS, agent fleets, anywhere "memories don't mix" matters |
+| `tenant` | **per-tenant**, enforced server-side at every read & write | tenant tokens (`nm_…`) for the data plane; dashboard session bearers (`ns_…`) for the control plane | multi-tenant SaaS, agent fleets, anywhere "memories don't mix" matters |
 
 In `tenant` mode the server stores only **sha256 hashes** of bearer tokens — the plaintext is shown once at creation and never again.
 
@@ -334,6 +334,17 @@ Set `NOVAMEM_ADMIN_DASHBOARD=0` (or `false` / `no` / `off`) to disable both `/ad
 ```
 
 > **Note:** metrics live in-process and **reset on every restart**. This is an operational dashboard, not a long-term SLO store — for historical metrics, scrape `/v1/admin/metrics` into Prometheus / your TSDB of choice.
+
+## Operator gotchas
+
+- **Tenant ids cannot start with `p_` or be exactly `p`.** Such ids would collide with the project-scoped collection name prefix and let an admin wipe other tenants' shared-project vector data via `DELETE /v1/admin/tenants/:id`. Enforced by Zod at create time.
+- **Removing a project member revokes their project-scoped tokens** atomically. The kicked user's existing `nm_…` tokens stop working immediately.
+- **Dashboard sessions live in `sessionStorage`** — XSS in `/admin/*` would be able to lift them. CSP is strict (`default-src 'self'`) but operators with sensitive deployments may want to put novamem behind a same-origin auth proxy and rely on cookie-based session forwarding.
+- **Bootstrap admin password is auto-scrubbed** from `process.env` after first-run seeding. Set the env var, restart, log in, rotate the password from the dashboard, remove the env var from your config. The username env var stays — it isn't sensitive.
+- **Schema is forward-only.** All DDL is `ALTER ... ADD COLUMN IF NOT EXISTS`. Back up Postgres before upgrading novamem in place; there is no rollback.
+- **`/v1/admin/metrics` resets on restart.** It is not an SLO store. Scrape it into your TSDB if you want history.
+
+For the full hardening checklist see [SECURITY.md](SECURITY.md).
 
 ## Status
 

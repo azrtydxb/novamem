@@ -89,7 +89,8 @@ describe("http: /v1/remember", () => {
       url: "/v1/remember",
       payload: { content: "" },
     });
-    expect(r.statusCode).toBe(500); // Zod throws inside handler → fastify 500
+    expect(r.statusCode).toBe(400); // Zod errors mapped to 400 by setErrorHandler
+    expect(r.json().error).toMatch(/invalid request/i);
   });
 
   it("rejects oversized content (> 256KB)", async () => {
@@ -99,7 +100,7 @@ describe("http: /v1/remember", () => {
       url: "/v1/remember",
       payload: { content: "x".repeat(300_000) },
     });
-    expect([400, 413, 500]).toContain(r.statusCode);
+    expect([400, 413]).toContain(r.statusCode);
   });
 });
 
@@ -376,7 +377,7 @@ describe("http: tenant mode + admin routes", () => {
       payload: { id: "Has Spaces!", name: "x" },
       headers: { authorization: "Bearer admin-secret" },
     });
-    expect([400, 500]).toContain(r.statusCode);
+    expect(r.statusCode).toBe(400);
   });
 
   it("throws at construction when tenant mode lacks admin token", () => {
@@ -934,6 +935,209 @@ describe("http: dashboard auth + RBAC", () => {
     });
     expect(r.statusCode).toBe(401);
   });
+});
+
+describe("http: P0 regression tests", () => {
+  async function setupBobInAcme() {
+    const { app, warm } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { hashPassword } = await import("./auth.js");
+    await warm.createTenant("acme", "Acme");
+    await warm.createTenant("contoso", "Contoso");
+    const bobHash = await hashPassword("bobpass1");
+    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", tenantId: "acme" });
+    const carolHash = await hashPassword("carolpass1");
+    await warm.createUser({ username: "carol", passwordHash: carolHash, role: "user", tenantId: "contoso" });
+    const login = (u: string, p: string) => app.inject({
+      method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
+    });
+    const bobSession = (await login("bob", "bobpass1")).json().token as string;
+    const carolSession = (await login("carol", "carolpass1")).json().token as string;
+    return { app, warm, bobSession, carolSession };
+  }
+
+  // P0-1: tenant id `p_*` collision with project collection prefix
+  it("P0-1: tenant id starting with `p_` is refused", async () => {
+    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const r = await app.inject({
+      method: "POST", url: "/v1/admin/tenants",
+      payload: { id: "p_evil", name: "Evil" },
+      headers: { authorization: "Bearer admin-secret" },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toMatch(/invalid request/i);
+  });
+
+  it("P0-1: tenant id exactly `p` is refused", async () => {
+    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const r = await app.inject({
+      method: "POST", url: "/v1/admin/tenants",
+      payload: { id: "p", name: "Just P" },
+      headers: { authorization: "Bearer admin-secret" },
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it("P0-1: normal tenant ids still work", async () => {
+    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const r = await app.inject({
+      method: "POST", url: "/v1/admin/tenants",
+      payload: { id: "phoenix", name: "Phoenix" },
+      headers: { authorization: "Bearer admin-secret" },
+    });
+    expect(r.statusCode).toBe(201);
+  });
+
+  // P0-2: removing a member must revoke that user's project tokens
+  it("P0-2: removeProjectMember revokes the kicked user's project-scoped tokens", async () => {
+    const { app, bobSession, carolSession } = await setupBobInAcme();
+    const bobAuth = { authorization: `Bearer ${bobSession}` };
+    const carolAuth = { authorization: `Bearer ${carolSession}` };
+    // Bob owns 'shared'; Carol joins.
+    await app.inject({
+      method: "POST", url: "/v1/me/projects",
+      payload: { id: "shared", name: "Shared" }, headers: bobAuth,
+    });
+    await app.inject({
+      method: "POST", url: "/v1/me/projects/shared/members",
+      payload: { username: "carol" }, headers: bobAuth,
+    });
+    // Carol mints a project token.
+    const mint = await app.inject({
+      method: "POST", url: "/v1/me/tokens",
+      payload: { projectId: "shared", label: "carol-laptop" }, headers: carolAuth,
+    });
+    const carolTok = mint.json().token;
+    // Bob removes Carol.
+    const carolMe = await app.inject({ method: "GET", url: "/v1/auth/me", headers: carolAuth });
+    const carolUserId = carolMe.json().user.id;
+    const remove = await app.inject({
+      method: "DELETE", url: `/v1/me/projects/shared/members/${carolUserId}`,
+      headers: bobAuth,
+    });
+    expect(remove.statusCode).toBe(200);
+    expect(remove.json().tokensRevoked).toBeGreaterThanOrEqual(1);
+    // Carol's old project token must now 401.
+    const r = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {},
+      headers: { authorization: `Bearer ${carolTok}` },
+    });
+    expect(r.statusCode).toBe(401);
+  });
+
+  // P0-3: per-username login throttle locks an account out after 5 failures
+  // Backoff sleeps add up; allow extra time.
+  it("P0-3: 5 wrong passwords lock the account out (429)", { timeout: 15_000 }, async () => {
+    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { hashPassword } = await import("./auth.js");
+    const w = (app as unknown as { warmFake?: unknown }) as never;
+    void w;
+    // Register bob
+    const { warm } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    void warm; // throwaway — main test uses the throttle on the original app
+    // Fresh app for an isolated throttle.
+    const { app: app2, warm: warm2 } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const hash = await hashPassword("right-password");
+    await warm2.createUser({ username: "bob", passwordHash: hash, role: "user", tenantId: null });
+    for (let i = 0; i < 5; i++) {
+      const bad = await app2.inject({
+        method: "POST", url: "/v1/auth/login",
+        payload: { username: "bob", password: "wrong" + i },
+      });
+      expect(bad.statusCode).toBe(401);
+    }
+    // 6th attempt — even with the right password — is throttled.
+    const sixth = await app2.inject({
+      method: "POST", url: "/v1/auth/login",
+      payload: { username: "bob", password: "right-password" },
+    });
+    expect(sixth.statusCode).toBe(429);
+    expect(sixth.headers["retry-after"]).toBeDefined();
+  });
+
+  // P0-4: getEntry's `"*"` magic-string bypass is gone
+  it("P0-4: getEntry with projectId='*' is treated as a literal id, not a bypass", async () => {
+    const { warm } = makeApp({ authMode: "none" });
+    const id = await warm.insertEntry({
+      tenantId: "public",
+      projectId: "phoenix",
+      content: "x",
+      namespace: "default",
+      source: "manual",
+    });
+    // With projectId="*" the row has projectId="phoenix" → must NOT match.
+    const got = await warm.getEntry("public", id, { projectId: "*" });
+    expect(got).toBeUndefined();
+    // Sanity: with the actual projectId it does match.
+    const ok = await warm.getEntry("public", id, { projectId: "phoenix" });
+    expect(ok).toBeDefined();
+  });
+
+  // P0-5: cross-tenant project member CAN forget shared rows
+  it("P0-5: cross-tenant project member can forget a shared entry", async () => {
+    const { app, bobSession, carolSession } = await setupBobInAcme();
+    const bobAuth = { authorization: `Bearer ${bobSession}` };
+    const carolAuth = { authorization: `Bearer ${carolSession}` };
+    // Owner Bob, member Carol on 'shared'
+    await app.inject({
+      method: "POST", url: "/v1/me/projects",
+      payload: { id: "shared", name: "Shared" }, headers: bobAuth,
+    });
+    await app.inject({
+      method: "POST", url: "/v1/me/projects/shared/members",
+      payload: { username: "carol" }, headers: bobAuth,
+    });
+    const bobTok = (await app.inject({
+      method: "POST", url: "/v1/me/tokens",
+      payload: { projectId: "shared" }, headers: bobAuth,
+    })).json().token;
+    const carolTok = (await app.inject({
+      method: "POST", url: "/v1/me/tokens",
+      payload: { projectId: "shared" }, headers: carolAuth,
+    })).json().token;
+    // Bob remembers something
+    const created = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "bob's note" },
+      headers: { authorization: `Bearer ${bobTok}` },
+    });
+    const id = created.json().id;
+    // Carol (different tenant) can forget it
+    const f = await app.inject({
+      method: "POST", url: "/v1/forget",
+      payload: { id },
+      headers: { authorization: `Bearer ${carolTok}` },
+    });
+    expect(f.statusCode).toBe(200);
+    expect(f.json().deleted).toBe(true);
+    // And it's actually gone.
+    const recent = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {},
+      headers: { authorization: `Bearer ${bobTok}` },
+    });
+    expect(recent.json().results.find((r: { id: string }) => r.id === id)).toBeUndefined();
+  });
+
+  // P1-S6: admin actions write to the audit log
+  it("P1-S6: tenant.create writes an audit-log entry", async () => {
+    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    await app.inject({
+      method: "POST", url: "/v1/admin/tenants",
+      payload: { id: "audited", name: "Audited" },
+      headers: { authorization: "Bearer admin-secret" },
+    });
+    const log = await app.inject({
+      method: "GET", url: "/v1/admin/audit-log",
+      headers: { authorization: "Bearer admin-secret" },
+    });
+    expect(log.statusCode).toBe(200);
+    const e = log.json().entries.find((x: { action: string; target: string }) =>
+      x.action === "tenant.create" && x.target === "audited",
+    );
+    expect(e).toBeDefined();
+    expect(e.actorLabel).toBe("legacy-admin-token");
+  });
+
+  // P2-1: Zod errors → 400 (covered by existing test rewritten earlier).
 });
 
 describe("http: projects (sub-brains)", () => {
