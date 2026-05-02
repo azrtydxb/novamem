@@ -1,0 +1,101 @@
+import { describe, expect, it } from "vitest";
+
+import { ConfigSchema, loadConfig } from "./config.js";
+
+const baseEnv = {
+  NOVAMEM_WARM_URL: "postgres://x@y:5432/z",
+  NOVAMEM_COLD_URL: "http://qdrant:6333",
+  NOVAMEM_GRAPH_URL: "redis://falkordb:6379",
+};
+
+describe("config: defaults + env loading", () => {
+  it("loads defaults when only required URLs are set", () => {
+    const cfg = loadConfig({ ...baseEnv } as NodeJS.ProcessEnv);
+    expect(cfg.service.port).toBe(5_000);
+    expect(cfg.auth.mode).toBe("none");
+    expect(cfg.embeddings.provider).toBe("local-transformers");
+    expect(cfg.decay.defaultEffectiveDays).toBe(7);
+  });
+
+  it("respects port + rate-limit overrides from env", () => {
+    const cfg = loadConfig({
+      ...baseEnv,
+      NOVAMEM_PORT: "9000",
+      NOVAMEM_RATE_LIMIT_PER_MINUTE: "42",
+    } as NodeJS.ProcessEnv);
+    expect(cfg.service.port).toBe(9_000);
+    expect(cfg.service.rateLimitPerMinute).toBe(42);
+  });
+});
+
+describe("config: auth.bearer requires token", () => {
+  it("throws at parse time when bearer mode has no token", () => {
+    expect(() =>
+      ConfigSchema.parse({
+        service: {},
+        auth: { mode: "bearer" }, // no token
+        warm: { url: baseEnv.NOVAMEM_WARM_URL },
+        cold: { url: baseEnv.NOVAMEM_COLD_URL },
+        graph: { enabled: true, url: baseEnv.NOVAMEM_GRAPH_URL },
+        embeddings: {},
+        decay: {},
+      }),
+    ).toThrow(/auth\.mode = 'bearer'/);
+  });
+
+  it("accepts bearer mode when token is set", () => {
+    const cfg = ConfigSchema.parse({
+      service: {},
+      auth: { mode: "bearer", token: "s3cret" },
+      warm: { url: baseEnv.NOVAMEM_WARM_URL },
+      cold: { url: baseEnv.NOVAMEM_COLD_URL },
+      graph: { enabled: true, url: baseEnv.NOVAMEM_GRAPH_URL },
+      embeddings: {},
+      decay: {},
+    });
+    expect(cfg.auth.mode).toBe("bearer");
+    expect(cfg.auth.token).toBe("s3cret");
+  });
+
+  it("none mode never requires a token", () => {
+    const cfg = ConfigSchema.parse({
+      service: {},
+      auth: { mode: "none" },
+      warm: { url: baseEnv.NOVAMEM_WARM_URL },
+      cold: { url: baseEnv.NOVAMEM_COLD_URL },
+      graph: { enabled: true, url: baseEnv.NOVAMEM_GRAPH_URL },
+      embeddings: {},
+      decay: {},
+    });
+    expect(cfg.auth.mode).toBe("none");
+  });
+});
+
+describe("config: graph.enabled requires url", () => {
+  it("throws when graph.enabled but graph.url is missing", () => {
+    expect(() =>
+      ConfigSchema.parse({
+        service: {},
+        auth: { mode: "none" },
+        warm: { url: baseEnv.NOVAMEM_WARM_URL },
+        cold: { url: baseEnv.NOVAMEM_COLD_URL },
+        graph: { enabled: true }, // no url
+        embeddings: {},
+        decay: {},
+      }),
+    ).toThrow(/graph\.enabled/);
+  });
+
+  it("allows graph disabled with no url", () => {
+    const cfg = ConfigSchema.parse({
+      service: {},
+      auth: { mode: "none" },
+      warm: { url: baseEnv.NOVAMEM_WARM_URL },
+      cold: { url: baseEnv.NOVAMEM_COLD_URL },
+      graph: { enabled: false },
+      embeddings: {},
+      decay: {},
+    });
+    expect(cfg.graph.enabled).toBe(false);
+  });
+});
