@@ -155,17 +155,21 @@ export class WarmStore {
     );
   }
 
-  async listColdCandidates(effectiveDays: number, limit = 1000) {
-    // Demote warm → cold when last_accessed is older than effective lifespan.
-    return this.pool.query<{ id: string; hits: number }>(
-      `SELECT e.id, a.hits
+  async listColdCandidates(_effectiveDays: number, limit = 1000) {
+    // Return every warm entry with its idle age in days. The engine compares
+    // idle age against the entry's effective lifespan (`7 × log₂(hits+1)`)
+    // and demotes the ones that have outlived theirs. Pre-filtering here
+    // would only be a perf optimisation; the engine does the real check.
+    return this.pool.query<{ id: string; hits: number; idle_days: number }>(
+      `SELECT e.id,
+              COALESCE(a.hits, 0) AS hits,
+              EXTRACT(EPOCH FROM (now() - COALESCE(a.last_accessed, e.created_at))) / 86400.0 AS idle_days
          FROM memory_entries e
-         JOIN memory_access a ON a.entry_id = e.id
+         LEFT JOIN memory_access a ON a.entry_id = e.id
         WHERE e.cold = false
-          AND a.last_accessed < now() - ($1 || ' days')::interval
-        ORDER BY a.last_accessed ASC
-        LIMIT $2`,
-      [effectiveDays, limit],
+        ORDER BY COALESCE(a.last_accessed, e.created_at) ASC
+        LIMIT $1`,
+      [limit],
     );
   }
 
