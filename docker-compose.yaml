@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: novamem
+      POSTGRES_PASSWORD: novamem
+      POSTGRES_DB: novamem
+    ports:
+      - "5432:5432"
+    volumes:
+      - novamem_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novamem"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports:
+      - "6333:6333"
+    volumes:
+      - novamem_qdrant:/qdrant/storage
+
+  falkordb:
+    image: falkordb/falkordb:edge
+    ports:
+      - "6379:6379"
+    volumes:
+      - novamem_falkor:/data
+
+  novamem:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      falkordb:
+        condition: service_started
+    environment:
+      NOVAMEM_WARM_URL: postgres://novamem:novamem@postgres:5432/novamem
+      NOVAMEM_COLD_URL: http://qdrant:6333
+      NOVAMEM_GRAPH_URL: redis://falkordb:6379
+      NOVAMEM_EMBEDDINGS_PROVIDER: local-transformers
+      NOVAMEM_AUTH_MODE: none
+      NOVAMEM_PORT: "5000"
+    ports:
+      - "5000:5000"
+
+volumes:
+  novamem_pg:
+  novamem_qdrant:
+  novamem_falkor:
