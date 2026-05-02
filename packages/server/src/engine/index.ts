@@ -116,14 +116,19 @@ export class MemoryEngine {
   }
 
   async decay(opts: { effectiveDaysOverride?: number } = {}): Promise<{ demoted: number }> {
-    const candidates = await this.warm.listColdCandidates(
-      opts.effectiveDaysOverride ?? this.defaultDecayDays,
-    );
+    // For each warm entry, compare idle age (days since last access) against
+    // its effective lifespan: `7 × log₂(hits+1)` — frequently-used memories
+    // resist decay because their lifespan grows with use. Override the
+    // default 7-day base via `effectiveDaysOverride` for one-shot passes.
+    const baseDays = opts.effectiveDaysOverride ?? this.defaultDecayDays;
+    const candidates = await this.warm.listColdCandidates(baseDays);
     let demoted = 0;
     for (const c of candidates.rows) {
-      const lifespan = effectiveDays(c.hits);
-      // If the entry's effective lifespan has elapsed since last access, demote.
-      if (lifespan < this.defaultDecayDays) {
+      // Lifespan is in 7-day units by default; scale to whatever base the
+      // caller asked for so the override actually shifts the curve.
+      const lifespan = (effectiveDays(c.hits) / 7) * baseDays;
+      const idle = Number(c.idle_days);
+      if (idle > lifespan) {
         await this.warm.markCold(c.id, true);
         demoted++;
       }
