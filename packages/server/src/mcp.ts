@@ -55,6 +55,40 @@ export function buildMcpServer(engine: MemoryEngine): Server {
         },
       },
       {
+        name: "memory.recent",
+        description: "Recent entries in a namespace, ordered newest first. Optional ISO-8601 `since` lower bound.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            namespace: { type: "string" },
+            k: { type: "number" },
+            since: { type: "string", description: "ISO-8601 timestamp" },
+          },
+        },
+      },
+      {
+        name: "memory.neighbors",
+        description: "Graph-neighbour traversal from a seed memory id",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            depth: { type: "number", description: "Traversal depth (default 1)" },
+            k: { type: "number" },
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: "memory.forget",
+        description: "Explicit deletion. Removes warm row, FTS, cold vector, and graph edges.",
+        inputSchema: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"],
+        },
+      },
+      {
         name: "memory.stats",
         description: "Service-wide stats snapshot",
         inputSchema: { type: "object", properties: {} },
@@ -87,6 +121,26 @@ export function buildMcpServer(engine: MemoryEngine): Server {
           k: typeof args.k === "number" ? args.k : 20,
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
         });
+        return { content: [{ type: "text", text: JSON.stringify(r) }] };
+      }
+      case "memory.recent": {
+        const r = await engine.recent({
+          namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          k: typeof args.k === "number" ? args.k : undefined,
+          since: typeof args.since === "string" ? args.since : undefined,
+        });
+        return { content: [{ type: "text", text: JSON.stringify(r) }] };
+      }
+      case "memory.neighbors": {
+        const r = await engine.neighbors({
+          id: String(args.id),
+          depth: typeof args.depth === "number" ? args.depth : undefined,
+          k: typeof args.k === "number" ? args.k : undefined,
+        });
+        return { content: [{ type: "text", text: JSON.stringify(r) }] };
+      }
+      case "memory.forget": {
+        const r = await engine.forget(String(args.id));
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.stats": {
