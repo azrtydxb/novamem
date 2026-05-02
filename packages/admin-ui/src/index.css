@@ -1,0 +1,36 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background-color: theme("colors.accent.subtle");
+    color: theme("colors.text.DEFAULT");
+  }
+}
+
+@layer utilities {
+  /* Subtle scrollbars consistent across the dashboard. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.border.strong") transparent;
+  }
+  .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: theme("colors.border.strong");
+    border-radius: 4px;
+  }
+}

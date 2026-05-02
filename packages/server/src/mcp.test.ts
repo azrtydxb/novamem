@@ -58,7 +58,7 @@ async function callTool(
 describe("mcp: tools/list", () => {
   it("advertises the full memory.* tool surface", async () => {
     const { engine } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     const r = (await callList(server)) as { tools: Array<{ name: string }> };
     const names = r.tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -70,13 +70,15 @@ describe("mcp: tools/list", () => {
         "memory.neighbors",
         "memory.forget",
         "memory.stats",
+        "project.list",
+        "project.create",
       ].sort(),
     );
   });
 
   it("memory.search exposes weights override in input schema", async () => {
     const { engine } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     const r = (await callList(server)) as { tools: Array<{ name: string; inputSchema: any }> };
     const search = r.tools.find((t) => t.name === "memory.search");
     expect(search?.inputSchema?.properties?.weights).toBeDefined();
@@ -91,7 +93,7 @@ describe("mcp: tools/list", () => {
 describe("mcp: tool dispatch", () => {
   it("memory.remember stores via engine and returns id", async () => {
     const { engine, warm } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     const r = (await callTool(server, "memory.remember", { content: "via mcp" })) as {
       content: Array<{ text: string }>;
     };
@@ -101,7 +103,7 @@ describe("mcp: tool dispatch", () => {
 
   it("memory.search finds the just-stored entry", async () => {
     const { engine } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     await callTool(server, "memory.remember", { content: "Pascal likes coffee" });
     const r = (await callTool(server, "memory.search", { query: "coffee" })) as {
       content: Array<{ text: string }>;
@@ -113,7 +115,7 @@ describe("mcp: tool dispatch", () => {
 
   it("memory.today uses a real 24h since cutoff (not search '*')", async () => {
     const { engine, warm } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     // Fresh entry
     const fresh = (await callTool(server, "memory.remember", { content: "fresh" })) as {
       content: Array<{ text: string }>;
@@ -136,7 +138,7 @@ describe("mcp: tool dispatch", () => {
 
   it("memory.forget deletes the entry", async () => {
     const { engine, warm } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     const created = (await callTool(server, "memory.remember", { content: "to delete" })) as {
       content: Array<{ text: string }>;
     };
@@ -147,7 +149,7 @@ describe("mcp: tool dispatch", () => {
 
   it("memory.stats returns aggregate counts", async () => {
     const { engine } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     await callTool(server, "memory.remember", { content: "a" });
     await callTool(server, "memory.remember", { content: "b" });
     const r = (await callTool(server, "memory.stats", {})) as { content: Array<{ text: string }> };
@@ -158,7 +160,7 @@ describe("mcp: tool dispatch", () => {
 
   it("unknown tool name returns isError", async () => {
     const { engine } = makeEngine();
-    const server = buildMcpServer(engine);
+    const server = buildMcpServer(engine, "public");
     const r = (await callTool(server, "memory.madeup", {})) as { isError?: boolean };
     expect(r.isError).toBe(true);
   });
