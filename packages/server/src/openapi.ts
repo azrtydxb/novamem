@@ -18,9 +18,9 @@ export function openapiSpec() {
       description:
         "Tiered memory service with hybrid search (keyword + vector + graph), per-tenant " +
         "isolation, and project-scoped sub-brains.\n\n" +
-        "**Auth**: data-plane routes accept tenant tokens (`nm_…`), control-plane routes " +
-        "accept session tokens (`ns_…`). Admin routes also accept the legacy " +
-        "`NOVAMEM_ADMIN_TOKEN` for back-compat.",
+        "**Auth**: data-plane routes accept tenant tokens (`nm_…`); control-plane and " +
+        "admin routes accept dashboard session tokens (`ns_…`) — log in via " +
+        "`POST /v1/auth/login` first.",
       license: { name: "MIT" },
     },
     servers: [{ url: "/", description: "this server" }],
@@ -41,9 +41,10 @@ export function openapiSpec() {
         AdminBearer: {
           type: "http",
           scheme: "bearer",
+          bearerFormat: "ns_…",
           description:
-            "Either an admin user's session bearer (ns_…) OR the legacy " +
-            "NOVAMEM_ADMIN_TOKEN. Required for /v1/admin/*.",
+            "Admin user's session bearer (ns_…). Required for /v1/admin/*. " +
+            "Obtain by logging in as a user with role=admin.",
         },
       },
       schemas: {

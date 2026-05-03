@@ -22,15 +22,14 @@ export interface RouteContext {
   engine: MemoryEngine;
   warm?: WarmStore;
   metrics?: MetricsCollector;
-  auth: { mode: "none" | "bearer" | "tenant"; token?: string; adminToken?: string };
+  auth: { mode: "none" | "bearer" | "tenant"; token?: string };
   /** Master switch for /admin/* + /v1/admin/metrics. */
   adminDashboard: boolean;
   /** In-memory per-username login throttle. */
   loginThrottle: LoginThrottle;
   /** Shared safe-equal — protects token compares against timing oracles. */
   safeEqual: (a: string, b: string) => boolean;
-  /** Admin gate for /v1/admin/*. Accepts EITHER a session-admin OR the
-   *  legacy NOVAMEM_ADMIN_TOKEN. */
+  /** Admin gate for /v1/admin/*. Requires a session-admin user. */
   adminAuth: (req: FastifyRequest) => boolean;
   /** Audit-log writer. No-ops when warm is undefined. Failures don't
    *  block the request. */
