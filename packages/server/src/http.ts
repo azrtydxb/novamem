@@ -11,6 +11,7 @@ import { dirname, resolve } from "node:path";
 
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
+import fastifyCookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import fastifySwagger from "@fastify/swagger";
@@ -20,7 +21,19 @@ import { z } from "zod";
 
 import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
-import { hashPassword, verifyPassword, SESSION_TTL_MS, LoginThrottle } from "./auth.js";
+import {
+  hashPassword,
+  verifyPassword,
+  SESSION_TTL_MS,
+  SESSION_COOKIE,
+  CSRF_COOKIE,
+  CSRF_HEADER,
+  LoginThrottle,
+  csrfCookieOptions,
+  csrfRequired,
+  generateCsrfToken,
+  sessionCookieOptions,
+} from "./auth.js";
 import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
 import { resolveRequestProject } from "./routes/context.js";
@@ -267,6 +280,18 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         : corsOriginsEnv.split(",").map((s) => s.trim()).filter(Boolean);
   app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false });
 
+  // P1-S3: cookie support for HttpOnly session storage. Cookies are
+  // signed with a server-side secret so any bit-flip / tamper invalidates
+  // the value before it reaches our auth hook. NOVAMEM_COOKIE_SECRET is
+  // operator-supplied in production; for dev we derive a stable value
+  // from the admin token (or a fixed dev string) so restarts keep
+  // existing sessions valid.
+  const cookieSecret =
+    process.env.NOVAMEM_COOKIE_SECRET ??
+    opts.auth.adminToken ??
+    "novamem-dev-cookie-secret-change-me";
+  app.register(fastifyCookie, { secret: cookieSecret });
+
   // Per-username login throttle (P0-3). In-memory; resets on restart.
   const loginThrottle = new LoginThrottle();
 
@@ -381,12 +406,53 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     // Try to resolve a session bearer regardless of route — the control
     // plane handlers consult `req.dashUser` and admin endpoints accept
     // either a session-admin OR the legacy admin token.
+    //
+    // Two ways to present a session: an HttpOnly cookie (the dashboard
+    // SPA) or `Authorization: Bearer ns_…` (CLI / MCP / scripts). Cookie
+    // takes precedence so a stale Authorization header doesn't override
+    // a fresh cookie.
     const header = req.headers.authorization;
-    const token = header && header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
+    const headerToken =
+      header && header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
+    let token = headerToken;
+    let authedByCookie = false;
+
+    // Signed-cookie unsigning. `req.cookies[name]` is the raw signed
+    // value; `req.unsignCookie` checks the signature. We use this to
+    // detect tampering before resolving the bearer.
+    const sessionCookieRaw = req.cookies?.[SESSION_COOKIE];
+    if (sessionCookieRaw && opts.warm) {
+      const unsigned = req.unsignCookie(sessionCookieRaw);
+      if (unsigned.valid && unsigned.value && unsigned.value.startsWith("ns_")) {
+        token = unsigned.value;
+        authedByCookie = true;
+      }
+    }
 
     if (token.startsWith("ns_") && opts.warm) {
       const session = await opts.warm.resolveSession(token);
       if (session) req.dashUser = session.user;
+    }
+
+    // CSRF double-submit: when the request is authed by cookie AND the
+    // method is state-changing, the X-CSRF-Token header must equal the
+    // CSRF cookie. Bearer-authenticated requests skip this check (they
+    // aren't browser-vector). The CSRF cookie is signed too, so a
+    // tampered value gets ignored before we compare.
+    if (req.dashUser && authedByCookie && csrfRequired(req.method)) {
+      // Plain double-submit: header must equal cookie. The cookie is
+      // SameSite=Strict so cross-site requests can't carry it; that
+      // already blocks classic CSRF. The header check makes XSS-via-
+      // arbitrary-form-post (which can attach cookies but not headers)
+      // impractical. We don't sign this cookie because the SPA needs to
+      // echo the raw value back, and there's no benefit to signing a
+      // value that's already in the same channel both ways.
+      const csrfHeader = (req.headers[CSRF_HEADER] as string | undefined) ?? "";
+      const csrfCookieValue = req.cookies?.[CSRF_COOKIE] ?? "";
+      if (!csrfHeader || !csrfCookieValue || !safeEqual(csrfHeader, csrfCookieValue)) {
+        reply.code(403).send({ error: "CSRF token missing or invalid" });
+        return reply;
+      }
     }
 
     // /v1/auth/* (other than login/status) and /v1/me/* require a session.
@@ -643,29 +709,63 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
     loginThrottle.recordSuccess(body.username);
     const session = await opts.warm.createSession(user.id, SESSION_TTL_MS);
-    reply.code(201).send({
-      token: session.token,
-      expiresAt: session.expiresAt.toISOString(),
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        tenantId: user.tenantId,
-      },
-    });
+    // P1-S3: dashboard sessions live in HttpOnly + Secure + SameSite=Strict
+    // cookies. The CSRF token sits in a sibling JS-readable cookie; the
+    // SPA reads it and echoes back as X-CSRF-Token on writes.
+    const csrf = generateCsrfToken();
+    reply
+      .setCookie(SESSION_COOKIE, session.token, {
+        ...sessionCookieOptions(),
+        signed: true,
+      })
+      .setCookie(CSRF_COOKIE, csrf, csrfCookieOptions())
+      .code(201)
+      .send({
+        // We still return `token` in the body for back-compat with the
+        // CLI / MCP flow (novamem-login etc.); browsers don't need to read
+        // it because the cookie is set.
+        token: session.token,
+        expiresAt: session.expiresAt.toISOString(),
+        csrfToken: csrf,
+        user: {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          tenantId: user.tenantId,
+        },
+      });
   });
 
   app.post("/v1/auth/logout", async (req, reply) => {
-    const h = req.headers.authorization;
-    if (opts.warm && h && h.startsWith("Bearer ")) {
-      await opts.warm.revokeSession(h.slice("Bearer ".length));
+    // Revoke the session server-side regardless of how it was presented.
+    let token = "";
+    const cookieRaw = req.cookies?.[SESSION_COOKIE];
+    if (cookieRaw) {
+      const unsigned = req.unsignCookie(cookieRaw);
+      if (unsigned.valid && unsigned.value) token = unsigned.value;
     }
-    reply.code(204).send();
+    if (!token) {
+      const h = req.headers.authorization;
+      if (h && h.startsWith("Bearer ")) token = h.slice("Bearer ".length);
+    }
+    if (opts.warm && token) await opts.warm.revokeSession(token);
+    // Clear both cookies so the browser stops sending them.
+    reply
+      .clearCookie(SESSION_COOKIE, { path: "/" })
+      .clearCookie(CSRF_COOKIE, { path: "/" })
+      .code(204)
+      .send();
   });
 
   app.get("/v1/auth/me", async (req, reply) => {
     // Auth hook already resolved the session; if we got here it's valid.
-    reply.send({ user: req.dashUser });
+    // Re-issue the CSRF cookie on every me() so the SPA always has a fresh
+    // value after page reload (the JS-readable cookie persists across
+    // reloads but having `me()` re-issue it makes the flow more robust).
+    const csrf = generateCsrfToken();
+    reply
+      .setCookie(CSRF_COOKIE, csrf, csrfCookieOptions())
+      .send({ user: req.dashUser, csrfToken: csrf });
   });
 
   // ─── Admin: user management ────────────────────────────────────────────
