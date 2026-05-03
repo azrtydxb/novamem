@@ -23,7 +23,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { api, MetricsSnapshot, TenantMetricsSnapshot } from "../lib/api";
+import { api, MetricsSnapshot, UserMetricsSnapshot } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
 import { StatCard } from "../components/StatCard";
@@ -78,7 +78,7 @@ function tokenShortLabel(row: { tokenHash: string; label: string | null }): stri
  *  which omits those (decay/promotions are cross-tenant). */
 type AnySnapshot =
   | { kind: "admin"; data: MetricsSnapshot }
-  | { kind: "user"; data: TenantMetricsSnapshot };
+  | { kind: "user"; data: UserMetricsSnapshot };
 
 function isAdminSnapshot(s: AnySnapshot): s is { kind: "admin"; data: MetricsSnapshot } {
   return s.kind === "admin";
@@ -108,11 +108,11 @@ export function MetricsPage() {
   } = useQuery({
     queryKey: ["metrics", endpoint],
     queryFn: async () => {
-      const r = await api<MetricsSnapshot | TenantMetricsSnapshot>("GET", endpoint);
+      const r = await api<MetricsSnapshot | UserMetricsSnapshot>("GET", endpoint);
       if (!r.ok || !r.body) throw new Error(r.error ?? `metrics ${r.status}`);
       return isAdmin
         ? ({ kind: "admin", data: r.body as MetricsSnapshot } as AnySnapshot)
-        : ({ kind: "user", data: r.body as TenantMetricsSnapshot } as AnySnapshot);
+        : ({ kind: "user", data: r.body as UserMetricsSnapshot } as AnySnapshot);
     },
     refetchInterval: POLL_MS,
   });
@@ -182,8 +182,8 @@ export function MetricsPage() {
             <Pill tone="accent" dot pulse>
               live · {POLL_MS / 1000}s
             </Pill>
-            {!isAdmin && user?.userId ? (
-              <Pill tone="neutral">tenant: {user.userId}</Pill>
+            {!isAdmin && user?.username ? (
+              <Pill tone="neutral">user: {user.username}</Pill>
             ) : null}
           </div>
         }

@@ -64,7 +64,6 @@ async function adminAuth(
     username: id,
     passwordHash: "test-bcrypt-not-checked-for-session-resolve",
     role: "admin",
-    userId: null,
   });
   // Look up the row to get its real id (createUser assigns one).
   let userId = id;
@@ -250,28 +249,25 @@ describe("http: SSE/MCP transport routes", () => {
 });
 
 describe("http: tenant mode + admin routes", () => {
-  async function setupTenantApp() {
+  /** Create two users and mint a token for each. The new model has no
+   *  separate tenant concept — each user IS their own scope. Tests that
+   *  used to assert "memories don't mix between tenants" now assert the
+   *  same boundary at the user level. */
+  async function setupTwoUsers() {
     const { app, warm } = makeApp({ authMode: "tenant" });
     const adminH = await adminAuth(warm);
-    // Bootstrap two tenants and a token each.
-    const mkTenant = async (id: string) => {
-      await app.inject({
-        method: "POST",
-        url: "/v1/admin/tenants",
-        payload: { id, name: id },
-        headers: adminH,
+    const mkUser = async (username: string) => {
+      const u = await warm.createUser({
+        username,
+        passwordHash: "test",
+        role: "user",
       });
-      const tok = await app.inject({
-        method: "POST",
-        url: `/v1/admin/tenants/${id}/tokens`,
-        payload: { label: "test" },
-        headers: adminH,
-      });
-      return tok.json().token as string;
+      const t = await warm.createUserToken(u.id, "test");
+      return { id: u.id, token: t!.token };
     };
-    const tokenA = await mkTenant("tenant_a");
-    const tokenB = await mkTenant("tenant_b");
-    return { app, warm, tokenA, tokenB, adminH };
+    const a = await mkUser("alice-mem");
+    const b = await mkUser("bob-mem");
+    return { app, warm, tokenA: a.token, tokenB: b.token, userA: a.id, userB: b.id, adminH };
   }
 
   it("rejects requests without a recognised token", async () => {
@@ -285,18 +281,18 @@ describe("http: tenant mode + admin routes", () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it("admin routes require the admin token, not a tenant token", async () => {
-    const { app, tokenA } = await setupTenantApp();
+  it("admin routes refuse a tenant bearer (only session-admin works)", async () => {
+    const { app, tokenA } = await setupTwoUsers();
     const r = await app.inject({
       method: "GET",
-      url: "/v1/admin/tenants",
+      url: "/v1/admin/users",
       headers: { authorization: `Bearer ${tokenA}` },
     });
     expect(r.statusCode).toBe(401);
   });
 
-  it("memories don't mix between tenants — search", async () => {
-    const { app, tokenA, tokenB } = await setupTenantApp();
+  it("memories don't mix between users — search", async () => {
+    const { app, tokenA, tokenB } = await setupTwoUsers();
     const created = await app.inject({
       method: "POST",
       url: "/v1/remember",
@@ -315,15 +311,14 @@ describe("http: tenant mode + admin routes", () => {
   });
 
   it("memories don't mix — recent + forget", async () => {
-    const { app, tokenA, tokenB } = await setupTenantApp();
+    const { app, tokenA, tokenB } = await setupTwoUsers();
     const created = await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "tenant a fact" },
+      payload: { content: "user a fact" },
       headers: { authorization: `Bearer ${tokenA}` },
     });
     const aId = created.json().id;
-    // B can't see it in recent.
     const bRecent = await app.inject({
       method: "POST",
       url: "/v1/recent",
@@ -331,7 +326,6 @@ describe("http: tenant mode + admin routes", () => {
       headers: { authorization: `Bearer ${tokenB}` },
     });
     expect(bRecent.json().results.find((r: { id: string }) => r.id === aId)).toBeUndefined();
-    // B can't forget it.
     const bForget = await app.inject({
       method: "POST",
       url: "/v1/forget",
@@ -339,7 +333,6 @@ describe("http: tenant mode + admin routes", () => {
       headers: { authorization: `Bearer ${tokenB}` },
     });
     expect(bForget.json().deleted).toBe(false);
-    // A still has it.
     const aRecent = await app.inject({
       method: "POST",
       url: "/v1/recent",
@@ -350,8 +343,7 @@ describe("http: tenant mode + admin routes", () => {
   });
 
   it("revoked tokens stop working immediately", async () => {
-    const { app, tokenA, adminH } = await setupTenantApp();
-    // Confirm it works.
+    const { app, tokenA, adminH } = await setupTwoUsers();
     const r1 = await app.inject({
       method: "POST",
       url: "/v1/recent",
@@ -359,14 +351,12 @@ describe("http: tenant mode + admin routes", () => {
       headers: { authorization: `Bearer ${tokenA}` },
     });
     expect(r1.statusCode).toBe(200);
-    // Revoke.
     await app.inject({
       method: "POST",
       url: "/v1/admin/tokens/revoke",
       payload: { token: tokenA },
       headers: adminH,
     });
-    // Same call now 401s.
     const r2 = await app.inject({
       method: "POST",
       url: "/v1/recent",
@@ -374,38 +364,6 @@ describe("http: tenant mode + admin routes", () => {
       headers: { authorization: `Bearer ${tokenA}` },
     });
     expect(r2.statusCode).toBe(401);
-  });
-
-  it("create-token response carries the warning that it's shown once", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
-    const adminH = await adminAuth(warm);
-    await app.inject({
-      method: "POST",
-      url: "/v1/admin/tenants",
-      payload: { id: "t1", name: "t1" },
-      headers: adminH,
-    });
-    const r = await app.inject({
-      method: "POST",
-      url: "/v1/admin/tenants/t1/tokens",
-      payload: {},
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(201);
-    expect(r.json().token).toMatch(/^nm_/);
-    expect(r.json().warning).toMatch(/sha256/);
-  });
-
-  it("rejects invalid tenant ids at creation", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
-    const adminH = await adminAuth(warm);
-    const r = await app.inject({
-      method: "POST",
-      url: "/v1/admin/tenants",
-      payload: { id: "Has Spaces!", name: "x" },
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(400);
   });
 });
 
@@ -572,153 +530,62 @@ describe("http: /admin dashboard mount", () => {
   });
 });
 
-describe("http: tenant CRUD — full lifecycle (admin)", () => {
+describe("http: user delete (admin)", () => {
   async function bootstrap() {
     const { app, warm } = makeApp({ authMode: "tenant" });
     const adminH = await adminAuth(warm);
-    await app.inject({
-      method: "POST", url: "/v1/admin/tenants",
-      payload: { id: "acme", name: "Acme" },
-      headers: adminH,
+    const u = await warm.createUser({
+      username: "alice-del",
+      passwordHash: "test",
+      role: "user",
     });
-    const tk = await app.inject({
-      method: "POST", url: "/v1/admin/tenants/acme/tokens",
-      payload: { label: "first" },
-      headers: adminH,
-    });
-    return { app, warm, adminH, token: tk.json().token as string };
+    const tk = await warm.createUserToken(u.id, "first");
+    return { app, warm, adminH, userId: u.id, token: tk!.token };
   }
 
-  it("listUserTokens returns the tokenHash", async () => {
-    const { app, adminH } = await bootstrap();
-    const r = await app.inject({
-      method: "GET", url: "/v1/admin/tenants/acme/tokens",
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().tokens[0].tokenHash).toBeDefined();
-    expect(typeof r.json().tokens[0].tokenHash).toBe("string");
-  });
-
-  it("revoke-by-hash invalidates the token without needing plaintext", async () => {
-    const { app, token, adminH } = await bootstrap();
-    const list = await app.inject({
-      method: "GET", url: "/v1/admin/tenants/acme/tokens",
-      headers: adminH,
-    });
-    const hash = list.json().tokens[0].tokenHash as string;
-
-    // Token currently works.
-    const ok = await app.inject({
-      method: "POST", url: "/v1/recent", payload: {},
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(ok.statusCode).toBe(200);
-
-    // Revoke by hash (the dashboard path).
-    const revoke = await app.inject({
-      method: "POST", url: `/v1/admin/tenants/acme/tokens/${hash}/revoke`,
-      headers: adminH,
-    });
-    expect(revoke.statusCode).toBe(200);
-    expect(revoke.json().revoked).toBe(true);
-
-    // Token rejected on next call.
-    const after = await app.inject({
-      method: "POST", url: "/v1/recent", payload: {},
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(after.statusCode).toBe(401);
-  });
-
-  it("revoke-by-hash 404s on unknown hash", async () => {
-    const { app, adminH } = await bootstrap();
-    const fakeHash = "f".repeat(64);
-    const r = await app.inject({
-      method: "POST", url: `/v1/admin/tenants/acme/tokens/${fakeHash}/revoke`,
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(404);
-  });
-
-  it("revoke-by-hash 400s on a malformed hash", async () => {
-    const { app, adminH } = await bootstrap();
-    const r = await app.inject({
-      method: "POST", url: `/v1/admin/tenants/acme/tokens/not-a-hash/revoke`,
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(400);
-  });
-
-  it("revoke-by-hash requires admin auth", async () => {
-    const { app, token, adminH } = await bootstrap();
-    const list = await app.inject({
-      method: "GET", url: "/v1/admin/tenants/acme/tokens",
-      headers: adminH,
-    });
-    const hash = list.json().tokens[0].tokenHash as string;
-    const r = await app.inject({
-      method: "POST", url: `/v1/admin/tenants/acme/tokens/${hash}/revoke`,
-      headers: { authorization: `Bearer ${token}` }, // tenant token, not admin
-    });
-    expect(r.statusCode).toBe(401);
-  });
-
-  it("DELETE /v1/admin/tenants/:id purges the tenant + tokens + memories", async () => {
-    const { app, token, adminH } = await bootstrap();
-    // Add a memory so we can verify it gets purged.
+  it("DELETE /v1/admin/users/:id purges the user + tokens + memories", async () => {
+    const { app, userId, token, adminH } = await bootstrap();
     await app.inject({
-      method: "POST", url: "/v1/remember",
+      method: "POST",
+      url: "/v1/remember",
       payload: { content: "to be deleted", namespace: "default" },
       headers: { authorization: `Bearer ${token}` },
     });
 
     const del = await app.inject({
-      method: "DELETE", url: "/v1/admin/tenants/acme",
+      method: "DELETE",
+      url: `/v1/admin/users/${userId}`,
       headers: adminH,
     });
     expect(del.statusCode).toBe(200);
-    const body = del.json();
-    expect(body.deleted).toBe(true);
-    expect(body.entriesRemoved).toBeGreaterThanOrEqual(1);
+    expect(del.json().deleted).toBe(true);
+    expect(del.json().entriesRemoved).toBeGreaterThanOrEqual(1);
 
-    // Tenant gone from listing.
-    const list = await app.inject({
-      method: "GET", url: "/v1/admin/tenants",
-      headers: adminH,
-    });
-    expect(list.json().tenants.find((t: { id: string }) => t.id === "acme")).toBeUndefined();
-
-    // Old token rejected.
+    // Old bearer rejected.
     const after = await app.inject({
-      method: "POST", url: "/v1/recent", payload: {},
+      method: "POST",
+      url: "/v1/recent",
+      payload: {},
       headers: { authorization: `Bearer ${token}` },
     });
     expect(after.statusCode).toBe(401);
   });
 
-  it("DELETE refuses to delete the public tenant", async () => {
+  it("DELETE on unknown user 404s", async () => {
     const { app, adminH } = await bootstrap();
     const r = await app.inject({
-      method: "DELETE", url: "/v1/admin/tenants/public",
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(400);
-  });
-
-  it("DELETE on unknown tenant 404s", async () => {
-    const { app, adminH } = await bootstrap();
-    const r = await app.inject({
-      method: "DELETE", url: "/v1/admin/tenants/does-not-exist",
+      method: "DELETE",
+      url: "/v1/admin/users/does-not-exist",
       headers: adminH,
     });
     expect(r.statusCode).toBe(404);
   });
 
   it("DELETE requires admin auth", async () => {
-    const { app, token } = await bootstrap();
+    const { app, userId, token } = await bootstrap();
     const r = await app.inject({
-      method: "DELETE", url: "/v1/admin/tenants/acme",
+      method: "DELETE",
+      url: `/v1/admin/users/${userId}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(r.statusCode).toBe(401);
@@ -759,7 +626,7 @@ describe("http: dashboard auth + RBAC", () => {
     const { app, warm } = makeApp({ authMode: "tenant" });
     const { hashPassword } = await import("./auth.js");
     const hash = await hashPassword(adminPwd);
-    await warm.createUser({ username: "alice", passwordHash: hash, role: "admin", userId: null });
+    await warm.createUser({ username: "alice", passwordHash: hash, role: "admin" });
     return { app, warm, adminPwd };
   }
 
@@ -877,12 +744,11 @@ describe("http: dashboard auth + RBAC", () => {
     expect(selfDel.statusCode).toBe(400);
   });
 
-  it("user role: /v1/me/metrics is scoped to that tenant", async () => {
+  it("user role: /v1/me/metrics is scoped to that user", async () => {
     const { app, warm } = await setupWithAdmin();
     const { hashPassword } = await import("./auth.js");
-    await warm.createTenant("acme", "Acme");
     const hash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", userId: "acme" });
+    const bob = await warm.createUser({ username: "bob", passwordHash: hash, role: "user" });
 
     const login = await app.inject({
       method: "POST", url: "/v1/auth/login",
@@ -895,15 +761,14 @@ describe("http: dashboard auth + RBAC", () => {
       headers: { authorization: `Bearer ${session}` },
     });
     expect(m.statusCode).toBe(200);
-    expect(m.json().userId).toBe("acme");
+    expect(m.json().userId).toBe(bob.id);
   });
 
   it("user can mint + revoke tokens for their own tenant", async () => {
     const { app, warm } = await setupWithAdmin();
     const { hashPassword } = await import("./auth.js");
-    await warm.createTenant("acme", "Acme");
     const hash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", userId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: hash, role: "user" });
 
     const login = await app.inject({
       method: "POST", url: "/v1/auth/login",
@@ -985,40 +850,10 @@ describe("http: P0 regression tests", () => {
     return { app, warm, bobSession, carolSession };
   }
 
-  // P0-1: tenant id `p_*` collision with project collection prefix
-  it("P0-1: tenant id starting with `p_` is refused", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
-    const adminH = await adminAuth(warm);
-    const r = await app.inject({
-      method: "POST", url: "/v1/admin/tenants",
-      payload: { id: "p_evil", name: "Evil" },
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(400);
-    expect(r.json().error).toMatch(/invalid request/i);
-  });
-
-  it("P0-1: tenant id exactly `p` is refused", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
-    const adminH = await adminAuth(warm);
-    const r = await app.inject({
-      method: "POST", url: "/v1/admin/tenants",
-      payload: { id: "p", name: "Just P" },
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(400);
-  });
-
-  it("P0-1: normal tenant ids still work", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
-    const adminH = await adminAuth(warm);
-    const r = await app.inject({
-      method: "POST", url: "/v1/admin/tenants",
-      payload: { id: "phoenix", name: "Phoenix" },
-      headers: adminH,
-    });
-    expect(r.statusCode).toBe(201);
-  });
+  // P0-1 (tenant id `p_*` collision with project collection prefix) is
+  // obsolete — there are no tenant ids any more, just user ids; user
+  // creation goes through usernames which can't collide with project
+  // collection naming.
 
   // P0-2: removing a member must revoke that user's project tokens
   it("P0-2: removeProjectMember revokes the kicked user's project-scoped tokens", async () => {
@@ -1070,7 +905,7 @@ describe("http: P0 regression tests", () => {
     // Fresh app for an isolated throttle.
     const { app: app2, warm: warm2 } = makeApp({ authMode: "tenant" });
     const hash = await hashPassword("right-password");
-    await warm2.createUser({ username: "bob", passwordHash: hash, role: "user", userId: null });
+    await warm2.createUser({ username: "bob", passwordHash: hash, role: "user" });
     for (let i = 0; i < 5; i++) {
       const bad = await app2.inject({
         method: "POST", url: "/v1/auth/login",
@@ -1268,13 +1103,15 @@ describe("http: P0 regression tests", () => {
     expect(r.statusCode).toBe(403);
   });
 
-  // P1-S6: admin actions write to the audit log
-  it("P1-S6: tenant.create writes an audit-log entry", async () => {
+  // P1-S6: admin actions write to the audit log — the canonical action
+  // is now user.create (admin manages users; tenants are gone).
+  it("P1-S6: user.create writes an audit-log entry", async () => {
     const { app, warm } = makeApp({ authMode: "tenant" });
     const adminH = await adminAuth(warm);
     await app.inject({
-      method: "POST", url: "/v1/admin/tenants",
-      payload: { id: "audited", name: "Audited" },
+      method: "POST",
+      url: "/v1/admin/users",
+      payload: { username: "audited", password: "passpass1234", role: "user" },
       headers: adminH,
     });
     const log = await app.inject({
@@ -1282,8 +1119,9 @@ describe("http: P0 regression tests", () => {
       headers: adminH,
     });
     expect(log.statusCode).toBe(200);
-    const e = log.json().entries.find((x: { action: string; target: string }) =>
-      x.action === "tenant.create" && x.target === "audited",
+    const e = log.json().entries.find(
+      (x: { action: string; metadata?: { username?: string } }) =>
+        x.action === "user.create" && x.metadata?.username === "audited",
     );
     expect(e).toBeDefined();
     expect(e.actorLabel).toMatch(/^user:admin-/);
@@ -1569,17 +1407,13 @@ describe("http: projects (sub-brains)", () => {
 describe("http: /v1/auth/rotate-token (user self-service)", () => {
   it("rotates the caller's token and revokes the old one", async () => {
     const { app, warm } = makeApp({ authMode: "tenant" });
-    const adminH = await adminAuth(warm);
-    await app.inject({
-      method: "POST", url: "/v1/admin/tenants",
-      payload: { id: "acme", name: "Acme" },
-      headers: adminH,
+    const u = await warm.createUser({
+      username: "alice-rot",
+      passwordHash: "test",
+      role: "user",
     });
-    const tk = await app.inject({
-      method: "POST", url: "/v1/admin/tenants/acme/tokens",
-      headers: adminH,
-    });
-    const oldToken = tk.json().token as string;
+    const minted = await warm.createUserToken(u.id, "first");
+    const oldToken = minted!.token;
 
     const rot = await app.inject({
       method: "POST", url: "/v1/auth/rotate-token",

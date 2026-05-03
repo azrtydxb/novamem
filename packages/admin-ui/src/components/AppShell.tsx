@@ -6,7 +6,6 @@ import { useAuth } from "../lib/auth-context";
 export type Tab =
   | "metrics"
   | "health"
-  | "tenants"
   | "users"
   | "tokens"
   | "projects"
@@ -26,7 +25,6 @@ interface NavItem {
 const ADMIN_NAV: NavItem[] = [
   { id: "metrics", label: "Metrics", glyph: "◐" },
   { id: "health", label: "Health", glyph: "◇" },
-  { id: "tenants", label: "Tenants", glyph: "▢" },
   { id: "users", label: "Users", glyph: "○" },
 ];
 
@@ -94,7 +92,7 @@ export function AppShell({ active, onChange, children }: Props) {
           <div className="leading-tight">
             <div className="text-sm font-semibold text-ink tracking-tight">NovaMem</div>
             <div className="font-mono text-[10px] text-dim">
-              {isAdmin ? "admin" : user?.userId ?? "tenant"}
+              {isAdmin ? "admin" : user?.username ?? "user"}
             </div>
           </div>
         </div>
@@ -169,7 +167,7 @@ export function AppShell({ active, onChange, children }: Props) {
               <div className="flex-1 min-w-0 leading-tight">
                 <div className="text-xs font-medium text-ink truncate">{user.username}</div>
                 <div className="font-mono text-[10px] text-dim truncate">
-                  {isAdmin ? "admin" : `tenant·${user.userId ?? "—"}`}
+                  {isAdmin ? "admin" : "user"}
                 </div>
               </div>
             </div>
