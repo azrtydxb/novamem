@@ -192,8 +192,6 @@ export class WarmStore {
       `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS project_id text`,
       `CREATE INDEX IF NOT EXISTS idx_fts_project ON memory_fts(project_id)`,
       `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS project_id text`,
-      `ALTER TABLE user_tokens ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_tokens_project ON user_tokens(project_id)`,
       // ─── Audit log of admin actions (P1-S6) ─────────────────────────
       `CREATE TABLE IF NOT EXISTS admin_audit_log (
         id serial PRIMARY KEY,
@@ -220,23 +218,25 @@ export class WarmStore {
 
   /** Mint a new bearer token for a user. Returns the **plaintext** token —
    *  the caller is responsible for getting it to their device; the server
-   *  keeps only the sha256 hash. Returns null if the user doesn't exist. */
+   *  keeps only the sha256 hash. The bearer grants access to everything
+   *  the owning user can reach (global memory + every project the user
+   *  is a member of); there is no per-token project scope. Returns null
+   *  if the user doesn't exist. */
   async createUserToken(
     userId: string,
     label?: string,
-    projectId?: string | null,
-  ): Promise<{ token: string; userId: string; projectId: string | null; createdAt: Date } | null> {
+  ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
     const exists = await this.pool.query(`SELECT 1 FROM users WHERE id = $1`, [userId]);
     if (exists.rowCount === 0) return null;
     const token = generateBearerToken();
     const tokenHash = hashToken(token);
     const r = await this.pool.query<{ created_at: Date }>(
-      `INSERT INTO user_tokens (token_hash, user_id, label, project_id)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO user_tokens (token_hash, user_id, label)
+       VALUES ($1, $2, $3)
        RETURNING created_at`,
-      [tokenHash, userId, label ?? null, projectId ?? null],
+      [tokenHash, userId, label ?? null],
     );
-    return { token, userId, projectId: projectId ?? null, createdAt: r.rows[0]!.created_at };
+    return { token, userId, createdAt: r.rows[0]!.created_at };
   }
 
   /** Resolve a plaintext bearer token to its user id. Touches `last_used_at`
@@ -247,7 +247,6 @@ export class WarmStore {
     plaintext: string,
   ): Promise<{
     userId: string;
-    projectId: string | null;
     tokenHash: string;
     label: string | null;
   } | null> {
@@ -255,17 +254,16 @@ export class WarmStore {
     const tokenHash = hashToken(plaintext);
     const r = await this.pool.query<{
       user_id: string;
-      project_id: string | null;
       label: string | null;
     }>(
       `UPDATE user_tokens SET last_used_at = now()
         WHERE token_hash = $1 AND revoked_at IS NULL
-        RETURNING user_id, project_id, label`,
+        RETURNING user_id, label`,
       [tokenHash],
     );
     const row = r.rows[0];
     if (!row) return null;
-    return { userId: row.user_id, projectId: row.project_id, tokenHash, label: row.label };
+    return { userId: row.user_id, tokenHash, label: row.label };
   }
 
   async revokeUserToken(plaintext: string): Promise<boolean> {
@@ -383,7 +381,6 @@ export class WarmStore {
     Array<{
       tokenHash: string;
       label: string | null;
-      projectId: string | null;
       createdAt: Date;
       lastUsedAt: Date | null;
       revoked: boolean;
@@ -392,19 +389,17 @@ export class WarmStore {
     const r = await this.pool.query<{
       token_hash: string;
       label: string | null;
-      project_id: string | null;
       created_at: Date;
       last_used_at: Date | null;
       revoked_at: Date | null;
     }>(
-      `SELECT token_hash, label, project_id, created_at, last_used_at, revoked_at FROM user_tokens
+      `SELECT token_hash, label, created_at, last_used_at, revoked_at FROM user_tokens
         WHERE user_id = $1 ORDER BY created_at ASC`,
       [userId],
     );
     return r.rows.map((row) => ({
       tokenHash: row.token_hash,
       label: row.label,
-      projectId: row.project_id,
       createdAt: row.created_at,
       lastUsedAt: row.last_used_at,
       revoked: row.revoked_at !== null,
@@ -720,24 +715,27 @@ export class WarmStore {
   // via `project_members`. The owner is also a member-row (role='owner').
 
   async createProject(args: {
-    id: string;
     name: string;
     ownerUserId: string;
   }): Promise<{ id: string; name: string; ownerUserId: string; createdAt: Date }> {
+    // Project id is a server-assigned ULID. Clients name projects in the
+    // dashboard; the id is never user-visible (it surfaces only in
+    // /v1/me/projects/:id URLs and cold-collection names).
+    const id = ulid();
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const r = await client.query<{ created_at: Date }>(
         `INSERT INTO projects (id, name, owner_user_id) VALUES ($1, $2, $3)
          RETURNING created_at`,
-        [args.id, args.name, args.ownerUserId],
+        [id, args.name, args.ownerUserId],
       );
       await client.query(
         `INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'owner')`,
-        [args.id, args.ownerUserId],
+        [id, args.ownerUserId],
       );
       await client.query("COMMIT");
-      return { ...args, createdAt: r.rows[0]!.created_at };
+      return { id, name: args.name, ownerUserId: args.ownerUserId, createdAt: r.rows[0]!.created_at };
     } catch (err) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw err;
@@ -837,38 +835,15 @@ export class WarmStore {
   async removeProjectMember(
     projectId: string,
     userId: string,
-  ): Promise<{ removed: boolean; tokensRevoked: number }> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const m = await client.query(
-        `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
-        [projectId, userId],
-      );
-      const removed = (m.rowCount ?? 0) > 0;
-      // Auth fix (P0-2): an ex-member's project-scoped tokens stay valid
-      // until explicit revoke. Revoke them at member-removal time so
-      // access ends with the membership.
-      let tokensRevoked = 0;
-      if (removed) {
-        const t = await client.query(
-          `UPDATE user_tokens
-              SET revoked_at = now()
-            WHERE project_id = $1
-              AND user_id = $2
-              AND revoked_at IS NULL`,
-          [projectId, userId],
-        );
-        tokensRevoked = t.rowCount ?? 0;
-      }
-      await client.query("COMMIT");
-      return { removed, tokensRevoked };
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
+  ): Promise<{ removed: boolean }> {
+    const r = await this.pool.query(
+      `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
+      [projectId, userId],
+    );
+    return { removed: (r.rowCount ?? 0) > 0 };
+    /* (Tokens are user-scoped, not project-scoped. Removing a member
+     *  drops their access to the project's memory but leaves their
+     *  bearers alone — they still authenticate as that user.) */
   }
 
   async getProjectMembership(
@@ -903,11 +878,9 @@ export class WarmStore {
       entriesRemoved = del.rowCount ?? 0;
       await client.query("DELETE FROM cold_orphans WHERE project_id = $1", [id]);
       await client.query("DELETE FROM project_members WHERE project_id = $1", [id]);
-      // Tokens scoped to this project become invalid; revoke them.
-      await client.query(
-        `UPDATE user_tokens SET revoked_at = now() WHERE project_id = $1 AND revoked_at IS NULL`,
-        [id],
-      );
+      // (Tokens have no project scope — they belong to the user, not the
+      // project. The kicked / removed members keep their bearers; they
+      // just no longer reach this project's memory.)
       await client.query("DELETE FROM projects WHERE id = $1", [id]);
       await client.query("COMMIT");
     } catch (err) {
@@ -1078,7 +1051,7 @@ export class WarmStore {
   async getEntries(
     userId: string,
     ids: string[],
-    opts: { projectId?: string | null } = {},
+    opts: { projectId?: string | null; includeProjects?: string[] } = {},
   ): Promise<Array<typeof schema.memoryEntries.$inferSelect | undefined>> {
     if (ids.length === 0) return [];
     const rows = await this.pool.query<{
@@ -1100,9 +1073,17 @@ export class WarmStore {
       [ids],
     );
     const want = opts.projectId;
+    const includeSet = opts.includeProjects?.length ? new Set(opts.includeProjects) : null;
     const byId = new Map<string, (typeof rows.rows)[number]>();
     for (const r of rows.rows) {
-      if (typeof want === "string") {
+      if (includeSet) {
+        // Active-project mode: row is visible if it's user-global for this
+        // caller, OR it's in one of the listed (membership-checked) projects.
+        const ok =
+          (r.project_id === null && r.user_id === userId) ||
+          (r.project_id !== null && includeSet.has(r.project_id));
+        if (!ok) continue;
+      } else if (typeof want === "string") {
         if (r.project_id !== want) continue;
       } else {
         if (r.project_id !== null) continue;

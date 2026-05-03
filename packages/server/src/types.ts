@@ -24,6 +24,10 @@ export interface SearchRequest {
   /** Project (sub-brain) id. When omitted, scope is user-wide entries
    *  (entries with no project). When set, scope is just this project. */
   project?: string | null;
+  /** Active-project mode: when set, scope expands to (user-wide entries) ∪
+   *  (every listed project the caller is a member of). Membership is
+   *  enforced upstream at the route layer. */
+  includeProjects?: string[];
   /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour. */
   weights?: { keyword?: number; vector?: number; graph?: number };
 }

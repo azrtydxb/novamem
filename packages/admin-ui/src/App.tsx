@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { AppShell, Tab } from "./components/AppShell";
 import { ToastProvider } from "./components/Toast";
 import { AuthProvider, useAuth } from "./lib/auth-context";
+import { ActiveProjectProvider } from "./lib/active-project";
 import { SignIn } from "./pages/SignIn";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 
@@ -23,7 +24,9 @@ export function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <Authed />
+        <ActiveProjectProvider>
+          <Authed />
+        </ActiveProjectProvider>
       </ToastProvider>
     </AuthProvider>
   );

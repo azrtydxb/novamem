@@ -120,7 +120,6 @@ export interface MetricsSnapshot {
 export interface UserToken {
   tokenHash: string;
   label: string | null;
-  projectId: string | null;
   createdAt: string;
   lastUsedAt: string | null;
   revoked: boolean;
