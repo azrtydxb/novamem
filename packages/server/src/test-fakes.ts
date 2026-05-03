@@ -426,7 +426,22 @@ export class FakeWarmStore {
   async resolveTenantToken(plaintext: string) {
     const t = this.tokens.get(plaintext);
     if (!t || t.revoked) return null;
-    return { tenantId: t.tenantId, projectId: t.projectId };
+    return {
+      tenantId: t.tenantId,
+      projectId: t.projectId,
+      tokenHash: this.fakeHash(plaintext),
+      label: t.label,
+    };
+  }
+
+  async listTokensCreatedByUser(userId: string) {
+    const out: Array<{ tokenHash: string; label: string | null; tenantId: string }> = [];
+    for (const [plain, v] of this.tokens.entries()) {
+      if (v.createdByUserId === userId && !v.revoked) {
+        out.push({ tokenHash: this.fakeHash(plain), label: v.label, tenantId: v.tenantId });
+      }
+    }
+    return out;
   }
 
   async revokeTenantToken(plaintext: string): Promise<boolean> {
