@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ChevronDown,
@@ -21,26 +22,32 @@ import { useToast } from "../components/Toast";
 import { fmtTimestamp, fmtRelative, shortHash } from "../lib/utils";
 
 export function TenantsPage() {
-  const [tenants, setTenants] = useState<Tenant[] | null>(null);
-  const [tenantModeUnavailable, setTenantModeUnavailable] = useState(false);
-  const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const queryClient = useQueryClient();
+  const [tenantModeUnavailable, setTenantModeUnavailable] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    const r = await api<{ tenants: Tenant[] }>("GET", "/v1/admin/tenants");
-    setBusy(false);
-    if (r.status === 404 || r.status === 400 || r.status === 501) {
-      setTenantModeUnavailable(true);
-      setTenants([]);
-      return;
-    }
-    if (r.body) setTenants(r.body.tenants);
-  }, []);
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ["admin", "tenants"],
+    queryFn: async () => {
+      const r = await api<{ tenants: Tenant[] }>("GET", "/v1/admin/tenants");
+      if (r.status === 404 || r.status === 400 || r.status === 501) {
+        return { tenants: [], unavailable: true };
+      }
+      if (!r.ok || !r.body) throw new Error(r.error ?? `tenants ${r.status}`);
+      return { tenants: r.body.tenants, unavailable: false };
+    },
+  });
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (data?.unavailable) setTenantModeUnavailable(true);
+  }, [data?.unavailable]);
+
+  const tenants = data?.tenants ?? null;
+  const busy = isFetching;
+  const refresh = () => {
+    void refetch();
+    void queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
+  };
 
   return (
     <div className="space-y-6">

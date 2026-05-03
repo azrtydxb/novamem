@@ -1,4 +1,5 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ChevronDown,
@@ -19,24 +20,30 @@ import { useToast } from "../components/Toast";
 import { fmtRelative } from "../lib/utils";
 
 export function UsersPage() {
-  const [users, setUsers] = useState<DashUser[] | null>(null);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    const [u, t] = await Promise.all([
-      api<{ users: DashUser[] }>("GET", "/v1/admin/users"),
-      api<{ tenants: Tenant[] }>("GET", "/v1/admin/tenants"),
-    ]);
-    setBusy(false);
-    if (u.body) setUsers(u.body.users);
-    if (t.body) setTenants(t.body.tenants);
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const queryClient = useQueryClient();
+  const usersQ = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: async () => {
+      const r = await api<{ users: DashUser[] }>("GET", "/v1/admin/users");
+      if (!r.ok || !r.body) throw new Error(r.error ?? `users ${r.status}`);
+      return r.body.users;
+    },
+  });
+  const tenantsQ = useQuery({
+    queryKey: ["admin", "tenants"],
+    queryFn: async () => {
+      const r = await api<{ tenants: Tenant[] }>("GET", "/v1/admin/tenants");
+      if (!r.ok || !r.body) return [] as Tenant[];
+      return r.body.tenants;
+    },
+  });
+  const users: DashUser[] | null = usersQ.data ?? null;
+  const tenants: Tenant[] = tenantsQ.data ?? [];
+  const busy = usersQ.isFetching || tenantsQ.isFetching;
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
+  };
 
   return (
     <div className="space-y-6">

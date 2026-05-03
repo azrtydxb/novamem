@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { CheckCircle2, XCircle, MinusCircle, RefreshCw } from "lucide-react";
-import { api, HealthSnapshot } from "../lib/api";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
+import { useQuery } from "@tanstack/react-query";
+import { CheckCircle2, MinusCircle, RefreshCw, XCircle } from "lucide-react";
+import { api, type HealthSnapshot } from "../lib/api";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
 import { fmtRelative } from "../lib/utils";
 
 const POLL_MS = 5000;
@@ -35,23 +35,15 @@ function statusBadge(s: string | undefined) {
 }
 
 export function HealthPage() {
-  const [snap, setSnap] = useState<HealthSnapshot | null>(null);
-  const [lastAt, setLastAt] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const load = async () => {
-    setBusy(true);
-    const r = await api<HealthSnapshot>("GET", "/health");
-    if (r.body) setSnap(r.body);
-    setLastAt(new Date().toISOString());
-    setBusy(false);
-  };
-
-  useEffect(() => {
-    void load();
-    const id = window.setInterval(load, POLL_MS);
-    return () => window.clearInterval(id);
-  }, []);
+  const { data, isFetching, dataUpdatedAt, refetch } = useQuery({
+    queryKey: ["health"],
+    queryFn: async () => {
+      const r = await api<HealthSnapshot>("GET", "/health");
+      if (!r.ok || !r.body) throw new Error(r.error ?? `health ${r.status}`);
+      return r.body;
+    },
+    refetchInterval: POLL_MS,
+  });
 
   return (
     <div className="space-y-6">
@@ -63,8 +55,8 @@ export function HealthPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-text-muted">
-          <span>last checked {fmtRelative(lastAt)}</span>
-          <Button size="sm" variant="ghost" onClick={load} loading={busy}>
+          <span>last checked {fmtRelative(new Date(dataUpdatedAt).toISOString())}</span>
+          <Button size="sm" variant="ghost" onClick={() => void refetch()} loading={isFetching}>
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
         </div>
@@ -74,12 +66,10 @@ export function HealthPage() {
         <CardHeader className="flex items-center justify-between">
           <div>
             <CardTitle>Overall status</CardTitle>
-            <CardDescription>
-              Aggregate of warm + cold liveness probes.
-            </CardDescription>
+            <CardDescription>Aggregate of warm + cold liveness probes.</CardDescription>
           </div>
-          {snap ? (
-            snap.ok ? (
+          {data ? (
+            data.ok ? (
               <Badge tone="success">
                 <CheckCircle2 className="h-3 w-3" /> healthy
               </Badge>
@@ -100,7 +90,7 @@ export function HealthPage() {
                   <div className="text-sm font-medium text-text">{d.name}</div>
                   <div className="text-xs text-text-muted">{d.system}</div>
                 </div>
-                {statusBadge(snap?.deps?.[d.key])}
+                {statusBadge(data?.deps?.[d.key])}
               </div>
             ))}
           </div>
