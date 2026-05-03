@@ -347,8 +347,8 @@ export class WarmStore {
     }));
   }
 
-  /** Tokens created by a specific user — used to scope per-token metrics
-   *  to "my own tokens" on the user dashboard. Excludes revoked. */
+  /** Tokens belonging to a specific user — used to scope per-token
+   *  metrics to "my own tokens" on the user dashboard. Excludes revoked. */
   async listTokensCreatedByUser(
     userId: string,
   ): Promise<Array<{ tokenHash: string; label: string | null; userId: string }>> {
@@ -358,7 +358,7 @@ export class WarmStore {
       user_id: string;
     }>(
       `SELECT token_hash, label, user_id FROM user_tokens
-        WHERE created_by_user_id = $1 AND revoked_at IS NULL
+        WHERE user_id = $1 AND revoked_at IS NULL
         ORDER BY created_at ASC`,
       [userId],
     );
@@ -375,7 +375,6 @@ export class WarmStore {
     Array<{
       tokenHash: string;
       label: string | null;
-      createdByUserId: string | null;
       projectId: string | null;
       createdAt: Date;
       lastUsedAt: Date | null;
@@ -385,20 +384,18 @@ export class WarmStore {
     const r = await this.pool.query<{
       token_hash: string;
       label: string | null;
-      created_by_user_id: string | null;
       project_id: string | null;
       created_at: Date;
       last_used_at: Date | null;
       revoked_at: Date | null;
     }>(
-      `SELECT token_hash, label, created_by_user_id, project_id, created_at, last_used_at, revoked_at FROM user_tokens
+      `SELECT token_hash, label, project_id, created_at, last_used_at, revoked_at FROM user_tokens
         WHERE user_id = $1 ORDER BY created_at ASC`,
       [userId],
     );
     return r.rows.map((row) => ({
       tokenHash: row.token_hash,
       label: row.label,
-      createdByUserId: row.created_by_user_id,
       projectId: row.project_id,
       createdAt: row.created_at,
       lastUsedAt: row.last_used_at,
@@ -850,7 +847,7 @@ export class WarmStore {
           `UPDATE user_tokens
               SET revoked_at = now()
             WHERE project_id = $1
-              AND created_by_user_id = $2
+              AND user_id = $2
               AND revoked_at IS NULL`,
           [projectId, userId],
         );

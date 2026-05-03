@@ -603,7 +603,7 @@ describe("http: OpenAPI + Swagger UI", () => {
     expect(body.paths).toBeDefined();
     expect(body.paths["/v1/search"]).toBeDefined();
     expect(body.paths["/v1/me/projects"]).toBeDefined();
-    expect(body.components.securitySchemes.TenantBearer).toBeDefined();
+    expect(body.components.securitySchemes.UserBearer).toBeDefined();
   });
 
   it("/api-docs serves Swagger UI HTML", async () => {
