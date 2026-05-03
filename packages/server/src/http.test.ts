@@ -764,7 +764,7 @@ describe("http: dashboard auth + RBAC", () => {
     expect(m.json().userId).toBe(bob.id);
   });
 
-  it("user can mint + revoke tokens for their own tenant", async () => {
+  it("user can create + delete their own tokens", async () => {
     const { app, warm } = await setupWithAdmin();
     const { hashPassword } = await import("./auth.js");
     const hash = await hashPassword("bobpass1");
@@ -797,11 +797,16 @@ describe("http: dashboard auth + RBAC", () => {
     });
     expect(r.statusCode).toBe(200);
 
-    const rev = await app.inject({
-      method: "POST", url: `/v1/me/tokens/${tokenHash}/revoke`,
+    const del = await app.inject({
+      method: "DELETE", url: `/v1/me/tokens/${tokenHash}`,
       headers: auth,
     });
-    expect(rev.statusCode).toBe(200);
+    expect(del.statusCode).toBe(200);
+    expect(del.json().deleted).toBe(true);
+
+    // Token row gone from listing — hard delete, no soft tombstone.
+    const after_list = await app.inject({ method: "GET", url: "/v1/me/tokens", headers: auth });
+    expect(after_list.json().tokens.length).toBe(0);
 
     const after = await app.inject({
       method: "POST", url: "/v1/recent",

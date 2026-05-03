@@ -824,16 +824,18 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     });
   });
 
-  app.post("/v1/me/tokens/:hash/revoke", async (req, reply) => {
+  /** Hard-delete a token by its sha256 hash. Removes the row outright
+   *  (no soft "revoked" tombstone) so the list view doesn't accumulate
+   *  dead entries. The device using it gets 401 on its next call. */
+  app.delete("/v1/me/tokens/:hash", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
     const u = req.dashUser!;
-    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
     const hash = (req.params as { hash: string }).hash;
     if (!/^[a-f0-9]{64}$/i.test(hash)) return reply.code(400).send({ error: "invalid hash" });
-    const ok = await opts.warm.revokeUserTokenByHash(u.id, hash);
-    if (!ok) return reply.code(404).send({ error: "token not found or already revoked" });
+    const ok = await opts.warm.deleteUserTokenByHash(u.id, hash);
+    if (!ok) return reply.code(404).send({ error: "token not found" });
     opts.metrics?.forgetToken(hash);
-    reply.send({ revoked: true });
+    reply.send({ deleted: true });
   });
 
   // ─── User self-service: projects (sub-brains) ──────────────────────────
