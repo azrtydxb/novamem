@@ -16,7 +16,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   return (
     <div className="space-y-1.5">
       {label ? (
-        <label htmlFor={id} className="block text-xs font-medium text-text-muted">
+        <label htmlFor={id} className="block text-xs font-medium text-dim">
           {label}
         </label>
       ) : null}
@@ -24,19 +24,19 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
         ref={ref}
         id={id}
         className={cn(
-          "w-full h-9 rounded-md border bg-bg-panel px-3 text-sm font-mono",
-          "placeholder:text-text-subtle",
+          "w-full h-9 rounded-md border bg-panel px-3 text-sm font-mono",
+          "placeholder:text-faint",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-          error ? "border-danger" : "border-border",
+          error ? "border-err" : "border-rule",
           "disabled:opacity-60 disabled:cursor-not-allowed",
           className,
         )}
         {...rest}
       />
       {error ? (
-        <p className="text-xs text-danger">{error}</p>
+        <p className="text-xs text-err">{error}</p>
       ) : hint ? (
-        <p className="text-xs text-text-subtle">{hint}</p>
+        <p className="text-xs text-faint">{hint}</p>
       ) : null}
     </div>
   );

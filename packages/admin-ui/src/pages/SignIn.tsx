@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { LogIn, ShieldCheck, AlertTriangle } from "lucide-react";
+import { LogIn, AlertTriangle } from "lucide-react";
 import { api, type LoginResponse } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { Button } from "../components/Button";
@@ -45,20 +45,39 @@ export function SignIn() {
 
   return (
     <div className="min-h-full flex items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-accent to-accent/40 flex items-center justify-center shadow-lg mb-4">
-            <ShieldCheck className="h-6 w-6 text-white" />
+      <div className="w-[380px] max-w-full bg-panel border border-rule rounded-xl p-8 shadow-modal">
+        {/* Brand row — synapse logo + name + version pill (Grid spec). */}
+        <div className="flex items-center gap-2.5 mb-6">
+          <div className="h-9 w-9 rounded-[10px] bg-accent flex items-center justify-center">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 6 L12 12 M20 6 L12 12 M4 18 L12 12 M20 18 L12 12"
+                stroke="white"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                fill="none"
+              />
+              <circle cx="12" cy="12" r="2.6" fill="white" />
+            </svg>
           </div>
-          <h1 className="text-xl font-semibold text-text">novamem</h1>
-          <p className="text-sm text-text-muted mt-1">Sign in to the dashboard.</p>
+          <div className="leading-tight">
+            <div className="text-base font-semibold text-ink">NovaMem</div>
+            <div className="font-mono text-[10px] text-dim">v0.1.0</div>
+          </div>
         </div>
 
+        <h2 className="text-xl font-semibold text-ink tracking-[-0.015em]">
+          Sign in to your console
+        </h2>
+        <p className="text-[13px] text-dim mt-1.5">
+          Use your dashboard username — not a bearer token.
+        </p>
+
         {bootstrapNeeded ? (
-          <div className="mb-4 rounded-lg border border-warning/40 bg-warning-subtle/40 p-3 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 text-warning flex-none" />
-            <div className="text-xs text-text-muted">
-              <span className="text-text font-medium">No admin yet.</span> Set{" "}
+          <div className="mt-5 rounded-lg border border-warn/40 bg-warn-soft/40 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 mt-0.5 text-warn flex-none" />
+            <div className="text-xs text-dim">
+              <span className="text-ink font-medium">No admin yet.</span> Set{" "}
               <code className="text-accent">NOVAMEM_BOOTSTRAP_ADMIN_USERNAME</code> +{" "}
               <code className="text-accent">NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD</code> on the server
               and restart to seed one.
@@ -66,10 +85,7 @@ export function SignIn() {
           </div>
         ) : null}
 
-        <form
-          onSubmit={submit}
-          className="space-y-3 rounded-xl border border-border bg-bg-panel p-5 shadow-card"
-        >
+        <form onSubmit={submit} className="mt-5 space-y-3.5">
           <Input
             type="text"
             name="username"
@@ -95,11 +111,15 @@ export function SignIn() {
             variant="primary"
             loading={busy}
             disabled={!username.trim() || !password}
-            className="w-full"
+            className="w-full !py-2.5 !text-[13px] !font-semibold"
           >
-            <LogIn className="h-3.5 w-3.5" /> Sign in
+            <LogIn className="h-3.5 w-3.5" /> Continue
           </Button>
         </form>
+
+        <div className="mt-5 font-mono text-[10px] text-faint text-center leading-relaxed">
+          Session expires in 24h · stored in HttpOnly cookie
+        </div>
       </div>
     </div>
   );

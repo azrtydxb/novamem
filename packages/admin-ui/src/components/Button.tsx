@@ -14,11 +14,11 @@ const VARIANT: Record<Variant, string> = {
   primary:
     "bg-accent text-white hover:bg-accent-hover focus-visible:ring-accent disabled:bg-accent/50",
   secondary:
-    "bg-bg-subtle text-text border border-border hover:bg-bg-hover focus-visible:ring-accent",
+    "bg-subtle text-ink border border-rule hover:bg-hover focus-visible:ring-accent",
   danger:
-    "bg-danger/10 text-danger border border-danger/40 hover:bg-danger/20 focus-visible:ring-danger",
+    "bg-err/10 text-err border border-err/40 hover:bg-err/20 focus-visible:ring-err",
   ghost:
-    "bg-transparent text-text-muted hover:bg-bg-subtle hover:text-text focus-visible:ring-accent",
+    "bg-transparent text-dim hover:bg-subtle hover:text-ink focus-visible:ring-accent",
 };
 
 const SIZE: Record<Size, string> = {

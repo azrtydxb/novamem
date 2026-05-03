@@ -40,8 +40,8 @@ export function ProjectsPage() {
     <div className="space-y-6">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-text">Projects</h1>
-          <p className="text-sm text-text-muted mt-1">
+          <h1 className="text-2xl font-semibold text-ink">Projects</h1>
+          <p className="text-sm text-dim mt-1">
             A project is a sub-brain — its memories live separately from your tenant-wide entries.
             Share with another user (any tenant) by adding them as a member.
           </p>
@@ -54,12 +54,12 @@ export function ProjectsPage() {
       <CreateProjectCard onCreated={refresh} />
 
       {projects === null ? (
-        <Card className="p-8 text-center text-sm text-text-muted">Loading projects…</Card>
+        <Card className="p-8 text-center text-sm text-dim">Loading projects…</Card>
       ) : projects.length === 0 ? (
         <Card className="p-12 text-center">
-          <FolderKanban className="h-8 w-8 text-text-subtle mx-auto mb-3" />
-          <div className="text-sm text-text font-medium">No projects yet</div>
-          <div className="text-xs text-text-muted mt-1">
+          <FolderKanban className="h-8 w-8 text-faint mx-auto mb-3" />
+          <div className="text-sm text-ink font-medium">No projects yet</div>
+          <div className="text-xs text-dim mt-1">
             Create your first project above to start a fresh sub-brain.
           </div>
         </Card>
@@ -212,16 +212,16 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
   return (
     <Card>
       <div
-        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-bg-hover/40"
+        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-hover/40"
         onClick={() => setOpen(!open)}
       >
-        <button className="text-text-subtle hover:text-text" aria-label={open ? "collapse" : "expand"}>
+        <button className="text-faint hover:text-ink" aria-label={open ? "collapse" : "expand"}>
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
         <FolderKanban className="h-4 w-4 text-accent" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-text">{project.id}</span>
+            <span className="font-mono text-sm text-ink">{project.id}</span>
             {isOwner ? (
               <Badge tone="accent">
                 <ShieldCheck className="h-3 w-3" /> owner
@@ -230,7 +230,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
               <Badge tone="neutral">member</Badge>
             )}
           </div>
-          <div className="text-xs text-text-muted mt-0.5 truncate">
+          <div className="text-xs text-dim mt-0.5 truncate">
             {project.name} · created {fmtRelative(project.createdAt)}
           </div>
         </div>
@@ -248,7 +248,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
       </div>
 
       {open && (
-        <div className="border-t border-border p-5 space-y-4">
+        <div className="border-t border-rule p-5 space-y-4">
           {isOwner && <AddMemberForm projectId={project.id} onAdded={loadMembers} />}
           <MemberTable
             members={members}
@@ -270,7 +270,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
           <>
             Every memory, vector, and graph node in this project is purged. Tokens scoped to this
             project are revoked.{" "}
-            <span className="text-danger font-medium">This cannot be undone.</span>
+            <span className="text-err font-medium">This cannot be undone.</span>
           </>
         }
         size="md"
@@ -383,18 +383,18 @@ function MemberTable({
   ownerUserId: string;
   onRemove: (m: ProjectMember) => void;
 }) {
-  if (members === null) return <div className="text-sm text-text-muted">Loading members…</div>;
+  if (members === null) return <div className="text-sm text-dim">Loading members…</div>;
   if (members.length === 0)
     return (
-      <div className="text-sm text-text-muted flex items-center gap-2">
-        <UsersIcon className="h-4 w-4 text-text-subtle" /> No members yet.
+      <div className="text-sm text-dim flex items-center gap-2">
+        <UsersIcon className="h-4 w-4 text-faint" /> No members yet.
       </div>
     );
   return (
-    <div className="border border-border rounded-md overflow-hidden">
+    <div className="border border-rule rounded-md overflow-hidden">
       <table className="w-full text-sm">
-        <thead className="bg-bg-subtle/60">
-          <tr className="text-text-muted text-[11px] uppercase tracking-wider">
+        <thead className="bg-subtle/60">
+          <tr className="text-dim text-[11px] uppercase tracking-wider">
             <th className="text-left font-medium px-4 py-2.5">User</th>
             <th className="text-left font-medium px-4 py-2.5">Tenant</th>
             <th className="text-left font-medium px-4 py-2.5">Role</th>
@@ -404,8 +404,8 @@ function MemberTable({
         <tbody className="divide-y divide-border">
           {members.map((m) => (
             <tr key={m.userId}>
-              <td className="px-4 py-3 font-medium text-text">{m.username}</td>
-              <td className="px-4 py-3 text-text-muted">
+              <td className="px-4 py-3 font-medium text-ink">{m.username}</td>
+              <td className="px-4 py-3 text-dim">
                 {m.tenantId ? <code className="font-mono text-xs">{m.tenantId}</code> : "—"}
               </td>
               <td className="px-4 py-3">

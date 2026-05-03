@@ -62,12 +62,12 @@ export function MyTokensPage() {
       <header className="flex items-end justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-text">API tokens</h1>
+            <h1 className="text-2xl font-semibold text-ink">API tokens</h1>
             {user?.tenantId ? <Badge tone="accent">tenant: {user.tenantId}</Badge> : null}
           </div>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-dim mt-1">
             Mint a token per device. All tokens authenticate as the same tenant — only the label
-            distinguishes them. Plaintext is shown <span className="text-text">once</span> at mint
+            distinguishes them. Plaintext is shown <span className="text-ink">once</span> at mint
             and is unrecoverable; revoke and mint again if you lose it.
           </p>
         </div>
@@ -85,12 +85,12 @@ export function MyTokensPage() {
       />
 
       {tokens === null ? (
-        <Card className="p-8 text-center text-sm text-text-muted">Loading tokens…</Card>
+        <Card className="p-8 text-center text-sm text-dim">Loading tokens…</Card>
       ) : tokens.length === 0 ? (
         <Card className="p-12 text-center">
-          <KeyRound className="h-8 w-8 text-text-subtle mx-auto mb-3" />
-          <div className="text-sm text-text font-medium">No tokens yet</div>
-          <div className="text-xs text-text-muted mt-1">
+          <KeyRound className="h-8 w-8 text-faint mx-auto mb-3" />
+          <div className="text-sm text-ink font-medium">No tokens yet</div>
+          <div className="text-xs text-dim mt-1">
             Mint one above to start authenticating a device.
           </div>
         </Card>
@@ -98,8 +98,8 @@ export function MyTokensPage() {
         <Card>
           <div className="overflow-hidden rounded-lg">
             <table className="w-full text-sm">
-              <thead className="bg-bg-subtle/60">
-                <tr className="text-text-muted text-[11px] uppercase tracking-wider">
+              <thead className="bg-subtle/60">
+                <tr className="text-dim text-[11px] uppercase tracking-wider">
                   <th className="text-left font-medium px-4 py-2.5">Device</th>
                   <th className="text-left font-medium px-4 py-2.5">Scope</th>
                   <th className="text-left font-medium px-4 py-2.5">Hash</th>
@@ -114,9 +114,9 @@ export function MyTokensPage() {
                   <tr key={t.tokenHash}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Smartphone className="h-3.5 w-3.5 text-text-subtle" />
-                        <span className="text-text">
-                          {t.label || <span className="text-text-subtle">unlabeled</span>}
+                        <Smartphone className="h-3.5 w-3.5 text-faint" />
+                        <span className="text-ink">
+                          {t.label || <span className="text-faint">unlabeled</span>}
                         </span>
                       </div>
                     </td>
@@ -127,17 +127,17 @@ export function MyTokensPage() {
                         <Badge tone="neutral">tenant-wide</Badge>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-muted" title={t.tokenHash}>
+                    <td className="px-4 py-3 font-mono text-xs text-dim" title={t.tokenHash}>
                       {shortHash(t.tokenHash)}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-muted">
+                    <td className="px-4 py-3 font-mono text-xs text-dim">
                       {fmtTimestamp(t.createdAt)}
                     </td>
-                    <td className="px-4 py-3 text-xs text-text-muted">
+                    <td className="px-4 py-3 text-xs text-dim">
                       {t.lastUsedAt ? (
                         fmtRelative(t.lastUsedAt)
                       ) : (
-                        <span className="text-text-subtle">never</span>
+                        <span className="text-faint">never</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -171,7 +171,7 @@ export function MyTokensPage() {
         description={
           <>
             This is the only time you'll see the plaintext.{" "}
-            <span className="text-warning font-medium">Copy it now</span> and store it on your
+            <span className="text-warn font-medium">Copy it now</span> and store it on your
             device — the server keeps only a sha256 hash.
           </>
         }
@@ -183,21 +183,21 @@ export function MyTokensPage() {
       >
         {mintedPlaintext ? (
           <div className="space-y-3">
-            <div className="text-xs text-text-muted flex flex-wrap gap-x-4">
+            <div className="text-xs text-dim flex flex-wrap gap-x-4">
               <div>
-                Label: <span className="text-text font-medium">{mintedPlaintext.label}</span>
+                Label: <span className="text-ink font-medium">{mintedPlaintext.label}</span>
               </div>
               <div>
                 Scope:{" "}
                 {mintedPlaintext.projectId ? (
                   <span className="text-accent font-medium">project {mintedPlaintext.projectId}</span>
                 ) : (
-                  <span className="text-text font-medium">tenant-wide</span>
+                  <span className="text-ink font-medium">tenant-wide</span>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <code className="flex-1 px-3 py-2 rounded-md bg-bg text-text font-mono text-xs break-all border border-border">
+              <code className="flex-1 px-3 py-2 rounded-md bg-bg text-ink font-mono text-xs break-all border border-rule">
                 {mintedPlaintext.token}
               </code>
               <CopyButton value={mintedPlaintext.token} />
@@ -214,7 +214,7 @@ export function MyTokensPage() {
         description={
           confirmRevoke ? (
             <>
-              <span className="text-text font-medium">{confirmRevoke.label || "(unlabeled)"}</span>{" "}
+              <span className="text-ink font-medium">{confirmRevoke.label || "(unlabeled)"}</span>{" "}
               <code className="font-mono text-xs">{shortHash(confirmRevoke.tokenHash)}</code> will
               stop working immediately. The device using it will receive 401s.
             </>
@@ -292,13 +292,13 @@ function MintCard({
             onChange={(e) => setLabel(e.target.value)}
           />
           <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-text-muted">Scope</label>
+            <label className="block text-xs font-medium text-dim">Scope</label>
             <div className="relative">
               <select
                 name="scope"
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="w-full md:w-56 h-9 appearance-none rounded-md border border-border bg-bg-panel pl-3 pr-8 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                className="w-full md:w-56 h-9 appearance-none rounded-md border border-rule bg-panel pl-3 pr-8 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
               >
                 <option value="">tenant-wide (default)</option>
                 {projects.map((p) => (
@@ -307,7 +307,7 @@ function MintCard({
                   </option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-subtle pointer-events-none" />
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-faint pointer-events-none" />
             </div>
           </div>
           <Button type="submit" variant="primary" loading={busy}>

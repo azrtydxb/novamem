@@ -2,42 +2,54 @@
 @import "@fontsource/inter/500.css";
 @import "@fontsource/inter/600.css";
 @import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
 
 /* Tailwind v4: a single import replaces the v3 @tailwind base/components/
    utilities trio. */
 @import "tailwindcss";
 
-/* Class-based dark mode (Tailwind 4: declared via @variant). */
-@custom-variant dark (&:where(.dark, .dark *));
+/* Theme toggle is class-based (`.light` on <html>); default is dark. */
+@custom-variant light (&:where(.light, .light *));
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
 
-  /* Semantic colour tokens — referenced everywhere instead of raw colours
-     so the theme is one place to tune. */
-  --color-bg: #0b0d12;
-  --color-bg-panel: #11141b;
-  --color-bg-subtle: #161a23;
-  --color-bg-hover: #1c2230;
+  /* ── Grid direction palette (dark — default) ──────────────────────
+     Token names mirror the design handoff (bg / panel / subtle / ink /
+     dim / faint / rule / accent / warm / cold / graph / err / warn) so
+     class usage reads identically against the spec. */
+  --color-bg: #0a0d12;
+  --color-panel: #11151c;
+  --color-subtle: #161b24;
+  --color-hover: #1c2230;
 
-  --color-border: #222836;
-  --color-border-strong: #2c3344;
+  --color-rule: #1f2530;
+  --color-rule-soft: #171c25;
 
-  --color-text: #e8ebf1;
-  --color-text-muted: #8b94a6;
-  --color-text-subtle: #5b6373;
+  --color-ink: #e6ebf2;
+  --color-dim: #8a93a3;
+  --color-faint: #5a6373;
 
-  --color-accent: #7c9cff;
-  --color-accent-hover: #8fb0ff;
-  --color-accent-subtle: #1a2340;
+  --color-accent: oklch(70% 0.16 250);
+  --color-accent-soft: oklch(28% 0.10 250);
 
-  --color-success: #4ade80;
-  --color-success-subtle: #0e2a1a;
-  --color-warning: #fbbf24;
-  --color-warning-subtle: #2a1f0a;
-  --color-danger: #f87171;
-  --color-danger-subtle: #2a1212;
+  --color-warm: oklch(72% 0.17 35);
+  --color-warm-soft: oklch(28% 0.10 35);
+
+  --color-cold: oklch(72% 0.14 220);
+  --color-cold-soft: oklch(28% 0.10 220);
+
+  --color-graph: oklch(72% 0.16 165);
+  --color-graph-soft: oklch(28% 0.10 165);
+
+  --color-err: oklch(70% 0.20 25);
+  --color-err-soft: oklch(28% 0.10 25);
+
+  --color-warn: oklch(78% 0.16 80);
+  --color-warn-soft: oklch(28% 0.10 80);
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -45,15 +57,51 @@
   --radius-xl: 12px;
 
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03), 0 4px 12px rgba(0, 0, 0, 0.25);
-  --shadow-modal: 0 20px 50px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.4);
 
   --animate-fade-in: fade-in 120ms ease-out;
   --animate-scale-in: scale-in 120ms ease-out;
   --animate-slide-in-right: slide-in-right 200ms ease-out;
+  --animate-pulse-soft: pulse-soft 5s ease-in-out infinite;
 }
 
-/* Keyframes still need a global block — Tailwind 4 doesn't auto-generate
-   them from the @theme animate-* tokens. */
+/* Light theme override. Tailwind 4 reads the same custom properties from
+   :root, so we just rebind them under `.light`. */
+.light {
+  --color-bg: #fafbfc;
+  --color-panel: #ffffff;
+  --color-subtle: #f3f5f8;
+  --color-hover: #eef0f4;
+
+  --color-rule: #e6e9ee;
+  --color-rule-soft: #eef0f4;
+
+  --color-ink: #0d1117;
+  --color-dim: #5b6470;
+  --color-faint: #8b94a3;
+
+  --color-accent: oklch(58% 0.15 250);
+  --color-accent-soft: oklch(95% 0.04 250);
+
+  --color-warm: oklch(62% 0.16 35);
+  --color-warm-soft: oklch(95% 0.04 35);
+
+  --color-cold: oklch(58% 0.13 220);
+  --color-cold-soft: oklch(95% 0.04 220);
+
+  --color-graph: oklch(60% 0.16 165);
+  --color-graph-soft: oklch(95% 0.04 165);
+
+  --color-err: oklch(58% 0.20 25);
+  --color-err-soft: oklch(95% 0.04 25);
+
+  --color-warn: oklch(70% 0.16 80);
+  --color-warn-soft: oklch(95% 0.04 80);
+
+  --shadow-card: 0 1px 2px rgba(13, 17, 23, 0.04);
+  --shadow-modal: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
 @keyframes fade-in {
   0% { opacity: 0; }
   100% { opacity: 1; }
@@ -66,18 +114,29 @@
   0% { opacity: 0; transform: translateX(8px); }
   100% { opacity: 1; transform: translateX(0); }
 }
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 
 @layer base {
   html, body, #root {
     height: 100%;
   }
   body {
+    background: var(--color-bg);
+    color: var(--color-ink);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
   }
   ::selection {
-    background-color: var(--color-accent-subtle);
-    color: var(--color-text);
+    background-color: var(--color-accent-soft);
+    color: var(--color-ink);
+  }
+  /* Tabular numerals on every numeric class — saves repeating it on each
+     KPI value, table cell, and stat row. */
+  .tabnum, .num {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -85,12 +144,36 @@
   /* Subtle scrollbars consistent across the dashboard. */
   .scroll-thin {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-border-strong) transparent;
+    scrollbar-color: var(--color-rule) transparent;
   }
   .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scroll-thin::-webkit-scrollbar-track { background: transparent; }
   .scroll-thin::-webkit-scrollbar-thumb {
-    background: var(--color-border-strong);
+    background: var(--color-rule);
     border-radius: 4px;
+  }
+
+  /* Mono kicker used on most page headers — small uppercase tracking
+     label above the H1. */
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-dim);
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+
+  /* Status pill — see SECURITY.md for the canonical recipe. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 99px;
+    line-height: 1;
   }
 }
