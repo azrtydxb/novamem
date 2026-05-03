@@ -508,7 +508,6 @@ export class WarmStore {
     username: string;
     passwordHash: string;
     role: string;
-    userId: string | null;
     passwordChangedAt: Date | null;
   } | null> {
     const r = await this.pool.query<{
@@ -516,9 +515,8 @@ export class WarmStore {
       username: string;
       password_hash: string;
       role: string;
-      user_id: string | null;
       password_changed_at: Date | null;
-    }>(`SELECT id, username, password_hash, role, user_id, password_changed_at FROM users WHERE username = $1`, [username]);
+    }>(`SELECT id, username, password_hash, role, password_changed_at FROM users WHERE username = $1`, [username]);
     const row = r.rows[0];
     if (!row) return null;
     return {
@@ -526,7 +524,6 @@ export class WarmStore {
       username: row.username,
       passwordHash: row.password_hash,
       role: row.role,
-      userId: row.user_id,
       passwordChangedAt: row.password_changed_at,
     };
   }
@@ -535,17 +532,15 @@ export class WarmStore {
     id: string;
     username: string;
     role: string;
-    userId: string | null;
   } | null> {
     const r = await this.pool.query<{
       id: string;
       username: string;
       role: string;
-      user_id: string | null;
-    }>(`SELECT id, username, role, user_id FROM users WHERE id = $1`, [id]);
+    }>(`SELECT id, username, role FROM users WHERE id = $1`, [id]);
     const row = r.rows[0];
     if (!row) return null;
-    return { id: row.id, username: row.username, role: row.role, userId: row.user_id };
+    return { id: row.id, username: row.username, role: row.role };
   }
 
   async listUsers(): Promise<
@@ -553,7 +548,6 @@ export class WarmStore {
       id: string;
       username: string;
       role: string;
-      userId: string | null;
       createdAt: Date;
       lastLoginAt: Date | null;
       passwordChangedAt: Date | null;
@@ -563,16 +557,14 @@ export class WarmStore {
       id: string;
       username: string;
       role: string;
-      user_id: string | null;
       created_at: Date;
       last_login_at: Date | null;
       password_changed_at: Date | null;
-    }>(`SELECT id, username, role, user_id, created_at, last_login_at, password_changed_at FROM users ORDER BY created_at ASC`);
+    }>(`SELECT id, username, role, created_at, last_login_at, password_changed_at FROM users ORDER BY created_at ASC`);
     return r.rows.map((row) => ({
       id: row.id,
       username: row.username,
       role: row.role,
-      userId: row.user_id,
       createdAt: row.created_at,
       lastLoginAt: row.last_login_at,
       passwordChangedAt: row.password_changed_at,

@@ -1,15 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  ChevronDown,
-  RefreshCw,
-  ShieldCheck,
-  Trash2,
-  UserPlus,
-  Users as UsersIcon,
-} from "lucide-react";
-import { api, DashUser, Tenant } from "../lib/api";
+import { RefreshCw, ShieldCheck, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
+import { api, DashUser } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
 import { Button } from "../components/Button";
@@ -30,20 +22,10 @@ export function UsersPage() {
       return r.body.users;
     },
   });
-  const tenantsQ = useQuery({
-    queryKey: ["admin", "tenants"],
-    queryFn: async () => {
-      const r = await api<{ tenants: Tenant[] }>("GET", "/v1/admin/tenants");
-      if (!r.ok || !r.body) return [] as Tenant[];
-      return r.body.tenants;
-    },
-  });
   const users: DashUser[] | null = usersQ.data ?? null;
-  const tenants: Tenant[] = tenantsQ.data ?? [];
-  const busy = usersQ.isFetching || tenantsQ.isFetching;
+  const busy = usersQ.isFetching;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-    void queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
   };
 
   return (
@@ -51,7 +33,7 @@ export function UsersPage() {
       <PageHeader
         kicker="Dashboard auth · username + password"
         title="Users"
-        subtitle="Manage dashboard logins. Admins see everything; users are scoped to one tenant."
+        subtitle="Manage dashboard logins. Admins see everything; each user has their own memory namespace."
         actions={
           <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
@@ -59,7 +41,7 @@ export function UsersPage() {
         }
       />
       <div className="p-5 space-y-3">
-      <CreateUserCard tenants={tenants} onCreated={refresh} />
+      <CreateUserCard onCreated={refresh} />
 
       <div className="space-y-3">
         {users === null ? (
@@ -78,14 +60,13 @@ export function UsersPage() {
                   <tr className="text-dim text-[11px] uppercase tracking-wider">
                     <th className="text-left font-medium px-4 py-2.5">User</th>
                     <th className="text-left font-medium px-4 py-2.5">Role</th>
-                    <th className="text-left font-medium px-4 py-2.5">Tenant</th>
                     <th className="text-left font-medium px-4 py-2.5">Last login</th>
                     <th className="text-right font-medium px-4 py-2.5"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {users.map((u) => (
-                    <UserRow key={u.id} user={u} tenants={tenants} onChange={refresh} />
+                    <UserRow key={u.id} user={u} onChange={refresh} />
                   ))}
                 </tbody>
               </table>
@@ -100,11 +81,10 @@ export function UsersPage() {
 
 // ─── Create ────────────────────────────────────────────────────────────
 
-function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: () => void }) {
+function CreateUserCard({ onCreated }: { onCreated: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
-  const [userId, setTenantId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
@@ -113,18 +93,17 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const body =
-      role === "admin"
-        ? { username: username.trim(), password, role }
-        : { username: username.trim(), password, role, userId };
-    const r = await api("POST", "/v1/admin/users", body);
+    const r = await api("POST", "/v1/admin/users", {
+      username: username.trim(),
+      password,
+      role,
+    });
     setBusy(false);
     if (r.ok) {
       toast.success(`User "${username}" created`);
       setUsername("");
       setPassword("");
       setRole("user");
-      setTenantId("");
       onCreated();
     } else {
       const msg = r.error ?? `status ${r.status}`;
@@ -133,17 +112,15 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
     }
   };
 
-  const canSubmit =
-    username.trim().length >= 2 &&
-    password.length >= 8 &&
-    (role === "admin" || userId);
+  const canSubmit = username.trim().length >= 2 && password.length >= 8;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Create user</CardTitle>
         <CardDescription>
-          Passwords must be at least 8 characters. The user signs in with username + password.
+          Passwords must be at least 8 characters. Each user signs in with their username and
+          owns their own memory namespace.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -167,23 +144,12 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] gap-3 items-end">
+          <div className="flex items-end justify-between gap-3">
             <RoleSelector role={role} onChange={setRole} />
-            <TenantSelector
-              tenants={tenants}
-              value={userId}
-              onChange={setTenantId}
-              disabled={role === "admin"}
-            />
             <Button type="submit" variant="primary" loading={busy} disabled={!canSubmit}>
               <UserPlus className="h-3.5 w-3.5" /> Create
             </Button>
           </div>
-          {role === "admin" ? (
-            <div className="text-xs text-faint flex items-center gap-1.5">
-              <AlertCircle className="h-3 w-3" /> Admins are not bound to a tenant.
-            </div>
-          ) : null}
         </form>
       </CardContent>
     </Card>
@@ -225,67 +191,25 @@ function RoleSelector({
   );
 }
 
-function TenantSelector({
-  tenants,
-  value,
-  onChange,
-  disabled,
-}: {
-  tenants: Tenant[];
-  value: string;
-  onChange: (id: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-medium text-dim">Tenant</label>
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className={
-            "w-full h-9 appearance-none rounded-md border border-rule bg-panel pl-3 pr-8 text-sm " +
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg " +
-            (disabled ? "opacity-60 cursor-not-allowed" : "")
-          }
-        >
-          <option value="">— select tenant —</option>
-          {tenants.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.id} ({t.name})
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-faint pointer-events-none" />
-      </div>
-    </div>
-  );
-}
-
 // ─── Row ───────────────────────────────────────────────────────────────
 
 function UserRow({
   user,
-  tenants,
   onChange,
 }: {
   user: DashUser;
-  tenants: Tenant[];
   onChange: () => void;
 }) {
   const { user: me } = useAuth();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmRole, setConfirmRole] = useState<{ to: "admin" | "user"; userId: string } | null>(
-    null,
-  );
+  const [confirmRole, setConfirmRole] = useState<{ to: "admin" | "user" } | null>(null);
   const toast = useToast();
 
   const isMe = me?.id === user.id;
 
-  const setRole = async (to: "admin" | "user", userId: string | null) => {
+  const setRole = async (to: "admin" | "user") => {
     setConfirmRole(null);
-    const r = await api("POST", `/v1/admin/users/${user.id}/role`, { role: to, userId });
+    const r = await api("POST", `/v1/admin/users/${user.id}/role`, { role: to });
     if (r.ok) {
       toast.success(to === "admin" ? "Promoted to admin" : "Demoted to user");
       onChange();
@@ -332,13 +256,6 @@ function UserRow({
           <Badge tone="neutral">user</Badge>
         )}
       </td>
-      <td className="px-4 py-3 text-dim">
-        {user.userId ? (
-          <code className="font-mono text-xs">{user.userId}</code>
-        ) : (
-          <span className="text-faint">—</span>
-        )}
-      </td>
       <td className="px-4 py-3 text-dim text-xs">
         {user.lastLoginAt ? fmtRelative(user.lastLoginAt) : <span className="text-faint">never</span>}
       </td>
@@ -348,7 +265,7 @@ function UserRow({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setConfirmRole({ to: "admin", userId: user.userId ?? "" })}
+              onClick={() => setConfirmRole({ to: "admin" })}
             >
               Promote
             </Button>
@@ -356,7 +273,7 @@ function UserRow({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setConfirmRole({ to: "user", userId: "" })}
+              onClick={() => setConfirmRole({ to: "user" })}
               disabled={isMe}
             >
               Demote
@@ -377,7 +294,7 @@ function UserRow({
           open={confirmDelete}
           onClose={() => setConfirmDelete(false)}
           title={`Delete user "${user.username}"?`}
-          description="The user will be signed out everywhere. Their personal logins are removed; tokens they minted remain on the tenant."
+          description="The user will be signed out everywhere. Their personal logins, memory entries, and minted tokens are all removed."
           size="md"
           footer={
             <>
@@ -401,8 +318,8 @@ function UserRow({
           }
           description={
             confirmRole?.to === "admin"
-              ? "Admins can manage all tenants and users."
-              : "User accounts are scoped to a single tenant. Pick one below."
+              ? "Admins can manage all users."
+              : "Demoting an admin makes them a regular user with their own memory namespace."
           }
           size="md"
           footer={
@@ -412,28 +329,13 @@ function UserRow({
               </Button>
               <Button
                 variant="primary"
-                onClick={() =>
-                  confirmRole &&
-                  setRole(
-                    confirmRole.to,
-                    confirmRole.to === "admin" ? null : confirmRole.userId || null,
-                  )
-                }
-                disabled={confirmRole?.to === "user" && !confirmRole?.userId}
+                onClick={() => confirmRole && setRole(confirmRole.to)}
               >
                 {confirmRole?.to === "admin" ? "Promote" : "Demote"}
               </Button>
             </>
           }
-        >
-          {confirmRole?.to === "user" ? (
-            <TenantSelector
-              tenants={tenants}
-              value={confirmRole.userId}
-              onChange={(id) => setConfirmRole({ to: "user", userId: id })}
-            />
-          ) : null}
-        </Modal>
+        />
       </td>
     </tr>
   );

@@ -9,7 +9,6 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 // recharts (~40% of the bundle) before the user is even logged in.
 const HealthPage = lazy(() => import("./pages/HealthPage").then((m) => ({ default: m.HealthPage })));
 const MetricsPage = lazy(() => import("./pages/MetricsPage").then((m) => ({ default: m.MetricsPage })));
-const TenantsPage = lazy(() => import("./pages/TenantsPage").then((m) => ({ default: m.TenantsPage })));
 const UsersPage = lazy(() => import("./pages/UsersPage").then((m) => ({ default: m.UsersPage })));
 const MyTokensPage = lazy(() => import("./pages/MyTokensPage").then((m) => ({ default: m.MyTokensPage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
@@ -36,8 +35,15 @@ function Authed() {
   const defaultTab: Tab = isAdmin ? "metrics" : "metrics";
   const [tab, setTab] = useState<Tab>(defaultTab);
 
-  // Redirect to change-password page on first login.
-  // After the user sets a new password they won't see this again.
+  // Reset to a sensible default when auth state changes (login → switch
+  // to metrics; demote → don't show admin-only tabs). Must come before
+  // any conditional return so the hook order is stable across renders.
+  useEffect(() => {
+    if (!user) return;
+    if (!isAdmin && (tab === "users" || tab === "health")) setTab("metrics");
+    if (isAdmin && (tab === "projects" || tab === "tokens" || tab === "browse" || tab === "today" || tab === "graph")) setTab("metrics");
+  }, [user, isAdmin, tab]);
+
   if (loading) {
     return (
       <div className="min-h-full flex items-center justify-center">
@@ -45,14 +51,6 @@ function Authed() {
       </div>
     );
   }
-
-  // Reset to a sensible default when auth state changes (login → switch to
-  // metrics; demote → don't show admin-only tabs).
-  useEffect(() => {
-    if (!user) return;
-    if (!isAdmin && (tab === "tenants" || tab === "users" || tab === "health")) setTab("metrics");
-    if (isAdmin && (tab === "projects" || tab === "tokens" || tab === "browse" || tab === "today" || tab === "graph")) setTab("metrics");
-  }, [user, isAdmin, tab]);
 
   if (!user) return <SignIn />;
 
@@ -65,7 +63,6 @@ function Authed() {
       <Suspense fallback={<PageSkeleton />}>
         {tab === "metrics" && <MetricsPage />}
         {isAdmin && tab === "health" && <HealthPage />}
-        {isAdmin && tab === "tenants" && <TenantsPage />}
         {isAdmin && tab === "users" && <UsersPage />}
         {!isAdmin && tab === "projects" && <ProjectsPage />}
         {!isAdmin && tab === "tokens" && <MyTokensPage />}

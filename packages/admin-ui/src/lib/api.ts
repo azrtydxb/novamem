@@ -117,16 +117,9 @@ export interface MetricsSnapshot {
   uptime_ms: number;
 }
 
-export interface Tenant {
-  id: string;
-  name: string;
-  createdAt: string;
-}
-
-export interface TenantToken {
+export interface UserToken {
   tokenHash: string;
   label: string | null;
-  createdByUserId: string | null;
   projectId: string | null;
   createdAt: string;
   lastUsedAt: string | null;
@@ -138,14 +131,12 @@ export interface Project {
   name: string;
   role: "owner" | "member";
   ownerUserId: string;
-  ownerTenantId: string;
   createdAt: string;
 }
 
 export interface ProjectMember {
   userId: string;
   username: string;
-  userId: string | null;
   role: "owner" | "member";
   joinedAt: string;
 }
@@ -154,7 +145,6 @@ export interface DashUser {
   id: string;
   username: string;
   role: "admin" | "user";
-  userId: string | null;
   createdAt: string;
   lastLoginAt: string | null;
 }
@@ -163,7 +153,6 @@ export interface SessionUser {
   id: string;
   username: string;
   role: "admin" | "user";
-  userId: string | null;
 }
 
 export interface LoginResponse {
@@ -174,7 +163,7 @@ export interface LoginResponse {
   user: SessionUser;
 }
 
-export interface TenantMetricsSnapshot {
+export interface UserMetricsSnapshot {
   userId: string;
   counters: {
     queries_total: number;
