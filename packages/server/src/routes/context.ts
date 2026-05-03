@@ -4,7 +4,7 @@
  * receive this context plus the Fastify app instance.
  */
 
-import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import type { MemoryEngine } from "../engine/index.js";
 import type { MetricsCollector } from "../admin/metrics.js";
@@ -15,7 +15,6 @@ export interface DashboardUser {
   id: string;
   username: string;
   role: string;
-  userId: string | null;
 }
 
 export interface RouteContext {
@@ -41,39 +40,4 @@ export interface RouteContext {
   ) => Promise<void>;
 }
 
-/** Resolve the project a request should be scoped to. Rules:
- *  - Project-scoped bearer: forced to that project. A different `project`
- *    in body → 403.
- *  - User-wide bearer (no project on token): user-wide entries only.
- *    A `project` in body → 403 ("mint a project-scoped token").
- *  Returns the project id (or null) on success, or undefined after
- *  sending a 403 reply. Centralised here so the rule cannot drift between
- *  the HTTP layer and the MCP layer (review finding P2-9). */
-export function resolveRequestProject(
-  req: { bearerProjectId?: string | null },
-  bodyProject: string | null | undefined,
-  reply: FastifyReply,
-): string | null | undefined {
-  const bearerProject = req.bearerProjectId ?? null;
-  const requested = bodyProject === undefined ? null : bodyProject;
-  if (bearerProject) {
-    if (requested && requested !== bearerProject) {
-      reply.code(403).send({
-        error: `bearer is scoped to project '${bearerProject}'; cannot operate on '${requested}'`,
-      });
-      return undefined;
-    }
-    return bearerProject;
-  }
-  if (requested) {
-    reply.code(403).send({
-      error: "this bearer is user-wide; mint a project-scoped token to access a project",
-    });
-    return undefined;
-  }
-  return null;
-}
-
-/** Sentinel returned by reply helpers so handlers can `return errOf(reply, ...)`
- *  and bail out cleanly. Use the raw reply when you want to send + return. */
 export type RouteRegistrar = (app: FastifyInstance, ctx: RouteContext) => void;

@@ -75,7 +75,6 @@ export function ProjectsPage() {
 }
 
 function CreateProjectCard({ onCreated }: { onCreated: () => void }) {
-  const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,11 +84,10 @@ function CreateProjectCard({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await api("POST", "/v1/me/projects", { id: id.trim(), name: name.trim() });
+    const r = await api<{ id: string }>("POST", "/v1/me/projects", { name: name.trim() });
     setBusy(false);
     if (r.ok) {
-      toast.success(`Project "${id}" created`);
-      setId("");
+      toast.success(`Project "${name}" created`);
       setName("");
       onCreated();
     } else {
@@ -104,31 +102,24 @@ function CreateProjectCard({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle>Create project</CardTitle>
         <CardDescription>
-          Use a slug for the id (alphanumeric / dot / underscore / dash). You become the owner.
+          Pick a name — the id is assigned automatically. You become the owner.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
-          <Input
-            name="project_id"
-            label="Project ID"
-            placeholder="phoenix"
-            value={id}
-            onChange={(e) => setId(e.target.value)}
-            error={error ?? undefined}
-          />
+        <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
           <Input
             name="project_name"
-            label="Display name"
+            label="Project name"
             placeholder="Phoenix"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            error={error ?? undefined}
           />
           <Button
             type="submit"
             variant="primary"
             loading={busy}
-            disabled={!id.trim() || !name.trim()}
+            disabled={!name.trim()}
           >
             <FolderPlus className="h-3.5 w-3.5" /> Create
           </Button>
@@ -171,7 +162,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
     );
     if (r.ok) {
       toast.success(
-        `Project "${project.id}" deleted`,
+        `Project "${project.name}" deleted`,
         `purged ${r.body?.entriesRemoved ?? 0} entries`,
       );
       onChange();
@@ -188,7 +179,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
       `/v1/me/projects/${encodeURIComponent(project.id)}/members/${user.id}`,
     );
     if (r.ok) {
-      toast.success(`Left "${project.id}"`);
+      toast.success(`Left "${project.name}"`);
       onChange();
     } else {
       toast.error("Could not leave", r.error ?? `status ${r.status}`);
@@ -221,7 +212,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
         <FolderKanban className="h-4 w-4 text-accent" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-ink">{project.id}</span>
+            <span className="text-sm text-ink font-medium">{project.name}</span>
             {isOwner ? (
               <Badge tone="accent">
                 <ShieldCheck className="h-3 w-3" /> owner
@@ -230,8 +221,8 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
               <Badge tone="neutral">member</Badge>
             )}
           </div>
-          <div className="text-xs text-dim mt-0.5 truncate">
-            {project.name} · created {fmtRelative(project.createdAt)}
+          <div className="text-xs text-dim mt-0.5 truncate font-mono" title={project.id}>
+            {project.id.slice(0, 10)}… · created {fmtRelative(project.createdAt)}
           </div>
         </div>
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -265,11 +256,10 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
           setConfirmDelete(false);
           setDeleteTyped("");
         }}
-        title={`Delete project "${project.id}"?`}
+        title={`Delete project "${project.name}"?`}
         description={
           <>
-            Every memory, vector, and graph node in this project is purged. Tokens scoped to this
-            project are revoked.{" "}
+            Every memory, vector, and graph node in this project is purged.{" "}
             <span className="text-err font-medium">This cannot be undone.</span>
           </>
         }
@@ -279,17 +269,17 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
             <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={deleteProject} disabled={deleteTyped !== project.id}>
+            <Button variant="danger" onClick={deleteProject} disabled={deleteTyped !== project.name}>
               <Trash2 className="h-3.5 w-3.5" /> Delete project
             </Button>
           </>
         }
       >
         <Input
-          label={`Type "${project.id}" to confirm`}
+          label={`Type "${project.name}" to confirm`}
           value={deleteTyped}
           onChange={(e) => setDeleteTyped(e.target.value)}
-          placeholder={project.id}
+          placeholder={project.name}
           autoFocus
         />
       </Modal>
@@ -297,7 +287,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
       <Modal
         open={confirmLeave}
         onClose={() => setConfirmLeave(false)}
-        title={`Leave "${project.id}"?`}
+        title={`Leave "${project.name}"?`}
         description="You'll lose access to this project's memories. The owner can re-add you any time."
         size="sm"
         footer={

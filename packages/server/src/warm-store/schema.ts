@@ -87,28 +87,22 @@ export const sessions = pgTable(
 
 /** One row per provisioned bearer token. A token belongs to exactly one
  *  user — it represents a device or agent that user has authorised to
- *  act on their memory. The plaintext token is *only* shown at creation;
- *  the column stores a sha256 hash so a leaked DB doesn't equal leaked
- *  tokens. Token format is high-entropy random (256 bits), so a salt
- *  isn't useful — sha256 is fast and sufficient for non-password
- *  material. */
+ *  act on their memory. The bearer grants access to everything the
+ *  owning user can reach (global memory + every project they're a
+ *  member of); there is no per-token project scope. The plaintext token
+ *  is *only* shown at creation; the column stores a sha256 hash so a
+ *  leaked DB doesn't equal leaked tokens. */
 export const userTokens = pgTable(
   "user_tokens",
   {
     tokenHash: text("token_hash").primaryKey(),
     userId: text("user_id").notNull(),
     label: text("label"),
-    /** Optional project scope: when set, this token can only see/write
-     *  entries belonging to this project. Null = whole user-scope. */
-    projectId: text("project_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
-  (table) => [
-    index("idx_user_tokens_user").on(table.userId),
-    index("idx_user_tokens_project").on(table.projectId),
-  ],
+  (table) => [index("idx_user_tokens_user").on(table.userId)],
 );
 
 export const memoryEntries = pgTable(

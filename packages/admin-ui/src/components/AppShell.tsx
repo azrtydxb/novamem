@@ -1,7 +1,8 @@
 import { ReactNode, useEffect, useState } from "react";
-import { ExternalLink, LogOut, Moon, Sun } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, FolderKanban, LogOut, Moon, Sun } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../lib/auth-context";
+import { useActiveProject } from "../lib/active-project";
 
 export type Tab =
   | "metrics"
@@ -97,6 +98,11 @@ export function AppShell({ active, onChange, children }: Props) {
           </div>
         </div>
 
+        {/* Active-project switcher (user only — admins don't have projects).
+            Selecting a project widens the BrowsePage / TodayPage / GraphPage
+            scope to user-global ∪ this project via includeProjects. */}
+        {!isAdmin && <ActiveProjectSwitcher />}
+
         {/* Nav */}
         <nav className="flex-1 p-2.5 overflow-y-auto scroll-thin">
           <div className="px-2.5 pt-1.5 pb-1 font-mono text-[10px] uppercase tracking-[0.10em] text-faint">
@@ -185,6 +191,70 @@ export function AppShell({ active, onChange, children }: Props) {
       <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto scroll-thin">
         {children}
       </main>
+    </div>
+  );
+}
+
+/** Compact dropdown that toggles the user's active project. Persists to
+ *  localStorage via the ActiveProjectContext. Renders nothing when the
+ *  user has no projects yet — the empty switcher would just be noise. */
+function ActiveProjectSwitcher() {
+  const { activeProjectId, activeProjectName, setActiveProjectId, projects } = useActiveProject();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest?.("[data-project-switcher]")) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  if (projects.length === 0) return null;
+
+  const label = activeProjectId ? activeProjectName ?? "Project" : "Global memory";
+
+  return (
+    <div className="relative px-2.5 pt-2.5" data-project-switcher>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-2.5 h-9 rounded-md text-[12px] bg-subtle/40 hover:bg-subtle text-ink transition-colors border border-rule-soft"
+        aria-label="Switch active project"
+      >
+        <FolderKanban className="h-3.5 w-3.5 text-accent" />
+        <span className="flex-1 text-left truncate">{label}</span>
+        <ChevronDown className="h-3 w-3 text-faint" />
+      </button>
+      {open && (
+        <div className="absolute z-30 left-2.5 right-2.5 mt-1 bg-panel border border-rule rounded-md shadow-lg overflow-hidden">
+          <button
+            onClick={() => { setActiveProjectId(null); setOpen(false); }}
+            className="w-full flex items-center gap-2 px-2.5 h-9 text-[12px] text-ink hover:bg-subtle/60"
+          >
+            <span className="w-3.5 flex justify-center">
+              {activeProjectId === null ? <Check className="h-3 w-3 text-accent" /> : null}
+            </span>
+            <span className="flex-1 text-left">Global memory only</span>
+          </button>
+          <div className="border-t border-rule-soft" />
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => { setActiveProjectId(p.id); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-2.5 h-9 text-[12px] text-ink hover:bg-subtle/60"
+              title={p.id}
+            >
+              <span className="w-3.5 flex justify-center">
+                {p.id === activeProjectId ? <Check className="h-3 w-3 text-accent" /> : null}
+              </span>
+              <span className="flex-1 text-left truncate">{p.name}</span>
+              <span className="font-mono text-[9px] text-faint uppercase">{p.role}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

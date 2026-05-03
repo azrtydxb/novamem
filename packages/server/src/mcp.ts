@@ -280,16 +280,12 @@ export function buildMcpServer(
             isError: true,
           };
         }
-        const id = String(args.id);
         const name = String(args.name);
-        if (!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(id)) {
-          return { content: [{ type: "text", text: "invalid project id (must be a slug, 2–64 chars)" }], isError: true };
+        if (!name || name.length > 128) {
+          return { content: [{ type: "text", text: "invalid project name (1–128 chars)" }], isError: true };
         }
-        if (await warm.getProject(id)) {
-          return { content: [{ type: "text", text: "project id already exists" }], isError: true };
-        }
+        // Project ids are server-assigned ULIDs.
         const project = await warm.createProject({
-          id,
           name,
           ownerUserId: ctx.dashUserId,
         });

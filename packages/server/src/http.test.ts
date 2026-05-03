@@ -859,41 +859,53 @@ describe("http: P0 regression tests", () => {
   // creation goes through usernames which can't collide with project
   // collection naming.
 
-  // P0-2: removing a member must revoke that user's project tokens
-  it("P0-2: removeProjectMember revokes the kicked user's project-scoped tokens", async () => {
+  // P0-2: removing a member terminates that user's project access.
+  // Tokens themselves have no per-project scope; access flows from the
+  // owning user's memberships at request time. So the kicked member's
+  // bearer continues to work for their own user-global memory but is
+  // refused when it asks for the project they used to be in.
+  it("P0-2: removeProjectMember terminates the kicked user's project access", async () => {
     const { app, bobSession, carolSession } = await setupBobInAcme();
     const bobAuth = { authorization: `Bearer ${bobSession}` };
     const carolAuth = { authorization: `Bearer ${carolSession}` };
     // Bob owns 'shared'; Carol joins.
-    await app.inject({
+    const created = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "shared", name: "Shared" }, headers: bobAuth,
+      payload: { name: "Shared" }, headers: bobAuth,
     });
+    const sharedId = created.json().id as string;
     await app.inject({
-      method: "POST", url: "/v1/me/projects/shared/members",
+      method: "POST", url: `/v1/me/projects/${sharedId}/members`,
       payload: { username: "carol" }, headers: bobAuth,
     });
-    // Carol mints a project token.
+    // Carol mints a (user-global) bearer.
     const mint = await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "shared", label: "carol-laptop" }, headers: carolAuth,
+      payload: { label: "carol-laptop" }, headers: carolAuth,
     });
     const carolTok = mint.json().token;
+    // Carol can search the project while still a member.
+    const okSearch = await app.inject({
+      method: "POST", url: "/v1/search",
+      payload: { query: "x", project: sharedId },
+      headers: { authorization: `Bearer ${carolTok}` },
+    });
+    expect(okSearch.statusCode).toBe(200);
     // Bob removes Carol.
     const carolMe = await app.inject({ method: "GET", url: "/v1/auth/me", headers: carolAuth });
     const carolUserId = carolMe.json().user.id;
     const remove = await app.inject({
-      method: "DELETE", url: `/v1/me/projects/shared/members/${carolUserId}`,
+      method: "DELETE", url: `/v1/me/projects/${sharedId}/members/${carolUserId}`,
       headers: bobAuth,
     });
     expect(remove.statusCode).toBe(200);
-    expect(remove.json().tokensRevoked).toBeGreaterThanOrEqual(1);
-    // Carol's old project token must now 401.
-    const r = await app.inject({
-      method: "POST", url: "/v1/recent", payload: {},
+    // Carol's bearer still authenticates (user-global), but project access is gone.
+    const denied = await app.inject({
+      method: "POST", url: "/v1/search",
+      payload: { query: "x", project: sharedId },
       headers: { authorization: `Bearer ${carolTok}` },
     });
-    expect(r.statusCode).toBe(401);
+    expect(denied.statusCode).toBe(403);
   });
 
   // P0-3: per-username login throttle locks an account out after 5 failures
@@ -950,40 +962,42 @@ describe("http: P0 regression tests", () => {
     const bobAuth = { authorization: `Bearer ${bobSession}` };
     const carolAuth = { authorization: `Bearer ${carolSession}` };
     // Owner Bob, member Carol on 'shared'
-    await app.inject({
+    const proj = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "shared", name: "Shared" }, headers: bobAuth,
+      payload: { name: "Shared" }, headers: bobAuth,
     });
+    const sharedId = proj.json().id as string;
     await app.inject({
-      method: "POST", url: "/v1/me/projects/shared/members",
+      method: "POST", url: `/v1/me/projects/${sharedId}/members`,
       payload: { username: "carol" }, headers: bobAuth,
     });
     const bobTok = (await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "shared" }, headers: bobAuth,
+      payload: {}, headers: bobAuth,
     })).json().token;
     const carolTok = (await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "shared" }, headers: carolAuth,
+      payload: {}, headers: carolAuth,
     })).json().token;
-    // Bob remembers something
+    // Bob remembers something in the shared project
     const created = await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "bob's note" },
+      payload: { content: "bob's note", project: sharedId },
       headers: { authorization: `Bearer ${bobTok}` },
     });
     const id = created.json().id;
     // Carol (different user, same project) can forget it
     const f = await app.inject({
       method: "POST", url: "/v1/forget",
-      payload: { id },
+      payload: { id, project: sharedId },
       headers: { authorization: `Bearer ${carolTok}` },
     });
     expect(f.statusCode).toBe(200);
     expect(f.json().deleted).toBe(true);
     // And it's actually gone.
     const recent = await app.inject({
-      method: "POST", url: "/v1/recent", payload: {},
+      method: "POST", url: "/v1/recent",
+      payload: { project: sharedId },
       headers: { authorization: `Bearer ${bobTok}` },
     });
     expect(recent.json().results.find((r: { id: string }) => r.id === id)).toBeUndefined();
@@ -1011,43 +1025,44 @@ describe("http: P0 regression tests", () => {
     // Alice creates a private project; Bob is not a member.
     const created = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "alice-secret", name: "Alice Secret" },
+      payload: { name: "Alice Secret" },
       headers: aliceAuth,
     });
     expect(created.statusCode).toBe(201);
+    const aliceProjId = created.json().id as string;
 
     // Each /v1/me/* mirror must 403 when Bob targets Alice's project.
     const search = await app.inject({
       method: "POST", url: "/v1/me/search",
-      payload: { query: "x", project: "alice-secret" },
+      payload: { query: "x", project: aliceProjId },
       headers: bobAuth,
     });
     expect(search.statusCode).toBe(403);
 
     const recent = await app.inject({
       method: "POST", url: "/v1/me/recent",
-      payload: { project: "alice-secret" },
+      payload: { project: aliceProjId },
       headers: bobAuth,
     });
     expect(recent.statusCode).toBe(403);
 
     const remember = await app.inject({
       method: "POST", url: "/v1/me/remember",
-      payload: { content: "bob's intrusion", project: "alice-secret" },
+      payload: { content: "bob's intrusion", project: aliceProjId },
       headers: bobAuth,
     });
     expect(remember.statusCode).toBe(403);
 
     const forget = await app.inject({
       method: "POST", url: "/v1/me/forget",
-      payload: { id: "01HXXX", project: "alice-secret" },
+      payload: { id: "01HXXX", project: aliceProjId },
       headers: bobAuth,
     });
     expect(forget.statusCode).toBe(403);
 
     const neighbors = await app.inject({
       method: "POST", url: "/v1/me/neighbors",
-      payload: { id: "01HXXX", project: "alice-secret" },
+      payload: { id: "01HXXX", project: aliceProjId },
       headers: bobAuth,
     });
     expect(neighbors.statusCode).toBe(403);
@@ -1055,7 +1070,7 @@ describe("http: P0 regression tests", () => {
     // Alice (the owner) can still use her own project.
     const okSearch = await app.inject({
       method: "POST", url: "/v1/me/search",
-      payload: { query: "x", project: "alice-secret" },
+      payload: { query: "x", project: aliceProjId },
       headers: aliceAuth,
     });
     expect(okSearch.statusCode).toBe(200);
@@ -1079,18 +1094,19 @@ describe("http: P0 regression tests", () => {
     const aliceAuth = { authorization: `Bearer ${aliceSession}` };
     const bobAuth = { authorization: `Bearer ${bobSession}` };
 
-    await app.inject({
+    const proj = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "alice-secret", name: "Alice Secret" },
+      payload: { name: "Alice Secret" },
       headers: aliceAuth,
     });
+    const aliceProjId = proj.json().id as string;
     const aliceTok = (await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "alice-secret" }, headers: aliceAuth,
+      payload: {}, headers: aliceAuth,
     })).json().token;
     const created = await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "alice's secret", project: "alice-secret" },
+      payload: { content: "alice's secret", project: aliceProjId },
       headers: { authorization: `Bearer ${aliceTok}` },
     });
     const id = created.json().id;
@@ -1154,133 +1170,95 @@ describe("http: projects (sub-brains)", () => {
 
     const create = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "phoenix", name: "Phoenix" },
+      payload: { name: "Phoenix" },
       headers: auth,
     });
     expect(create.statusCode).toBe(201);
+    const id = create.json().id as string;
+    expect(typeof id).toBe("string");
+    expect(id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/); // ULID
 
     const list = await app.inject({ method: "GET", url: "/v1/me/projects", headers: auth });
     const projects = list.json().projects;
     expect(projects.length).toBe(1);
-    expect(projects[0].id).toBe("phoenix");
+    expect(projects[0].id).toBe(id);
+    expect(projects[0].name).toBe("Phoenix");
     expect(projects[0].role).toBe("owner");
   });
 
-  it("project-scoped token isolates memory from user-wide", async () => {
+  it("active-project mode unions user-global with the project", async () => {
     const { app, session } = await setupBobInAcme();
     const auth = { authorization: `Bearer ${session}` };
 
-    await app.inject({
+    const proj = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "phoenix", name: "Phoenix" },
+      payload: { name: "Phoenix" },
       headers: auth,
     });
+    const phoenixId = proj.json().id as string;
 
-    const phoenixTok = (await app.inject({
+    const tok = (await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { label: "ph-laptop", projectId: "phoenix" },
+      payload: { label: "laptop" },
       headers: auth,
     })).json().token as string;
-    const wideTok = (await app.inject({
-      method: "POST", url: "/v1/me/tokens",
-      payload: { label: "wide-laptop" },
-      headers: auth,
-    })).json().token as string;
+    const tokAuth = { authorization: `Bearer ${tok}` };
 
-    // User-wide entry
+    // User-global remember
     await app.inject({
       method: "POST", url: "/v1/remember",
       payload: { content: "user-wide alpha" },
-      headers: { authorization: `Bearer ${wideTok}` },
+      headers: tokAuth,
     });
-    // Project entry
+    // Project remember
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "phoenix beta gamma" },
-      headers: { authorization: `Bearer ${phoenixTok}` },
+      payload: { content: "phoenix beta gamma", project: phoenixId },
+      headers: tokAuth,
     });
 
-    // Project bearer should see only phoenix
+    // Default scope = user-global only
+    const wide = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {}, headers: tokAuth,
+    });
+    const wideContents = wide.json().results.map((r: { content: string }) => r.content);
+    expect(wideContents).toContain("user-wide alpha");
+    expect(wideContents).not.toContain("phoenix beta gamma");
+
+    // Project-only scope
     const ph = await app.inject({
       method: "POST", url: "/v1/recent",
-      payload: {},
-      headers: { authorization: `Bearer ${phoenixTok}` },
+      payload: { project: phoenixId },
+      headers: tokAuth,
     });
     const phContents = ph.json().results.map((r: { content: string }) => r.content);
     expect(phContents).toContain("phoenix beta gamma");
     expect(phContents).not.toContain("user-wide alpha");
 
-    // User-wide bearer should see only the wide entry
-    const wd = await app.inject({
+    // Active-project mode unions the two
+    const both = await app.inject({
       method: "POST", url: "/v1/recent",
-      payload: {},
-      headers: { authorization: `Bearer ${wideTok}` },
+      payload: { includeProjects: [phoenixId] },
+      headers: tokAuth,
     });
-    const wdContents = wd.json().results.map((r: { content: string }) => r.content);
-    expect(wdContents).toContain("user-wide alpha");
-    expect(wdContents).not.toContain("phoenix beta gamma");
-  });
-
-  it("user-wide bearer rejected if it asks for a project in body", async () => {
-    const { app, session } = await setupBobInAcme();
-    const auth = { authorization: `Bearer ${session}` };
-    await app.inject({
-      method: "POST", url: "/v1/me/projects",
-      payload: { id: "phoenix", name: "Phoenix" },
-      headers: auth,
-    });
-    const wideTok = (await app.inject({
-      method: "POST", url: "/v1/me/tokens", payload: {}, headers: auth,
-    })).json().token;
-
-    const r = await app.inject({
-      method: "POST", url: "/v1/remember",
-      payload: { content: "x", project: "phoenix" },
-      headers: { authorization: `Bearer ${wideTok}` },
-    });
-    expect(r.statusCode).toBe(403);
-  });
-
-  it("project-scoped bearer rejected if body asks for a different project", async () => {
-    const { app, warm, session } = await setupBobInAcme();
-    const auth = { authorization: `Bearer ${session}` };
-    await app.inject({
-      method: "POST", url: "/v1/me/projects",
-      payload: { id: "phoenix", name: "Phoenix" },
-      headers: auth,
-    });
-    await app.inject({
-      method: "POST", url: "/v1/me/projects",
-      payload: { id: "atlas", name: "Atlas" },
-      headers: auth,
-    });
-    void warm;
-    const phTok = (await app.inject({
-      method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "phoenix" },
-      headers: auth,
-    })).json().token;
-
-    const r = await app.inject({
-      method: "POST", url: "/v1/remember",
-      payload: { content: "x", project: "atlas" },
-      headers: { authorization: `Bearer ${phTok}` },
-    });
-    expect(r.statusCode).toBe(403);
+    const bothContents = both.json().results.map((r: { content: string }) => r.content);
+    expect(bothContents).toContain("user-wide alpha");
+    expect(bothContents).toContain("phoenix beta gamma");
   });
 
   it("owner adds a cross-user member; member sees the project + can mint tokens", async () => {
     const { app, warm, session } = await setupBobInAcme();
     const authBob = { authorization: `Bearer ${session}` };
-    await app.inject({
+    const proj = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "shared", name: "Shared" },
+      payload: { name: "Shared" },
       headers: authBob,
     });
+    const sharedId = proj.json().id as string;
 
     // Add carol (different user) by username
     const add = await app.inject({
-      method: "POST", url: "/v1/me/projects/shared/members",
+      method: "POST", url: `/v1/me/projects/${sharedId}/members`,
       payload: { username: "carol" },
       headers: authBob,
     });
@@ -1297,13 +1275,12 @@ describe("http: projects (sub-brains)", () => {
     // Carol sees the shared project in her list
     const list = await app.inject({ method: "GET", url: "/v1/me/projects", headers: authCarol });
     const ids = list.json().projects.map((p: { id: string }) => p.id);
-    expect(ids).toContain("shared");
+    expect(ids).toContain(sharedId);
 
-    // Carol can mint a token scoped to the shared project (uses HER user_id
-    // for the token row, but the project id makes the access work).
+    // Carol mints a (user-global) bearer.
     const mint = await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "shared", label: "carols-laptop" },
+      payload: { label: "carols-laptop" },
       headers: authCarol,
     });
     expect(mint.statusCode).toBe(201);
@@ -1312,20 +1289,18 @@ describe("http: projects (sub-brains)", () => {
     // Bob remembers something in shared
     const bobTok = (await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "shared" },
-      headers: authBob,
+      payload: {}, headers: authBob,
     })).json().token;
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "bob's note in shared" },
+      payload: { content: "bob's note in shared", project: sharedId },
       headers: { authorization: `Bearer ${bobTok}` },
     });
 
-    // Carol can read Bob's note in the shared project — the actual sharing
-    // story working end-to-end.
+    // Carol's bearer can read Bob's note when scoped to the shared project.
     const r = await app.inject({
       method: "POST", url: "/v1/recent",
-      payload: {},
+      payload: { project: sharedId },
       headers: { authorization: `Bearer ${carolTok}` },
     });
     const contents = r.json().results.map((x: { content: string }) => x.content);
@@ -1336,13 +1311,14 @@ describe("http: projects (sub-brains)", () => {
   it("non-owner cannot add members or delete the project", async () => {
     const { app, session } = await setupBobInAcme();
     const authBob = { authorization: `Bearer ${session}` };
-    await app.inject({
+    const proj = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "shared", name: "Shared" },
+      payload: { name: "Shared" },
       headers: authBob,
     });
+    const sharedId = proj.json().id as string;
     await app.inject({
-      method: "POST", url: "/v1/me/projects/shared/members",
+      method: "POST", url: `/v1/me/projects/${sharedId}/members`,
       payload: { username: "carol" },
       headers: authBob,
     });
@@ -1354,53 +1330,54 @@ describe("http: projects (sub-brains)", () => {
     const carolAuth = { authorization: `Bearer ${carolLogin.json().token}` };
 
     const add = await app.inject({
-      method: "POST", url: "/v1/me/projects/shared/members",
+      method: "POST", url: `/v1/me/projects/${sharedId}/members`,
       payload: { username: "bob" },
       headers: carolAuth,
     });
     expect(add.statusCode).toBe(403);
 
     const del = await app.inject({
-      method: "DELETE", url: "/v1/me/projects/shared",
+      method: "DELETE", url: `/v1/me/projects/${sharedId}`,
       headers: carolAuth,
     });
     expect(del.statusCode).toBe(403);
   });
 
-  it("owner deletes the project; entries gone, tokens revoked", async () => {
+  it("owner deletes the project; entries gone, project access dies", async () => {
     const { app, session } = await setupBobInAcme();
     const auth = { authorization: `Bearer ${session}` };
-    await app.inject({
+    const proj = await app.inject({
       method: "POST", url: "/v1/me/projects",
-      payload: { id: "phoenix", name: "Phoenix" },
+      payload: { name: "Phoenix" },
       headers: auth,
     });
+    const phoenixId = proj.json().id as string;
     const tok = (await app.inject({
       method: "POST", url: "/v1/me/tokens",
-      payload: { projectId: "phoenix" },
-      headers: auth,
+      payload: {}, headers: auth,
     })).json().token;
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "to be purged" },
+      payload: { content: "to be purged", project: phoenixId },
       headers: { authorization: `Bearer ${tok}` },
     });
 
     const del = await app.inject({
-      method: "DELETE", url: "/v1/me/projects/phoenix",
+      method: "DELETE", url: `/v1/me/projects/${phoenixId}`,
       headers: auth,
     });
     expect(del.statusCode).toBe(200);
     expect(del.json().deleted).toBe(true);
     expect(del.json().entriesRemoved).toBeGreaterThanOrEqual(1);
 
-    // Token revoked → 401
-    const r = await app.inject({
+    // Token still authenticates (no project scope on tokens), but project
+    // access is gone — membership lookup misses since the project is dead.
+    const denied = await app.inject({
       method: "POST", url: "/v1/recent",
-      payload: {},
+      payload: { project: phoenixId },
       headers: { authorization: `Bearer ${tok}` },
     });
-    expect(r.statusCode).toBe(401);
+    expect(denied.statusCode).toBe(403);
   });
 });
 

@@ -36,7 +36,6 @@ import {
 } from "./auth.js";
 import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
-import { resolveRequestProject } from "./routes/context.js";
 import {
   AddMemberBody,
   AdminRevokeBody,
@@ -66,10 +65,6 @@ declare module "fastify" {
     /** Resolved user for this request — populated by the auth hook.
      *  In `none` and `bearer` modes this is always `SYSTEM_USER`. */
     userId: string;
-    /** Project (sub-brain) the bearer is bound to. When set, requests
-     *  default to this project; explicit `project` in body that mismatches
-     *  is rejected by the engine layer. Null for user-wide tokens. */
-    bearerProjectId?: string | null;
     /** Identity of the user bearer that authenticated this request — set
      *  in `user` auth mode after the bearer resolves. Used to attribute
      *  search/remember/forget calls to per-token metrics. */
@@ -368,7 +363,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return reply;
     }
     req.userId = resolved.userId;
-    req.bearerProjectId = resolved.projectId;
     req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
   });
 
@@ -439,19 +433,46 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // skip for this URL); explicit empty-204 keeps console clean.
   app.get("/favicon.ico", async (_req, reply) => reply.code(204).send());
 
+  /** Project access guard for the data plane. A bearer's owning user
+   *  has access to every project they're a member of. When `body.project`
+   *  is set, we look up `project_members` once and 403 if the bearer's
+   *  user isn't on the list. `null` = global namespace, always allowed.
+   *
+   *  `body.includeProjects` (the active-project mode) is also membership-
+   *  checked — search returns global ∪ those projects, and we refuse any
+   *  ids the user can't see. */
+  async function checkProjectAccess(
+    userId: string,
+    project: string | null | undefined,
+    includeProjects: string[] | undefined,
+    reply: FastifyReply,
+  ): Promise<boolean> {
+    if (!opts.warm) return true;
+    const ids = new Set<string>();
+    if (project) ids.add(project);
+    for (const p of includeProjects ?? []) ids.add(p);
+    if (ids.size === 0) return true;
+    for (const id of ids) {
+      const m = await opts.warm.getProjectMembership(id, userId);
+      if (!m) {
+        reply.code(403).send({ error: `not a member of project '${id}'` });
+        return false;
+      }
+    }
+    return true;
+  }
+
   app.post("/v1/search", async (req, reply) => {
     const body = SearchBody.parse(req.body);
-    const project = resolveRequestProject(req, body.project ?? null, reply);
-    if (project === undefined) return reply;
-    const r = await opts.engine.search(req.userId, { ...body, project }, req.bearerToken);
+    if (!(await checkProjectAccess(req.userId, body.project, body.includeProjects, reply))) return;
+    const r = await opts.engine.search(req.userId, body, req.bearerToken);
     reply.send(r);
   });
 
   app.post("/v1/remember", async (req, reply) => {
     const body = RememberBody.parse(req.body);
-    const project = resolveRequestProject(req, body.project ?? null, reply);
-    if (project === undefined) return reply;
-    const r = await opts.engine.remember(req.userId, { ...body, project }, req.bearerToken);
+    if (!(await checkProjectAccess(req.userId, body.project, undefined, reply))) return;
+    const r = await opts.engine.remember(req.userId, body, req.bearerToken);
     reply.code(201).send(r);
   });
 
@@ -470,24 +491,21 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   app.post("/v1/recent", async (req, reply) => {
     const body = RecentBody.parse(req.body ?? {});
-    const project = resolveRequestProject(req, body.project ?? null, reply);
-    if (project === undefined) return reply;
-    reply.send(await opts.engine.recent(req.userId, { ...body, project }));
+    if (!(await checkProjectAccess(req.userId, body.project, body.includeProjects, reply))) return;
+    reply.send(await opts.engine.recent(req.userId, body));
   });
 
   app.post("/v1/neighbors", async (req, reply) => {
     const body = NeighborsBody.parse(req.body);
-    const project = resolveRequestProject(req, body.project ?? null, reply);
-    if (project === undefined) return reply;
-    reply.send(await opts.engine.neighbors(req.userId, { ...body, project }));
+    if (!(await checkProjectAccess(req.userId, body.project, body.includeProjects, reply))) return;
+    reply.send(await opts.engine.neighbors(req.userId, body));
   });
 
   app.post("/v1/forget", async (req, reply) => {
     const body = ForgetBody.parse(req.body);
-    const project = resolveRequestProject(req, body.project ?? null, reply);
-    if (project === undefined) return reply;
+    if (!(await checkProjectAccess(req.userId, body.project, undefined, reply))) return;
     reply.send(
-      await opts.engine.forget(req.userId, body.id, { project, token: req.bearerToken }),
+      await opts.engine.forget(req.userId, body.id, { project: body.project ?? null, token: req.bearerToken }),
     );
   });
 
@@ -807,16 +825,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const u = req.dashUser!;
     if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
     const body = MintMyTokenBody.parse(req.body ?? {});
-    // If a project is specified, the user must be a member.
-    if (body.projectId) {
-      const m = await opts.warm.getProjectMembership(body.projectId, u.id);
-      if (!m) return reply.code(403).send({ error: "you are not a member of this project" });
-    }
-    const result = await opts.warm.createUserToken(
-      u.id,
-      body.label,
-      body.projectId ?? null,
-    );
+    // Tokens have no per-project scope — access flows from the owning
+    // user's memberships at request time.
+    const result = await opts.warm.createUserToken(u.id, body.label);
     if (!result) return reply.code(404).send({ error: "user missing" });
     reply.code(201).send({
       ...result,
@@ -850,14 +861,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
     const u = req.dashUser!;
     const body = CreateProjectBody.parse(req.body);
-    const existing = await opts.warm.getProject(body.id);
-    if (existing) return reply.code(409).send({ error: "project id already exists" });
     const project = await opts.warm.createProject({
-      id: body.id,
       name: body.name,
       ownerUserId: u.id,
     });
-    await audit(req, "project.create", body.id, { name: body.name });
+    await audit(req, "project.create", project.id, { name: body.name });
     reply.code(201).send(project);
   });
 
@@ -923,11 +931,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
     const r = await opts.warm.removeProjectMember(id, userId);
     if (!r.removed) return reply.code(404).send({ error: "user is not a member" });
-    await audit(req, "project.member.remove", id, {
-      memberUserId: userId,
-      tokensRevoked: r.tokensRevoked,
-    });
-    reply.send({ removed: true, tokensRevoked: r.tokensRevoked });
+    await audit(req, "project.member.remove", id, { memberUserId: userId });
+    reply.send({ removed: true });
   });
 
   // ─── User self-service: data-plane proxies ──────────────────────────
@@ -949,16 +954,22 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     user: DashboardUser,
     projectId: string | null,
     reply: FastifyReply,
+    includeProjects?: string[] | undefined,
   ): Promise<boolean> {
-    if (!projectId) return true;
+    const ids = new Set<string>();
+    if (projectId) ids.add(projectId);
+    for (const p of includeProjects ?? []) ids.add(p);
+    if (ids.size === 0) return true;
     if (!opts.warm) {
       reply.code(404).send({ error: "warm store disabled" });
       return false;
     }
-    const m = await opts.warm.getProjectMembership(projectId, user.id);
-    if (!m) {
-      reply.code(403).send({ error: "not a member of this project" });
-      return false;
+    for (const id of ids) {
+      const m = await opts.warm.getProjectMembership(id, user.id);
+      if (!m) {
+        reply.code(403).send({ error: `not a member of project '${id}'` });
+        return false;
+      }
     }
     return true;
   }
@@ -967,7 +978,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const u = req.dashUser!;
     const body = SearchBody.parse(req.body);
     const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply))) return;
+    if (!(await requireProjectAccess(u, project, reply, body.includeProjects))) return;
     const userId = u.id;
     const r = await opts.engine.search(userId, { ...body, project });
     reply.send(r);
@@ -977,7 +988,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const u = req.dashUser!;
     const body = RecentBody.parse(req.body ?? {});
     const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply))) return;
+    if (!(await requireProjectAccess(u, project, reply, body.includeProjects))) return;
     const userId = u.id;
     reply.send(await opts.engine.recent(userId, { ...body, project }));
   });
@@ -986,7 +997,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const u = req.dashUser!;
     const body = NeighborsBody.parse(req.body);
     const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply))) return;
+    if (!(await requireProjectAccess(u, project, reply, body.includeProjects))) return;
     const userId = u.id;
     try {
       reply.send(await opts.engine.neighbors(userId, { ...body, project }));
@@ -1182,7 +1193,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       opts.engine,
       {
         userId,
-        projectId: req.bearerProjectId ?? null,
         dashUserId: req.dashUser?.id ?? null,
       },
       opts.warm,
