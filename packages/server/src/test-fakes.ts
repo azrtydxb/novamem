@@ -483,6 +483,16 @@ export class FakeWarmStore {
     return false;
   }
 
+  async deleteUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
+    for (const [plain, v] of [...this.tokens.entries()]) {
+      if (v.userId === userId && this.fakeHash(plain) === tokenHash) {
+        this.tokens.delete(plain);
+        return true;
+      }
+    }
+    return false;
+  }
+
   async rotateTenantToken(plaintext: string) {
     const t = this.tokens.get(plaintext);
     if (!t || t.revoked) return null;

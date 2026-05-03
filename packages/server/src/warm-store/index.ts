@@ -277,15 +277,23 @@ export class WarmStore {
     return (r.rowCount ?? 0) > 0;
   }
 
-  /** Revoke a token addressed by its sha256 hash, scoped to a tenant id.
-   *  This is the path the admin dashboard uses — the server doesn't keep
-   *  plaintext, but it does know each token's hash, and the listing surfaces
-   *  it. The userId scoping prevents an admin from accidentally
-   *  cross-revoking another tenant's token by hash collision typo. */
+  /** Revoke a token by sha256 hash (soft — keeps the row with revoked_at
+   *  stamped). Used by admin tooling that wants a tombstone for audit. */
   async revokeUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
     const r = await this.pool.query(
       `UPDATE user_tokens SET revoked_at = now()
         WHERE token_hash = $1 AND user_id = $2 AND revoked_at IS NULL`,
+      [tokenHash, userId],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  /** Hard-delete a token by sha256 hash. Used by the user dashboard's
+   *  delete-token action so the row disappears from the list outright —
+   *  the soft revoke would leave dead entries cluttering the table. */
+  async deleteUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
+    const r = await this.pool.query(
+      `DELETE FROM user_tokens WHERE token_hash = $1 AND user_id = $2`,
       [tokenHash, userId],
     );
     return (r.rowCount ?? 0) > 0;
