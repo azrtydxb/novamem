@@ -1,11 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // The admin UI is served by the novamem server under /admin/, so all asset
 // URLs must be absolute under that prefix. Build output goes to dist/ and
 // the server's build script copies it into packages/server/dist/admin/ui/.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   base: "/admin/",
   build: {
     outDir: "dist",
