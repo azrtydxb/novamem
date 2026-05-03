@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Copy, KeyRound, Plus, RefreshCw, ShieldOff, Smartphone } from "lucide-react";
-import { api, Project, TenantToken } from "../lib/api";
+import { api, Project, UserToken } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
 import { Button } from "../components/Button";
@@ -18,7 +18,7 @@ export function MyTokensPage() {
   const tokensQ = useQuery({
     queryKey: ["me", "tokens"],
     queryFn: async () => {
-      const r = await api<{ tokens: TenantToken[] }>("GET", "/v1/me/tokens");
+      const r = await api<{ tokens: UserToken[] }>("GET", "/v1/me/tokens");
       if (!r.ok || !r.body) throw new Error(r.error ?? `tokens ${r.status}`);
       return r.body.tokens;
     },
@@ -31,7 +31,7 @@ export function MyTokensPage() {
       return r.body.projects;
     },
   });
-  const tokens: TenantToken[] | null = tokensQ.data ?? null;
+  const tokens: UserToken[] | null = tokensQ.data ?? null;
   const projects: Project[] = projectsQ.data ?? [];
   const busy = tokensQ.isFetching || projectsQ.isFetching;
   const refresh = () => {
@@ -44,7 +44,7 @@ export function MyTokensPage() {
     label: string;
     projectId: string | null;
   } | null>(null);
-  const [confirmRevoke, setConfirmRevoke] = useState<TenantToken | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState<UserToken | null>(null);
   const toast = useToast();
 
   const revoke = async (hash: string) => {
@@ -65,7 +65,7 @@ export function MyTokensPage() {
         title={
           <div className="flex items-center gap-2">
             <span>API tokens</span>
-            {user?.userId ? <Badge tone="accent">tenant: {user.userId}</Badge> : null}
+            {user?.username ? <Badge tone="accent">{user.username}</Badge> : null}
           </div>
         }
         subtitle="Mint a token per device. Plaintext is shown once at mint — revoke and mint again if you lose it."

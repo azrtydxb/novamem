@@ -414,15 +414,14 @@ export class FakeWarmStore {
   async createUserToken(
     userId: string,
     label?: string,
-    createdByUserId?: string | null,
     projectId?: string | null,
   ) {
-    if (!this.tenants.has(userId)) return null;
+    // The synthetic "public" user always exists for none/bearer mode.
+    if (userId !== "public" && !this.users.has(userId)) return null;
     const token = "nm_test_" + Math.random().toString(36).slice(2, 18);
     this.tokens.set(token, {
       userId,
       label: label ?? null,
-      createdByUserId: createdByUserId ?? null,
       projectId: projectId ?? null,
       revoked: false,
     });
@@ -706,7 +705,10 @@ export class FakeWarmStore {
     let tokensRevoked = 0;
     if (removed) {
       for (const v of this.tokens.values()) {
-        if (v.projectId === projectId && v.createdByUserId === userId && !v.revoked) {
+        // Tokens belong to a user; project-scoped tokens that belonged
+        // to the kicked member must be revoked so they can't keep
+        // accessing the project.
+        if (v.projectId === projectId && v.userId === userId && !v.revoked) {
           v.revoked = true;
           tokensRevoked++;
         }

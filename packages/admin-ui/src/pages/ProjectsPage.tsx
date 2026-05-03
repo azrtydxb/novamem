@@ -396,7 +396,6 @@ function MemberTable({
         <thead className="bg-subtle/60">
           <tr className="text-dim text-[11px] uppercase tracking-wider">
             <th className="text-left font-medium px-4 py-2.5">User</th>
-            <th className="text-left font-medium px-4 py-2.5">Tenant</th>
             <th className="text-left font-medium px-4 py-2.5">Role</th>
             <th className="text-right font-medium px-4 py-2.5"></th>
           </tr>
@@ -405,9 +404,6 @@ function MemberTable({
           {members.map((m) => (
             <tr key={m.userId}>
               <td className="px-4 py-3 font-medium text-ink">{m.username}</td>
-              <td className="px-4 py-3 text-dim">
-                {m.userId ? <code className="font-mono text-xs">{m.userId}</code> : "—"}
-              </td>
               <td className="px-4 py-3">
                 {m.role === "owner" ? (
                   <Badge tone="accent">

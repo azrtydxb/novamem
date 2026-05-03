@@ -33,8 +33,8 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
     { n: 1, label: "Bootstrap admin", hint: "Seeded from env", done: data?.bootstrapDone ?? true },
     {
       n: 2,
-      label: "Tenant created",
-      hint: data?.userId ? `${data.userId} · 1 user` : "—",
+      label: "Account ready",
+      hint: data?.userId ? `signed in as ${data.userId}` : "—",
       done: data?.tenantDone ?? false,
     },
     {
