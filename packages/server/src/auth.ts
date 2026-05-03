@@ -7,6 +7,8 @@
  * module is strictly for the dashboard control plane (login, RBAC).
  */
 
+import { randomBytes } from "node:crypto";
+
 import bcrypt from "bcryptjs";
 
 import type { WarmStore } from "./warm-store/index.js";
@@ -170,4 +172,69 @@ export async function bootstrapAdmin(
 export async function gcExpiredSessions(warm: WarmStore): Promise<number> {
   const r = await warm.pool.query(`DELETE FROM sessions WHERE expires_at < now()`);
   return r.rowCount ?? 0;
+}
+
+// ─── Session cookies + CSRF (P1-S3) ────────────────────────────────────
+//
+// The dashboard now keeps its session bearer in an HttpOnly + Secure +
+// SameSite=Strict cookie instead of `sessionStorage`. CSRF protection is
+// the standard double-submit-token pattern: we set a *second* cookie
+// (NOT HttpOnly) that JS reads and echoes back as `X-CSRF-Token` on
+// state-changing requests. The server verifies the header matches the
+// cookie. An XSS in the dashboard can lift the CSRF token (which alone
+// is useless) but cannot read the session cookie.
+//
+// CLI / MCP / scripts continue to authenticate via `Authorization: Bearer
+// ns_…` — those flows skip the CSRF check, since they're not exposed to
+// browser CSRF vectors.
+
+export const SESSION_COOKIE = "novamem_session";
+export const CSRF_COOKIE = "novamem_csrf";
+export const CSRF_HEADER = "x-csrf-token";
+
+export function generateCsrfToken(): string {
+  // 24 random bytes (192 bits) — enough entropy that a brute-force attack
+  // is uneconomical and short enough to keep the URL-safe encoding tidy.
+  return randomBytes(24).toString("base64url");
+}
+
+/** Cookie options used for both session + CSRF cookies. Same TTL as the
+ *  session itself; `secure: true` is the default but operators on plain
+ *  HTTP localhost can disable via env if needed. */
+export function sessionCookieOptions(): {
+  httpOnly: true;
+  secure: boolean;
+  sameSite: "strict";
+  path: "/";
+  maxAge: number;
+} {
+  const secureDefault = process.env.NOVAMEM_INSECURE_COOKIES !== "1";
+  return {
+    httpOnly: true,
+    secure: secureDefault,
+    sameSite: "strict",
+    path: "/",
+    maxAge: Math.floor(SESSION_TTL_MS / 1000),
+  };
+}
+
+/** Same TTL/Path/SameSite as the session cookie, but NOT HttpOnly so the
+ *  SPA can read it and echo it back as `X-CSRF-Token`. The CSRF token by
+ *  itself authenticates nothing — it only proves the request originated
+ *  from a page that successfully read this cookie (i.e. same origin). */
+export function csrfCookieOptions(): {
+  httpOnly: false;
+  secure: boolean;
+  sameSite: "strict";
+  path: "/";
+  maxAge: number;
+} {
+  return { ...sessionCookieOptions(), httpOnly: false };
+}
+
+/** Methods that require CSRF verification when authenticated by cookie. */
+const STATE_CHANGING_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
+
+export function csrfRequired(method: string | undefined): boolean {
+  return STATE_CHANGING_METHODS.has((method ?? "").toUpperCase());
 }

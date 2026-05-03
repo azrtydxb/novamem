@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { LogIn, ShieldCheck, AlertTriangle } from "lucide-react";
-import { api, LoginResponse } from "../lib/api";
+import { api, type LoginResponse } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
@@ -32,7 +32,8 @@ export function SignIn() {
     });
     setBusy(false);
     if (r.ok && r.body) {
-      login(r.body.token, r.body.user);
+      // Cookie has been set by the server; we just record the user.
+      login(r.body.user);
     } else if (r.status === 401) {
       setError("Invalid username or password.");
     } else if (r.status === 404) {
