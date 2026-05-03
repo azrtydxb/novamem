@@ -37,6 +37,23 @@ import {
 import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
 import { resolveRequestProject } from "./routes/context.js";
+import {
+  AddMemberBody,
+  AdminCreateTenantBody,
+  AdminCreateTokenBody,
+  AdminRevokeBody,
+  CreateProjectBody,
+  CreateUserBody,
+  DecayBody,
+  ForgetBody,
+  LoginBody,
+  MintMyTokenBody,
+  NeighborsBody,
+  RecentBody,
+  RememberBody,
+  SearchBody,
+  SetRoleBody,
+} from "./routes/schemas.js";
 import { PUBLIC_TENANT, type WarmStore } from "./warm-store/index.js";
 
 export interface DashboardUser {
@@ -63,150 +80,9 @@ declare module "fastify" {
   }
 }
 
-/** Hard cap on stored content size — prevents a single oversized POST from
- *  exhausting memory or the DB row size limit. ~256KB is plenty for any
- *  reasonable memory entry. */
-const MAX_CONTENT_BYTES = 256 * 1024;
-
-const ProjectIdRule = z.string().min(2).max(64).regex(/^[a-z0-9][a-z0-9._-]*$/i);
-
-const SearchBody = z.object({
-  query: z.string().min(1).max(8 * 1024),
-  k: z.number().int().positive().max(100).optional(),
-  namespace: z.string().max(128).optional(),
-  agentName: z.string().max(128).optional().nullable(),
-  /** Sub-brain scope. Omitted = tenant-wide entries. */
-  project: ProjectIdRule.optional().nullable(),
-  weights: z
-    .object({
-      keyword: z.number().optional(),
-      vector: z.number().optional(),
-      graph: z.number().optional(),
-    })
-    .optional(),
-});
-
-const RememberBody = z.object({
-  content: z.string().min(1).max(MAX_CONTENT_BYTES),
-  namespace: z.string().max(128).optional(),
-  source: z.string().max(128).optional(),
-  agentName: z.string().max(128).optional().nullable(),
-  project: ProjectIdRule.optional().nullable(),
-  metadata: z.record(z.unknown()).optional(),
-});
-
-const DecayBody = z.object({
-  effectiveDays: z.number().positive().optional(),
-});
-
-const RecentBody = z.object({
-  namespace: z.string().max(128).optional(),
-  k: z.number().int().positive().max(200).optional(),
-  /** ISO-8601 lower bound. Validated up-front so an invalid string
-   *  doesn't reach the SQL layer (review finding P2-14). */
-  since: z
-    .string()
-    .datetime({ offset: true, message: "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)" })
-    .optional(),
-  project: ProjectIdRule.optional().nullable(),
-});
-
-const NeighborsBody = z.object({
-  id: z.string().min(1).max(128),
-  depth: z.number().int().positive().max(3).optional(),
-  k: z.number().int().positive().max(50).optional(),
-  project: ProjectIdRule.optional().nullable(),
-});
-
-const ForgetBody = z.object({
-  id: z.string().min(1).max(128),
-  project: ProjectIdRule.optional().nullable(),
-});
-
-// Admin bodies — kept short, slug-safe ids.
-//
-// The tenant id regex is *narrower* than a generic slug: the cold store
-// derives qdrant collection names as `novamem_<tenantId>_<namespace>` for
-// tenant-wide entries and `novamem_p_<projectId>_<namespace>` for project-
-// scoped entries. A tenant id starting with `p_` would make a tenant's
-// collections indistinguishable from project collections at prefix-scan
-// time (see review finding P0-1). Forbid `p_` prefix explicitly + the
-// bare value `p` for the same reason. Also forbid `__` (used as a
-// separator-with-margin in a future migration).
-const AdminCreateTenantBody = z.object({
-  id: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9][a-z0-9_-]*$/, {
-      message: "tenant id must be lowercase alphanumeric / underscore / hyphen",
-    })
-    .refine((v) => v !== "p" && !v.startsWith("p_"), {
-      message:
-        "tenant id cannot start with 'p_' or be exactly 'p' (collides with project collection naming)",
-    })
-    .refine((v) => !v.includes("__"), {
-      message: "tenant id cannot contain '__' (reserved separator)",
-    }),
-  name: z.string().min(1).max(128),
-});
-
-const AdminCreateTokenBody = z.object({
-  label: z.string().max(128).optional(),
-});
-
-const AdminRevokeBody = z.object({
-  token: z.string().min(1).max(256),
-});
-
-// ─── Dashboard auth & user-management bodies ────────────────────────────
-
-const LoginBody = z.object({
-  username: z.string().min(1).max(64),
-  password: z.string().min(1).max(256),
-});
-
-const UsernameRule = z.string().min(2).max(64).regex(/^[a-z0-9][a-z0-9._-]*$/i, {
-  message: "username must be 2–64 chars; alphanumeric, dot, underscore, dash",
-});
-
-const CreateUserBody = z
-  .object({
-    username: UsernameRule,
-    password: z.string().min(8).max(256),
-    role: z.enum(["admin", "user"]),
-    tenantId: z.string().min(1).max(64).optional().nullable(),
-  })
-  .refine((v) => v.role === "admin" || (typeof v.tenantId === "string" && v.tenantId.length > 0), {
-    message: "role 'user' requires a tenantId",
-    path: ["tenantId"],
-  });
-
-const SetRoleBody = z
-  .object({
-    role: z.enum(["admin", "user"]),
-    tenantId: z.string().min(1).max(64).optional().nullable(),
-  })
-  .refine((v) => v.role === "admin" || (typeof v.tenantId === "string" && v.tenantId.length > 0), {
-    message: "role 'user' requires a tenantId",
-    path: ["tenantId"],
-  });
-
-const MintMyTokenBody = z.object({
-  label: z.string().max(128).optional(),
-  /** Optional project scope. Null/omitted = tenant-wide token (legacy). */
-  projectId: ProjectIdRule.optional().nullable(),
-});
-
-const CreateProjectBody = z.object({
-  id: ProjectIdRule,
-  name: z.string().min(1).max(128),
-});
-
-const AddMemberBody = z.object({
-  username: z.string().min(1).max(64),
-  role: z.enum(["owner", "member"]).optional(),
-});
+// Zod request-body schemas live in `routes/schemas.ts` so they can be
+// imported by tests, the OpenAPI generator, and the MCP shim. See that
+// file for the per-schema docstrings.
 
 export interface HttpOptions {
   engine: MemoryEngine;
