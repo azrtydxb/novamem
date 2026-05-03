@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import fastifyCookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
@@ -926,11 +926,39 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // mirrors invoke the engine on behalf of the calling user, scoping
   // automatically to their tenant. Admin variants (no tenant) get
   // PUBLIC_TENANT, mirroring the bearer-mode behaviour.
+  //
+  // ── Project access guard ─────────────────────────────────────────────
+  // Bearer-token routes enforce project scope by minting tokens only for
+  // members. Cookie-authed mirrors don't go through token mint, so they
+  // must check membership themselves — otherwise any user in tenant
+  // `acme` could read/modify another user's project entries by passing
+  // the project id in the body. Returns true if access ok; sends a 403
+  // and returns false otherwise. `null` projectId means tenant-wide and
+  // is always allowed (the existing tenant boundary still applies).
+  async function requireProjectAccess(
+    user: DashboardUser,
+    projectId: string | null,
+    reply: FastifyReply,
+  ): Promise<boolean> {
+    if (!projectId) return true;
+    if (!opts.warm) {
+      reply.code(404).send({ error: "warm store disabled" });
+      return false;
+    }
+    const m = await opts.warm.getProjectMembership(projectId, user.id);
+    if (!m) {
+      reply.code(403).send({ error: "not a member of this project" });
+      return false;
+    }
+    return true;
+  }
+
   app.post("/v1/me/search", async (req, reply) => {
     const u = req.dashUser!;
     const body = SearchBody.parse(req.body);
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     const project = body.project ?? null;
+    if (!(await requireProjectAccess(u, project, reply))) return;
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     const r = await opts.engine.search(tenantId, { ...body, project });
     reply.send(r);
   });
@@ -938,16 +966,18 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/me/recent", async (req, reply) => {
     const u = req.dashUser!;
     const body = RecentBody.parse(req.body ?? {});
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     const project = body.project ?? null;
+    if (!(await requireProjectAccess(u, project, reply))) return;
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     reply.send(await opts.engine.recent(tenantId, { ...body, project }));
   });
 
   app.post("/v1/me/neighbors", async (req, reply) => {
     const u = req.dashUser!;
     const body = NeighborsBody.parse(req.body);
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     const project = body.project ?? null;
+    if (!(await requireProjectAccess(u, project, reply))) return;
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     try {
       reply.send(await opts.engine.neighbors(tenantId, { ...body, project }));
     } catch (err) {
@@ -963,8 +993,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/me/remember", async (req, reply) => {
     const u = req.dashUser!;
     const body = RememberBody.parse(req.body);
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     const project = body.project ?? null;
+    if (!(await requireProjectAccess(u, project, reply))) return;
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     const r = await opts.engine.remember(tenantId, { ...body, project });
     reply.code(201).send(r);
   });
@@ -972,8 +1003,31 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/me/forget", async (req, reply) => {
     const u = req.dashUser!;
     const body = ForgetBody.parse(req.body);
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
     const project = body.project ?? null;
+    if (!(await requireProjectAccess(u, project, reply))) return;
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    // Defence in depth: even after the requested-project check, resolve
+    // the entry's actual scope by id alone and re-verify membership.
+    // This stops an attacker who knows an entry id from deleting it by
+    // passing `project: null` when the entry is actually project-scoped,
+    // or by passing a project they're a member of when the entry belongs
+    // to a different (non-member) project. Tenant-wide entries
+    // (project_id null) need only the tenant boundary, which the engine
+    // enforces. We use `getEntryScope` (no scope filter) instead of
+    // `getEntry` because the latter filters by the caller-supplied
+    // project, which is exactly the value we don't trust.
+    if (opts.warm) {
+      const scope = await opts.warm.getEntryScope(body.id);
+      if (scope) {
+        if (scope.projectId) {
+          const m = await opts.warm.getProjectMembership(scope.projectId, u.id);
+          if (!m) return reply.code(403).send({ error: "not a member of this project" });
+        } else if (scope.tenantId !== tenantId) {
+          // Tenant-wide entry in a different tenant — refuse.
+          return reply.code(403).send({ error: "entry not in your tenant" });
+        }
+      }
+    }
     reply.send(await opts.engine.forget(tenantId, body.id, { project }));
   });
 

@@ -289,6 +289,12 @@ export class FakeWarmStore {
     return matches;
   }
 
+  async getEntryScope(id: string) {
+    const r = this.rows.get(id);
+    if (!r) return undefined;
+    return { tenantId: r.tenantId, projectId: r.projectId };
+  }
+
   async getEntry(tenantId: string, id: string, opts: { projectId?: string | null } = {}) {
     const r = this.rows.get(id);
     if (!r) return undefined;
