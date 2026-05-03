@@ -93,7 +93,7 @@ export interface HttpOptions {
   /** Warm store — only used by the auth hook to resolve tenant tokens.
    *  Required when auth.mode = 'tenant'; optional otherwise. */
   warm?: WarmStore;
-  auth: { mode: "none" | "bearer" | "tenant"; token?: string; adminToken?: string };
+  auth: { mode: "none" | "bearer" | "tenant"; token?: string };
   /** Per-IP requests-per-minute. Default 600 (10/sec sustained). */
   rateLimitPerMinute?: number;
   /** Metrics collector — when set, /v1/admin/metrics is available (subject
@@ -111,9 +111,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     throw new Error("auth.mode = 'bearer' requires auth.token to be set (NOVAMEM_AUTH_TOKEN)");
   }
   if (opts.auth.mode === "tenant") {
-    if (!opts.auth.adminToken) {
-      throw new Error("auth.mode = 'tenant' requires auth.adminToken (NOVAMEM_ADMIN_TOKEN)");
-    }
     if (!opts.warm) {
       throw new Error("auth.mode = 'tenant' requires the warm store to resolve tenant tokens");
     }
@@ -163,13 +160,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // P1-S3: cookie support for HttpOnly session storage. Cookies are
   // signed with a server-side secret so any bit-flip / tamper invalidates
   // the value before it reaches our auth hook. NOVAMEM_COOKIE_SECRET is
-  // operator-supplied in production; for dev we derive a stable value
-  // from the admin token (or a fixed dev string) so restarts keep
-  // existing sessions valid.
+  // operator-supplied in production; for dev we fall back to a fixed
+  // string so restarts keep existing sessions valid.
   const cookieSecret =
-    process.env.NOVAMEM_COOKIE_SECRET ??
-    opts.auth.adminToken ??
-    "novamem-dev-cookie-secret-change-me";
+    process.env.NOVAMEM_COOKIE_SECRET ?? "novamem-dev-cookie-secret-change-me";
   app.register(fastifyCookie, { secret: cookieSecret });
 
   // Per-username login throttle (P0-3). In-memory; resets on restart.
@@ -252,8 +246,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // Bearer prefixes:
   //   nm_<...>   tenant token (data plane)
   //   ns_<...>   dashboard session token (control plane)
-  //   anything else → could be the legacy NOVAMEM_ADMIN_TOKEN (used by CI
-  //   scripts directly against /v1/admin/*) or `bearer` mode shared token.
+  //   anything else → `bearer`-mode shared token (only when auth.mode = 'bearer').
   app.addHook("onRequest", async (req, reply) => {
     if (
       req.url === "/health" ||
@@ -284,8 +277,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
 
     // Try to resolve a session bearer regardless of route — the control
-    // plane handlers consult `req.dashUser` and admin endpoints accept
-    // either a session-admin OR the legacy admin token.
+    // plane handlers consult `req.dashUser` and admin endpoints require
+    // a session-admin.
     //
     // Two ways to present a session: an HttpOnly cookie (the dashboard
     // SPA) or `Authorization: Bearer ns_…` (CLI / MCP / scripts). Cookie
@@ -345,8 +338,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return;
     }
 
-    // /v1/admin/* — handlers do their own check (legacy admin token OR
-    // session-admin). Tenant id is irrelevant for admin routes.
+    // /v1/admin/* — handlers do their own check (session-admin only).
+    // Tenant id is irrelevant for admin routes.
     if (req.url.startsWith("/v1/admin/")) {
       req.tenantId = PUBLIC_TENANT;
       return;
@@ -382,11 +375,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // ─── Admin dashboard (static SPA) ────────────────────────────────────
-  // Hand-rolled Preact + htm bundle under src/admin/ui. Mounted under
-  // /admin/* with a strict CSP so even a stray inline-script attempt would
-  // fail closed. The SPA fetches /v1/admin/* via the admin token stored
-  // in sessionStorage. When the dashboard is disabled, we register no
-  // routes — the server will 404 /admin and /admin/* automatically.
+  // React + Vite bundle under packages/admin-ui. Mounted under /admin/*
+  // with a strict CSP so even a stray inline-script attempt would fail
+  // closed. The SPA authenticates with the HttpOnly session cookie set
+  // at login. When the dashboard is disabled, we register no routes —
+  // the server will 404 /admin and /admin/* automatically.
   if (opts.adminDashboard !== false) {
     // The admin SPA is built by the @azrty/novamem-admin-ui package and copied
     // into this server's dist/admin/ui by the build:assets step. In dev (tsx
@@ -505,20 +498,16 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // ─── Admin: tenant + token bootstrap ──────────────────────────────────
-  // Gated by NOVAMEM_ADMIN_TOKEN. Available in any auth mode (so you can
-  // seed tenants before flipping the service into 'tenant' mode), but if
-  // mode != 'tenant' the warm store and admin token may not be configured —
-  // we hard-require them at handler-time and 404 otherwise.
+  // Available in any auth mode (so you can seed tenants before flipping
+  // the service into 'tenant' mode), but if mode != 'tenant' the warm
+  // store may not be configured — handlers hard-require it.
 
-  /** Admin gate for /v1/admin/*. Accepts EITHER a logged-in admin user
-   *  (preferred — what the dashboard uses) OR the legacy NOVAMEM_ADMIN_TOKEN
-   *  (kept for CI scripts and manual curl). */
-  const adminAuth = (req: { headers: { authorization?: string }; dashUser?: DashboardUser }): boolean => {
-    if (req.dashUser?.role === "admin") return true;
-    if (!opts.auth.adminToken) return false;
-    const h = req.headers.authorization;
-    if (!h || !h.startsWith("Bearer ")) return false;
-    return safeEqual(h.slice("Bearer ".length), opts.auth.adminToken);
+  /** Admin gate for /v1/admin/*. Requires a logged-in admin dashboard
+   *  user — log in via /v1/auth/login first, then the cookie or session
+   *  bearer carries the role through. There is no operator-managed
+   *  shared admin token; admin auth is always per-user. */
+  const adminAuth = (req: { dashUser?: DashboardUser }): boolean => {
+    return req.dashUser?.role === "admin";
   };
 
   /** Write an audit entry attributed to the current request's actor.
@@ -652,8 +641,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // ─── Admin: user management ────────────────────────────────────────────
-  // Distinct from legacy /v1/admin/tenants/* — these are dashboard logins.
-  // Only an admin (session or legacy admin token) can manage them.
+  // Distinct from /v1/admin/tenants/* — these are dashboard logins.
+  // Only a logged-in admin can manage them.
 
   app.get("/v1/admin/users", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
@@ -1126,8 +1115,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   // ─── Admin: operational metrics ───────────────────────────────────────
   // Read-through snapshot of in-process counters/gauges/rates. Gated by
-  // the admin token AND the dashboard flag — operators who don't want the
-  // surface set NOVAMEM_ADMIN_DASHBOARD=0 and the route disappears entirely.
+  // session-admin auth AND the dashboard flag — operators who don't want
+  // the surface set NOVAMEM_ADMIN_DASHBOARD=0 and the route disappears.
   const dashboardEnabled = opts.adminDashboard !== false;
   app.get("/v1/admin/metrics", async (req, reply) => {
     if (!dashboardEnabled || !opts.metrics) {
