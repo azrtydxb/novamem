@@ -28,7 +28,8 @@ import { useAuth } from "../lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
 import { StatCard } from "../components/StatCard";
 import { Button } from "../components/Button";
-import { Badge } from "../components/Badge";
+import { PageHeader } from "../components/PageHeader";
+import { Pill } from "../components/Pill";
 import { useToast } from "../components/Toast";
 import { fmtNumber, fmtRelative } from "../lib/utils";
 
@@ -173,33 +174,38 @@ export function MetricsPage() {
   const pct = (n: number) => (totalHits === 0 ? 0 : (n / totalHits) * 100);
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between">
-        <div>
+    <>
+      <PageHeader
+        title={
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-ink">Metrics</h1>
+            <span>Metrics</span>
+            <Pill tone="accent" dot pulse>
+              live · {POLL_MS / 1000}s
+            </Pill>
             {!isAdmin && user?.tenantId ? (
-              <Badge tone="accent">tenant: {user.tenantId}</Badge>
+              <Pill tone="neutral">tenant: {user.tenantId}</Pill>
             ) : null}
           </div>
-          <p className="text-sm text-dim mt-1">
-            {isAdmin
-              ? "Operational counters, gauges, and rates. In-memory; resets on restart."
-              : "Activity for your tenant only. In-memory; resets on restart."}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button size="sm" variant="ghost" onClick={load} loading={busy}>
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </Button>
-          {isAdmin ? (
-            <Button size="sm" variant="secondary" onClick={runDecay} loading={decayBusy}>
-              <ArrowDownToLine className="h-3.5 w-3.5" /> Run decay
+        }
+        subtitle={
+          isAdmin
+            ? "Operational counters, gauges, and rates. In-memory; resets on restart."
+            : "Activity for your tenant only. In-memory; resets on restart."
+        }
+        actions={
+          <>
+            <Button size="sm" variant="ghost" onClick={load} loading={busy}>
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </Button>
-          ) : null}
-        </div>
-      </header>
-
+            {isAdmin ? (
+              <Button size="sm" variant="primary" onClick={runDecay} loading={decayBusy}>
+                <ArrowDownToLine className="h-3.5 w-3.5" /> Run decay
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+      <div className="p-5 space-y-5">
       {/* Top: rolling rates + uptime */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
@@ -207,18 +213,23 @@ export function MetricsPage() {
           label="Queries / sec"
           value={fmtNumber(snap.data.rates.queries_per_sec_60s)}
           sublabel="rolling 60s"
+          tone="accent"
+          trend={history.map((p) => p.qps)}
         />
         <StatCard
           icon={Zap}
           label="Remembers / sec"
           value={fmtNumber(snap.data.rates.remembers_per_sec_60s)}
           sublabel="rolling 60s"
+          tone="graph"
+          trend={history.map((p) => p.rps)}
         />
         <StatCard
           icon={Activity}
           label="Total queries"
           value={fmtNumber(c.queries_total)}
           sublabel={`${fmtNumber(c.queries_zero_hit)} zero-hit`}
+          trend={history.map((p) => p.qps)}
         />
         {isAdmin && adminGauges ? (
           <StatCard
@@ -460,26 +471,26 @@ export function MetricsPage() {
           </CardContent>
         </Card>
       ) : null}
-    </div>
+      </div>
+    </>
   );
 }
 
 function SkeletonMetrics() {
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-ink">Metrics</h1>
-        <p className="text-sm text-dim mt-1">Loading…</p>
-      </header>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i} className="p-4 animate-pulse">
-            <div className="h-3 w-24 bg-subtle rounded mb-3" />
-            <div className="h-7 w-16 bg-subtle rounded" />
-          </Card>
-        ))}
+    <>
+      <PageHeader title="Metrics" subtitle="Loading…" />
+      <div className="p-5 space-y-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="p-4 animate-pulse">
+              <div className="h-3 w-24 bg-subtle rounded mb-3" />
+              <div className="h-7 w-16 bg-subtle rounded" />
+            </Card>
+          ))}
+        </div>
+        <Card className="h-64 animate-pulse" />
       </div>
-      <Card className="h-64 animate-pulse" />
-    </div>
+    </>
   );
 }

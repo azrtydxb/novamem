@@ -18,6 +18,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
+import { PageHeader } from "../components/PageHeader";
 import { useToast } from "../components/Toast";
 import { fmtTimestamp, fmtRelative, shortHash } from "../lib/utils";
 
@@ -27,7 +28,7 @@ export function TenantsPage() {
   const [tenantModeUnavailable, setTenantModeUnavailable] = useState(false);
 
   const { data, isFetching, refetch } = useQuery({
-    queryKey: ["admin", "tenants"],
+    queryKey: ["admin", "tenants", "with-mode"],
     queryFn: async () => {
       const r = await api<{ tenants: Tenant[] }>("GET", "/v1/admin/tenants");
       if (r.status === 404 || r.status === 400 || r.status === 501) {
@@ -46,23 +47,22 @@ export function TenantsPage() {
   const busy = isFetching;
   const refresh = () => {
     void refetch();
-    void queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "tenants", "with-mode"] });
   };
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Tenants</h1>
-          <p className="text-sm text-dim mt-1">
-            Manage tenants and their bearer tokens.
-          </p>
-        </div>
-        <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </Button>
-      </header>
-
+    <>
+      <PageHeader
+        kicker={`${tenants?.length ?? 0} active · enforced server-side`}
+        title="Tenants"
+        subtitle="Manage tenants and their bearer tokens."
+        actions={
+          <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        }
+      />
+      <div className="p-5 space-y-3">
       {tenantModeUnavailable ? (
         <Card>
           <CardContent className="flex items-start gap-3">
@@ -107,7 +107,8 @@ export function TenantsPage() {
           ))
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -273,13 +274,18 @@ function TenantRow({
         >
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
+        {/* Monogram tile + name/id (Grid spec). */}
+        <div className="h-[30px] w-[30px] rounded-lg bg-accent-soft text-accent flex items-center justify-center text-[13px] font-semibold uppercase">
+          {tenant.name.charAt(0) || tenant.id.charAt(0)}
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-ink">{tenant.id}</span>
+            <span className="text-[13px] font-medium text-ink truncate">{tenant.name}</span>
+            <span className="font-mono text-[11px] text-dim">{tenant.id}</span>
             {isPublic && <Badge tone="neutral">system</Badge>}
           </div>
-          <div className="text-xs text-dim mt-0.5 truncate">
-            {tenant.name} · created {fmtRelative(tenant.createdAt)}
+          <div className="font-mono text-[10px] text-faint mt-0.5">
+            created {fmtRelative(tenant.createdAt)}
           </div>
         </div>
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>

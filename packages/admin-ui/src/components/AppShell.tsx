@@ -28,8 +28,6 @@ const ADMIN_NAV: NavItem[] = [
   { id: "health", label: "Health", glyph: "◇" },
   { id: "tenants", label: "Tenants", glyph: "▢" },
   { id: "users", label: "Users", glyph: "○" },
-  { id: "projects", label: "Projects", glyph: "▢" },
-  { id: "tokens", label: "API Tokens", glyph: "⌘" },
 ];
 
 const USER_NAV: NavItem[] = [

@@ -40,6 +40,7 @@ function Authed() {
   useEffect(() => {
     if (!user) return;
     if (!isAdmin && (tab === "tenants" || tab === "users" || tab === "health")) setTab("metrics");
+    if (isAdmin && (tab === "projects" || tab === "tokens" || tab === "browse" || tab === "today" || tab === "graph")) setTab("metrics");
   }, [user, isAdmin, tab]);
 
   if (loading) {
@@ -59,11 +60,11 @@ function Authed() {
         {isAdmin && tab === "health" && <HealthPage />}
         {isAdmin && tab === "tenants" && <TenantsPage />}
         {isAdmin && tab === "users" && <UsersPage />}
-        {tab === "projects" && <ProjectsPage />}
-        {tab === "tokens" && <MyTokensPage />}
-        {tab === "browse" && <BrowsePage />}
-        {tab === "today" && <TodayPage />}
-        {tab === "graph" && <GraphPage />}
+        {!isAdmin && tab === "projects" && <ProjectsPage />}
+        {!isAdmin && tab === "tokens" && <MyTokensPage />}
+        {!isAdmin && tab === "browse" && <BrowsePage />}
+        {!isAdmin && tab === "today" && <TodayPage />}
+        {!isAdmin && tab === "graph" && <GraphPage />}
         {tab === "onboarding" && (
           <OnboardingPage onSkip={() => setTab("metrics")} onContinue={() => setTab("tokens")} />
         )}
