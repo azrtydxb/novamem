@@ -94,7 +94,7 @@ export function AppShell({ active, onChange, children }: Props) {
           <div className="leading-tight">
             <div className="text-sm font-semibold text-ink tracking-tight">NovaMem</div>
             <div className="font-mono text-[10px] text-dim">
-              {isAdmin ? "admin" : user?.tenantId ?? "tenant"}
+              {isAdmin ? "admin" : user?.userId ?? "tenant"}
             </div>
           </div>
         </div>
@@ -169,7 +169,7 @@ export function AppShell({ active, onChange, children }: Props) {
               <div className="flex-1 min-w-0 leading-tight">
                 <div className="text-xs font-medium text-ink truncate">{user.username}</div>
                 <div className="font-mono text-[10px] text-dim truncate">
-                  {isAdmin ? "admin" : `tenant·${user.tenantId ?? "—"}`}
+                  {isAdmin ? "admin" : `tenant·${user.userId ?? "—"}`}
                 </div>
               </div>
             </div>

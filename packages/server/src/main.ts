@@ -86,22 +86,22 @@ async function main() {
     },
   });
 
-  metrics.bindTenantGaugeSources({
-    warmEntries: async (tenantId) => {
+  metrics.bindUserGaugeSources({
+    warmEntries: async (userId) => {
       const r = await warm.pool.query<{ count: string }>(
-        "SELECT COUNT(*)::text AS count FROM memory_entries WHERE tenant_id = $1 AND cold = false",
-        [tenantId],
+        "SELECT COUNT(*)::text AS count FROM memory_entries WHERE user_id = $1 AND cold = false",
+        [userId],
       );
       return Number(r.rows[0]?.count ?? 0);
     },
-    coldEntries: async (tenantId) => {
+    coldEntries: async (userId) => {
       const r = await warm.pool.query<{ count: string }>(
-        "SELECT COUNT(*)::text AS count FROM memory_entries WHERE tenant_id = $1 AND cold = true",
-        [tenantId],
+        "SELECT COUNT(*)::text AS count FROM memory_entries WHERE user_id = $1 AND cold = true",
+        [userId],
       );
       return Number(r.rows[0]?.count ?? 0);
     },
-    graphEdges: async (_tenantId) => {
+    graphEdges: async (_userId) => {
       // Per-tenant edge count would require a graph query parameterised on
       // tenant — out of scope for this dashboard cut. Return null so the UI
       // shows "—" for tenant-scoped graph edges.

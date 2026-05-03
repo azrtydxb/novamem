@@ -15,7 +15,7 @@ export interface DashboardUser {
   id: string;
   username: string;
   role: string;
-  tenantId: string | null;
+  userId: string | null;
 }
 
 export interface RouteContext {

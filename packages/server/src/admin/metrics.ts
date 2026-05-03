@@ -18,7 +18,7 @@ const RATE_WINDOW_MS = 60_000;
  *  (`promotions_total`, `demotions_total`, `decay_runs_total`,
  *  `orphans_reaped_total`) are global only — the decay loop and reaper
  *  are cross-tenant operations. */
-export type TenantCounterName =
+export type UserCounterName =
   | "queries_total"
   | "queries_zero_hit"
   | "remembers_total"
@@ -28,7 +28,7 @@ export type TenantCounterName =
   | "hits_graph_total";
 
 export type GlobalCounterName =
-  | TenantCounterName
+  | UserCounterName
   | "promotions_total"
   | "demotions_total"
   | "decay_runs_total"
@@ -65,9 +65,9 @@ export interface TokenMetricsRow {
   };
 }
 
-export interface TenantMetricsSnapshot {
-  tenantId: string;
-  counters: Record<TenantCounterName, number>;
+export interface UserMetricsSnapshot {
+  userId: string;
+  counters: Record<UserCounterName, number>;
   gauges: {
     warm_entries: number | null;
     cold_entries: number | null;
@@ -93,10 +93,10 @@ export interface GaugeSources {
 }
 
 /** Source for per-tenant gauges. Same contract as GaugeSources but scoped. */
-export interface TenantGaugeSources {
-  warmEntries(tenantId: string): Promise<number>;
-  coldEntries(tenantId: string): Promise<number>;
-  graphEdges(tenantId: string): Promise<number | null>;
+export interface UserGaugeSources {
+  warmEntries(userId: string): Promise<number>;
+  coldEntries(userId: string): Promise<number>;
+  graphEdges(userId: string): Promise<number | null>;
 }
 
 class TimestampRing {
@@ -120,7 +120,7 @@ class TimestampRing {
   }
 }
 
-const ZERO_TENANT_COUNTERS: Record<TenantCounterName, number> = {
+const ZERO_TENANT_COUNTERS: Record<UserCounterName, number> = {
   queries_total: 0,
   queries_zero_hit: 0,
   remembers_total: 0,
@@ -131,7 +131,7 @@ const ZERO_TENANT_COUNTERS: Record<TenantCounterName, number> = {
 };
 
 interface TenantSlot {
-  counters: Record<TenantCounterName, number>;
+  counters: Record<UserCounterName, number>;
   queryRing: TimestampRing;
   rememberRing: TimestampRing;
 }
@@ -145,16 +145,16 @@ function newTenantSlot(): TenantSlot {
 }
 
 interface TokenSlot {
-  tenantId: string;
+  userId: string;
   label: string | null;
   counters: { queries_total: number; remembers_total: number; forgets_total: number };
   queryRing: TimestampRing;
   rememberRing: TimestampRing;
 }
 
-function newTokenSlot(tenantId: string, label: string | null): TokenSlot {
+function newTokenSlot(userId: string, label: string | null): TokenSlot {
   return {
-    tenantId,
+    userId,
     label,
     counters: { queries_total: 0, remembers_total: 0, forgets_total: 0 },
     queryRing: new TimestampRing(),
@@ -190,7 +190,7 @@ export class MetricsCollector {
   private lastDecayAt: Date | null = null;
   private readonly startedAt = Date.now();
   private gaugeSources: GaugeSources | null = null;
-  private tenantGaugeSources: TenantGaugeSources | null = null;
+  private tenantGaugeSources: UserGaugeSources | null = null;
   private readonly now: () => number;
 
   constructor(opts: { now?: () => number } = {}) {
@@ -201,23 +201,23 @@ export class MetricsCollector {
     this.gaugeSources = sources;
   }
 
-  bindTenantGaugeSources(sources: TenantGaugeSources): void {
+  bindUserGaugeSources(sources: UserGaugeSources): void {
     this.tenantGaugeSources = sources;
   }
 
-  private slot(tenantId: string): TenantSlot {
-    let s = this.perTenant.get(tenantId);
+  private slot(userId: string): TenantSlot {
+    let s = this.perTenant.get(userId);
     if (!s) {
       s = newTenantSlot();
-      this.perTenant.set(tenantId, s);
+      this.perTenant.set(userId, s);
     }
     return s;
   }
 
-  private tokenSlot(tenantId: string, token: TokenIdentity): TokenSlot {
+  private tokenSlot(userId: string, token: TokenIdentity): TokenSlot {
     let s = this.perToken.get(token.hash);
     if (!s) {
-      s = newTokenSlot(tenantId, token.label);
+      s = newTokenSlot(userId, token.label);
       this.perToken.set(token.hash, s);
     } else if (s.label !== token.label) {
       // Re-label if the operator renames a token between observations.
@@ -226,16 +226,16 @@ export class MetricsCollector {
     return s;
   }
 
-  /** Record a search call. Pass tenantId + per-tier hit counts. When the
+  /** Record a search call. Pass userId + per-tier hit counts. When the
    *  request was authenticated by a tenant bearer token, pass `token` so
    *  the per-token series in /v1/me/metrics reflects this call. */
   recordQuery(
-    tenantId: string,
+    userId: string,
     hits: { warm: number; cold: number; graph: number },
     token?: TokenIdentity,
   ): void {
     const now = this.now();
-    const s = this.slot(tenantId);
+    const s = this.slot(userId);
     s.counters.queries_total += 1;
     s.counters.hits_warm_total += hits.warm;
     s.counters.hits_cold_total += hits.cold;
@@ -243,27 +243,27 @@ export class MetricsCollector {
     if (hits.warm + hits.cold + hits.graph === 0) s.counters.queries_zero_hit += 1;
     s.queryRing.record(now);
     if (token) {
-      const t = this.tokenSlot(tenantId, token);
+      const t = this.tokenSlot(userId, token);
       t.counters.queries_total += 1;
       t.queryRing.record(now);
     }
   }
 
-  recordRemember(tenantId: string, token?: TokenIdentity): void {
+  recordRemember(userId: string, token?: TokenIdentity): void {
     const now = this.now();
-    const s = this.slot(tenantId);
+    const s = this.slot(userId);
     s.counters.remembers_total += 1;
     s.rememberRing.record(now);
     if (token) {
-      const t = this.tokenSlot(tenantId, token);
+      const t = this.tokenSlot(userId, token);
       t.counters.remembers_total += 1;
       t.rememberRing.record(now);
     }
   }
 
-  recordForget(tenantId: string, token?: TokenIdentity): void {
-    this.slot(tenantId).counters.forgets_total += 1;
-    if (token) this.tokenSlot(tenantId, token).counters.forgets_total += 1;
+  recordForget(userId: string, token?: TokenIdentity): void {
+    this.slot(userId).counters.forgets_total += 1;
+    if (token) this.tokenSlot(userId, token).counters.forgets_total += 1;
   }
 
   recordPromotion(n = 1): void {
@@ -287,10 +287,10 @@ export class MetricsCollector {
    *  so the perTenant Map doesn't accumulate dead entries forever
    *  (review finding P2-5). Also clears any per-token slots scoped to
    *  the tenant. */
-  forgetTenant(tenantId: string): void {
-    this.perTenant.delete(tenantId);
+  forgetUser(userId: string): void {
+    this.perTenant.delete(userId);
     for (const [hash, slot] of this.perToken) {
-      if (slot.tenantId === tenantId) this.perToken.delete(hash);
+      if (slot.userId === userId) this.perToken.delete(hash);
     }
   }
 
@@ -301,8 +301,8 @@ export class MetricsCollector {
   }
 
   /** Aggregate per-tenant counters across all tenants. */
-  private aggregate(): Record<TenantCounterName, number> {
-    const out: Record<TenantCounterName, number> = { ...ZERO_TENANT_COUNTERS };
+  private aggregate(): Record<UserCounterName, number> {
+    const out: Record<UserCounterName, number> = { ...ZERO_TENANT_COUNTERS };
     for (const slot of this.perTenant.values()) {
       out.queries_total += slot.counters.queries_total;
       out.queries_zero_hit += slot.counters.queries_zero_hit;
@@ -406,24 +406,24 @@ export class MetricsCollector {
     return lines.join("\n") + "\n";
   }
 
-  async snapshotForTenant(
-    tenantId: string,
+  async snapshotForUser(
+    userId: string,
     opts: { tokens?: Array<{ hash: string; label: string | null }> } = {},
-  ): Promise<TenantMetricsSnapshot> {
+  ): Promise<UserMetricsSnapshot> {
     const now = this.now();
-    const slot = this.slot(tenantId);
+    const slot = this.slot(userId);
     const seconds = RATE_WINDOW_MS / 1000;
 
-    let gauges: TenantMetricsSnapshot["gauges"] = {
+    let gauges: UserMetricsSnapshot["gauges"] = {
       warm_entries: null,
       cold_entries: null,
       graph_edges: null,
     };
     if (this.tenantGaugeSources) {
       const [warm, cold, edges] = await Promise.all([
-        this.tenantGaugeSources.warmEntries(tenantId).catch(() => null),
-        this.tenantGaugeSources.coldEntries(tenantId).catch(() => null),
-        this.tenantGaugeSources.graphEdges(tenantId).catch(() => null),
+        this.tenantGaugeSources.warmEntries(userId).catch(() => null),
+        this.tenantGaugeSources.coldEntries(userId).catch(() => null),
+        this.tenantGaugeSources.graphEdges(userId).catch(() => null),
       ]);
       gauges = { warm_entries: warm, cold_entries: cold, graph_edges: edges };
     }
@@ -456,7 +456,7 @@ export class MetricsCollector {
     }
 
     return {
-      tenantId,
+      userId,
       counters: { ...slot.counters },
       gauges,
       rates: {

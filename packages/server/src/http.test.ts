@@ -64,7 +64,7 @@ async function adminAuth(
     username: id,
     passwordHash: "test-bcrypt-not-checked-for-session-resolve",
     role: "admin",
-    tenantId: null,
+    userId: null,
   });
   // Look up the row to get its real id (createUser assigns one).
   let userId = id;
@@ -589,7 +589,7 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
     return { app, warm, adminH, token: tk.json().token as string };
   }
 
-  it("listTenantTokens returns the tokenHash", async () => {
+  it("listUserTokens returns the tokenHash", async () => {
     const { app, adminH } = await bootstrap();
     const r = await app.inject({
       method: "GET", url: "/v1/admin/tenants/acme/tokens",
@@ -759,7 +759,7 @@ describe("http: dashboard auth + RBAC", () => {
     const { app, warm } = makeApp({ authMode: "tenant" });
     const { hashPassword } = await import("./auth.js");
     const hash = await hashPassword(adminPwd);
-    await warm.createUser({ username: "alice", passwordHash: hash, role: "admin", tenantId: null });
+    await warm.createUser({ username: "alice", passwordHash: hash, role: "admin", userId: null });
     return { app, warm, adminPwd };
   }
 
@@ -829,7 +829,7 @@ describe("http: dashboard auth + RBAC", () => {
 
     const created = await app.inject({
       method: "POST", url: "/v1/admin/users",
-      payload: { username: "bob", password: "bobsbobsbobs", role: "user", tenantId: "acme" },
+      payload: { username: "bob", password: "bobsbobsbobs", role: "user", userId: "acme" },
       headers: auth,
     });
     expect(created.statusCode).toBe(201);
@@ -847,7 +847,7 @@ describe("http: dashboard auth + RBAC", () => {
 
     const demote = await app.inject({
       method: "POST", url: `/v1/admin/users/${bobId}/role`,
-      payload: { role: "user", tenantId: "acme" },
+      payload: { role: "user", userId: "acme" },
       headers: auth,
     });
     expect(demote.statusCode).toBe(200);
@@ -882,7 +882,7 @@ describe("http: dashboard auth + RBAC", () => {
     const { hashPassword } = await import("./auth.js");
     await warm.createTenant("acme", "Acme");
     const hash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", userId: "acme" });
 
     const login = await app.inject({
       method: "POST", url: "/v1/auth/login",
@@ -895,7 +895,7 @@ describe("http: dashboard auth + RBAC", () => {
       headers: { authorization: `Bearer ${session}` },
     });
     expect(m.statusCode).toBe(200);
-    expect(m.json().tenantId).toBe("acme");
+    expect(m.json().userId).toBe("acme");
   });
 
   it("user can mint + revoke tokens for their own tenant", async () => {
@@ -903,7 +903,7 @@ describe("http: dashboard auth + RBAC", () => {
     const { hashPassword } = await import("./auth.js");
     await warm.createTenant("acme", "Acme");
     const hash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", userId: "acme" });
 
     const login = await app.inject({
       method: "POST", url: "/v1/auth/login",
@@ -951,7 +951,7 @@ describe("http: dashboard auth + RBAC", () => {
     const { hashPassword } = await import("./auth.js");
     await warm.createTenant("acme", "Acme");
     const hash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", userId: "acme" });
 
     const login = await app.inject({
       method: "POST", url: "/v1/auth/login",
@@ -974,9 +974,9 @@ describe("http: P0 regression tests", () => {
     await warm.createTenant("acme", "Acme");
     await warm.createTenant("contoso", "Contoso");
     const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
     const carolHash = await hashPassword("carolpass1");
-    await warm.createUser({ username: "carol", passwordHash: carolHash, role: "user", tenantId: "contoso" });
+    await warm.createUser({ username: "carol", passwordHash: carolHash, role: "user", userId: "contoso" });
     const login = (u: string, p: string) => app.inject({
       method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
     });
@@ -1070,7 +1070,7 @@ describe("http: P0 regression tests", () => {
     // Fresh app for an isolated throttle.
     const { app: app2, warm: warm2 } = makeApp({ authMode: "tenant" });
     const hash = await hashPassword("right-password");
-    await warm2.createUser({ username: "bob", passwordHash: hash, role: "user", tenantId: null });
+    await warm2.createUser({ username: "bob", passwordHash: hash, role: "user", userId: null });
     for (let i = 0; i < 5; i++) {
       const bad = await app2.inject({
         method: "POST", url: "/v1/auth/login",
@@ -1091,7 +1091,7 @@ describe("http: P0 regression tests", () => {
   it("P0-4: getEntry with projectId='*' is treated as a literal id, not a bypass", async () => {
     const { warm } = makeApp({ authMode: "none" });
     const id = await warm.insertEntry({
-      tenantId: "public",
+      userId: "public",
       projectId: "phoenix",
       content: "x",
       namespace: "default",
@@ -1160,8 +1160,8 @@ describe("http: P0 regression tests", () => {
     await warm.createTenant("acme", "Acme");
     const aliceHash = await hashPassword("alicepass1");
     const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", tenantId: "acme" });
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", userId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
     const login = (u: string, p: string) => app.inject({
       method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
     });
@@ -1232,8 +1232,8 @@ describe("http: P0 regression tests", () => {
     await warm.createTenant("acme", "Acme");
     const aliceHash = await hashPassword("alicepass1");
     const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", tenantId: "acme" });
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", userId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
     const login = (u: string, p: string) => app.inject({
       method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
     });
@@ -1299,9 +1299,9 @@ describe("http: projects (sub-brains)", () => {
     await warm.createTenant("acme", "Acme");
     await warm.createTenant("contoso", "Contoso");
     const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
     const carolHash = await hashPassword("carolpass1");
-    await warm.createUser({ username: "carol", passwordHash: carolHash, role: "user", tenantId: "contoso" });
+    await warm.createUser({ username: "carol", passwordHash: carolHash, role: "user", userId: "contoso" });
     const login = await app.inject({
       method: "POST", url: "/v1/auth/login",
       payload: { username: "bob", password: "bobpass1" },
@@ -1461,7 +1461,7 @@ describe("http: projects (sub-brains)", () => {
     const ids = list.json().projects.map((p: { id: string }) => p.id);
     expect(ids).toContain("shared");
 
-    // Carol can mint a token scoped to the shared project (uses HER tenant_id
+    // Carol can mint a token scoped to the shared project (uses HER user_id
     // for the token row, but the project id makes the access work).
     const mint = await app.inject({
       method: "POST", url: "/v1/me/tokens",

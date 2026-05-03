@@ -39,9 +39,8 @@ import { openapiSpec } from "./openapi.js";
 import { resolveRequestProject } from "./routes/context.js";
 import {
   AddMemberBody,
-  AdminCreateTenantBody,
-  AdminCreateTokenBody,
   AdminRevokeBody,
+  ChangePasswordBody,
   CreateProjectBody,
   CreateUserBody,
   DecayBody,
@@ -54,20 +53,19 @@ import {
   SearchBody,
   SetRoleBody,
 } from "./routes/schemas.js";
-import { PUBLIC_TENANT, type WarmStore } from "./warm-store/index.js";
+import { SYSTEM_USER, type WarmStore } from "./warm-store/index.js";
 
 export interface DashboardUser {
   id: string;
   username: string;
   role: string;
-  tenantId: string | null;
 }
 
 declare module "fastify" {
   interface FastifyRequest {
     /** Resolved tenant for this request — populated by the auth hook.
-     *  In `none` and `bearer` modes this is always `PUBLIC_TENANT`. */
-    tenantId: string;
+     *  In `none` and `bearer` modes this is always `SYSTEM_USER`. */
+    userId: string;
     /** Project (sub-brain) the bearer is bound to. When set, requests
      *  default to this project; explicit `project` in body that mismatches
      *  is rejected by the engine layer. Null for tenant-wide tokens. */
@@ -256,12 +254,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       req.url.startsWith("/api-docs/") ||
       req.url.startsWith("/documentation/")
     ) {
-      req.tenantId = PUBLIC_TENANT;
+      req.userId = SYSTEM_USER;
       return;
     }
     // Dashboard static assets are public — HTML shell must load before login.
     if (req.url === "/admin" || req.url.startsWith("/admin/")) {
-      req.tenantId = PUBLIC_TENANT;
+      req.userId = SYSTEM_USER;
       return;
     }
     // Login + bootstrap-status are reached without any auth. The CLI
@@ -272,7 +270,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       req.url === "/v1/auth/status" ||
       req.url === "/v1/auth/rotate-token"
     ) {
-      req.tenantId = PUBLIC_TENANT;
+      req.userId = SYSTEM_USER;
       return;
     }
 
@@ -334,21 +332,21 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         reply.code(401).send({ error: "unauthorized" });
         return reply;
       }
-      req.tenantId = req.dashUser.tenantId ?? PUBLIC_TENANT;
+      req.userId = req.dashUser.id;
       return;
     }
 
     // /v1/admin/* — handlers do their own check (session-admin only).
     // Tenant id is irrelevant for admin routes.
     if (req.url.startsWith("/v1/admin/")) {
-      req.tenantId = PUBLIC_TENANT;
+      req.userId = SYSTEM_USER;
       return;
     }
 
     // Data-plane (search/remember/forget/etc.) — tenant bearer required
     // unless mode = none/bearer.
     if (opts.auth.mode === "none") {
-      req.tenantId = PUBLIC_TENANT;
+      req.userId = SYSTEM_USER;
       return;
     }
     if (!token) {
@@ -360,16 +358,16 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         reply.code(401).send({ error: "unauthorized" });
         return reply;
       }
-      req.tenantId = PUBLIC_TENANT;
+      req.userId = SYSTEM_USER;
       return;
     }
     // tenant mode
-    const resolved = await opts.warm!.resolveTenantToken(token);
+    const resolved = await opts.warm!.resolveUserToken(token);
     if (!resolved) {
       reply.code(401).send({ error: "unauthorized" });
       return reply;
     }
-    req.tenantId = resolved.tenantId;
+    req.userId = resolved.userId;
     req.bearerProjectId = resolved.projectId;
     req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
   });
@@ -445,7 +443,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = SearchBody.parse(req.body);
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
-    const r = await opts.engine.search(req.tenantId, { ...body, project }, req.bearerToken);
+    const r = await opts.engine.search(req.userId, { ...body, project }, req.bearerToken);
     reply.send(r);
   });
 
@@ -453,7 +451,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = RememberBody.parse(req.body);
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
-    const r = await opts.engine.remember(req.tenantId, { ...body, project }, req.bearerToken);
+    const r = await opts.engine.remember(req.userId, { ...body, project }, req.bearerToken);
     reply.code(201).send(r);
   });
 
@@ -466,7 +464,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/reap-orphans", async (_req, reply) => {
     // Manual trigger for the cold-orphan reaper. The same pass also runs
     // automatically inside the decay loop (main.ts). Cross-tenant by design —
-    // each orphan row carries its own tenant_id.
+    // each orphan row carries its own user_id.
     reply.send(await opts.engine.reapOrphans());
   });
 
@@ -474,14 +472,14 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = RecentBody.parse(req.body ?? {});
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
-    reply.send(await opts.engine.recent(req.tenantId, { ...body, project }));
+    reply.send(await opts.engine.recent(req.userId, { ...body, project }));
   });
 
   app.post("/v1/neighbors", async (req, reply) => {
     const body = NeighborsBody.parse(req.body);
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
-    reply.send(await opts.engine.neighbors(req.tenantId, { ...body, project }));
+    reply.send(await opts.engine.neighbors(req.userId, { ...body, project }));
   });
 
   app.post("/v1/forget", async (req, reply) => {
@@ -489,12 +487,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
     reply.send(
-      await opts.engine.forget(req.tenantId, body.id, { project, token: req.bearerToken }),
+      await opts.engine.forget(req.userId, body.id, { project, token: req.bearerToken }),
     );
   });
 
   app.get("/v1/stats", async (req, reply) => {
-    reply.send(await opts.engine.stats(req.tenantId));
+    reply.send(await opts.engine.stats(req.userId));
   });
 
   // ─── Admin: tenant + token bootstrap ──────────────────────────────────
@@ -581,6 +579,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
     loginThrottle.recordSuccess(body.username);
     const session = await opts.warm.createSession(user.id, SESSION_TTL_MS);
+    // If password_changed_at is NULL the admin hasn't set a custom password yet —
+    // require rotation before they can use the dashboard (P1-S1).
+    const needsPasswordChange = user.passwordChangedAt === undefined || user.passwordChangedAt === null;
     // P1-S3: dashboard sessions live in HttpOnly + Secure + SameSite=Strict
     // cookies. The CSRF token sits in a sibling JS-readable cookie; the
     // SPA reads it and echoes back as X-CSRF-Token on writes.
@@ -599,11 +600,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         token: session.token,
         expiresAt: session.expiresAt.toISOString(),
         csrfToken: csrf,
+        needsPasswordChange,
         user: {
           id: user.id,
           username: user.username,
           role: user.role,
-          tenantId: user.tenantId,
         },
       });
   });
@@ -629,15 +630,39 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       .send();
   });
 
+  app.post("/v1/auth/change-password", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "auth disabled" });
+    const u = req.dashUser!;
+    const body = ChangePasswordBody.parse(req.body);
+    // Look up the user to verify the current password.
+    const existing = await opts.warm.findUserByUsername(u.username);
+    if (!existing) return reply.code(401).send({ error: "user not found" });
+    const ok = await verifyPassword(body.currentPassword, existing.passwordHash);
+    if (!ok) return reply.code(401).send({ error: "current password is incorrect" });
+    if (body.newPassword === body.currentPassword) {
+      return reply.code(400).send({ error: "new password must differ from current" });
+    }
+    const hash = await hashPassword(body.newPassword);
+    const patched = await opts.warm.patchUserPassword(u.id, hash, new Date());
+    if (!patched) return reply.code(500).send({ error: "failed to update password" });
+    await audit(req, "password.change", u.id, { username: u.username });
+    return reply.code(200).send({ ok: true });
+  });
+
   app.get("/v1/auth/me", async (req, reply) => {
     // Auth hook already resolved the session; if we got here it's valid.
     // Re-issue the CSRF cookie on every me() so the SPA always has a fresh
     // value after page reload (the JS-readable cookie persists across
     // reloads but having `me()` re-issue it makes the flow more robust).
+    const existing = opts.warm
+      ? await opts.warm.findUserByUsername(req.dashUser!.username)
+      : null;
+    const needsPasswordChange =
+      !existing || existing.passwordChangedAt === undefined || existing.passwordChangedAt === null;
     const csrf = generateCsrfToken();
     reply
       .setCookie(CSRF_COOKIE, csrf, csrfCookieOptions())
-      .send({ user: req.dashUser, csrfToken: csrf });
+      .send({ user: req.dashUser, needsPasswordChange, csrfToken: csrf });
   });
 
   // ─── Admin: user management ────────────────────────────────────────────
@@ -656,23 +681,15 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = CreateUserBody.parse(req.body);
     const existing = await opts.warm.findUserByUsername(body.username);
     if (existing) return reply.code(409).send({ error: "username already exists" });
-    if (body.role === "user" && body.tenantId) {
-      const tenants = await opts.warm.listTenants();
-      if (!tenants.find((t) => t.id === body.tenantId)) {
-        return reply.code(400).send({ error: "unknown tenantId" });
-      }
-    }
     const hash = await hashPassword(body.password);
     const user = await opts.warm.createUser({
       username: body.username,
       passwordHash: hash,
       role: body.role,
-      tenantId: body.role === "admin" ? null : (body.tenantId ?? null),
     });
     await audit(req, "user.create", user.id, {
       username: body.username,
       role: body.role,
-      tenantId: body.role === "admin" ? null : body.tenantId,
     });
     reply.code(201).send(user);
   });
@@ -696,9 +713,17 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         return reply.code(400).send({ error: "cannot delete the last admin" });
       }
     }
-    const ok = await opts.warm.deleteUser(id);
-    if (ok) await audit(req, "user.delete", id, { username: target.username });
-    reply.send({ deleted: ok });
+    // Engine-level delete: warm rows + cold collections + graph nodes
+    // + tokens + sessions + projects (FK cascades). Memory belongs to
+    // the user being deleted, so it goes with them.
+    const r = await opts.engine.deleteUser(id);
+    if (r.deleted) {
+      await audit(req, "user.delete", id, {
+        username: target.username,
+        entriesRemoved: r.entriesRemoved,
+      });
+    }
+    reply.send({ deleted: r.deleted, entriesRemoved: r.entriesRemoved });
   });
 
   app.post("/v1/admin/users/:id/role", async (req, reply) => {
@@ -715,22 +740,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         return reply.code(400).send({ error: "cannot demote the last admin" });
       }
     }
-    if (body.role === "user" && body.tenantId) {
-      const tenants = await opts.warm.listTenants();
-      if (!tenants.find((t) => t.id === body.tenantId)) {
-        return reply.code(400).send({ error: "unknown tenantId" });
-      }
-    }
-    const ok = await opts.warm.setUserRole(
-      id,
-      body.role,
-      body.role === "admin" ? null : (body.tenantId ?? null),
-    );
+    const ok = await opts.warm.setUserRole(id, body.role);
     if (ok)
       await audit(req, "user.role.change", id, {
         previousRole: target.role,
         newRole: body.role,
-        tenantId: body.role === "admin" ? null : body.tenantId,
       });
     reply.send({ updated: ok });
   });
@@ -754,57 +768,56 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         : [];
       const global = await opts.metrics.snapshot();
       // Hand-attach token series — `snapshot()` is the global view and
-      // doesn't take a token filter, so compute it via snapshotForTenant
+      // doesn't take a token filter, so compute it via snapshotForUser
       // on each tenant the admin's tokens belong to. In practice an admin
-      // creates tokens against PUBLIC_TENANT only, so this is one call.
+      // creates tokens against SYSTEM_USER only, so this is one call.
       const tokensByTenant = new Map<string, Array<{ hash: string; label: string | null }>>();
       if (opts.warm) {
         for (const row of await opts.warm.listTokensCreatedByUser(u.id)) {
-          const arr = tokensByTenant.get(row.tenantId) ?? [];
+          const arr = tokensByTenant.get(row.userId) ?? [];
           arr.push({ hash: row.tokenHash, label: row.label });
-          tokensByTenant.set(row.tenantId, arr);
+          tokensByTenant.set(row.userId, arr);
         }
       }
       const tokenRows = [];
-      for (const [tenantId, list] of tokensByTenant) {
-        const t = await opts.metrics.snapshotForTenant(tenantId, { tokens: list });
+      for (const [userId, list] of tokensByTenant) {
+        const t = await opts.metrics.snapshotForUser(userId, { tokens: list });
         if (t.tokens) tokenRows.push(...t.tokens);
       }
       return reply.send({ ...global, tokens: tokenRows, _hasMyTokens: myTokens.length > 0 });
     }
-    if (!u.tenantId) return reply.code(400).send({ error: "user has no tenant assigned" });
+    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
     const myTokens = opts.warm
       ? (await opts.warm.listTokensCreatedByUser(u.id))
-          .filter((t) => t.tenantId === u.tenantId)
+          .filter((t) => t.userId === u.id)
           .map((t) => ({ hash: t.tokenHash, label: t.label }))
       : [];
-    reply.send(await opts.metrics.snapshotForTenant(u.tenantId, { tokens: myTokens }));
+    reply.send(await opts.metrics.snapshotForUser(u.id, { tokens: myTokens }));
   });
 
   app.get("/v1/me/tokens", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
     const u = req.dashUser!;
-    if (!u.tenantId) return reply.code(400).send({ error: "user has no tenant assigned" });
-    reply.send({ tokens: await opts.warm.listTenantTokens(u.tenantId) });
+    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
+    reply.send({ tokens: await opts.warm.listUserTokens(u.id) });
   });
 
   app.post("/v1/me/tokens", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
     const u = req.dashUser!;
-    if (!u.tenantId) return reply.code(400).send({ error: "user has no tenant assigned" });
+    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
     const body = MintMyTokenBody.parse(req.body ?? {});
     // If a project is specified, the user must be a member.
     if (body.projectId) {
       const m = await opts.warm.getProjectMembership(body.projectId, u.id);
       if (!m) return reply.code(403).send({ error: "you are not a member of this project" });
     }
-    const result = await opts.warm.createTenantToken(
-      u.tenantId,
-      body.label,
+    const result = await opts.warm.createUserToken(
       u.id,
+      body.label,
       body.projectId ?? null,
     );
-    if (!result) return reply.code(404).send({ error: "tenant missing" });
+    if (!result) return reply.code(404).send({ error: "user missing" });
     reply.code(201).send({
       ...result,
       warning: "Store this token now — it will not be shown again. Server retains only a sha256 hash.",
@@ -814,10 +827,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/me/tokens/:hash/revoke", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
     const u = req.dashUser!;
-    if (!u.tenantId) return reply.code(400).send({ error: "user has no tenant assigned" });
+    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
     const hash = (req.params as { hash: string }).hash;
     if (!/^[a-f0-9]{64}$/i.test(hash)) return reply.code(400).send({ error: "invalid hash" });
-    const ok = await opts.warm.revokeTenantTokenByHash(u.tenantId, hash);
+    const ok = await opts.warm.revokeUserTokenByHash(u.id, hash);
     if (!ok) return reply.code(404).send({ error: "token not found or already revoked" });
     opts.metrics?.forgetToken(hash);
     reply.send({ revoked: true });
@@ -834,10 +847,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/me/projects", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
     const u = req.dashUser!;
-    if (!u.tenantId && u.role !== "admin") {
-      return reply.code(400).send({ error: "user has no tenant assigned" });
-    }
-    const ownerTenantId = u.tenantId ?? PUBLIC_TENANT;
     const body = CreateProjectBody.parse(req.body);
     const existing = await opts.warm.getProject(body.id);
     if (existing) return reply.code(409).send({ error: "project id already exists" });
@@ -845,9 +854,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       id: body.id,
       name: body.name,
       ownerUserId: u.id,
-      ownerTenantId,
     });
-    await audit(req, "project.create", body.id, { name: body.name, ownerTenantId });
+    await audit(req, "project.create", body.id, { name: body.name });
     reply.code(201).send(project);
   });
 
@@ -925,7 +933,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // bearer, so it can't hit /v1/search etc. directly. These /v1/me/*
   // mirrors invoke the engine on behalf of the calling user, scoping
   // automatically to their tenant. Admin variants (no tenant) get
-  // PUBLIC_TENANT, mirroring the bearer-mode behaviour.
+  // SYSTEM_USER, mirroring the bearer-mode behaviour.
   //
   // ── Project access guard ─────────────────────────────────────────────
   // Bearer-token routes enforce project scope by minting tokens only for
@@ -958,8 +966,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = SearchBody.parse(req.body);
     const project = body.project ?? null;
     if (!(await requireProjectAccess(u, project, reply))) return;
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
-    const r = await opts.engine.search(tenantId, { ...body, project });
+    const userId = u.id;
+    const r = await opts.engine.search(userId, { ...body, project });
     reply.send(r);
   });
 
@@ -968,8 +976,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = RecentBody.parse(req.body ?? {});
     const project = body.project ?? null;
     if (!(await requireProjectAccess(u, project, reply))) return;
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
-    reply.send(await opts.engine.recent(tenantId, { ...body, project }));
+    const userId = u.id;
+    reply.send(await opts.engine.recent(userId, { ...body, project }));
   });
 
   app.post("/v1/me/neighbors", async (req, reply) => {
@@ -977,9 +985,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = NeighborsBody.parse(req.body);
     const project = body.project ?? null;
     if (!(await requireProjectAccess(u, project, reply))) return;
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const userId = u.id;
     try {
-      reply.send(await opts.engine.neighbors(tenantId, { ...body, project }));
+      reply.send(await opts.engine.neighbors(userId, { ...body, project }));
     } catch (err) {
       // Graph store occasionally returns Edge values the redis-client
       // decoder rejects ("Type mismatch: expected List or Null but was
@@ -995,8 +1003,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = RememberBody.parse(req.body);
     const project = body.project ?? null;
     if (!(await requireProjectAccess(u, project, reply))) return;
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
-    const r = await opts.engine.remember(tenantId, { ...body, project });
+    const userId = u.id;
+    const r = await opts.engine.remember(userId, { ...body, project });
     reply.code(201).send(r);
   });
 
@@ -1005,7 +1013,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = ForgetBody.parse(req.body);
     const project = body.project ?? null;
     if (!(await requireProjectAccess(u, project, reply))) return;
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const userId = u.id;
     // Defence in depth: even after the requested-project check, resolve
     // the entry's actual scope by id alone and re-verify membership.
     // This stops an attacker who knows an entry id from deleting it by
@@ -1022,24 +1030,23 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         if (scope.projectId) {
           const m = await opts.warm.getProjectMembership(scope.projectId, u.id);
           if (!m) return reply.code(403).send({ error: "not a member of this project" });
-        } else if (scope.tenantId !== tenantId) {
+        } else if (scope.userId !== userId) {
           // Tenant-wide entry in a different tenant — refuse.
           return reply.code(403).send({ error: "entry not in your tenant" });
         }
       }
     }
-    reply.send(await opts.engine.forget(tenantId, body.id, { project }));
+    reply.send(await opts.engine.forget(userId, body.id, { project }));
   });
 
   /** "Today" — lightweight activity feed for the user dashboard. We
    *  derive it from the recent memory_entries (kind = "remember") and
-   *  recent tenant_tokens (kind = "token"). Cheap query, ranks by
+   *  recent user_tokens (kind = "token"). Cheap query, ranks by
    *  timestamp, capped at 50 events. */
   app.get("/v1/me/today", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
     const u = req.dashUser!;
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
-    const events = await opts.warm.listRecentActivity(tenantId, u.id, 50);
+    const events = await opts.warm.listRecentActivity(u.id, 50);
     reply.send({ events });
   });
 
@@ -1048,77 +1055,26 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.get("/v1/me/onboarding", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
     const u = req.dashUser!;
-    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const userId = u.id;
     const tokens = await opts.warm.listTokensCreatedByUser(u.id);
-    const recent = u.tenantId
-      ? await opts.engine.recent(u.tenantId, { k: 1 })
+    const recent = u.id
+      ? await opts.engine.recent(u.id, { k: 1 })
       : { results: [] as unknown[] };
     reply.send({
       bootstrapDone: true,
-      tenantDone: u.role === "admin" || !!u.tenantId,
+      tenantDone: u.role === "admin" || !!u.id,
       mintedToken: tokens.length > 0,
       remembered: recent.results.length > 0,
-      tenantId,
+      userId,
     });
-  });
-
-  app.post("/v1/admin/tenants", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const body = AdminCreateTenantBody.parse(req.body);
-    const t = await opts.warm.createTenant(body.id, body.name);
-    await audit(req, "tenant.create", body.id, { name: body.name });
-    reply.code(201).send(t);
-  });
-
-  app.get("/v1/admin/tenants", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    reply.send({ tenants: await opts.warm.listTenants() });
-  });
-
-  app.post("/v1/admin/tenants/:id/tokens", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const tenantId = (req.params as { id: string }).id;
-    const body = AdminCreateTokenBody.parse(req.body ?? {});
-    const result = await opts.warm.createTenantToken(tenantId, body.label);
-    if (!result) return reply.code(404).send({ error: "unknown tenant" });
-    // Plaintext token is shown ONCE — server only stores the hash. Tell
-    // the caller this clearly so they don't lose it.
-    reply.code(201).send({
-      ...result,
-      warning: "Store this token now — it will not be shown again. Server retains only a sha256 hash.",
-    });
-  });
-
-  app.get("/v1/admin/tenants/:id/tokens", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const tenantId = (req.params as { id: string }).id;
-    reply.send({ tokens: await opts.warm.listTenantTokens(tenantId) });
   });
 
   app.post("/v1/admin/tokens/revoke", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
     if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
     const body = AdminRevokeBody.parse(req.body);
-    const ok = await opts.warm.revokeTenantToken(body.token);
+    const ok = await opts.warm.revokeUserToken(body.token);
     reply.send({ revoked: ok });
-  });
-
-  // Tenant-scoped token revoke by hash — the path the admin dashboard uses.
-  // The hash is non-secret (it's a sha256), and tenant-scoping the route
-  // catches typos before they become cross-tenant accidents.
-  app.post("/v1/admin/tenants/:tenantId/tokens/:hash/revoke", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const { tenantId, hash } = req.params as { tenantId: string; hash: string };
-    if (!/^[a-f0-9]{64}$/i.test(hash)) return reply.code(400).send({ error: "invalid hash" });
-    const ok = await opts.warm.revokeTenantTokenByHash(tenantId, hash);
-    if (!ok) return reply.code(404).send({ error: "token not found or already revoked" });
-    await audit(req, "token.revoke", `${tenantId}:${hash.slice(0, 8)}`, {});
-    reply.send({ revoked: true });
   });
 
   // Audit log read (admin only).
@@ -1127,20 +1083,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
     const limit = Math.min(Number((req.query as { limit?: string }).limit ?? 200), 500);
     reply.send({ entries: await opts.warm.listAuditLog({ limit }) });
-  });
-
-  // Delete a tenant: warm rows + cold collections + graph nodes + tokens.
-  // Hard delete; the warning is in the dashboard and README. The synthetic
-  // `public` tenant is refused by the warm-store layer.
-  app.delete("/v1/admin/tenants/:id", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const id = (req.params as { id: string }).id;
-    if (id === "public") return reply.code(400).send({ error: "cannot delete the public tenant" });
-    const r = await opts.engine.deleteTenant(id);
-    if (!r.deleted) return reply.code(404).send({ error: "unknown tenant" });
-    await audit(req, "tenant.delete", id, { entriesRemoved: r.entriesRemoved });
-    reply.send(r);
   });
 
   // ─── Tenant token self-rotation (CLI / device path) ────────────────────
@@ -1207,13 +1149,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // SSE connection. They're disposed when the client disconnects.
 
   // SSE-MCP: tenant is captured at the GET /mcp/sse handshake (when the
-  // bearer auth hook ran and populated req.tenantId) and persisted with
+  // bearer auth hook ran and populated req.userId) and persisted with
   // the transport for the session's lifetime. Subsequent POST /mcp/messages
   // calls inherit that tenant — they're authenticated by sessionId, not
   // by a new bearer header on every JSON-RPC call.
   const sseTransports = new Map<string, {
     transport: SSEServerTransport;
-    tenantId: string;
+    userId: string;
     mcpServer: ReturnType<typeof buildMcpServer>;
   }>();
 
@@ -1233,19 +1175,19 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.get("/mcp/sse", async (req, reply) => {
     const transport = new SSEServerTransport("/mcp/messages", reply.raw);
     const sessionId = transport.sessionId;
-    const tenantId = req.tenantId;
+    const userId = req.userId;
     const mcpServer = buildMcpServer(
       opts.engine,
       {
-        tenantId,
+        userId,
         projectId: req.bearerProjectId ?? null,
-        userId: req.dashUser?.id ?? null,
+        dashUserId: req.dashUser?.id ?? null,
       },
       opts.warm,
     );
-    sseTransports.set(sessionId, { transport, tenantId, mcpServer });
+    sseTransports.set(sessionId, { transport, userId, mcpServer });
     await mcpServer.connect(transport);
-    req.log.info({ sessionId, tenantId }, "mcp-sse: session opened");
+    req.log.info({ sessionId, userId }, "mcp-sse: session opened");
     const cleanup = () => {
       sseTransports.delete(sessionId);
       mcpServer.close().catch(() => undefined);

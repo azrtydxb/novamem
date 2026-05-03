@@ -242,7 +242,7 @@ export function openapiSpec() {
               type: "string",
               description: "Plaintext bearer token — shown ONCE; server stores only the hash.",
             },
-            tenantId: { type: "string" },
+            userId: { type: "string" },
             projectId: { type: "string", nullable: true },
             createdAt: { type: "string", format: "date-time" },
             warning: { type: "string" },
@@ -272,7 +272,7 @@ export function openapiSpec() {
             id: { type: "string" },
             username: { type: "string" },
             role: { type: "string", enum: ["admin", "user"] },
-            tenantId: { type: "string", nullable: true },
+            userId: { type: "string", nullable: true },
           },
         },
         DashUser: {
@@ -281,7 +281,7 @@ export function openapiSpec() {
             id: { type: "string" },
             username: { type: "string" },
             role: { type: "string", enum: ["admin", "user"] },
-            tenantId: { type: "string", nullable: true },
+            userId: { type: "string", nullable: true },
             createdAt: { type: "string", format: "date-time" },
             lastLoginAt: { type: "string", format: "date-time", nullable: true },
           },
@@ -293,7 +293,7 @@ export function openapiSpec() {
             username: { type: "string" },
             password: { type: "string", format: "password", minLength: 8 },
             role: { type: "string", enum: ["admin", "user"] },
-            tenantId: {
+            userId: {
               type: "string",
               nullable: true,
               description: "Required for role 'user'.",
@@ -317,7 +317,6 @@ export function openapiSpec() {
           properties: {
             userId: { type: "string" },
             username: { type: "string" },
-            tenantId: { type: "string", nullable: true },
             role: { type: "string", enum: ["owner", "member"] },
             joinedAt: { type: "string", format: "date-time" },
           },
@@ -646,13 +645,13 @@ function buildPaths() {
         responses: { 201: jsonResponse("MintTokenResponse"), 404: errorResponse },
       },
     },
-    "/v1/admin/tenants/{tenantId}/tokens/{hash}/revoke": {
+    "/v1/admin/tenants/{userId}/tokens/{hash}/revoke": {
       post: {
         tags: ["Admin"],
         summary: "Revoke a tenant token by sha256 hash",
         security: admin,
         parameters: [
-          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+          { name: "userId", in: "path", required: true, schema: { type: "string" } },
           { name: "hash", in: "path", required: true, schema: { type: "string" } },
         ],
         responses: { 200: { description: "{ revoked: true }" }, ...adminError },
@@ -697,7 +696,7 @@ function buildPaths() {
         summary: "Change a user's role / tenant",
         security: admin,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        requestBody: { content: { "application/json": { schema: { type: "object", required: ["role"], properties: { role: { type: "string", enum: ["admin", "user"] }, tenantId: { type: "string", nullable: true } } } } } },
+        requestBody: { content: { "application/json": { schema: { type: "object", required: ["role"], properties: { role: { type: "string", enum: ["admin", "user"] }, userId: { type: "string", nullable: true } } } } } },
         responses: { 200: { description: "{ updated: boolean }" }, ...adminError },
       },
     },

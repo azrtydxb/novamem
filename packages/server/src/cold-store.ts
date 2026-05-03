@@ -42,17 +42,17 @@ export class ColdStore {
    *  a project id (tenant ids are slugs without that prefix by convention).
    *  Project membership is cross-tenant by design, so the tenant id
    *  intentionally does not appear in project-scoped collection names. */
-  private collectionFor(tenantId: string, namespace: string, projectId: string | null = null): string {
+  private collectionFor(userId: string, namespace: string, projectId: string | null = null): string {
     if (projectId) return `novamem_p_${projectId}_${namespace}`;
-    return `novamem_${tenantId}_${namespace}`;
+    return `novamem_${userId}_${namespace}`;
   }
 
   private async ensureCollection(
-    tenantId: string,
+    userId: string,
     namespace: string,
     projectId: string | null = null,
   ): Promise<void> {
-    const name = this.collectionFor(tenantId, namespace, projectId);
+    const name = this.collectionFor(userId, namespace, projectId);
     if (this.seenCollections.has(name)) return;
     const existing = await this.client.getCollections();
     const exists = existing.collections.some((c) => c.name === name);
@@ -65,7 +65,7 @@ export class ColdStore {
   }
 
   async upsert(args: {
-    tenantId: string;
+    userId: string;
     projectId?: string | null;
     id: string;
     namespace: string;
@@ -73,8 +73,8 @@ export class ColdStore {
     payload: Record<string, unknown>;
   }): Promise<void> {
     const projectId = args.projectId ?? null;
-    await this.ensureCollection(args.tenantId, args.namespace, projectId);
-    await this.client.upsert(this.collectionFor(args.tenantId, args.namespace, projectId), {
+    await this.ensureCollection(args.userId, args.namespace, projectId);
+    await this.client.upsert(this.collectionFor(args.userId, args.namespace, projectId), {
       points: [
         {
           id: ulidToUuid(args.id),
@@ -82,7 +82,7 @@ export class ColdStore {
           payload: {
             ...args.payload,
             entryId: args.id,
-            tenantId: args.tenantId,
+            userId: args.userId,
             projectId,
           },
         },
@@ -91,15 +91,15 @@ export class ColdStore {
   }
 
   async search(args: {
-    tenantId: string;
+    userId: string;
     projectId?: string | null;
     namespace: string;
     embedding: number[];
     k: number;
   }): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> {
     const projectId = args.projectId ?? null;
-    await this.ensureCollection(args.tenantId, args.namespace, projectId);
-    const r = await this.client.search(this.collectionFor(args.tenantId, args.namespace, projectId), {
+    await this.ensureCollection(args.userId, args.namespace, projectId);
+    const r = await this.client.search(this.collectionFor(args.userId, args.namespace, projectId), {
       vector: args.embedding,
       limit: args.k,
       with_payload: true,
@@ -112,13 +112,13 @@ export class ColdStore {
   }
 
   async delete(
-    tenantId: string,
+    userId: string,
     namespace: string,
     id: string,
     projectId: string | null = null,
   ): Promise<void> {
-    await this.ensureCollection(tenantId, namespace, projectId);
-    await this.client.delete(this.collectionFor(tenantId, namespace, projectId), {
+    await this.ensureCollection(userId, namespace, projectId);
+    await this.client.delete(this.collectionFor(userId, namespace, projectId), {
       points: [ulidToUuid(id)],
     });
   }
@@ -128,8 +128,8 @@ export class ColdStore {
    *  vector data. Returns the names of the dropped collections so callers
    *  can log + audit. Best-effort: a delete failure for one collection
    *  doesn't block the others. */
-  async deleteAllForTenant(tenantId: string): Promise<string[]> {
-    const prefix = `novamem_${tenantId}_`;
+  async deleteAllForTenant(userId: string): Promise<string[]> {
+    const prefix = `novamem_${userId}_`;
     const all = await this.client.getCollections();
     const mine = all.collections.map((c) => c.name).filter((n) => n.startsWith(prefix));
     const dropped: string[] = [];

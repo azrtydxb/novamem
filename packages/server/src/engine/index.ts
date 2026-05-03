@@ -95,14 +95,14 @@ export class MemoryEngine {
   }
 
   async remember(
-    tenantId: string,
+    userId: string,
     req: RememberRequest,
     token?: TokenIdentity,
   ): Promise<{ id: string }> {
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
     const id = await this.warm.insertEntry({
-      tenantId,
+      userId,
       projectId,
       content: req.content,
       namespace,
@@ -113,7 +113,7 @@ export class MemoryEngine {
     const [embedding] = await this.embedder.embed(req.content);
     if (embedding) {
       await this.cold.upsert({
-        tenantId,
+        userId,
         projectId,
         id,
         namespace,
@@ -121,10 +121,10 @@ export class MemoryEngine {
         payload: { source: req.source ?? "manual", agentName: req.agentName ?? null },
       });
       if (this.graphLinkFanout > 0) {
-        await this.linkVectorNeighbors(tenantId, projectId, id, namespace, embedding);
+        await this.linkVectorNeighbors(userId, projectId, id, namespace, embedding);
       }
     }
-    this.metrics?.recordRemember(tenantId, token);
+    this.metrics?.recordRemember(userId, token);
     return { id };
   }
 
@@ -133,7 +133,7 @@ export class MemoryEngine {
    *  fallback if the graph is offline). Self-links are filtered. Errors are
    *  logged and swallowed — failures to enrich shouldn't fail the write. */
   private async linkVectorNeighbors(
-    tenantId: string,
+    userId: string,
     projectId: string | null,
     id: string,
     namespace: string,
@@ -141,7 +141,7 @@ export class MemoryEngine {
   ): Promise<void> {
     try {
       const hits = await this.cold.search({
-        tenantId,
+        userId,
         projectId,
         namespace,
         embedding,
@@ -152,7 +152,7 @@ export class MemoryEngine {
       if (neighbours.length > 0 && this.graph?.isConnected()) {
         try {
           await this.graph.addEdgesBatch(
-            tenantId,
+            userId,
             id,
             neighbours.map((n) => ({ to: n.id, relation: "co_occurs", strength: n.score })),
             projectId,
@@ -163,7 +163,7 @@ export class MemoryEngine {
       }
       // Warm relations are still per-row (UPSERT semantics differ; volume small).
       for (const n of neighbours) {
-        await this.warm.addRelation(tenantId, id, n.id, "co_occurs", n.score, projectId);
+        await this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId);
       }
     } catch (err) {
       this.logger.warn(`[engine] linkVectorNeighbors(${id}) failed: ${(err as Error).message}`);
@@ -171,7 +171,7 @@ export class MemoryEngine {
   }
 
   async search(
-    tenantId: string,
+    userId: string,
     req: SearchRequest,
     token?: TokenIdentity,
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
@@ -183,7 +183,7 @@ export class MemoryEngine {
     const [embedding] = await this.embedder.embed(req.query);
     const [keywordHits, vectorHits] = await Promise.all([
       this.warm.ftsSearch({
-        tenantId,
+        userId,
         projectId,
         query: req.query,
         namespace,
@@ -191,7 +191,7 @@ export class MemoryEngine {
         agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
       }),
       embedding
-        ? this.cold.search({ tenantId, projectId, namespace, embedding, k: k * 3 })
+        ? this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 })
         : Promise.resolve([]),
     ]);
 
@@ -200,7 +200,7 @@ export class MemoryEngine {
     if (this.graph?.isConnected() && vectorHits.length > 0) {
       const seed = vectorHits[0]!.id;
       try {
-        graphHits = await this.graph.neighbors(tenantId, seed, 1, k, projectId);
+        graphHits = await this.graph.neighbors(userId, seed, 1, k, projectId);
       } catch (err) {
         degraded = true;
         this.logger.warn("[engine] graph neighbours failed: " + (err as Error).message);
@@ -223,7 +223,7 @@ export class MemoryEngine {
     // search hot path from 2N+1 round-trips to ~3 (one entry lookup, one
     // bump, plus per-cold-entry promotion stats which are typically few).
     const fusedIds = fused.map((f) => f.id);
-    const entries = await this.warm.getEntries(tenantId, fusedIds, { projectId });
+    const entries = await this.warm.getEntries(userId, fusedIds, { projectId });
     const results: SearchResult[] = [];
     const idsToBump: string[] = [];
     for (let i = 0; i < fused.length; i++) {
@@ -267,7 +267,7 @@ export class MemoryEngine {
         if (f.signals.vector) coldHits++;
         if (f.signals.graph) graphHits++;
       }
-      this.metrics.recordQuery(tenantId, { warm: warmHits, cold: coldHits, graph: graphHits }, token);
+      this.metrics.recordQuery(userId, { warm: warmHits, cold: coldHits, graph: graphHits }, token);
     }
     return { results, degraded };
   }
@@ -328,7 +328,7 @@ export class MemoryEngine {
   /** Recent entries in a namespace, ordered newest first. Optional `since`
    *  ISO-8601 lower bound for time-windowed queries ("since yesterday"). */
   async recent(
-    tenantId: string,
+    userId: string,
     args: { namespace?: string; k?: number; since?: string; project?: string | null },
   ): Promise<{ results: SearchResult[] }> {
     const namespace = args.namespace ?? "default";
@@ -336,15 +336,15 @@ export class MemoryEngine {
     const projectId = args.project ?? null;
     // Same isolation rule as ftsSearch / getEntry: project-set queries scope
     // by project_id only (members may be cross-tenant). Tenant-wide queries
-    // scope by tenant_id with project_id IS NULL.
+    // scope by user_id with project_id IS NULL.
     const params: Array<string | number> = [namespace, k];
     let sql =
       `SELECT id, content, namespace, project_id, source, metadata, cold, created_at
          FROM memory_entries
         WHERE namespace = $1`;
     if (projectId === null) {
-      params.push(tenantId);
-      sql += ` AND tenant_id = $${params.length} AND project_id IS NULL`;
+      params.push(userId);
+      sql += ` AND user_id = $${params.length} AND project_id IS NULL`;
     } else {
       params.push(projectId);
       sql += ` AND project_id = $${params.length}`;
@@ -377,7 +377,7 @@ export class MemoryEngine {
 
   /** Graph-neighbour traversal from a seed memory id. Depth defaults to 1. */
   async neighbors(
-    tenantId: string,
+    userId: string,
     args: { id: string; depth?: number; k?: number; project?: string | null },
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
     const depth = args.depth ?? 1;
@@ -386,12 +386,12 @@ export class MemoryEngine {
     if (!this.graph?.isConnected()) return { results: [], degraded: true };
     // Cross-tenant + cross-project guard: refuse to traverse from a seed the
     // caller can't see in their (tenant, project) scope.
-    const seedEntry = await this.warm.getEntry(tenantId, args.id, { projectId });
+    const seedEntry = await this.warm.getEntry(userId, args.id, { projectId });
     if (!seedEntry) return { results: [], degraded: false };
-    const hits = await this.graph.neighbors(tenantId, args.id, depth, k, projectId);
+    const hits = await this.graph.neighbors(userId, args.id, depth, k, projectId);
     const results: SearchResult[] = [];
     for (const h of hits) {
-      const e = await this.warm.getEntry(tenantId, h.id, { projectId });
+      const e = await this.warm.getEntry(userId, h.id, { projectId });
       if (!e) continue;
       results.push({
         id: h.id,
@@ -414,24 +414,24 @@ export class MemoryEngine {
    *  ids and (for project-scoped queries) for entries in a different
    *  project. The DELETEs that follow MUST scope by the same boundary —
    *  P0-5: when the entry is project-scoped, scope by project_id (NOT
-   *  tenant_id, because cross-tenant project members must be able to
-   *  delete shared rows); when tenant-wide, scope by tenant_id. */
+   *  user_id, because cross-tenant project members must be able to
+   *  delete shared rows); when tenant-wide, scope by user_id. */
   async forget(
-    tenantId: string,
+    userId: string,
     id: string,
     opts: { project?: string | null; token?: TokenIdentity } = {},
   ): Promise<{ deleted: boolean; coldDeleteOk: boolean }> {
-    const e = await this.warm.getEntry(tenantId, id, { projectId: opts.project ?? null });
+    const e = await this.warm.getEntry(userId, id, { projectId: opts.project ?? null });
     if (!e) return { deleted: false, coldDeleteOk: true };
-    this.metrics?.recordForget(tenantId, opts.token);
+    this.metrics?.recordForget(userId, opts.token);
     const pool = this.warm.pool;
     const isProject = e.projectId !== null;
     // Scope clause for the by-id DELETEs. When the row is project-scoped,
     // project_id = entry's project_id is the correct access boundary;
-    // tenant_id is decorative (and may differ from the bearer's tenant
-    // for shared projects). When tenant-wide, tenant_id is the boundary.
-    const scopeClause = isProject ? "project_id = $2" : "tenant_id = $2";
-    const scopeValue = isProject ? e.projectId! : tenantId;
+    // user_id is decorative (and may differ from the bearer's tenant
+    // for shared projects). When tenant-wide, user_id is the boundary.
+    const scopeClause = isProject ? "project_id = $2" : "user_id = $2";
+    const scopeValue = isProject ? e.projectId! : userId;
     await pool.query(
       `DELETE FROM memory_fts WHERE entry_id = $1 AND ${scopeClause}`,
       [id, scopeValue],
@@ -448,30 +448,30 @@ export class MemoryEngine {
     );
     if (this.graph?.isConnected()) {
       try {
-        await this.graph.removeNode(tenantId, id);
+        await this.graph.removeNode(userId, id);
       } catch (err) {
         this.logger.warn(`[engine] forget(${id}): graph removeNode failed: ${(err as Error).message}`);
       }
     }
     let coldDeleteOk = true;
     try {
-      await this.cold.delete(tenantId, e.namespace, id, e.projectId ?? null);
+      await this.cold.delete(userId, e.namespace, id, e.projectId ?? null);
     } catch (err) {
       // Warm row is already gone; cold vector is orphaned. Park the id in
       // cold_orphans; the reaper retries on the decay schedule until the
-      // qdrant delete succeeds. The orphan row carries tenant_id so the
+      // qdrant delete succeeds. The orphan row carries user_id so the
       // reaper knows which collection to delete from.
       coldDeleteOk = false;
       const message = (err as Error).message;
       this.logger.warn(`[engine] forget(${id}): cold vector survived (${message}); queued for reaper`);
       await pool.query(
-        `INSERT INTO cold_orphans (id, tenant_id, namespace, project_id, attempts, last_error, last_attempt_at)
+        `INSERT INTO cold_orphans (id, user_id, namespace, project_id, attempts, last_error, last_attempt_at)
          VALUES ($1, $2, $3, $4, 1, $5, now())
          ON CONFLICT (id) DO UPDATE SET
            attempts = cold_orphans.attempts + 1,
            last_error = EXCLUDED.last_error,
            last_attempt_at = now()`,
-        [id, tenantId, e.namespace, e.projectId ?? null, message],
+        [id, userId, e.namespace, e.projectId ?? null, message],
       );
     }
     return { deleted: true, coldDeleteOk };
@@ -492,12 +492,12 @@ export class MemoryEngine {
     const limit = opts.limit ?? 100;
     const rows = await this.warm.pool.query<{
       id: string;
-      tenant_id: string;
+      user_id: string;
       namespace: string;
       project_id: string | null;
       attempts: number;
     }>(
-      `SELECT id, tenant_id, namespace, project_id, attempts FROM cold_orphans
+      `SELECT id, user_id, namespace, project_id, attempts FROM cold_orphans
         WHERE attempts < $1
         ORDER BY last_attempt_at ASC NULLS FIRST
         LIMIT $2`,
@@ -507,7 +507,7 @@ export class MemoryEngine {
     let abandoned = 0;
     for (const r of rows.rows) {
       try {
-        await this.cold.delete(r.tenant_id, r.namespace, r.id, r.project_id);
+        await this.cold.delete(r.user_id, r.namespace, r.id, r.project_id);
         await this.warm.pool.query(`DELETE FROM cold_orphans WHERE id = $1`, [r.id]);
         cleared++;
       } catch (err) {
@@ -547,31 +547,31 @@ export class MemoryEngine {
    *  graph. The warm purge is transactional; cold and graph are best-effort
    *  but always attempted. Refuses to delete the synthetic `public` tenant
    *  (would orphan legacy single-tenant rows). */
-  async deleteTenant(tenantId: string): Promise<{
+  async deleteUser(userId: string): Promise<{
     deleted: boolean;
     entriesRemoved: number;
     coldCollectionsDropped: string[];
     graphCleared: boolean;
   }> {
-    const warm = await this.warm.deleteTenant(tenantId);
+    const warm = await this.warm.deleteUserAndMemory(userId);
     if (!warm.deleted) {
       return { deleted: false, entriesRemoved: 0, coldCollectionsDropped: [], graphCleared: false };
     }
     let coldCollectionsDropped: string[] = [];
     try {
-      coldCollectionsDropped = await this.cold.deleteAllForTenant(tenantId);
+      coldCollectionsDropped = await this.cold.deleteAllForTenant(userId);
     } catch (err) {
-      this.logger.warn(`[engine] deleteTenant(${tenantId}): cold cleanup failed: ${(err as Error).message}`);
+      this.logger.warn(`[engine] deleteUser(${userId}): cold cleanup failed: ${(err as Error).message}`);
     }
     let graphCleared = false;
     if (this.graph?.isConnected()) {
       // graph-store now returns whether the DELETE actually ran (it logs
       // its own error on failure). Don't claim graphCleared falsely.
-      graphCleared = await this.graph.removeAllForTenant(tenantId);
+      graphCleared = await this.graph.removeAllForTenant(userId);
     }
     // P2-5: drop the tenant's MetricsCollector slot so the in-memory Map
     // doesn't accumulate dead entries.
-    this.metrics?.forgetTenant(tenantId);
+    this.metrics?.forgetUser(userId);
     return {
       deleted: true,
       entriesRemoved: warm.entriesRemoved,
@@ -612,8 +612,8 @@ export class MemoryEngine {
     };
   }
 
-  async stats(tenantId: string): Promise<MemoryStats> {
-    const s = await this.warm.stats(tenantId);
+  async stats(userId: string): Promise<MemoryStats> {
+    const s = await this.warm.stats(userId);
     const byNamespace: Record<string, { warm: number; cold: number }> = {};
     let totalWarm = 0;
     let totalCold = 0;

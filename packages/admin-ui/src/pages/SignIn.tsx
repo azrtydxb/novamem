@@ -32,8 +32,9 @@ export function SignIn() {
     });
     setBusy(false);
     if (r.ok && r.body) {
-      // Cookie has been set by the server; we just record the user.
-      login(r.body.user);
+      // Cookie has been set by the server; record the user and whether a
+      // password change is required on first login.
+      login(r.body.user, r.body.needsPasswordChange);
     } else if (r.status === 401) {
       setError("Invalid username or password.");
     } else if (r.status === 404) {

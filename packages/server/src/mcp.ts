@@ -14,17 +14,22 @@ import type { MemoryEngine } from "./engine/index.js";
 import type { WarmStore } from "./warm-store/index.js";
 
 export interface McpContext {
-  tenantId: string;
-  /** Project the bearer/session is bound to (or null for tenant-wide). */
+  /** Memory-owner id. For session callers this equals the dashboard
+   *  user's id; for tenant-bearer callers it's the user the bearer is
+   *  scoped to. */
+  userId: string;
+  /** Project the bearer/session is bound to (or null for whole-user). */
   projectId?: string | null;
-  /** User id when authenticated as a dashboard user (used for project.create
-   *  ownership). Null/undefined for tenant-bearer-only callers — those can't
-   *  create projects via MCP. */
-  userId?: string | null;
+  /** User id when authenticated as a dashboard user (used for
+   *  project.create ownership). Null/undefined for bearer-only callers —
+   *  those can't create projects via MCP. Usually equal to userId, but
+   *  kept distinct so a bearer's owning user is never confused with the
+   *  caller. */
+  dashUserId?: string | null;
 }
 
 /** Build the MCP server. `ctxOrTenant` accepts either a context object (new
- *  shape with tenant + project + user) or a bare tenantId string for back-
+ *  shape with tenant + project + user) or a bare userId string for back-
  *  compat with existing callers. */
 export function buildMcpServer(
   engine: MemoryEngine,
@@ -32,8 +37,8 @@ export function buildMcpServer(
   warm?: WarmStore,
 ): Server {
   const ctx: McpContext =
-    typeof ctxOrTenant === "string" ? { tenantId: ctxOrTenant } : ctxOrTenant;
-  const tenantId = ctx.tenantId;
+    typeof ctxOrTenant === "string" ? { userId: ctxOrTenant } : ctxOrTenant;
+  const userId = ctx.userId;
   const bearerProject = ctx.projectId ?? null;
   const server = new Server(
     { name: "novamem", version: "0.1.0" },
@@ -199,7 +204,7 @@ export function buildMcpServer(
               }
             : undefined;
         const project = resolveProject(args.project);
-        const r = await engine.search(tenantId, {
+        const r = await engine.search(userId, {
           query: String(args.query),
           k: typeof args.k === "number" ? args.k : undefined,
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
@@ -210,7 +215,7 @@ export function buildMcpServer(
       }
       case "memory.remember": {
         const project = resolveProject(args.project);
-        const r = await engine.remember(tenantId, {
+        const r = await engine.remember(userId, {
           content: String(args.content),
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           source: typeof args.source === "string" ? args.source : undefined,
@@ -221,7 +226,7 @@ export function buildMcpServer(
       case "memory.today": {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const project = resolveProject(args.project);
-        const r = await engine.recent(tenantId, {
+        const r = await engine.recent(userId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           k: typeof args.k === "number" ? args.k : 20,
           since,
@@ -231,7 +236,7 @@ export function buildMcpServer(
       }
       case "memory.recent": {
         const project = resolveProject(args.project);
-        const r = await engine.recent(tenantId, {
+        const r = await engine.recent(userId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           k: typeof args.k === "number" ? args.k : undefined,
           since: typeof args.since === "string" ? args.since : undefined,
@@ -241,7 +246,7 @@ export function buildMcpServer(
       }
       case "memory.neighbors": {
         const project = resolveProject(args.project);
-        const r = await engine.neighbors(tenantId, {
+        const r = await engine.neighbors(userId, {
           id: String(args.id),
           depth: typeof args.depth === "number" ? args.depth : undefined,
           k: typeof args.k === "number" ? args.k : undefined,
@@ -251,25 +256,25 @@ export function buildMcpServer(
       }
       case "memory.forget": {
         const project = resolveProject(args.project);
-        const r = await engine.forget(tenantId, String(args.id), { project });
+        const r = await engine.forget(userId, String(args.id), { project });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.stats": {
-        const r = await engine.stats(tenantId);
+        const r = await engine.stats(userId);
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "project.list": {
-        if (!warm || !ctx.userId) {
+        if (!warm || !ctx.dashUserId) {
           return {
             content: [{ type: "text", text: "project.list requires dashboard-user authentication" }],
             isError: true,
           };
         }
-        const projects = await warm.listProjectsForUser(ctx.userId);
+        const projects = await warm.listProjectsForUser(ctx.dashUserId);
         return { content: [{ type: "text", text: JSON.stringify({ projects }) }] };
       }
       case "project.create": {
-        if (!warm || !ctx.userId) {
+        if (!warm || !ctx.dashUserId) {
           return {
             content: [{ type: "text", text: "project.create requires dashboard-user authentication" }],
             isError: true,
@@ -286,8 +291,7 @@ export function buildMcpServer(
         const project = await warm.createProject({
           id,
           name,
-          ownerUserId: ctx.userId,
-          ownerTenantId: tenantId,
+          ownerUserId: ctx.dashUserId,
         });
         return { content: [{ type: "text", text: JSON.stringify(project) }] };
       }
@@ -302,8 +306,8 @@ export function buildMcpServer(
   return server;
 }
 
-export async function startMcpStdio(engine: MemoryEngine, tenantId: string): Promise<void> {
-  const server = buildMcpServer(engine, tenantId);
+export async function startMcpStdio(engine: MemoryEngine, userId: string): Promise<void> {
+  const server = buildMcpServer(engine, userId);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
