@@ -15,7 +15,7 @@ import {
 
 function makeApp(
   opts: {
-    authMode?: "none" | "bearer" | "tenant";
+    authMode?: "none" | "bearer" | "user";
     token?: string;
     adminDashboard?: boolean;
     withMetrics?: boolean;
@@ -248,13 +248,13 @@ describe("http: SSE/MCP transport routes", () => {
   });
 });
 
-describe("http: tenant mode + admin routes", () => {
+describe("http: user mode + admin routes", () => {
   /** Create two users and mint a token for each. The new model has no
-   *  separate tenant concept — each user IS their own scope. Tests that
-   *  used to assert "memories don't mix between tenants" now assert the
+   *  separate user-namespace concept — each user IS their own scope. Tests that
+   *  used to assert "memories don't mix between users" now assert the
    *  same boundary at the user level. */
   async function setupTwoUsers() {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const adminH = await adminAuth(warm);
     const mkUser = async (username: string) => {
       const u = await warm.createUser({
@@ -271,7 +271,7 @@ describe("http: tenant mode + admin routes", () => {
   }
 
   it("rejects requests without a recognised token", async () => {
-    const { app } = makeApp({ authMode: "tenant" });
+    const { app } = makeApp({ authMode: "user" });
     const r = await app.inject({
       method: "POST",
       url: "/v1/search",
@@ -281,7 +281,7 @@ describe("http: tenant mode + admin routes", () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it("admin routes refuse a tenant bearer (only session-admin works)", async () => {
+  it("admin routes refuse a user bearer (only session-admin works)", async () => {
     const { app, tokenA } = await setupTwoUsers();
     const r = await app.inject({
       method: "GET",
@@ -521,10 +521,10 @@ describe("http: /admin dashboard mount", () => {
     expect(r.statusCode).toBe(404);
   });
 
-  it("dashboard HTML is reachable in tenant mode without a tenant token", async () => {
+  it("dashboard HTML is reachable in user mode without a user bearer", async () => {
     // The HTML shell must load before the user can paste their admin token.
     // The auth hook explicitly skips /admin/* — verify it doesn't 401.
-    const { app } = makeApp({ authMode: "tenant" });
+    const { app } = makeApp({ authMode: "user" });
     const r = await app.inject({ method: "GET", url: "/admin" });
     expect(r.statusCode).toBe(200);
   });
@@ -532,7 +532,7 @@ describe("http: /admin dashboard mount", () => {
 
 describe("http: user delete (admin)", () => {
   async function bootstrap() {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const adminH = await adminAuth(warm);
     const u = await warm.createUser({
       username: "alice-del",
@@ -614,8 +614,8 @@ describe("http: OpenAPI + Swagger UI", () => {
     expect([200, 301, 302]).toContain(r.statusCode);
   });
 
-  it("/api-docs is reachable in tenant mode without a bearer", async () => {
-    const { app } = makeApp({ authMode: "tenant" });
+  it("/api-docs is reachable in user mode without a bearer", async () => {
+    const { app } = makeApp({ authMode: "user" });
     const r = await app.inject({ method: "GET", url: "/api-docs/static/index.html" });
     expect([200, 301, 302]).toContain(r.statusCode);
   });
@@ -623,7 +623,7 @@ describe("http: OpenAPI + Swagger UI", () => {
 
 describe("http: dashboard auth + RBAC", () => {
   async function setupWithAdmin(adminPwd = "supersecret") {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const { hashPassword } = await import("./auth.js");
     const hash = await hashPassword(adminPwd);
     await warm.createUser({ username: "alice", passwordHash: hash, role: "admin" });
@@ -631,7 +631,7 @@ describe("http: dashboard auth + RBAC", () => {
   }
 
   it("/v1/auth/status reports bootstrap state", async () => {
-    const { app } = makeApp({ authMode: "tenant" });
+    const { app } = makeApp({ authMode: "user" });
     const r1 = await app.inject({ method: "GET", url: "/v1/auth/status" });
     expect(r1.statusCode).toBe(200);
     expect(r1.json()).toEqual({ ready: false, bootstrapNeeded: true });
@@ -685,7 +685,6 @@ describe("http: dashboard auth + RBAC", () => {
 
   it("admin can create + delete + promote/demote users", async () => {
     const { app, warm, adminPwd } = await setupWithAdmin();
-    await warm.createTenant("acme", "Acme");
 
     const login = await app.inject({
       method: "POST", url: "/v1/auth/login",
@@ -703,7 +702,10 @@ describe("http: dashboard auth + RBAC", () => {
     const bobId = created.json().id;
 
     const list = await app.inject({ method: "GET", url: "/v1/admin/users", headers: auth });
-    expect(list.json().users.length).toBe(2);
+    // The synthetic `public` user is always seeded; alice + bob are
+    // the two test users we created. So 3 total.
+    const usernames = list.json().users.map((u: { username: string }) => u.username).sort();
+    expect(usernames).toEqual(["alice", "bob", "public"]);
 
     const promote = await app.inject({
       method: "POST", url: `/v1/admin/users/${bobId}/role`,
@@ -783,8 +785,8 @@ describe("http: dashboard auth + RBAC", () => {
       headers: auth,
     });
     expect(mint.statusCode).toBe(201);
-    const tenantToken = mint.json().token;
-    expect(tenantToken).toMatch(/^nm_/);
+    const userBearer = mint.json().token;
+    expect(userBearer).toMatch(/^nm_/);
 
     const list = await app.inject({ method: "GET", url: "/v1/me/tokens", headers: auth });
     expect(list.json().tokens.length).toBe(1);
@@ -793,7 +795,7 @@ describe("http: dashboard auth + RBAC", () => {
     const r = await app.inject({
       method: "POST", url: "/v1/recent",
       payload: {},
-      headers: { authorization: `Bearer ${tenantToken}` },
+      headers: { authorization: `Bearer ${userBearer}` },
     });
     expect(r.statusCode).toBe(200);
 
@@ -811,7 +813,7 @@ describe("http: dashboard auth + RBAC", () => {
     const after = await app.inject({
       method: "POST", url: "/v1/recent",
       payload: {},
-      headers: { authorization: `Bearer ${tenantToken}` },
+      headers: { authorization: `Bearer ${userBearer}` },
     });
     expect(after.statusCode).toBe(401);
   });
@@ -819,7 +821,6 @@ describe("http: dashboard auth + RBAC", () => {
   it("user cannot reach admin routes", async () => {
     const { app, warm } = await setupWithAdmin();
     const { hashPassword } = await import("./auth.js");
-    await warm.createTenant("acme", "Acme");
     const hash = await hashPassword("bobpass1");
     await warm.createUser({ username: "bob", passwordHash: hash, role: "user", userId: "acme" });
 
@@ -839,10 +840,8 @@ describe("http: dashboard auth + RBAC", () => {
 
 describe("http: P0 regression tests", () => {
   async function setupBobInAcme() {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const { hashPassword } = await import("./auth.js");
-    await warm.createTenant("acme", "Acme");
-    await warm.createTenant("contoso", "Contoso");
     const bobHash = await hashPassword("bobpass1");
     await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
     const carolHash = await hashPassword("carolpass1");
@@ -855,8 +854,8 @@ describe("http: P0 regression tests", () => {
     return { app, warm, bobSession, carolSession };
   }
 
-  // P0-1 (tenant id `p_*` collision with project collection prefix) is
-  // obsolete — there are no tenant ids any more, just user ids; user
+  // P0-1 (user id `p_*` collision with project collection prefix) is
+  // obsolete — there are no user ids any more, just user ids; user
   // creation goes through usernames which can't collide with project
   // collection naming.
 
@@ -900,15 +899,15 @@ describe("http: P0 regression tests", () => {
   // P0-3: per-username login throttle locks an account out after 5 failures
   // Backoff sleeps add up; allow extra time.
   it("P0-3: 5 wrong passwords lock the account out (429)", { timeout: 15_000 }, async () => {
-    const { app } = makeApp({ authMode: "tenant" });
+    const { app } = makeApp({ authMode: "user" });
     const { hashPassword } = await import("./auth.js");
     const w = (app as unknown as { warmFake?: unknown }) as never;
     void w;
     // Register bob
-    const { warm } = makeApp({ authMode: "tenant" });
+    const { warm } = makeApp({ authMode: "user" });
     void warm; // throwaway — main test uses the throttle on the original app
     // Fresh app for an isolated throttle.
-    const { app: app2, warm: warm2 } = makeApp({ authMode: "tenant" });
+    const { app: app2, warm: warm2 } = makeApp({ authMode: "user" });
     const hash = await hashPassword("right-password");
     await warm2.createUser({ username: "bob", passwordHash: hash, role: "user" });
     for (let i = 0; i < 5; i++) {
@@ -945,8 +944,8 @@ describe("http: P0 regression tests", () => {
     expect(ok).toBeDefined();
   });
 
-  // P0-5: cross-tenant project member CAN forget shared rows
-  it("P0-5: cross-tenant project member can forget a shared entry", async () => {
+  // P0-5: cross-user project member CAN forget shared rows
+  it("P0-5: cross-user project member can forget a shared entry", async () => {
     const { app, bobSession, carolSession } = await setupBobInAcme();
     const bobAuth = { authorization: `Bearer ${bobSession}` };
     const carolAuth = { authorization: `Bearer ${carolSession}` };
@@ -974,7 +973,7 @@ describe("http: P0 regression tests", () => {
       headers: { authorization: `Bearer ${bobTok}` },
     });
     const id = created.json().id;
-    // Carol (different tenant) can forget it
+    // Carol (different user, same project) can forget it
     const f = await app.inject({
       method: "POST", url: "/v1/forget",
       payload: { id },
@@ -991,13 +990,12 @@ describe("http: P0 regression tests", () => {
   });
 
   // P0-6: cookie-authed /v1/me/* mirrors must check project membership.
-  // Without this guard, any user in tenant `acme` could read/write any
+  // Without this guard, any user in `acme` could read/write any
   // project under `acme` by passing the project id in the body — even
   // projects they're not a member of.
   it("P0-6: /v1/me/search refuses non-members of the requested project", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const { hashPassword } = await import("./auth.js");
-    await warm.createTenant("acme", "Acme");
     const aliceHash = await hashPassword("alicepass1");
     const bobHash = await hashPassword("bobpass1");
     await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", userId: "acme" });
@@ -1067,9 +1065,8 @@ describe("http: P0 regression tests", () => {
   // project-scoped entry by passing project: null. The handler looks up
   // the actual entry's project_id and re-checks membership.
   it("P0-6: /v1/me/forget rechecks the entry's real project", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const { hashPassword } = await import("./auth.js");
-    await warm.createTenant("acme", "Acme");
     const aliceHash = await hashPassword("alicepass1");
     const bobHash = await hashPassword("bobpass1");
     await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", userId: "acme" });
@@ -1099,7 +1096,7 @@ describe("http: P0 regression tests", () => {
     const id = created.json().id;
 
     // Bob tries to delete the entry by passing project: null. The first
-    // membership check passes (null is allowed — tenant-wide is OK), but
+    // membership check passes (null is allowed — user-wide is OK), but
     // the entry-resolution recheck must catch it.
     const r = await app.inject({
       method: "POST", url: "/v1/me/forget",
@@ -1109,9 +1106,9 @@ describe("http: P0 regression tests", () => {
   });
 
   // P1-S6: admin actions write to the audit log — the canonical action
-  // is now user.create (admin manages users; tenants are gone).
+  // is now user.create (admin manages users).
   it("P1-S6: user.create writes an audit-log entry", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const adminH = await adminAuth(warm);
     await app.inject({
       method: "POST",
@@ -1137,10 +1134,8 @@ describe("http: P0 regression tests", () => {
 
 describe("http: projects (sub-brains)", () => {
   async function setupBobInAcme() {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const { hashPassword } = await import("./auth.js");
-    await warm.createTenant("acme", "Acme");
-    await warm.createTenant("contoso", "Contoso");
     const bobHash = await hashPassword("bobpass1");
     await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
     const carolHash = await hashPassword("carolpass1");
@@ -1171,7 +1166,7 @@ describe("http: projects (sub-brains)", () => {
     expect(projects[0].role).toBe("owner");
   });
 
-  it("project-scoped token isolates memory from tenant-wide", async () => {
+  it("project-scoped token isolates memory from user-wide", async () => {
     const { app, session } = await setupBobInAcme();
     const auth = { authorization: `Bearer ${session}` };
 
@@ -1192,10 +1187,10 @@ describe("http: projects (sub-brains)", () => {
       headers: auth,
     })).json().token as string;
 
-    // Tenant-wide entry
+    // User-wide entry
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "tenant-wide alpha" },
+      payload: { content: "user-wide alpha" },
       headers: { authorization: `Bearer ${wideTok}` },
     });
     // Project entry
@@ -1213,20 +1208,20 @@ describe("http: projects (sub-brains)", () => {
     });
     const phContents = ph.json().results.map((r: { content: string }) => r.content);
     expect(phContents).toContain("phoenix beta gamma");
-    expect(phContents).not.toContain("tenant-wide alpha");
+    expect(phContents).not.toContain("user-wide alpha");
 
-    // Tenant-wide bearer should see only the wide entry
+    // User-wide bearer should see only the wide entry
     const wd = await app.inject({
       method: "POST", url: "/v1/recent",
       payload: {},
       headers: { authorization: `Bearer ${wideTok}` },
     });
     const wdContents = wd.json().results.map((r: { content: string }) => r.content);
-    expect(wdContents).toContain("tenant-wide alpha");
+    expect(wdContents).toContain("user-wide alpha");
     expect(wdContents).not.toContain("phoenix beta gamma");
   });
 
-  it("tenant-wide bearer rejected if it asks for a project in body", async () => {
+  it("user-wide bearer rejected if it asks for a project in body", async () => {
     const { app, session } = await setupBobInAcme();
     const auth = { authorization: `Bearer ${session}` };
     await app.inject({
@@ -1274,7 +1269,7 @@ describe("http: projects (sub-brains)", () => {
     expect(r.statusCode).toBe(403);
   });
 
-  it("owner adds a cross-tenant member; member sees the project + can mint tokens", async () => {
+  it("owner adds a cross-user member; member sees the project + can mint tokens", async () => {
     const { app, warm, session } = await setupBobInAcme();
     const authBob = { authorization: `Bearer ${session}` };
     await app.inject({
@@ -1283,7 +1278,7 @@ describe("http: projects (sub-brains)", () => {
       headers: authBob,
     });
 
-    // Add carol (different tenant) by username
+    // Add carol (different user) by username
     const add = await app.inject({
       method: "POST", url: "/v1/me/projects/shared/members",
       payload: { username: "carol" },
@@ -1411,7 +1406,7 @@ describe("http: projects (sub-brains)", () => {
 
 describe("http: /v1/auth/rotate-token (user self-service)", () => {
   it("rotates the caller's token and revokes the old one", async () => {
-    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { app, warm } = makeApp({ authMode: "user" });
     const u = await warm.createUser({
       username: "alice-rot",
       passwordHash: "test",
@@ -1445,7 +1440,7 @@ describe("http: /v1/auth/rotate-token (user self-service)", () => {
   });
 
   it("401s without a valid bearer", async () => {
-    const { app } = makeApp({ authMode: "tenant" });
+    const { app } = makeApp({ authMode: "user" });
     const r = await app.inject({
       method: "POST", url: "/v1/auth/rotate-token",
       headers: { authorization: "Bearer not-a-real-token" },
@@ -1453,7 +1448,7 @@ describe("http: /v1/auth/rotate-token (user self-service)", () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it("400s outside tenant mode", async () => {
+  it("400s outside user mode", async () => {
     const { app } = makeApp({ authMode: "bearer", token: "secret" });
     const r = await app.inject({
       method: "POST", url: "/v1/auth/rotate-token",

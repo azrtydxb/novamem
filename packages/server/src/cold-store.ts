@@ -31,16 +31,16 @@ export class ColdStore {
     this.vectorSize = cfg.vectorSize;
   }
 
-  /** Collection naming embeds tenant + project so vector leakage is
+  /** Collection naming embeds user + project so vector leakage is
    *  structurally impossible — there's literally no shared collection to
    *  accidentally search across either boundary.
    *
-   *  - Tenant-wide entries (no project): `novamem_<tenant>_<namespace>`
+   *  - User-wide entries (no project): `novamem_<user>_<namespace>`
    *  - Project-scoped entries: `novamem_p_<project>_<namespace>`
    *
-   *  Project names lead with `p_` so a tenant id could never collide with
-   *  a project id (tenant ids are slugs without that prefix by convention).
-   *  Project membership is cross-tenant by design, so the tenant id
+   *  Project names lead with `p_` so a user id could never collide with
+   *  a project id (user ids are slugs without that prefix by convention).
+   *  Project membership is cross-user by design, so the user id
    *  intentionally does not appear in project-scoped collection names. */
   private collectionFor(userId: string, namespace: string, projectId: string | null = null): string {
     if (projectId) return `novamem_p_${projectId}_${namespace}`;
@@ -123,12 +123,12 @@ export class ColdStore {
     });
   }
 
-  /** Drop every collection belonging to the given tenant. Used when a
-   *  tenant is deleted — leaves the qdrant cluster clean of orphaned
+  /** Drop every collection belonging to the given user. Used when a
+   *  user is deleted — leaves the qdrant cluster clean of orphaned
    *  vector data. Returns the names of the dropped collections so callers
    *  can log + audit. Best-effort: a delete failure for one collection
    *  doesn't block the others. */
-  async deleteAllForTenant(userId: string): Promise<string[]> {
+  async deleteAllForUser(userId: string): Promise<string[]> {
     const prefix = `novamem_${userId}_`;
     const all = await this.client.getCollections();
     const mine = all.collections.map((c) => c.name).filter((n) => n.startsWith(prefix));

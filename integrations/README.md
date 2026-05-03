@@ -65,4 +65,4 @@ The rules file (`CLAUDE.md` fragment) tells the agent:
 - when to call `memory.search` (before exploring the codebase, when the
   user references prior work, when a decision was likely already made)
 - how to use weights (`{ keyword: 1 }` for ids/symbols, default for prose)
-- how project scope works (omit for tenant-wide, set for sub-brain)
+- how project scope works (omit for user-wide, set for sub-brain)

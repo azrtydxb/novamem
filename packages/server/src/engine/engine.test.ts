@@ -356,58 +356,58 @@ describe("engine.stats", () => {
   });
 });
 
-describe("engine: tenant isolation", () => {
-  it("tenant B cannot see tenant A's entries via search", async () => {
+describe("engine: user isolation", () => {
+  it("user B cannot see user A's entries via search", async () => {
     const b = bench();
-    const a = await b.engine.remember("tenant_a", { content: "Pascal likes dark roast coffee" });
-    const r = await b.engine.search("tenant_b", { query: "coffee preference", k: 5 });
+    const a = await b.engine.remember("user_a", { content: "Pascal likes dark roast coffee" });
+    const r = await b.engine.search("user_b", { query: "coffee preference", k: 5 });
     expect(r.results.find((x) => x.id === a.id)).toBeUndefined();
   });
 
-  it("tenant B cannot see tenant A's entries via recent", async () => {
+  it("user B cannot see user A's entries via recent", async () => {
     const b = bench();
-    const a = await b.engine.remember("tenant_a", { content: "tenant a memory" });
-    const r = await b.engine.recent("tenant_b", { k: 50 });
+    const a = await b.engine.remember("user_a", { content: "user a memory" });
+    const r = await b.engine.recent("user_b", { k: 50 });
     expect(r.results.find((x) => x.id === a.id)).toBeUndefined();
   });
 
-  it("tenant B cannot forget tenant A's entries (returns deleted:false; entry survives)", async () => {
+  it("user B cannot forget user A's entries (returns deleted:false; entry survives)", async () => {
     const b = bench();
-    const a = await b.engine.remember("tenant_a", { content: "tenant a memory" });
-    const r = await b.engine.forget("tenant_b", a.id);
+    const a = await b.engine.remember("user_a", { content: "user a memory" });
+    const r = await b.engine.forget("user_b", a.id);
     expect(r.deleted).toBe(false);
-    // Original tenant can still read it.
-    const aRecent = await b.engine.recent("tenant_a", {});
+    // Original user can still read it.
+    const aRecent = await b.engine.recent("user_a", {});
     expect(aRecent.results.find((x) => x.id === a.id)).toBeDefined();
   });
 
-  it("tenant B cannot traverse from tenant A's seed via neighbors", async () => {
+  it("user B cannot traverse from user A's seed via neighbors", async () => {
     const b = bench();
-    const a = await b.engine.remember("tenant_a", { content: "tenant a seed" });
-    await b.engine.remember("tenant_a", { content: "tenant a neighbour" });
-    const r = await b.engine.neighbors("tenant_b", { id: a.id });
+    const a = await b.engine.remember("user_a", { content: "user a seed" });
+    await b.engine.remember("user_a", { content: "user a neighbour" });
+    const r = await b.engine.neighbors("user_b", { id: a.id });
     expect(r.results).toEqual([]);
   });
 
-  it("graph auto-links don't cross tenants even with similar content", async () => {
+  it("graph auto-links don't cross users even with similar content", async () => {
     const b = bench();
-    const a = await b.engine.remember("tenant_a", { content: "alpha alpha alpha" });
-    const c = await b.engine.remember("tenant_b", { content: "alpha alpha alpha" });
+    const a = await b.engine.remember("user_a", { content: "alpha alpha alpha" });
+    const c = await b.engine.remember("user_b", { content: "alpha alpha alpha" });
     // c should not be linked to a even though their vectors are identical —
-    // cold.search is tenant-scoped, so c sees no neighbours.
-    const aEdges = b.graph.edges.get(`tenant_a:${a.id}`) ?? [];
-    const cEdges = b.graph.edges.get(`tenant_b:${c.id}`) ?? [];
+    // cold.search is user-scoped, so c sees no neighbours.
+    const aEdges = b.graph.edges.get(`user_a:${a.id}`) ?? [];
+    const cEdges = b.graph.edges.get(`user_b:${c.id}`) ?? [];
     expect(aEdges).toEqual([]);
     expect(cEdges).toEqual([]);
   });
 
-  it("tenant-scoped stats only count one tenant's entries", async () => {
+  it("user-scoped stats only count one user's entries", async () => {
     const b = bench();
-    await b.engine.remember("tenant_a", { content: "a1" });
-    await b.engine.remember("tenant_a", { content: "a2" });
-    await b.engine.remember("tenant_b", { content: "b1" });
-    const sA = await b.engine.stats("tenant_a");
-    const sB = await b.engine.stats("tenant_b");
+    await b.engine.remember("user_a", { content: "a1" });
+    await b.engine.remember("user_a", { content: "a2" });
+    await b.engine.remember("user_b", { content: "b1" });
+    const sA = await b.engine.stats("user_a");
+    const sB = await b.engine.stats("user_b");
     expect(sA.totalWarm).toBe(2);
     expect(sB.totalWarm).toBe(1);
   });

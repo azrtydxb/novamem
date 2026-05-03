@@ -71,7 +71,7 @@ export function BrowsePage() {
       return r.body;
     },
     onSuccess: () => {
-      toast.success("Memory stored", "Added to your tenant.");
+      toast.success("Memory stored", "Added to your memory.");
       setComposing(false);
       setNewContent("");
       void queryClient.invalidateQueries({ queryKey: ["browse-recent"] });

@@ -87,28 +87,28 @@ export const ForgetBody = z.object({
 
 // ─── Admin bodies ──────────────────────────────────────────────────────
 //
-// The tenant id regex is *narrower* than a generic slug: the cold store
+// The user id regex is *narrower* than a generic slug: the cold store
 // derives qdrant collection names as `novamem_<userId>_<namespace>` for
-// tenant-wide entries and `novamem_p_<projectId>_<namespace>` for project-
-// scoped entries. A tenant id starting with `p_` would make a tenant's
+// user-wide entries and `novamem_p_<projectId>_<namespace>` for project-
+// scoped entries. A user id starting with `p_` would make a user's
 // collections indistinguishable from project collections at prefix-scan
 // time (see review finding P0-1). Forbid `p_` prefix explicitly + the
 // bare value `p` for the same reason. Also forbid `__` (used as a
 // separator-with-margin in a future migration).
-export const AdminCreateTenantBody = z.object({
+export const AdminCreateUserBody = z.object({
   id: z
     .string()
     .min(1)
     .max(64)
     .regex(/^[a-z0-9][a-z0-9_-]*$/, {
-      message: "tenant id must be lowercase alphanumeric / underscore / hyphen",
+      message: "user id must be lowercase alphanumeric / underscore / hyphen",
     })
     .refine((v) => v !== "p" && !v.startsWith("p_"), {
       message:
-        "tenant id cannot start with 'p_' or be exactly 'p' (collides with project collection naming)",
+        "user id cannot start with 'p_' or be exactly 'p' (collides with project collection naming)",
     })
     .refine((v) => !v.includes("__"), {
-      message: "tenant id cannot contain '__' (reserved separator)",
+      message: "user id cannot contain '__' (reserved separator)",
     }),
   name: z.string().min(1).max(128),
 });

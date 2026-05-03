@@ -238,7 +238,7 @@ export interface ActivityEvent {
 
 export interface OnboardingState {
   bootstrapDone: boolean;
-  tenantDone: boolean;
+  userDone: boolean;
   mintedToken: boolean;
   remembered: boolean;
   userId: string;

@@ -22,16 +22,16 @@ async function main() {
     // service "just works" out of the box; this warning is the receipt.
     // eslint-disable-next-line no-console
     console.warn(
-      "[novamem] WARNING: auth.mode=none — every request is accepted as the 'public' tenant. " +
-        "Set NOVAMEM_AUTH_MODE=tenant for real isolation, " +
-        "or =bearer + NOVAMEM_AUTH_TOKEN for a shared single-tenant token.",
+      "[novamem] WARNING: auth.mode=none — every request is accepted as the 'public' user. " +
+        "Set NOVAMEM_AUTH_MODE=user for real isolation, " +
+        "or =bearer + NOVAMEM_AUTH_TOKEN for a shared single-user bearer.",
     );
   } else if (cfg.auth.mode === "bearer") {
-    // Bearer mode is fine for single-tenant deployments but doesn't isolate.
+    // Bearer mode is fine for single-user deployments but doesn't isolate.
     // eslint-disable-next-line no-console
     console.warn(
-      "[novamem] auth.mode=bearer — single shared token, single 'public' tenant. " +
-        "Use auth.mode=tenant for multi-tenant isolation.",
+      "[novamem] auth.mode=bearer — single shared token, single 'public' user. " +
+        "Use auth.mode=user for multi-user isolation.",
     );
   }
 
@@ -102,9 +102,9 @@ async function main() {
       return Number(r.rows[0]?.count ?? 0);
     },
     graphEdges: async (_userId) => {
-      // Per-tenant edge count would require a graph query parameterised on
-      // tenant — out of scope for this dashboard cut. Return null so the UI
-      // shows "—" for tenant-scoped graph edges.
+      // Per-user edge count would require a graph query parameterised on
+      // user — out of scope for this dashboard cut. Return null so the UI
+      // shows "—" for user-scoped graph edges.
       return null;
     },
   });

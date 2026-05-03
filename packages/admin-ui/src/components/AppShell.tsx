@@ -75,7 +75,7 @@ export function AppShell({ active, onChange, children }: Props) {
         Skip to main content
       </a>
       <aside className="w-56 flex-none border-r border-rule bg-panel flex flex-col">
-        {/* Brand block — synapse logo + name + role/tenant caption. */}
+        {/* Brand block — synapse logo + name + role caption. */}
         <div className="px-4 py-4 border-b border-rule-soft flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-lg bg-accent flex items-center justify-center">
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">

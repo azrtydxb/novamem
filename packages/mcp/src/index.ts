@@ -4,7 +4,7 @@
  * in-process engine; this shim talks to a remote engine via HTTP.
  *
  * The shim authenticates with whatever bearer token the host sets via
- * NOVAMEM_TOKEN — either a tenant token (`nm_…`, data plane only) or a
+ * NOVAMEM_TOKEN — either a user token (`nm_…`, data plane only) or a
  * dashboard session token (`ns_…`, which unlocks `project.create` and
  * other user-scoped operations as well).
  */
@@ -28,7 +28,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
       {
         name: "memory.search",
         description:
-          "Hybrid search across stored memories (remote novamem). Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap. Pass `project` to scope to a sub-brain you have access to (or omit to search tenant-wide entries).",
+          "Hybrid search across stored memories (remote novamem). Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap. Pass `project` to scope to a sub-brain you have access to (or omit to search user-wide entries).",
         inputSchema: {
           type: "object",
           properties: {
@@ -37,7 +37,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
             namespace: { type: "string" },
             project: {
               type: "string",
-              description: "Project (sub-brain) id. Omit for tenant-wide entries.",
+              description: "Project (sub-brain) id. Omit for user-wide entries.",
             },
             weights: {
               type: "object",
@@ -124,7 +124,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
       {
         name: "project.list",
         description:
-          "List projects (sub-brains) the current caller is a member of. Requires a dashboard session bearer (NOVAMEM_TOKEN starting with `ns_`); tenant-token bearers will get an error.",
+          "List projects (sub-brains) the current caller is a member of. Requires a dashboard session bearer (NOVAMEM_TOKEN starting with `ns_`); user-bearer (`nm_`) callers will get an error.",
         inputSchema: { type: "object", properties: {} },
       },
       {

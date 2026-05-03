@@ -58,7 +58,7 @@ sentence ("Saved that as a memory.") so the user can correct or veto.
 ## Project scope
 
 A project is a *sub-brain*. Pass `project: <id>` to scope a call to
-that project; omit it for tenant-wide entries. Projects you can access
+that project; omit it for user-wide entries. Projects you can access
 come back from `project.list`. If a memory clearly belongs to a project
 the user is working on, scope it there.
 
