@@ -65,7 +65,7 @@ export function MyTokensPage() {
         title={
           <div className="flex items-center gap-2">
             <span>API tokens</span>
-            {user?.tenantId ? <Badge tone="accent">tenant: {user.tenantId}</Badge> : null}
+            {user?.userId ? <Badge tone="accent">tenant: {user.userId}</Badge> : null}
           </div>
         }
         subtitle="Mint a token per device. Plaintext is shown once at mint — revoke and mint again if you lose it."

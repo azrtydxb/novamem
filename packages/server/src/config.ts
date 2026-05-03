@@ -17,7 +17,7 @@ export const ConfigSchema = z
       .object({
         // - "none": dev only, every request becomes the synthetic `public` tenant.
         // - "bearer": single shared token, single implicit `public` tenant — back-compat.
-        // - "tenant": one-token-per-tenant via tenant_tokens table, real isolation.
+        // - "tenant": one-token-per-tenant via user_tokens table, real isolation.
         mode: z.enum(["none", "bearer", "tenant"]).default("none"),
         token: z.string().optional(),
       })

@@ -23,7 +23,7 @@ export function hashToken(plaintext: string): string {
   return createHash("sha256").update(plaintext).digest("hex");
 }
 
-export const PUBLIC_TENANT = "public";
+export const SYSTEM_USER = "public";
 
 export type WarmDB = NodePgDatabase<typeof schema>;
 
@@ -60,38 +60,32 @@ export class WarmStore {
     // single-tenant installs upgrade in place — pre-tenant rows backfill to
     // `public` via the column DEFAULT.
     const ddl = [
-      `CREATE TABLE IF NOT EXISTS tenants (
-        id text PRIMARY KEY,
-        name text NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `INSERT INTO tenants (id, name) VALUES ('public', 'public')
-         ON CONFLICT (id) DO NOTHING`,
-      `CREATE TABLE IF NOT EXISTS tenant_tokens (
-        token_hash text PRIMARY KEY,
-        tenant_id text NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-        label text,
-        created_by_user_id text,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        last_used_at timestamptz,
-        revoked_at timestamptz
-      )`,
-      `ALTER TABLE tenant_tokens ADD COLUMN IF NOT EXISTS created_by_user_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_tokens_tenant ON tenant_tokens(tenant_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_tokens_creator ON tenant_tokens(created_by_user_id)`,
+      // Users are the only first-class memory owner — no separate
+      // tenants table. The synthetic id "public" is the implicit owner
+      // for `auth.mode = none|bearer` deployments.
       `CREATE TABLE IF NOT EXISTS users (
         id text PRIMARY KEY,
         username text NOT NULL,
         password_hash text NOT NULL,
         role text NOT NULL DEFAULT 'user',
-        tenant_id text REFERENCES tenants(id) ON DELETE CASCADE,
         created_at timestamptz NOT NULL DEFAULT now(),
         last_login_at timestamptz,
         password_changed_at timestamptz
       )`,
       `CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users(username)`,
-      `CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id)`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz`,
+      `INSERT INTO users (id, username, password_hash, role)
+         VALUES ('public', 'public', 'unused', 'user')
+         ON CONFLICT (id) DO NOTHING`,
+      `CREATE TABLE IF NOT EXISTS user_tokens (
+        token_hash text PRIMARY KEY,
+        user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        label text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        last_used_at timestamptz,
+        revoked_at timestamptz
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id)`,
       `CREATE TABLE IF NOT EXISTS sessions (
         token_hash text PRIMARY KEY,
         user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -104,11 +98,9 @@ export class WarmStore {
         id text PRIMARY KEY,
         name text NOT NULL,
         owner_user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        owner_tenant_id text NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE INDEX IF NOT EXISTS idx_projects_owner_user ON projects(owner_user_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_projects_owner_tenant ON projects(owner_tenant_id)`,
       `CREATE TABLE IF NOT EXISTS project_members (
         project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -121,7 +113,7 @@ export class WarmStore {
       // cold_orphans are issued AFTER those tables are created — see below.
       `CREATE TABLE IF NOT EXISTS memory_entries (
         id text PRIMARY KEY,
-        tenant_id text NOT NULL DEFAULT 'public',
+        user_id text NOT NULL DEFAULT 'public',
         content text NOT NULL,
         namespace text NOT NULL DEFAULT 'default',
         source text NOT NULL DEFAULT 'manual',
@@ -132,8 +124,8 @@ export class WarmStore {
         updated_at timestamptz NOT NULL DEFAULT now()
       )`,
       // Upgrade path for installs that pre-date multi-tenancy:
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_tenant ON memory_entries(tenant_id)`,
+      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_tenant ON memory_entries(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_namespace ON memory_entries(namespace)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_agent ON memory_entries(agent_name)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_cold ON memory_entries(cold)`,
@@ -145,7 +137,7 @@ export class WarmStore {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_access_last ON memory_access(last_accessed)`,
       `CREATE TABLE IF NOT EXISTS memory_relations (
-        tenant_id text NOT NULL DEFAULT 'public',
+        user_id text NOT NULL DEFAULT 'public',
         from_id text NOT NULL,
         to_id text NOT NULL,
         relation text NOT NULL DEFAULT 'co_occurs',
@@ -153,33 +145,33 @@ export class WarmStore {
         created_at timestamptz NOT NULL DEFAULT now(),
         UNIQUE (from_id, to_id, relation)
       )`,
-      `ALTER TABLE memory_relations ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_relations_tenant ON memory_relations(tenant_id)`,
+      `ALTER TABLE memory_relations ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
+      `CREATE INDEX IF NOT EXISTS idx_relations_tenant ON memory_relations(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_id)`,
       `CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_id)`,
       `CREATE TABLE IF NOT EXISTS memory_fts (
         id serial PRIMARY KEY,
         entry_id text NOT NULL,
-        tenant_id text NOT NULL DEFAULT 'public',
+        user_id text NOT NULL DEFAULT 'public',
         content text NOT NULL,
         namespace text NOT NULL DEFAULT 'default',
         tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
       )`,
-      `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'public'`,
+      `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
       `CREATE INDEX IF NOT EXISTS idx_fts_tsv ON memory_fts USING gin(tsv)`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_tenant ON memory_fts(tenant_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_fts_tenant ON memory_fts(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_fts_namespace ON memory_fts(namespace)`,
       `CREATE INDEX IF NOT EXISTS idx_fts_entry ON memory_fts(entry_id)`,
       `CREATE TABLE IF NOT EXISTS cold_orphans (
         id text PRIMARY KEY,
-        tenant_id text NOT NULL DEFAULT 'public',
+        user_id text NOT NULL DEFAULT 'public',
         namespace text NOT NULL,
         attempts int NOT NULL DEFAULT 0,
         last_error text,
         first_seen timestamptz NOT NULL DEFAULT now(),
         last_attempt_at timestamptz
       )`,
-      `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'public'`,
+      `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
       `CREATE INDEX IF NOT EXISTS idx_orphans_attempts ON cold_orphans(attempts)`,
       `CREATE TABLE IF NOT EXISTS decay_runs (
         id serial PRIMARY KEY,
@@ -200,8 +192,8 @@ export class WarmStore {
       `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS project_id text`,
       `CREATE INDEX IF NOT EXISTS idx_fts_project ON memory_fts(project_id)`,
       `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS project_id text`,
-      `ALTER TABLE tenant_tokens ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_tokens_project ON tenant_tokens(project_id)`,
+      `ALTER TABLE user_tokens ADD COLUMN IF NOT EXISTS project_id text`,
+      `CREATE INDEX IF NOT EXISTS idx_tokens_project ON user_tokens(project_id)`,
       // ─── Audit log of admin actions (P1-S6) ─────────────────────────
       `CREATE TABLE IF NOT EXISTS admin_audit_log (
         id serial PRIMARY KEY,
@@ -216,7 +208,7 @@ export class WarmStore {
       `CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor_user_id)`,
       // ─── Performance: composite indexes flagged in review (P1-P2) ───
-      `CREATE INDEX IF NOT EXISTS idx_entries_tenant_cold ON memory_entries(tenant_id, cold)`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_tenant_cold ON memory_entries(user_id, cold)`,
       `CREATE INDEX IF NOT EXISTS idx_orphans_attempt_lastattempt ON cold_orphans(attempts, last_attempt_at)`,
     ];
     for (const stmt of ddl) {
@@ -224,62 +216,37 @@ export class WarmStore {
     }
   }
 
-  // ─── Tenants & tokens ─────────────────────────────────────────────────
+  // ─── Tokens ───────────────────────────────────────────────────────────
 
-  /** Create a new tenant. Idempotent on id collision (returns the existing
-   *  tenant). `id` should be a short, URL-safe slug — clients embed it nowhere
-   *  visible, but it ends up in qdrant collection names and graph node
-   *  properties so keep it sane. */
-  async createTenant(id: string, name: string): Promise<{ id: string; name: string }> {
-    await this.pool.query(
-      `INSERT INTO tenants (id, name) VALUES ($1, $2)
-       ON CONFLICT (id) DO NOTHING`,
-      [id, name],
-    );
-    const r = await this.pool.query<{ id: string; name: string }>(
-      `SELECT id, name FROM tenants WHERE id = $1`,
-      [id],
-    );
-    return r.rows[0]!;
-  }
-
-  async listTenants(): Promise<Array<{ id: string; name: string; createdAt: Date }>> {
-    const r = await this.pool.query<{ id: string; name: string; created_at: Date }>(
-      `SELECT id, name, created_at FROM tenants ORDER BY created_at ASC`,
-    );
-    return r.rows.map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at }));
-  }
-
-  /** Mint a new bearer token for a tenant. Returns the **plaintext** token —
-   *  the caller is responsible for getting it to the user; the server keeps
-   *  only the sha256 hash. Returns null if the tenant doesn't exist. */
-  async createTenantToken(
-    tenantId: string,
+  /** Mint a new bearer token for a user. Returns the **plaintext** token —
+   *  the caller is responsible for getting it to their device; the server
+   *  keeps only the sha256 hash. Returns null if the user doesn't exist. */
+  async createUserToken(
+    userId: string,
     label?: string,
-    createdByUserId?: string | null,
     projectId?: string | null,
-  ): Promise<{ token: string; tenantId: string; projectId: string | null; createdAt: Date } | null> {
-    const exists = await this.pool.query(`SELECT 1 FROM tenants WHERE id = $1`, [tenantId]);
+  ): Promise<{ token: string; userId: string; projectId: string | null; createdAt: Date } | null> {
+    const exists = await this.pool.query(`SELECT 1 FROM users WHERE id = $1`, [userId]);
     if (exists.rowCount === 0) return null;
     const token = generateBearerToken();
     const tokenHash = hashToken(token);
     const r = await this.pool.query<{ created_at: Date }>(
-      `INSERT INTO tenant_tokens (token_hash, tenant_id, label, created_by_user_id, project_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO user_tokens (token_hash, user_id, label, project_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING created_at`,
-      [tokenHash, tenantId, label ?? null, createdByUserId ?? null, projectId ?? null],
+      [tokenHash, userId, label ?? null, projectId ?? null],
     );
-    return { token, tenantId, projectId: projectId ?? null, createdAt: r.rows[0]!.created_at };
+    return { token, userId, projectId: projectId ?? null, createdAt: r.rows[0]!.created_at };
   }
 
   /** Resolve a plaintext bearer token to its tenant id. Touches `last_used_at`
    *  on success so dormant tokens are visible to operators. Returns null on
    *  unknown or revoked tokens — never throw, the auth hook decides what 4xx
    *  to send. */
-  async resolveTenantToken(
+  async resolveUserToken(
     plaintext: string,
   ): Promise<{
-    tenantId: string;
+    userId: string;
     projectId: string | null;
     tokenHash: string;
     label: string | null;
@@ -287,24 +254,24 @@ export class WarmStore {
     if (!plaintext) return null;
     const tokenHash = hashToken(plaintext);
     const r = await this.pool.query<{
-      tenant_id: string;
+      user_id: string;
       project_id: string | null;
       label: string | null;
     }>(
-      `UPDATE tenant_tokens SET last_used_at = now()
+      `UPDATE user_tokens SET last_used_at = now()
         WHERE token_hash = $1 AND revoked_at IS NULL
-        RETURNING tenant_id, project_id, label`,
+        RETURNING user_id, project_id, label`,
       [tokenHash],
     );
     const row = r.rows[0];
     if (!row) return null;
-    return { tenantId: row.tenant_id, projectId: row.project_id, tokenHash, label: row.label };
+    return { userId: row.user_id, projectId: row.project_id, tokenHash, label: row.label };
   }
 
-  async revokeTenantToken(plaintext: string): Promise<boolean> {
+  async revokeUserToken(plaintext: string): Promise<boolean> {
     const tokenHash = hashToken(plaintext);
     const r = await this.pool.query(
-      `UPDATE tenant_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+      `UPDATE user_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
       [tokenHash],
     );
     return (r.rowCount ?? 0) > 0;
@@ -313,13 +280,13 @@ export class WarmStore {
   /** Revoke a token addressed by its sha256 hash, scoped to a tenant id.
    *  This is the path the admin dashboard uses — the server doesn't keep
    *  plaintext, but it does know each token's hash, and the listing surfaces
-   *  it. The tenantId scoping prevents an admin from accidentally
+   *  it. The userId scoping prevents an admin from accidentally
    *  cross-revoking another tenant's token by hash collision typo. */
-  async revokeTenantTokenByHash(tenantId: string, tokenHash: string): Promise<boolean> {
+  async revokeUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
     const r = await this.pool.query(
-      `UPDATE tenant_tokens SET revoked_at = now()
-        WHERE token_hash = $1 AND tenant_id = $2 AND revoked_at IS NULL`,
-      [tokenHash, tenantId],
+      `UPDATE user_tokens SET revoked_at = now()
+        WHERE token_hash = $1 AND user_id = $2 AND revoked_at IS NULL`,
+      [tokenHash, userId],
     );
     return (r.rowCount ?? 0) > 0;
   }
@@ -330,7 +297,6 @@ export class WarmStore {
    *  for this user are also included so the user can see their own
    *  password resets / role changes / etc. */
   async listRecentActivity(
-    tenantId: string,
     userId: string,
     limit = 50,
   ): Promise<
@@ -351,28 +317,27 @@ export class WarmStore {
       `SELECT kind, at, text, project FROM (
          SELECT 'remember'::text AS kind, created_at AS at,
                 left(content, 160) AS text, project_id AS project
-           FROM memory_entries WHERE tenant_id = $1
+           FROM memory_entries WHERE user_id = $1
          UNION ALL
          SELECT 'token'::text AS kind, created_at AS at,
                 'Minted token: ' || COALESCE(label, '(no label)') AS text,
                 project_id AS project
-           FROM tenant_tokens
-          WHERE tenant_id = $1 AND created_by_user_id = $2
-            AND revoked_at IS NULL
+           FROM user_tokens
+          WHERE user_id = $1 AND revoked_at IS NULL
          UNION ALL
          SELECT 'project'::text AS kind, joined_at AS at,
                 'Joined project: ' || project_id AS text,
                 project_id AS project
-           FROM project_members WHERE user_id = $2
+           FROM project_members WHERE user_id = $1
          UNION ALL
          SELECT 'audit'::text AS kind, ts AS at,
                 action || ' ' || COALESCE(target, '') AS text,
                 NULL::text AS project
-           FROM admin_audit_log WHERE actor_user_id = $2
+           FROM admin_audit_log WHERE actor_user_id = $1
        ) src
        ORDER BY at DESC
-       LIMIT $3`,
-      [tenantId, userId, lim],
+       LIMIT $2`,
+      [userId, lim],
     );
     return r.rows.map((row) => ({
       kind: row.kind as "remember" | "token" | "project" | "audit",
@@ -386,13 +351,13 @@ export class WarmStore {
    *  to "my own tokens" on the user dashboard. Excludes revoked. */
   async listTokensCreatedByUser(
     userId: string,
-  ): Promise<Array<{ tokenHash: string; label: string | null; tenantId: string }>> {
+  ): Promise<Array<{ tokenHash: string; label: string | null; userId: string }>> {
     const r = await this.pool.query<{
       token_hash: string;
       label: string | null;
-      tenant_id: string;
+      user_id: string;
     }>(
-      `SELECT token_hash, label, tenant_id FROM tenant_tokens
+      `SELECT token_hash, label, user_id FROM user_tokens
         WHERE created_by_user_id = $1 AND revoked_at IS NULL
         ORDER BY created_at ASC`,
       [userId],
@@ -400,12 +365,12 @@ export class WarmStore {
     return r.rows.map((row) => ({
       tokenHash: row.token_hash,
       label: row.label,
-      tenantId: row.tenant_id,
+      userId: row.user_id,
     }));
   }
 
-  async listTenantTokens(
-    tenantId: string,
+  async listUserTokens(
+    userId: string,
   ): Promise<
     Array<{
       tokenHash: string;
@@ -426,9 +391,9 @@ export class WarmStore {
       last_used_at: Date | null;
       revoked_at: Date | null;
     }>(
-      `SELECT token_hash, label, created_by_user_id, project_id, created_at, last_used_at, revoked_at FROM tenant_tokens
-        WHERE tenant_id = $1 ORDER BY created_at ASC`,
-      [tenantId],
+      `SELECT token_hash, label, created_by_user_id, project_id, created_at, last_used_at, revoked_at FROM user_tokens
+        WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
     );
     return r.rows.map((row) => ({
       tokenHash: row.token_hash,
@@ -448,31 +413,31 @@ export class WarmStore {
    *  have a dashboard, this is their only self-service operation. */
   async rotateTenantToken(
     plaintext: string,
-  ): Promise<{ token: string; tenantId: string; createdAt: Date } | null> {
+  ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
     const oldHash = hashToken(plaintext);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const r = await client.query<{ tenant_id: string }>(
-        `UPDATE tenant_tokens SET revoked_at = now()
+      const r = await client.query<{ user_id: string }>(
+        `UPDATE user_tokens SET revoked_at = now()
           WHERE token_hash = $1 AND revoked_at IS NULL
-          RETURNING tenant_id`,
+          RETURNING user_id`,
         [oldHash],
       );
-      const tenantId = r.rows[0]?.tenant_id;
-      if (!tenantId) {
+      const userId = r.rows[0]?.user_id;
+      if (!userId) {
         await client.query("ROLLBACK");
         return null;
       }
       const token = generateBearerToken();
       const hash = hashToken(token);
       const ins = await client.query<{ created_at: Date }>(
-        `INSERT INTO tenant_tokens (token_hash, tenant_id, label) VALUES ($1, $2, $3)
+        `INSERT INTO user_tokens (token_hash, user_id, label) VALUES ($1, $2, $3)
          RETURNING created_at`,
-        [hash, tenantId, "rotated"],
+        [hash, userId, "rotated"],
       );
       await client.query("COMMIT");
-      return { token, tenantId, createdAt: ins.rows[0]!.created_at };
+      return { token, userId, createdAt: ins.rows[0]!.created_at };
     } catch (err) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw err;
@@ -481,32 +446,30 @@ export class WarmStore {
     }
   }
 
-  /** Delete a tenant and every row owned by it across the warm store. The
-   *  caller is responsible for purging cold collections and graph nodes
-   *  separately — those live in different processes. Returns false when the
-   *  tenant doesn't exist, or when the caller asks to delete the synthetic
-   *  `public` tenant (which we refuse — it would orphan every legacy row). */
-  async deleteTenant(id: string): Promise<{ deleted: boolean; entriesRemoved: number }> {
-    if (id === PUBLIC_TENANT) return { deleted: false, entriesRemoved: 0 };
-    const exists = await this.pool.query("SELECT 1 FROM tenants WHERE id = $1", [id]);
+  /** Delete a user and every memory row owned by them. Caller must purge
+   *  cold collections and graph nodes separately — those live in
+   *  different processes. Returns false for the synthetic `public` user
+   *  (would orphan every legacy row) or an unknown id. */
+  async deleteUserAndMemory(id: string): Promise<{ deleted: boolean; entriesRemoved: number }> {
+    if (id === SYSTEM_USER) return { deleted: false, entriesRemoved: 0 };
+    const exists = await this.pool.query("SELECT 1 FROM users WHERE id = $1", [id]);
     if (exists.rowCount === 0) return { deleted: false, entriesRemoved: 0 };
 
     const client = await this.pool.connect();
     let entriesRemoved = 0;
     try {
       await client.query("BEGIN");
-      // memory_access has no tenant_id column, so we delete by entry-id join.
       await client.query(
-        `DELETE FROM memory_access WHERE entry_id IN (SELECT id FROM memory_entries WHERE tenant_id = $1)`,
+        `DELETE FROM memory_access WHERE entry_id IN (SELECT id FROM memory_entries WHERE user_id = $1)`,
         [id],
       );
-      await client.query("DELETE FROM memory_fts WHERE tenant_id = $1", [id]);
-      await client.query("DELETE FROM memory_relations WHERE tenant_id = $1", [id]);
-      const del = await client.query("DELETE FROM memory_entries WHERE tenant_id = $1", [id]);
+      await client.query("DELETE FROM memory_fts WHERE user_id = $1", [id]);
+      await client.query("DELETE FROM memory_relations WHERE user_id = $1", [id]);
+      const del = await client.query("DELETE FROM memory_entries WHERE user_id = $1", [id]);
       entriesRemoved = del.rowCount ?? 0;
-      await client.query("DELETE FROM cold_orphans WHERE tenant_id = $1", [id]);
-      // tenant_tokens cascade-deletes via FK ON DELETE CASCADE.
-      await client.query("DELETE FROM tenants WHERE id = $1", [id]);
+      await client.query("DELETE FROM cold_orphans WHERE user_id = $1", [id]);
+      // user_tokens, sessions, projects cascade via FK ON DELETE CASCADE.
+      await client.query("DELETE FROM users WHERE id = $1", [id]);
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -523,20 +486,18 @@ export class WarmStore {
     username: string;
     passwordHash: string;
     role: "admin" | "user";
-    tenantId: string | null;
-  }): Promise<{ id: string; username: string; role: string; tenantId: string | null; createdAt: Date; passwordChangedAt: Date | null }> {
+  }): Promise<{ id: string; username: string; role: string; createdAt: Date; passwordChangedAt: Date | null }> {
     const id = ulid();
     const r = await this.pool.query<{ created_at: Date; password_changed_at: Date | null }>(
-      `INSERT INTO users (id, username, password_hash, role, tenant_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (id, username, password_hash, role)
+       VALUES ($1, $2, $3, $4)
        RETURNING created_at, password_changed_at`,
-      [id, args.username, args.passwordHash, args.role, args.tenantId],
+      [id, args.username, args.passwordHash, args.role],
     );
     return {
       id,
       username: args.username,
       role: args.role,
-      tenantId: args.tenantId,
       createdAt: r.rows[0]!.created_at,
       passwordChangedAt: r.rows[0]!.password_changed_at,
     };
@@ -547,7 +508,7 @@ export class WarmStore {
     username: string;
     passwordHash: string;
     role: string;
-    tenantId: string | null;
+    userId: string | null;
     passwordChangedAt: Date | null;
   } | null> {
     const r = await this.pool.query<{
@@ -555,9 +516,9 @@ export class WarmStore {
       username: string;
       password_hash: string;
       role: string;
-      tenant_id: string | null;
+      user_id: string | null;
       password_changed_at: Date | null;
-    }>(`SELECT id, username, password_hash, role, tenant_id, password_changed_at FROM users WHERE username = $1`, [username]);
+    }>(`SELECT id, username, password_hash, role, user_id, password_changed_at FROM users WHERE username = $1`, [username]);
     const row = r.rows[0];
     if (!row) return null;
     return {
@@ -565,7 +526,7 @@ export class WarmStore {
       username: row.username,
       passwordHash: row.password_hash,
       role: row.role,
-      tenantId: row.tenant_id,
+      userId: row.user_id,
       passwordChangedAt: row.password_changed_at,
     };
   }
@@ -574,17 +535,17 @@ export class WarmStore {
     id: string;
     username: string;
     role: string;
-    tenantId: string | null;
+    userId: string | null;
   } | null> {
     const r = await this.pool.query<{
       id: string;
       username: string;
       role: string;
-      tenant_id: string | null;
-    }>(`SELECT id, username, role, tenant_id FROM users WHERE id = $1`, [id]);
+      user_id: string | null;
+    }>(`SELECT id, username, role, user_id FROM users WHERE id = $1`, [id]);
     const row = r.rows[0];
     if (!row) return null;
-    return { id: row.id, username: row.username, role: row.role, tenantId: row.tenant_id };
+    return { id: row.id, username: row.username, role: row.role, userId: row.user_id };
   }
 
   async listUsers(): Promise<
@@ -592,26 +553,29 @@ export class WarmStore {
       id: string;
       username: string;
       role: string;
-      tenantId: string | null;
+      userId: string | null;
       createdAt: Date;
       lastLoginAt: Date | null;
+      passwordChangedAt: Date | null;
     }>
   > {
     const r = await this.pool.query<{
       id: string;
       username: string;
       role: string;
-      tenant_id: string | null;
+      user_id: string | null;
       created_at: Date;
       last_login_at: Date | null;
-    }>(`SELECT id, username, role, tenant_id, created_at, last_login_at FROM users ORDER BY created_at ASC`);
+      password_changed_at: Date | null;
+    }>(`SELECT id, username, role, user_id, created_at, last_login_at, password_changed_at FROM users ORDER BY created_at ASC`);
     return r.rows.map((row) => ({
       id: row.id,
       username: row.username,
       role: row.role,
-      tenantId: row.tenant_id,
+      userId: row.user_id,
       createdAt: row.created_at,
       lastLoginAt: row.last_login_at,
+      passwordChangedAt: row.password_changed_at,
     }));
   }
 
@@ -620,14 +584,18 @@ export class WarmStore {
     return (r.rowCount ?? 0) > 0;
   }
 
-  async setUserRole(
-    id: string,
-    role: "admin" | "user",
-    tenantId: string | null,
-  ): Promise<boolean> {
+  async patchUserPassword(id: string, passwordHash: string, changedAt: Date): Promise<boolean> {
     const r = await this.pool.query(
-      `UPDATE users SET role = $1, tenant_id = $2 WHERE id = $3`,
-      [role, tenantId, id],
+      `UPDATE users SET password_hash = $1, password_changed_at = $2 WHERE id = $3`,
+      [passwordHash, changedAt, id],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  async setUserRole(id: string, role: "admin" | "user"): Promise<boolean> {
+    const r = await this.pool.query(
+      `UPDATE users SET role = $1 WHERE id = $2`,
+      [role, id],
     );
     return (r.rowCount ?? 0) > 0;
   }
@@ -654,7 +622,7 @@ export class WarmStore {
   }
 
   async resolveSession(plaintext: string): Promise<{
-    user: { id: string; username: string; role: string; tenantId: string | null };
+    user: { id: string; username: string; role: string };
   } | null> {
     if (!plaintext) return null;
     const tokenHash = hashToken(plaintext);
@@ -662,14 +630,12 @@ export class WarmStore {
       user_id: string;
       username: string;
       role: string;
-      tenant_id: string | null;
     }>(
       `UPDATE sessions SET last_seen_at = now()
         WHERE token_hash = $1 AND expires_at > now()
         RETURNING user_id,
                   (SELECT username FROM users u WHERE u.id = sessions.user_id) AS username,
-                  (SELECT role FROM users u WHERE u.id = sessions.user_id) AS role,
-                  (SELECT tenant_id FROM users u WHERE u.id = sessions.user_id) AS tenant_id`,
+                  (SELECT role FROM users u WHERE u.id = sessions.user_id) AS role`,
       [tokenHash],
     );
     const row = r.rows[0];
@@ -679,7 +645,6 @@ export class WarmStore {
         id: row.user_id,
         username: row.username,
         role: row.role,
-        tenantId: row.tenant_id,
       },
     };
   }
@@ -761,15 +726,14 @@ export class WarmStore {
     id: string;
     name: string;
     ownerUserId: string;
-    ownerTenantId: string;
-  }): Promise<{ id: string; name: string; ownerUserId: string; ownerTenantId: string; createdAt: Date }> {
+  }): Promise<{ id: string; name: string; ownerUserId: string; createdAt: Date }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const r = await client.query<{ created_at: Date }>(
-        `INSERT INTO projects (id, name, owner_user_id, owner_tenant_id) VALUES ($1, $2, $3, $4)
+        `INSERT INTO projects (id, name, owner_user_id) VALUES ($1, $2, $3)
          RETURNING created_at`,
-        [args.id, args.name, args.ownerUserId, args.ownerTenantId],
+        [args.id, args.name, args.ownerUserId],
       );
       await client.query(
         `INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'owner')`,
@@ -787,21 +751,19 @@ export class WarmStore {
 
   async getProject(
     id: string,
-  ): Promise<{ id: string; name: string; ownerUserId: string; ownerTenantId: string; createdAt: Date } | null> {
+  ): Promise<{ id: string; name: string; ownerUserId: string; createdAt: Date } | null> {
     const r = await this.pool.query<{
       id: string;
       name: string;
       owner_user_id: string;
-      owner_tenant_id: string;
       created_at: Date;
-    }>(`SELECT id, name, owner_user_id, owner_tenant_id, created_at FROM projects WHERE id = $1`, [id]);
+    }>(`SELECT id, name, owner_user_id, created_at FROM projects WHERE id = $1`, [id]);
     const row = r.rows[0];
     if (!row) return null;
     return {
       id: row.id,
       name: row.name,
       ownerUserId: row.owner_user_id,
-      ownerTenantId: row.owner_tenant_id,
       createdAt: row.created_at,
     };
   }
@@ -814,7 +776,6 @@ export class WarmStore {
       name: string;
       role: string;
       ownerUserId: string;
-      ownerTenantId: string;
       createdAt: Date;
     }>
   > {
@@ -823,10 +784,9 @@ export class WarmStore {
       name: string;
       role: string;
       owner_user_id: string;
-      owner_tenant_id: string;
       created_at: Date;
     }>(
-      `SELECT p.id, p.name, m.role, p.owner_user_id, p.owner_tenant_id, p.created_at
+      `SELECT p.id, p.name, m.role, p.owner_user_id, p.created_at
          FROM projects p
          JOIN project_members m ON m.project_id = p.id
         WHERE m.user_id = $1
@@ -838,7 +798,6 @@ export class WarmStore {
       name: row.name,
       role: row.role,
       ownerUserId: row.owner_user_id,
-      ownerTenantId: row.owner_tenant_id,
       createdAt: row.created_at,
     }));
   }
@@ -846,16 +805,15 @@ export class WarmStore {
   async listProjectMembers(
     projectId: string,
   ): Promise<
-    Array<{ userId: string; username: string; tenantId: string | null; role: string; joinedAt: Date }>
+    Array<{ userId: string; username: string; role: string; joinedAt: Date }>
   > {
     const r = await this.pool.query<{
       user_id: string;
       username: string;
-      tenant_id: string | null;
       role: string;
       joined_at: Date;
     }>(
-      `SELECT m.user_id, u.username, u.tenant_id, m.role, m.joined_at
+      `SELECT m.user_id, u.username, m.role, m.joined_at
          FROM project_members m
          JOIN users u ON u.id = m.user_id
         WHERE m.project_id = $1
@@ -865,7 +823,6 @@ export class WarmStore {
     return r.rows.map((row) => ({
       userId: row.user_id,
       username: row.username,
-      tenantId: row.tenant_id,
       role: row.role,
       joinedAt: row.joined_at,
     }));
@@ -898,7 +855,7 @@ export class WarmStore {
       let tokensRevoked = 0;
       if (removed) {
         const t = await client.query(
-          `UPDATE tenant_tokens
+          `UPDATE user_tokens
               SET revoked_at = now()
             WHERE project_id = $1
               AND created_by_user_id = $2
@@ -951,7 +908,7 @@ export class WarmStore {
       await client.query("DELETE FROM project_members WHERE project_id = $1", [id]);
       // Tokens scoped to this project become invalid; revoke them.
       await client.query(
-        `UPDATE tenant_tokens SET revoked_at = now() WHERE project_id = $1 AND revoked_at IS NULL`,
+        `UPDATE user_tokens SET revoked_at = now() WHERE project_id = $1 AND revoked_at IS NULL`,
         [id],
       );
       await client.query("DELETE FROM projects WHERE id = $1", [id]);
@@ -966,7 +923,7 @@ export class WarmStore {
   }
 
   async insertEntry(args: {
-    tenantId: string;
+    userId: string;
     projectId?: string | null;
     content: string;
     namespace: string;
@@ -977,7 +934,7 @@ export class WarmStore {
     const id = ulid();
     await this.db.insert(schema.memoryEntries).values({
       id,
-      tenantId: args.tenantId,
+      userId: args.userId,
       projectId: args.projectId ?? null,
       content: args.content,
       namespace: args.namespace,
@@ -987,7 +944,7 @@ export class WarmStore {
     });
     await this.db.insert(schema.memoryFts).values({
       entryId: id,
-      tenantId: args.tenantId,
+      userId: args.userId,
       projectId: args.projectId ?? null,
       content: args.content,
       namespace: args.namespace,
@@ -1000,8 +957,8 @@ export class WarmStore {
    *  scopes the result to one agent's entries (matches `IS NULL` if `null`
    *  is passed explicitly; omit the field for "any agent"). */
   async ftsSearch(args: {
-    tenantId: string;
-    /** When set, project IS the isolation unit — tenant_id is NOT filtered
+    userId: string;
+    /** When set, project IS the isolation unit — user_id is NOT filtered
      *  on (membership has already been verified at the auth layer, and
      *  project members may belong to different tenants). When null/
      *  undefined, scope to tenant-wide entries (project_id IS NULL) for
@@ -1021,7 +978,7 @@ export class WarmStore {
     };
     const scopeClause = isProject
       ? `project_id = ${ph(args.projectId)}`
-      : `tenant_id = ${ph(args.tenantId)} AND project_id IS NULL`;
+      : `user_id = ${ph(args.userId)} AND project_id IS NULL`;
     const agentClause = !useAgent
       ? ""
       : args.agentName === null
@@ -1029,8 +986,8 @@ export class WarmStore {
         : `AND e.agent_name = ${ph(args.agentName)}`;
 
     // For the join variant we need to disambiguate column references with
-    // the table alias `f.` since both sides have project_id / tenant_id.
-    const fScopeClause = scopeClause.replace(/(project_id|tenant_id)/g, "f.$1");
+    // the table alias `f.` since both sides have project_id / user_id.
+    const fScopeClause = scopeClause.replace(/(project_id|user_id)/g, "f.$1");
     const sql = useAgent
       ? `SELECT f.entry_id,
                 ts_rank(f.tsv, plainto_tsquery('english', $1)) AS score
@@ -1059,27 +1016,27 @@ export class WarmStore {
    *  id (search, neighbors, forget).
    *
    *  - `opts.projectId` is a non-empty string → the entry must match that
-   *    project; tenant_id is decorative (cross-tenant members allowed).
+   *    project; user_id is decorative (cross-tenant members allowed).
    *  - `opts.projectId` is null/undefined → tenant-wide entries only, scoped
-   *    to `tenantId`.
+   *    to `userId`.
    *
    *  P0-4: the previous magic-string `"*"` bypass was removed; there is no
    *  way for an external caller to disable both checks. */
-  /** Return the entry's `tenant_id` and `project_id` by id alone — no
+  /** Return the entry's `user_id` and `project_id` by id alone — no
    *  scope filter. Used by /v1/me/forget to recheck the actual project
    *  membership before deletion (the regular `getEntry` filters by the
    *  caller-supplied scope, which an attacker can game by passing null). */
-  async getEntryScope(id: string): Promise<{ tenantId: string; projectId: string | null } | undefined> {
-    const r = await this.pool.query<{ tenant_id: string; project_id: string | null }>(
-      `SELECT tenant_id, project_id FROM memory_entries WHERE id = $1`,
+  async getEntryScope(id: string): Promise<{ userId: string; projectId: string | null } | undefined> {
+    const r = await this.pool.query<{ user_id: string; project_id: string | null }>(
+      `SELECT user_id, project_id FROM memory_entries WHERE id = $1`,
       [id],
     );
     const row = r.rows[0];
     if (!row) return undefined;
-    return { tenantId: row.tenant_id, projectId: row.project_id };
+    return { userId: row.user_id, projectId: row.project_id };
   }
 
-  async getEntry(tenantId: string, id: string, opts: { projectId?: string | null } = {}) {
+  async getEntry(userId: string, id: string, opts: { projectId?: string | null } = {}) {
     const rows = await this.db
       .select()
       .from(schema.memoryEntries)
@@ -1090,9 +1047,9 @@ export class WarmStore {
       // Project IS the access boundary when set.
       return row.projectId === opts.projectId ? row : undefined;
     }
-    // No project requested → tenant-wide entries only, scoped to tenantId.
+    // No project requested → tenant-wide entries only, scoped to userId.
     if (row.projectId !== null) return undefined;
-    return row.tenantId === tenantId ? row : undefined;
+    return row.userId === userId ? row : undefined;
   }
 
   async bumpHits(id: string): Promise<void> {
@@ -1120,16 +1077,16 @@ export class WarmStore {
 
   /** Batch entry lookup. Returns rows in the same order as the input ids
    *  (with undefined slots for missing/cross-scope). When `projectId` is
-   *  set, project IS the access boundary; otherwise tenant_id is. */
+   *  set, project IS the access boundary; otherwise user_id is. */
   async getEntries(
-    tenantId: string,
+    userId: string,
     ids: string[],
     opts: { projectId?: string | null } = {},
   ): Promise<Array<typeof schema.memoryEntries.$inferSelect | undefined>> {
     if (ids.length === 0) return [];
     const rows = await this.pool.query<{
       id: string;
-      tenant_id: string;
+      user_id: string;
       project_id: string | null;
       content: string;
       namespace: string;
@@ -1140,7 +1097,7 @@ export class WarmStore {
       created_at: Date;
       updated_at: Date;
     }>(
-      `SELECT id, tenant_id, project_id, content, namespace, source, agent_name,
+      `SELECT id, user_id, project_id, content, namespace, source, agent_name,
               metadata, cold, created_at, updated_at
          FROM memory_entries WHERE id = ANY($1::text[])`,
       [ids],
@@ -1152,7 +1109,7 @@ export class WarmStore {
         if (r.project_id !== want) continue;
       } else {
         if (r.project_id !== null) continue;
-        if (r.tenant_id !== tenantId) continue;
+        if (r.user_id !== userId) continue;
       }
       byId.set(r.id, r);
     }
@@ -1161,7 +1118,7 @@ export class WarmStore {
       if (!r) return undefined;
       return {
         id: r.id,
-        tenantId: r.tenant_id,
+        userId: r.user_id,
         projectId: r.project_id,
         content: r.content,
         namespace: r.namespace,
@@ -1177,11 +1134,11 @@ export class WarmStore {
 
   async listColdCandidates(_effectiveDays: number, limit = 1000) {
     // Decay is a global, cross-tenant operation: idle entries from any
-    // tenant are demoted by the same maths. The per-row tenant_id stays put
+    // tenant are demoted by the same maths. The per-row user_id stays put
     // — engine queries use it on read-side, but decay doesn't need to scope.
-    return this.pool.query<{ id: string; tenant_id: string; namespace: string; hits: number; idle_days: number }>(
+    return this.pool.query<{ id: string; user_id: string; namespace: string; hits: number; idle_days: number }>(
       `SELECT e.id,
-              e.tenant_id,
+              e.user_id,
               e.namespace,
               COALESCE(a.hits, 0) AS hits,
               EXTRACT(EPOCH FROM (now() - COALESCE(a.last_accessed, e.created_at))) / 86400.0 AS idle_days
@@ -1216,7 +1173,7 @@ export class WarmStore {
    *  data survives a graph outage. UNIQUE (from, to, relation) makes this
    *  idempotent — repeat links bump the strength via DO UPDATE. */
   async addRelation(
-    tenantId: string,
+    userId: string,
     fromId: string,
     toId: string,
     relation: string,
@@ -1224,11 +1181,11 @@ export class WarmStore {
     projectId?: string | null,
   ): Promise<void> {
     await this.pool.query(
-      `INSERT INTO memory_relations (tenant_id, project_id, from_id, to_id, relation, strength)
+      `INSERT INTO memory_relations (user_id, project_id, from_id, to_id, relation, strength)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (from_id, to_id, relation) DO UPDATE
          SET strength = EXCLUDED.strength`,
-      [tenantId, projectId ?? null, fromId, toId, relation, strength],
+      [userId, projectId ?? null, fromId, toId, relation, strength],
     );
   }
 
@@ -1239,13 +1196,13 @@ export class WarmStore {
       .where(eq(schema.memoryEntries.id, id));
   }
 
-  async stats(tenantId: string) {
+  async stats(userId: string) {
     const r = await this.pool.query<{ namespace: string; cold: boolean; count: string }>(
       `SELECT namespace, cold, COUNT(*)::text AS count
          FROM memory_entries
-        WHERE tenant_id = $1
+        WHERE user_id = $1
         GROUP BY namespace, cold`,
-      [tenantId],
+      [userId],
     );
     const last = await this.pool.query<{ finished_at: Date | null }>(
       `SELECT finished_at FROM decay_runs ORDER BY id DESC LIMIT 1`,

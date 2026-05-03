@@ -13,7 +13,7 @@ import { ulid } from "ulid";
 
 export interface FakeWarmRow {
   id: string;
-  tenantId: string;
+  userId: string;
   projectId: string | null;
   content: string;
   namespace: string;
@@ -28,10 +28,10 @@ export interface FakeWarmRow {
 
 export class FakeWarmStore {
   rows = new Map<string, FakeWarmRow>();
-  relations: Array<{ tenantId: string; projectId: string | null; fromId: string; toId: string; relation: string; strength: number }> = [];
+  relations: Array<{ userId: string; projectId: string | null; fromId: string; toId: string; relation: string; strength: number }> = [];
   tenants = new Map<string, { id: string; name: string }>([["public", { id: "public", name: "public" }]]);
-  tokens = new Map<string, { tenantId: string; label: string | null; createdByUserId: string | null; projectId: string | null; revoked: boolean }>();
-  users = new Map<string, { id: string; username: string; passwordHash: string; role: string; tenantId: string | null; createdAt: Date; lastLoginAt: Date | null }>();
+  tokens = new Map<string, { userId: string; label: string | null; createdByUserId: string | null; projectId: string | null; revoked: boolean }>();
+  users = new Map<string, { id: string; username: string; passwordHash: string; role: string; userId: string | null; createdAt: Date; lastLoginAt: Date | null }>();
   sessions = new Map<string, { userId: string; expiresAt: Date }>();
   projects = new Map<string, { id: string; name: string; ownerUserId: string; ownerTenantId: string; createdAt: Date }>();
   projectMembers = new Map<string, Map<string, { role: string; joinedAt: Date }>>();
@@ -39,7 +39,7 @@ export class FakeWarmStore {
   decayRunsUpdated = 0;
   coldOrphans = new Map<
     string,
-    { id: string; tenantId: string; namespace: string; attempts: number; lastError: string; lastAttemptAt: Date | null }
+    { id: string; userId: string; namespace: string; attempts: number; lastError: string; lastAttemptAt: Date | null }
   >();
   pool = {
     /** Fake the pool query surface used by engine.recent + engine.forget +
@@ -48,20 +48,20 @@ export class FakeWarmStore {
     query: async (sql: string, params: unknown[] = []): Promise<{ rows: any[] }> => {
       // recent()
       if (sql.includes("FROM memory_entries") && sql.includes("namespace = $1")) {
-        // Engine SQL: params[0] = namespace, params[1] = k, params[2] = tenantId or projectId,
+        // Engine SQL: params[0] = namespace, params[1] = k, params[2] = userId or projectId,
         // optional params[3] = since.
         const namespace = String(params[0]);
         const k = Number(params[1]);
         const projectScoped = sql.includes("project_id = $");
-        const tenantScoped = sql.includes("tenant_id = $");
-        const tenantId = tenantScoped ? String(params[2]) : null;
+        const tenantScoped = sql.includes("user_id = $");
+        const userId = tenantScoped ? String(params[2]) : null;
         const projectId = projectScoped ? String(params[2]) : null;
         const since = sql.includes("created_at >= $") ? new Date(String(params[3])) : null;
         const filtered = [...this.rows.values()]
           .filter((r) => r.namespace === namespace)
           .filter((r) => {
             if (projectScoped) return r.projectId === projectId;
-            return r.projectId === null && r.tenantId === tenantId;
+            return r.projectId === null && r.userId === userId;
           })
           .filter((r) => !since || r.createdAt >= since)
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -109,7 +109,7 @@ export class FakeWarmStore {
       }
       // forget()
       // The engine's forget builds the scope clause as either
-      // `project_id = $2` or `tenant_id = $2` depending on whether the
+      // `project_id = $2` or `user_id = $2` depending on whether the
       // entry is project-scoped. Inspect the SQL to know which.
       if (sql.startsWith("DELETE FROM memory_fts")) return { rows: [] };
       if (sql.startsWith("DELETE FROM memory_access")) return { rows: [] };
@@ -120,7 +120,7 @@ export class FakeWarmStore {
         this.relations = this.relations.filter((r) => {
           const isMatch = r.fromId === id || r.toId === id;
           if (!isMatch) return true;
-          return isProject ? r.projectId !== scope : r.tenantId !== scope;
+          return isProject ? r.projectId !== scope : r.userId !== scope;
         });
         return { rows: [] };
       }
@@ -130,7 +130,7 @@ export class FakeWarmStore {
         const isProject = sql.includes("project_id = $");
         const r = this.rows.get(id);
         if (r) {
-          if (isProject ? r.projectId === scope : r.tenantId === scope) {
+          if (isProject ? r.projectId === scope : r.userId === scope) {
             this.rows.delete(id);
           }
         }
@@ -138,7 +138,7 @@ export class FakeWarmStore {
       }
       // addRelation()
       if (sql.startsWith("INSERT INTO memory_relations")) {
-        const [tenantId, projectId, fromId, toId, relation, strength] = params as [
+        const [userId, projectId, fromId, toId, relation, strength] = params as [
           string,
           string | null,
           string,
@@ -151,17 +151,17 @@ export class FakeWarmStore {
         );
         if (i >= 0) {
           this.relations[i]!.strength = strength;
-          this.relations[i]!.tenantId = tenantId;
+          this.relations[i]!.userId = userId;
           this.relations[i]!.projectId = projectId;
         } else {
-          this.relations.push({ tenantId, projectId, fromId, toId, relation, strength });
+          this.relations.push({ userId, projectId, fromId, toId, relation, strength });
         }
         return { rows: [] };
       }
       // cold_orphans: insert / update / select / delete + count
       if (sql.includes("INSERT INTO cold_orphans")) {
         const id = String(params[0]);
-        const tenantId = String(params[1]);
+        const userId = String(params[1]);
         const namespace = String(params[2]);
         // params[3] is project_id (nullable), params[4] is lastError
         const lastError = String(params[4] ?? "");
@@ -173,7 +173,7 @@ export class FakeWarmStore {
         } else {
           this.coldOrphans.set(id, {
             id,
-            tenantId,
+            userId,
             namespace,
             attempts: 1,
             lastError,
@@ -182,7 +182,7 @@ export class FakeWarmStore {
         }
         return { rows: [] };
       }
-      if (sql.startsWith("SELECT id, tenant_id, namespace, project_id, attempts FROM cold_orphans")) {
+      if (sql.startsWith("SELECT id, user_id, namespace, project_id, attempts FROM cold_orphans")) {
         const maxAttempts = Number(params[0]);
         const limit = Number(params[1]);
         return {
@@ -192,7 +192,7 @@ export class FakeWarmStore {
             .slice(0, limit)
             .map((o) => ({
               id: o.id,
-              tenant_id: o.tenantId,
+              user_id: o.userId,
               namespace: o.namespace,
               project_id: null,
               attempts: o.attempts,
@@ -234,7 +234,7 @@ export class FakeWarmStore {
   async close(): Promise<void> { /* no-op */ }
 
   async insertEntry(args: {
-    tenantId: string;
+    userId: string;
     projectId?: string | null;
     content: string;
     namespace: string;
@@ -245,7 +245,7 @@ export class FakeWarmStore {
     const id = ulid();
     this.rows.set(id, {
       id,
-      tenantId: args.tenantId,
+      userId: args.userId,
       projectId: args.projectId ?? null,
       content: args.content,
       namespace: args.namespace,
@@ -261,7 +261,7 @@ export class FakeWarmStore {
   }
 
   async ftsSearch(args: {
-    tenantId: string;
+    userId: string;
     projectId?: string | null;
     query: string;
     namespace: string;
@@ -271,7 +271,7 @@ export class FakeWarmStore {
     const q = args.query.toLowerCase();
     const projectId = args.projectId ?? null;
     const matches = [...this.rows.values()]
-      .filter((r) => r.tenantId === args.tenantId && r.namespace === args.namespace)
+      .filter((r) => r.userId === args.userId && r.namespace === args.namespace)
       .filter((r) => r.projectId === projectId)
       .filter((r) => {
         if (args.agentName === undefined) return true;
@@ -292,10 +292,10 @@ export class FakeWarmStore {
   async getEntryScope(id: string) {
     const r = this.rows.get(id);
     if (!r) return undefined;
-    return { tenantId: r.tenantId, projectId: r.projectId };
+    return { userId: r.userId, projectId: r.projectId };
   }
 
-  async getEntry(tenantId: string, id: string, opts: { projectId?: string | null } = {}) {
+  async getEntry(userId: string, id: string, opts: { projectId?: string | null } = {}) {
     const r = this.rows.get(id);
     if (!r) return undefined;
     if (typeof opts.projectId === "string") {
@@ -304,11 +304,11 @@ export class FakeWarmStore {
     } else {
       // Tenant-wide queries: project must be null AND tenant must match.
       if (r.projectId !== null) return undefined;
-      if (r.tenantId !== tenantId) return undefined;
+      if (r.userId !== userId) return undefined;
     }
     return {
       id: r.id,
-      tenantId: r.tenantId,
+      userId: r.userId,
       projectId: r.projectId,
       content: r.content,
       namespace: r.namespace,
@@ -333,8 +333,8 @@ export class FakeWarmStore {
     for (const id of ids) await this.bumpHits(id);
   }
 
-  async getEntries(tenantId: string, ids: string[], opts: { projectId?: string | null } = {}) {
-    return Promise.all(ids.map((id) => this.getEntry(tenantId, id, opts)));
+  async getEntries(userId: string, ids: string[], opts: { projectId?: string | null } = {}) {
+    return Promise.all(ids.map((id) => this.getEntry(userId, id, opts)));
   }
 
   async listColdCandidates(_effectiveDays: number, _limit = 1000) {
@@ -344,7 +344,7 @@ export class FakeWarmStore {
         .filter((r) => !r.cold)
         .map((r) => ({
           id: r.id,
-          tenant_id: r.tenantId,
+          user_id: r.userId,
           namespace: r.namespace,
           hits: r.hits,
           idle_days: (now - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24),
@@ -358,7 +358,7 @@ export class FakeWarmStore {
   }
 
   async addRelation(
-    tenantId: string,
+    userId: string,
     fromId: string,
     toId: string,
     relation: string,
@@ -370,10 +370,10 @@ export class FakeWarmStore {
     );
     if (i >= 0) {
       this.relations[i]!.strength = strength;
-      this.relations[i]!.tenantId = tenantId;
+      this.relations[i]!.userId = userId;
       this.relations[i]!.projectId = projectId ?? null;
     } else {
-      this.relations.push({ tenantId, projectId: projectId ?? null, fromId, toId, relation, strength });
+      this.relations.push({ userId, projectId: projectId ?? null, fromId, toId, relation, strength });
     }
   }
 
@@ -386,11 +386,11 @@ export class FakeWarmStore {
     };
   }
 
-  async stats(tenantId: string) {
+  async stats(userId: string) {
     const rows: Array<{ namespace: string; cold: boolean; count: string }> = [];
     const groups = new Map<string, number>();
     for (const r of this.rows.values()) {
-      if (r.tenantId !== tenantId) continue;
+      if (r.userId !== userId) continue;
       const key = `${r.namespace}::${r.cold}`;
       groups.set(key, (groups.get(key) ?? 0) + 1);
     }
@@ -411,36 +411,36 @@ export class FakeWarmStore {
     return [...this.tenants.values()].map((t) => ({ ...t, createdAt: new Date() }));
   }
 
-  async createTenantToken(
-    tenantId: string,
+  async createUserToken(
+    userId: string,
     label?: string,
     createdByUserId?: string | null,
     projectId?: string | null,
   ) {
-    if (!this.tenants.has(tenantId)) return null;
+    if (!this.tenants.has(userId)) return null;
     const token = "nm_test_" + Math.random().toString(36).slice(2, 18);
     this.tokens.set(token, {
-      tenantId,
+      userId,
       label: label ?? null,
       createdByUserId: createdByUserId ?? null,
       projectId: projectId ?? null,
       revoked: false,
     });
-    return { token, tenantId, projectId: projectId ?? null, createdAt: new Date() };
+    return { token, userId, projectId: projectId ?? null, createdAt: new Date() };
   }
 
-  async resolveTenantToken(plaintext: string) {
+  async resolveUserToken(plaintext: string) {
     const t = this.tokens.get(plaintext);
     if (!t || t.revoked) return null;
     return {
-      tenantId: t.tenantId,
+      userId: t.userId,
       projectId: t.projectId,
       tokenHash: this.fakeHash(plaintext),
       label: t.label,
     };
   }
 
-  async listRecentActivity(_tenantId: string, _userId: string, _limit?: number) {
+  async listRecentActivity(_userId: string, _limit?: number) {
     // Tests don't exercise the activity feed — return empty so the
     // /v1/me/today route resolves without a real Postgres query plan.
     return [] as Array<{
@@ -452,16 +452,16 @@ export class FakeWarmStore {
   }
 
   async listTokensCreatedByUser(userId: string) {
-    const out: Array<{ tokenHash: string; label: string | null; tenantId: string }> = [];
+    const out: Array<{ tokenHash: string; label: string | null; userId: string }> = [];
     for (const [plain, v] of this.tokens.entries()) {
       if (v.createdByUserId === userId && !v.revoked) {
-        out.push({ tokenHash: this.fakeHash(plain), label: v.label, tenantId: v.tenantId });
+        out.push({ tokenHash: this.fakeHash(plain), label: v.label, userId: v.userId });
       }
     }
     return out;
   }
 
-  async revokeTenantToken(plaintext: string): Promise<boolean> {
+  async revokeUserToken(plaintext: string): Promise<boolean> {
     const t = this.tokens.get(plaintext);
     if (!t || t.revoked) return false;
     t.revoked = true;
@@ -474,9 +474,9 @@ export class FakeWarmStore {
     return createHash("sha256").update(plaintext).digest("hex");
   }
 
-  async revokeTenantTokenByHash(tenantId: string, tokenHash: string): Promise<boolean> {
+  async revokeUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
     for (const [plain, v] of this.tokens.entries()) {
-      if (v.tenantId === tenantId && this.fakeHash(plain) === tokenHash && !v.revoked) {
+      if (v.userId === userId && this.fakeHash(plain) === tokenHash && !v.revoked) {
         v.revoked = true;
         return true;
       }
@@ -489,31 +489,31 @@ export class FakeWarmStore {
     if (!t || t.revoked) return null;
     t.revoked = true;
     const newToken = "nm_test_" + Math.random().toString(36).slice(2, 18);
-    this.tokens.set(newToken, { tenantId: t.tenantId, label: "rotated", revoked: false });
-    return { token: newToken, tenantId: t.tenantId, createdAt: new Date() };
+    this.tokens.set(newToken, { userId: t.userId, label: "rotated", revoked: false });
+    return { token: newToken, userId: t.userId, createdAt: new Date() };
   }
 
-  async deleteTenant(id: string) {
+  async deleteUserAndMemory(id: string) {
     if (id === "public") return { deleted: false, entriesRemoved: 0 };
-    if (!this.tenants.has(id)) return { deleted: false, entriesRemoved: 0 };
+    if (!this.users.has(id)) return { deleted: false, entriesRemoved: 0 };
     let entriesRemoved = 0;
     for (const [rid, r] of [...this.rows.entries()]) {
-      if (r.tenantId === id) { this.rows.delete(rid); entriesRemoved++; }
+      if (r.userId === id) { this.rows.delete(rid); entriesRemoved++; }
     }
-    this.relations = this.relations.filter((r) => r.tenantId !== id);
+    this.relations = this.relations.filter((r) => r.userId !== id);
     for (const [oid, o] of [...this.coldOrphans.entries()]) {
-      if (o.tenantId === id) this.coldOrphans.delete(oid);
+      if (o.userId === id) this.coldOrphans.delete(oid);
     }
     for (const [tk, v] of [...this.tokens.entries()]) {
-      if (v.tenantId === id) this.tokens.delete(tk);
+      if (v.userId === id) this.tokens.delete(tk);
     }
-    this.tenants.delete(id);
+    this.users.delete(id);
     return { deleted: true, entriesRemoved };
   }
 
-  async listTenantTokens(tenantId: string) {
+  async listUserTokens(userId: string) {
     return [...this.tokens.entries()]
-      .filter(([, v]) => v.tenantId === tenantId)
+      .filter(([, v]) => v.userId === userId)
       .map(([plain, v]) => ({
         tokenHash: this.fakeHash(plain),
         label: v.label,
@@ -527,19 +527,19 @@ export class FakeWarmStore {
 
   // ─── Users + sessions ───────────────────────────────────────────────────
 
-  async createUser(args: { username: string; passwordHash: string; role: "admin" | "user"; tenantId: string | null }) {
+  async createUser(args: { username: string; passwordHash: string; role: "admin" | "user"; userId: string | null }) {
     const id = ulid();
     const row = {
       id,
       username: args.username,
       passwordHash: args.passwordHash,
       role: args.role,
-      tenantId: args.tenantId,
+      userId: args.userId,
       createdAt: new Date(),
       lastLoginAt: null,
     };
     this.users.set(id, row);
-    return { id, username: args.username, role: args.role, tenantId: args.tenantId, createdAt: row.createdAt };
+    return { id, username: args.username, role: args.role, userId: args.userId, createdAt: row.createdAt };
   }
 
   async findUserByUsername(username: string) {
@@ -550,7 +550,7 @@ export class FakeWarmStore {
           username: u.username,
           passwordHash: u.passwordHash,
           role: u.role,
-          tenantId: u.tenantId,
+          userId: u.userId,
         };
       }
     }
@@ -560,7 +560,7 @@ export class FakeWarmStore {
   async findUserById(id: string) {
     const u = this.users.get(id);
     if (!u) return null;
-    return { id: u.id, username: u.username, role: u.role, tenantId: u.tenantId };
+    return { id: u.id, username: u.username, role: u.role, userId: u.userId };
   }
 
   async listUsers() {
@@ -568,7 +568,7 @@ export class FakeWarmStore {
       id: u.id,
       username: u.username,
       role: u.role,
-      tenantId: u.tenantId,
+      userId: u.userId,
       createdAt: u.createdAt,
       lastLoginAt: u.lastLoginAt,
     }));
@@ -578,11 +578,11 @@ export class FakeWarmStore {
     return this.users.delete(id);
   }
 
-  async setUserRole(id: string, role: "admin" | "user", tenantId: string | null) {
+  async setUserRole(id: string, role: "admin" | "user", userId: string | null) {
     const u = this.users.get(id);
     if (!u) return false;
     u.role = role;
-    u.tenantId = tenantId;
+    u.userId = userId;
     return true;
   }
 
@@ -607,7 +607,7 @@ export class FakeWarmStore {
     const u = this.users.get(s.userId);
     if (!u) return null;
     return {
-      user: { id: u.id, username: u.username, role: u.role, tenantId: u.tenantId },
+      user: { id: u.id, username: u.username, role: u.role, userId: u.userId },
     };
   }
 
@@ -683,7 +683,7 @@ export class FakeWarmStore {
       return {
         userId,
         username: u?.username ?? "(deleted)",
-        tenantId: u?.tenantId ?? null,
+        userId: u?.userId ?? null,
         role: v.role,
         joinedAt: v.joinedAt,
       };
@@ -741,7 +741,7 @@ export class FakeColdStore {
     string,
     {
       id: string;
-      tenantId: string;
+      userId: string;
       projectId: string | null;
       namespace: string;
       embedding: number[];
@@ -754,7 +754,7 @@ export class FakeColdStore {
   async ping(): Promise<boolean> { return !this.fail; }
 
   async upsert(args: {
-    tenantId: string;
+    userId: string;
     projectId?: string | null;
     id: string;
     namespace: string;
@@ -766,7 +766,7 @@ export class FakeColdStore {
   }
 
   async search(args: {
-    tenantId: string;
+    userId: string;
     projectId?: string | null;
     namespace: string;
     embedding: number[];
@@ -784,7 +784,7 @@ export class FakeColdStore {
       return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
     };
     return [...this.vectors.values()]
-      .filter((v) => v.tenantId === args.tenantId && v.namespace === args.namespace)
+      .filter((v) => v.userId === args.userId && v.namespace === args.namespace)
       .filter((v) => (v.projectId ?? null) === projectId)
       .map((v) => ({ id: v.id, score: cosine(v.embedding, args.embedding), payload: v.payload }))
       .sort((a, b) => b.score - a.score)
@@ -792,7 +792,7 @@ export class FakeColdStore {
   }
 
   async delete(
-    tenantId: string,
+    userId: string,
     namespace: string,
     id: string,
     projectId: string | null = null,
@@ -801,7 +801,7 @@ export class FakeColdStore {
     const v = this.vectors.get(id);
     if (
       v &&
-      v.tenantId === tenantId &&
+      v.userId === userId &&
       v.namespace === namespace &&
       (v.projectId ?? null) === projectId
     ) {
@@ -809,13 +809,13 @@ export class FakeColdStore {
     }
   }
 
-  async deleteAllForTenant(tenantId: string): Promise<string[]> {
+  async deleteAllForTenant(userId: string): Promise<string[]> {
     if (this.fail) return [];
     const dropped = new Set<string>();
     for (const [id, v] of [...this.vectors.entries()]) {
-      if (v.tenantId === tenantId && v.projectId == null) {
+      if (v.userId === userId && v.projectId == null) {
         this.vectors.delete(id);
-        dropped.add(`novamem_${tenantId}_${v.namespace}`);
+        dropped.add(`novamem_${userId}_${v.namespace}`);
       }
     }
     return [...dropped];
@@ -835,50 +835,50 @@ export class FakeColdStore {
 }
 
 export class FakeGraphStore {
-  // Edges keyed by `${tenantId}:${projectId ?? "_"}:${fromId}` so cross-
+  // Edges keyed by `${userId}:${projectId ?? "_"}:${fromId}` so cross-
   // tenant + cross-project traversal is structurally impossible — same
   // approach as the real graph store's tenant + project node properties.
   edges = new Map<
     string,
-    Array<{ tenantId: string; projectId: string | null; to: string; strength: number }>
+    Array<{ userId: string; projectId: string | null; to: string; strength: number }>
   >();
   connected = true;
 
-  private key(tenantId: string, projectId: string | null, id: string): string {
-    return `${tenantId}:${projectId ?? "_"}:${id}`;
+  private key(userId: string, projectId: string | null, id: string): string {
+    return `${userId}:${projectId ?? "_"}:${id}`;
   }
 
   isConnected(): boolean { return this.connected; }
   async ping(): Promise<boolean> { return this.connected; }
 
   async addEdge(
-    tenantId: string,
+    userId: string,
     from: string,
     to: string,
     _relation: string,
     strength = 1,
     projectId: string | null = null,
   ): Promise<void> {
-    const k = this.key(tenantId, projectId, from);
+    const k = this.key(userId, projectId, from);
     const cur = this.edges.get(k) ?? [];
-    cur.push({ tenantId, projectId, to, strength });
+    cur.push({ userId, projectId, to, strength });
     this.edges.set(k, cur);
   }
 
   async addEdgesBatch(
-    tenantId: string,
+    userId: string,
     from: string,
     edges: Array<{ to: string; relation: string; strength?: number }>,
     projectId: string | null = null,
   ): Promise<void> {
     for (const e of edges) {
-      await this.addEdge(tenantId, from, e.to, e.relation, e.strength ?? 1, projectId);
+      await this.addEdge(userId, from, e.to, e.relation, e.strength ?? 1, projectId);
     }
   }
 
-  async removeNode(tenantId: string, id: string): Promise<void> {
+  async removeNode(userId: string, id: string): Promise<void> {
     for (const k of [...this.edges.keys()]) {
-      if (k.startsWith(`${tenantId}:`) && k.endsWith(`:${id}`)) this.edges.delete(k);
+      if (k.startsWith(`${userId}:`) && k.endsWith(`:${id}`)) this.edges.delete(k);
     }
     for (const [k, list] of this.edges) {
       this.edges.set(k, list.filter((e) => e.to !== id));
@@ -886,13 +886,13 @@ export class FakeGraphStore {
   }
 
   async neighbors(
-    tenantId: string,
+    userId: string,
     seedId: string,
     _depth = 1,
     k = 10,
     projectId: string | null = null,
   ): Promise<Array<{ id: string; score: number }>> {
-    const cur = this.edges.get(this.key(tenantId, projectId, seedId)) ?? [];
+    const cur = this.edges.get(this.key(userId, projectId, seedId)) ?? [];
     return cur.slice(0, k).map((e) => ({ id: e.to, score: e.strength }));
   }
 
@@ -903,11 +903,11 @@ export class FakeGraphStore {
     return n;
   }
 
-  async removeAllForTenant(tenantId: string): Promise<boolean> {
+  async removeAllForTenant(userId: string): Promise<boolean> {
     if (!this.connected) return false;
     for (const [k, list] of [...this.edges.entries()]) {
-      if (k.startsWith(`${tenantId}:`)) this.edges.delete(k);
-      else this.edges.set(k, list.filter((e) => e.tenantId !== tenantId));
+      if (k.startsWith(`${userId}:`)) this.edges.delete(k);
+      else this.edges.set(k, list.filter((e) => e.userId !== userId));
     }
     return true;
   }

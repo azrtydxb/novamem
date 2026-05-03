@@ -34,7 +34,7 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
     {
       n: 2,
       label: "Tenant created",
-      hint: data?.tenantId ? `${data.tenantId} · 1 user` : "—",
+      hint: data?.userId ? `${data.userId} · 1 user` : "—",
       done: data?.tenantDone ?? false,
     },
     {

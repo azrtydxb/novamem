@@ -53,14 +53,14 @@ describe("MetricsCollector: counters", () => {
     m.recordQuery("contoso", { warm: 0, cold: 0, graph: 0 });
     m.recordRemember("acme");
 
-    const acme = await m.snapshotForTenant("acme");
+    const acme = await m.snapshotForUser("acme");
     expect(acme.counters.queries_total).toBe(2);
     expect(acme.counters.hits_warm_total).toBe(2);
     expect(acme.counters.hits_cold_total).toBe(1);
     expect(acme.counters.queries_zero_hit).toBe(0);
     expect(acme.counters.remembers_total).toBe(1);
 
-    const contoso = await m.snapshotForTenant("contoso");
+    const contoso = await m.snapshotForUser("contoso");
     expect(contoso.counters.queries_total).toBe(1);
     expect(contoso.counters.queries_zero_hit).toBe(1);
     expect(contoso.counters.remembers_total).toBe(0);

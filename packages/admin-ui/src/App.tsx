@@ -3,6 +3,7 @@ import { AppShell, Tab } from "./components/AppShell";
 import { ToastProvider } from "./components/Toast";
 import { AuthProvider, useAuth } from "./lib/auth-context";
 import { SignIn } from "./pages/SignIn";
+import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 
 // P2-3: lazy-load the heavy pages so the SignIn route doesn't pay for
 // recharts (~40% of the bundle) before the user is even logged in.
@@ -30,10 +31,20 @@ export function App() {
 }
 
 function Authed() {
-  const { user, loading } = useAuth();
+  const { user, loading, needsPasswordChange } = useAuth();
   const isAdmin = user?.role === "admin";
   const defaultTab: Tab = isAdmin ? "metrics" : "metrics";
   const [tab, setTab] = useState<Tab>(defaultTab);
+
+  // Redirect to change-password page on first login.
+  // After the user sets a new password they won't see this again.
+  if (loading) {
+    return (
+      <div className="min-h-full flex items-center justify-center">
+        <div className="h-6 w-6 rounded-full border-2 border-faint border-t-transparent animate-spin" />
+      </div>
+    );
+  }
 
   // Reset to a sensible default when auth state changes (login → switch to
   // metrics; demote → don't show admin-only tabs).
@@ -43,15 +54,11 @@ function Authed() {
     if (isAdmin && (tab === "projects" || tab === "tokens" || tab === "browse" || tab === "today" || tab === "graph")) setTab("metrics");
   }, [user, isAdmin, tab]);
 
-  if (loading) {
-    return (
-      <div className="min-h-full flex items-center justify-center">
-        <div className="h-6 w-6 rounded-full border-2 border-faint border-t-transparent animate-spin" />
-      </div>
-    );
-  }
-
   if (!user) return <SignIn />;
+
+  if (needsPasswordChange) {
+    return <ChangePasswordPage onDone={() => setTab("onboarding")} />;
+  }
 
   return (
     <AppShell active={tab} onChange={setTab}>
