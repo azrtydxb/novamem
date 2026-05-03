@@ -25,6 +25,17 @@ const queryClient = new QueryClient({
   },
 });
 
+// Resolve the initial theme before the React tree mounts so we don't
+// flash the wrong palette. Stored choice wins; otherwise default to dark
+// to match the brand. The toggle in <AppShell> updates both
+// localStorage and the <html> class.
+{
+  const saved = localStorage.getItem("nm-theme");
+  const theme = saved === "light" ? "light" : "dark";
+  document.documentElement.classList.toggle("light", theme === "light");
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}
+
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root element");
 

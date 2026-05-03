@@ -49,8 +49,8 @@ export function UsersPage() {
     <div className="space-y-6">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-text">Users</h1>
-          <p className="text-sm text-text-muted mt-1">
+          <h1 className="text-2xl font-semibold text-ink">Users</h1>
+          <p className="text-sm text-dim mt-1">
             Manage dashboard logins. Admins see everything; users are scoped to one tenant.
           </p>
         </div>
@@ -63,19 +63,19 @@ export function UsersPage() {
 
       <div className="space-y-3">
         {users === null ? (
-          <Card className="p-8 text-center text-sm text-text-muted">Loading users…</Card>
+          <Card className="p-8 text-center text-sm text-dim">Loading users…</Card>
         ) : users.length === 0 ? (
           <Card className="p-12 text-center">
-            <UsersIcon className="h-8 w-8 text-text-subtle mx-auto mb-3" />
-            <div className="text-sm text-text font-medium">No users yet</div>
-            <div className="text-xs text-text-muted mt-1">Create your first user above.</div>
+            <UsersIcon className="h-8 w-8 text-faint mx-auto mb-3" />
+            <div className="text-sm text-ink font-medium">No users yet</div>
+            <div className="text-xs text-dim mt-1">Create your first user above.</div>
           </Card>
         ) : (
           <Card>
             <div className="overflow-hidden rounded-lg">
               <table className="w-full text-sm">
-                <thead className="bg-bg-subtle/60">
-                  <tr className="text-text-muted text-[11px] uppercase tracking-wider">
+                <thead className="bg-subtle/60">
+                  <tr className="text-dim text-[11px] uppercase tracking-wider">
                     <th className="text-left font-medium px-4 py-2.5">User</th>
                     <th className="text-left font-medium px-4 py-2.5">Role</th>
                     <th className="text-left font-medium px-4 py-2.5">Tenant</th>
@@ -179,7 +179,7 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
             </Button>
           </div>
           {role === "admin" ? (
-            <div className="text-xs text-text-subtle flex items-center gap-1.5">
+            <div className="text-xs text-faint flex items-center gap-1.5">
               <AlertCircle className="h-3 w-3" /> Admins are not bound to a tenant.
             </div>
           ) : null}
@@ -200,8 +200,8 @@ function RoleSelector({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-medium text-text-muted">Role</label>
-      <div className="inline-flex p-0.5 rounded-md border border-border bg-bg">
+      <label className="block text-xs font-medium text-dim">Role</label>
+      <div className="inline-flex p-0.5 rounded-md border border-rule bg-bg">
         {(["user", "admin"] as const).map((r) => (
           <button
             key={r}
@@ -211,8 +211,8 @@ function RoleSelector({
             className={
               "h-8 px-3 text-xs font-medium rounded-sm transition-colors " +
               (role === r
-                ? "bg-bg-subtle text-text shadow-sm"
-                : "text-text-muted hover:text-text") +
+                ? "bg-subtle text-ink shadow-sm"
+                : "text-dim hover:text-ink") +
               (disabled ? " opacity-50 cursor-not-allowed" : "")
             }
           >
@@ -237,14 +237,14 @@ function TenantSelector({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-medium text-text-muted">Tenant</label>
+      <label className="block text-xs font-medium text-dim">Tenant</label>
       <div className="relative">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className={
-            "w-full h-9 appearance-none rounded-md border border-border bg-bg-panel pl-3 pr-8 text-sm " +
+            "w-full h-9 appearance-none rounded-md border border-rule bg-panel pl-3 pr-8 text-sm " +
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg " +
             (disabled ? "opacity-60 cursor-not-allowed" : "")
           }
@@ -256,7 +256,7 @@ function TenantSelector({
             </option>
           ))}
         </select>
-        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-subtle pointer-events-none" />
+        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-faint pointer-events-none" />
       </div>
     </div>
   );
@@ -314,11 +314,11 @@ function UserRow({
             </span>
           </div>
           <div>
-            <div className="font-medium text-text">
+            <div className="font-medium text-ink">
               {user.username}
-              {isMe && <span className="ml-1.5 text-text-subtle text-xs">(you)</span>}
+              {isMe && <span className="ml-1.5 text-faint text-xs">(you)</span>}
             </div>
-            <div className="text-xs text-text-subtle">created {fmtRelative(user.createdAt)}</div>
+            <div className="text-xs text-faint">created {fmtRelative(user.createdAt)}</div>
           </div>
         </div>
       </td>
@@ -331,15 +331,15 @@ function UserRow({
           <Badge tone="neutral">user</Badge>
         )}
       </td>
-      <td className="px-4 py-3 text-text-muted">
+      <td className="px-4 py-3 text-dim">
         {user.tenantId ? (
           <code className="font-mono text-xs">{user.tenantId}</code>
         ) : (
-          <span className="text-text-subtle">—</span>
+          <span className="text-faint">—</span>
         )}
       </td>
-      <td className="px-4 py-3 text-text-muted text-xs">
-        {user.lastLoginAt ? fmtRelative(user.lastLoginAt) : <span className="text-text-subtle">never</span>}
+      <td className="px-4 py-3 text-dim text-xs">
+        {user.lastLoginAt ? fmtRelative(user.lastLoginAt) : <span className="text-faint">never</span>}
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex gap-1">

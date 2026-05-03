@@ -931,6 +931,94 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send({ removed: true, tokensRevoked: r.tokensRevoked });
   });
 
+  // ─── User self-service: data-plane proxies ──────────────────────────
+  // The dashboard SPA is authenticated by cookie session, not a tenant
+  // bearer, so it can't hit /v1/search etc. directly. These /v1/me/*
+  // mirrors invoke the engine on behalf of the calling user, scoping
+  // automatically to their tenant. Admin variants (no tenant) get
+  // PUBLIC_TENANT, mirroring the bearer-mode behaviour.
+  app.post("/v1/me/search", async (req, reply) => {
+    const u = req.dashUser!;
+    const body = SearchBody.parse(req.body);
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const project = body.project ?? null;
+    const r = await opts.engine.search(tenantId, { ...body, project });
+    reply.send(r);
+  });
+
+  app.post("/v1/me/recent", async (req, reply) => {
+    const u = req.dashUser!;
+    const body = RecentBody.parse(req.body ?? {});
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const project = body.project ?? null;
+    reply.send(await opts.engine.recent(tenantId, { ...body, project }));
+  });
+
+  app.post("/v1/me/neighbors", async (req, reply) => {
+    const u = req.dashUser!;
+    const body = NeighborsBody.parse(req.body);
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const project = body.project ?? null;
+    try {
+      reply.send(await opts.engine.neighbors(tenantId, { ...body, project }));
+    } catch (err) {
+      // Graph store occasionally returns Edge values the redis-client
+      // decoder rejects ("Type mismatch: expected List or Null but was
+      // Edge") — degrade to "no neighbours, graph degraded" so the SPA
+      // still renders the seed inspector instead of a 500 modal.
+      app.log?.warn?.({ err: (err as Error).message }, "[/v1/me/neighbors] degraded");
+      reply.send({ seed: body.id, results: [], degraded: true });
+    }
+  });
+
+  app.post("/v1/me/remember", async (req, reply) => {
+    const u = req.dashUser!;
+    const body = RememberBody.parse(req.body);
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const project = body.project ?? null;
+    const r = await opts.engine.remember(tenantId, { ...body, project });
+    reply.code(201).send(r);
+  });
+
+  app.post("/v1/me/forget", async (req, reply) => {
+    const u = req.dashUser!;
+    const body = ForgetBody.parse(req.body);
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const project = body.project ?? null;
+    reply.send(await opts.engine.forget(tenantId, body.id, { project }));
+  });
+
+  /** "Today" — lightweight activity feed for the user dashboard. We
+   *  derive it from the recent memory_entries (kind = "remember") and
+   *  recent tenant_tokens (kind = "token"). Cheap query, ranks by
+   *  timestamp, capped at 50 events. */
+  app.get("/v1/me/today", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
+    const u = req.dashUser!;
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const events = await opts.warm.listRecentActivity(tenantId, u.id, 50);
+    reply.send({ events });
+  });
+
+  /** Onboarding state — derived, not stored. Tells the SPA which steps
+   *  in the welcome wizard are done so it can highlight the next one. */
+  app.get("/v1/me/onboarding", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
+    const u = req.dashUser!;
+    const tenantId = u.tenantId ?? PUBLIC_TENANT;
+    const tokens = await opts.warm.listTokensCreatedByUser(u.id);
+    const recent = u.tenantId
+      ? await opts.engine.recent(u.tenantId, { k: 1 })
+      : { results: [] as unknown[] };
+    reply.send({
+      bootstrapDone: true,
+      tenantDone: u.role === "admin" || !!u.tenantId,
+      mintedToken: tokens.length > 0,
+      remembered: recent.results.length > 0,
+      tenantId,
+    });
+  });
+
   app.post("/v1/admin/tenants", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
     if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });

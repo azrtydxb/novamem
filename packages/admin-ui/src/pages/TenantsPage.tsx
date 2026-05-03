@@ -53,8 +53,8 @@ export function TenantsPage() {
     <div className="space-y-6">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-text">Tenants</h1>
-          <p className="text-sm text-text-muted mt-1">
+          <h1 className="text-2xl font-semibold text-ink">Tenants</h1>
+          <p className="text-sm text-dim mt-1">
             Manage tenants and their bearer tokens.
           </p>
         </div>
@@ -66,9 +66,9 @@ export function TenantsPage() {
       {tenantModeUnavailable ? (
         <Card>
           <CardContent className="flex items-start gap-3">
-            <AlertTriangle className="h-4 w-4 mt-0.5 text-warning flex-none" />
-            <div className="text-sm text-text-muted">
-              <span className="text-text font-medium">Tenant mode is not active. </span>
+            <AlertTriangle className="h-4 w-4 mt-0.5 text-warn flex-none" />
+            <div className="text-sm text-dim">
+              <span className="text-ink font-medium">Tenant mode is not active. </span>
               Set <code className="text-accent">NOVAMEM_AUTH_MODE=tenant</code> and restart the
               server to enable tenant CRUD. Health and Metrics still work without it.
             </div>
@@ -85,12 +85,12 @@ export function TenantsPage() {
 
       <div className="space-y-3">
         {tenants === null ? (
-          <Card className="p-8 text-center text-sm text-text-muted">Loading tenants…</Card>
+          <Card className="p-8 text-center text-sm text-dim">Loading tenants…</Card>
         ) : tenants.length === 0 ? (
           <Card className="p-12 text-center">
-            <Users className="h-8 w-8 text-text-subtle mx-auto mb-3" />
-            <div className="text-sm text-text font-medium">No tenants yet</div>
-            <div className="text-xs text-text-muted mt-1">
+            <Users className="h-8 w-8 text-faint mx-auto mb-3" />
+            <div className="text-sm text-ink font-medium">No tenants yet</div>
+            <div className="text-xs text-dim mt-1">
               {tenantModeUnavailable
                 ? "Tenant mode is disabled — switch the server to tenant mode to create tenants."
                 : "Create your first tenant above to get started."}
@@ -264,21 +264,21 @@ function TenantRow({
   return (
     <Card>
       <div
-        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-bg-hover/40"
+        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-hover/40"
         onClick={() => setOpen(!open)}
       >
         <button
-          className="text-text-subtle hover:text-text"
+          className="text-faint hover:text-ink"
           aria-label={open ? "collapse" : "expand"}
         >
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-text">{tenant.id}</span>
+            <span className="font-mono text-sm text-ink">{tenant.id}</span>
             {isPublic && <Badge tone="neutral">system</Badge>}
           </div>
-          <div className="text-xs text-text-muted mt-0.5 truncate">
+          <div className="text-xs text-dim mt-0.5 truncate">
             {tenant.name} · created {fmtRelative(tenant.createdAt)}
           </div>
         </div>
@@ -298,7 +298,7 @@ function TenantRow({
       </div>
 
       {open && (
-        <div className="border-t border-border">
+        <div className="border-t border-rule">
           {mintedPlaintext && (
             <NewTokenBanner
               token={mintedPlaintext}
@@ -327,7 +327,7 @@ function TenantRow({
           <>
             This will permanently remove every memory, vector, graph node, and bearer token
             owned by this tenant.{" "}
-            <span className="text-danger font-medium">This cannot be undone.</span>
+            <span className="text-err font-medium">This cannot be undone.</span>
           </>
         }
         size="md"
@@ -368,7 +368,7 @@ function TenantRow({
         description={
           confirmRevoke ? (
             <>
-              The token <code className="text-text font-mono">{shortHash(confirmRevoke.tokenHash)}</code>{" "}
+              The token <code className="text-ink font-mono">{shortHash(confirmRevoke.tokenHash)}</code>{" "}
               will stop working immediately. Active clients will receive 401s on their next request.
             </>
           ) : null
@@ -398,18 +398,18 @@ function NewTokenBanner({ token, onDismiss }: { token: string; onDismiss: () => 
   const [copied, setCopied] = useState(false);
   const toast = useToast();
   return (
-    <div className="border-b border-warning/40 bg-warning-subtle/40 px-5 py-4 space-y-3 animate-fade-in">
+    <div className="border-b border-warn/40 bg-warn-soft/40 px-5 py-4 space-y-3 animate-fade-in">
       <div className="flex items-start gap-2">
-        <KeyRound className="h-4 w-4 mt-0.5 text-warning" />
+        <KeyRound className="h-4 w-4 mt-0.5 text-warn" />
         <div className="flex-1">
-          <div className="text-sm font-medium text-text">New token — shown once</div>
-          <div className="text-xs text-text-muted">
+          <div className="text-sm font-medium text-ink">New token — shown once</div>
+          <div className="text-xs text-dim">
             The server keeps only a sha256 hash. Copy this token and store it now.
           </div>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <code className="flex-1 px-3 py-2 rounded-md bg-bg text-text-muted font-mono text-xs break-all border border-border">
+        <code className="flex-1 px-3 py-2 rounded-md bg-bg text-dim font-mono text-xs break-all border border-rule">
           {token}
         </code>
         <Button
@@ -445,15 +445,15 @@ function TokenTable({
   onRevoke: (t: TenantToken) => void;
   loading: boolean;
 }) {
-  if (loading) return <div className="text-sm text-text-muted py-4">Loading tokens…</div>;
+  if (loading) return <div className="text-sm text-dim py-4">Loading tokens…</div>;
   if (!tokens || tokens.length === 0)
-    return <div className="text-sm text-text-muted py-4">No tokens yet — click "Mint token" above.</div>;
+    return <div className="text-sm text-dim py-4">No tokens yet — click "Mint token" above.</div>;
 
   return (
-    <div className="border border-border rounded-md overflow-hidden">
+    <div className="border border-rule rounded-md overflow-hidden">
       <table className="w-full text-sm">
-        <thead className="bg-bg-subtle/60">
-          <tr className="text-text-muted text-[11px] uppercase tracking-wider">
+        <thead className="bg-subtle/60">
+          <tr className="text-dim text-[11px] uppercase tracking-wider">
             <th className="text-left font-medium px-4 py-2.5">Hash</th>
             <th className="text-left font-medium px-4 py-2.5">Label</th>
             <th className="text-left font-medium px-4 py-2.5">Created</th>
@@ -464,18 +464,18 @@ function TokenTable({
         </thead>
         <tbody className="divide-y divide-border">
           {tokens.map((t) => (
-            <tr key={t.tokenHash} className="text-text">
+            <tr key={t.tokenHash} className="text-ink">
               <td className="px-4 py-3">
                 <span className="font-mono text-xs" title={t.tokenHash}>
                   {shortHash(t.tokenHash)}
                 </span>
               </td>
-              <td className="px-4 py-3 text-text-muted">{t.label ?? "—"}</td>
-              <td className="px-4 py-3 font-mono text-xs text-text-muted">
+              <td className="px-4 py-3 text-dim">{t.label ?? "—"}</td>
+              <td className="px-4 py-3 font-mono text-xs text-dim">
                 {fmtTimestamp(t.createdAt)}
               </td>
-              <td className="px-4 py-3 font-mono text-xs text-text-muted">
-                {t.lastUsedAt ? fmtTimestamp(t.lastUsedAt) : <span className="text-text-subtle">never</span>}
+              <td className="px-4 py-3 font-mono text-xs text-dim">
+                {t.lastUsedAt ? fmtTimestamp(t.lastUsedAt) : <span className="text-faint">never</span>}
               </td>
               <td className="px-4 py-3">
                 {t.revoked ? (

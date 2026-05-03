@@ -322,6 +322,64 @@ export class WarmStore {
     return (r.rowCount ?? 0) > 0;
   }
 
+  /** Activity feed for the user dashboard "Today" page. Returns the
+   *  last N events of mixed kinds (`remember` + `token` + project member
+   *  joins) ranked by timestamp. Tenant-scoped. Auth audit log entries
+   *  for this user are also included so the user can see their own
+   *  password resets / role changes / etc. */
+  async listRecentActivity(
+    tenantId: string,
+    userId: string,
+    limit = 50,
+  ): Promise<
+    Array<{
+      kind: "remember" | "token" | "project" | "audit";
+      at: string;
+      text: string;
+      project: string | null;
+    }>
+  > {
+    const lim = Math.max(1, Math.min(200, limit));
+    const r = await this.pool.query<{
+      kind: string;
+      at: Date;
+      text: string;
+      project: string | null;
+    }>(
+      `SELECT kind, at, text, project FROM (
+         SELECT 'remember'::text AS kind, created_at AS at,
+                left(content, 160) AS text, project_id AS project
+           FROM memory_entries WHERE tenant_id = $1
+         UNION ALL
+         SELECT 'token'::text AS kind, created_at AS at,
+                'Minted token: ' || COALESCE(label, '(no label)') AS text,
+                project_id AS project
+           FROM tenant_tokens
+          WHERE tenant_id = $1 AND created_by_user_id = $2
+            AND revoked_at IS NULL
+         UNION ALL
+         SELECT 'project'::text AS kind, joined_at AS at,
+                'Joined project: ' || project_id AS text,
+                project_id AS project
+           FROM project_members WHERE user_id = $2
+         UNION ALL
+         SELECT 'audit'::text AS kind, ts AS at,
+                action || ' ' || COALESCE(target, '') AS text,
+                NULL::text AS project
+           FROM admin_audit_log WHERE actor_user_id = $2
+       ) src
+       ORDER BY at DESC
+       LIMIT $3`,
+      [tenantId, userId, lim],
+    );
+    return r.rows.map((row) => ({
+      kind: row.kind as "remember" | "token" | "project" | "audit",
+      at: row.at.toISOString(),
+      text: row.text,
+      project: row.project,
+    }));
+  }
+
   /** Tokens created by a specific user — used to scope per-token metrics
    *  to "my own tokens" on the user dashboard. Excludes revoked. */
   async listTokensCreatedByUser(

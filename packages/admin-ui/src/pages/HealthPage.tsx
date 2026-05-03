@@ -49,12 +49,12 @@ export function HealthPage() {
     <div className="space-y-6">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-text">Health</h1>
-          <p className="text-sm text-text-muted mt-1">
+          <h1 className="text-2xl font-semibold text-ink">Health</h1>
+          <p className="text-sm text-dim mt-1">
             Liveness and dependency status, polled every {POLL_MS / 1000}s.
           </p>
         </div>
-        <div className="flex items-center gap-3 text-xs text-text-muted">
+        <div className="flex items-center gap-3 text-xs text-dim">
           <span>last checked {fmtRelative(new Date(dataUpdatedAt).toISOString())}</span>
           <Button size="sm" variant="ghost" onClick={() => void refetch()} loading={isFetching}>
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
@@ -87,8 +87,8 @@ export function HealthPage() {
             {DEPS.map((d) => (
               <div key={d.key} className="flex items-center justify-between px-5 py-4">
                 <div>
-                  <div className="text-sm font-medium text-text">{d.name}</div>
-                  <div className="text-xs text-text-muted">{d.system}</div>
+                  <div className="text-sm font-medium text-ink">{d.name}</div>
+                  <div className="text-xs text-dim">{d.system}</div>
                 </div>
                 {statusBadge(data?.deps?.[d.key])}
               </div>
