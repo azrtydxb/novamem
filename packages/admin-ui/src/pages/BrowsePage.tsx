@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { api, SearchResult } from "../lib/api";
+import { useActiveProject } from "../lib/active-project";
 import { Card, CardContent } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
 import { Pill } from "../components/Pill";
@@ -24,11 +25,19 @@ export function BrowsePage() {
   const isSearching = debounced.trim().length > 0;
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { activeProjectId, activeProjectName } = useActiveProject();
+  // Active-project mode: union the user-global view with the selected
+  // project so Browse shows both side-by-side. The query key includes
+  // the id so React Query refetches whenever the user switches projects.
+  const includeProjects = activeProjectId ? [activeProjectId] : undefined;
 
   const { data: recent, isFetching: recentLoading } = useQuery({
-    queryKey: ["browse-recent"],
+    queryKey: ["browse-recent", activeProjectId ?? "global"],
     queryFn: async () => {
-      const r = await api<RecentResp>("POST", "/v1/me/recent", { k: 20 });
+      const r = await api<RecentResp>("POST", "/v1/me/recent", {
+        k: 20,
+        ...(includeProjects ? { includeProjects } : {}),
+      });
       if (!r.ok || !r.body) throw new Error(r.error ?? `recent ${r.status}`);
       return r.body;
     },
@@ -36,11 +45,12 @@ export function BrowsePage() {
   });
 
   const { data: searchResp, isFetching: searchLoading } = useQuery({
-    queryKey: ["browse-search", debounced],
+    queryKey: ["browse-search", debounced, activeProjectId ?? "global"],
     queryFn: async () => {
       const r = await api<SearchResp>("POST", "/v1/me/search", {
         query: debounced,
         k: 20,
+        ...(includeProjects ? { includeProjects } : {}),
       });
       if (!r.ok || !r.body) throw new Error(r.error ?? `search ${r.status}`);
       return r.body;
@@ -64,14 +74,20 @@ export function BrowsePage() {
   const [newContent, setNewContent] = useState("");
   const remember = useMutation({
     mutationFn: async () => {
+      // Writes follow the active scope: when a project is active, store
+      // the new memory inside it; otherwise it's user-global.
       const r = await api<{ id: string }>("POST", "/v1/me/remember", {
         content: newContent.trim(),
+        ...(activeProjectId ? { project: activeProjectId } : {}),
       });
       if (!r.ok) throw new Error(r.error ?? `remember ${r.status}`);
       return r.body;
     },
     onSuccess: () => {
-      toast.success("Memory stored", "Added to your memory.");
+      toast.success(
+        "Memory stored",
+        activeProjectName ? `Added to "${activeProjectName}".` : "Added to your memory.",
+      );
       setComposing(false);
       setNewContent("");
       void queryClient.invalidateQueries({ queryKey: ["browse-recent"] });

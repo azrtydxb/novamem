@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, RecentEntry } from "../lib/api";
+import { useActiveProject } from "../lib/active-project";
 import { Card, CardContent } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
 import { Pill } from "../components/Pill";
@@ -44,13 +45,19 @@ interface Edge {
  *  in a full force-layout library. */
 export function GraphPage() {
   const [seed, setSeed] = useState<string | null>(null);
+  const { activeProjectId } = useActiveProject();
+  const includeProjects = activeProjectId ? [activeProjectId] : undefined;
+  // Reset the seed when the user switches active project — the previous
+  // seed may not be visible in the new scope.
+  useEffect(() => { setSeed(null); }, [activeProjectId]);
 
-  // Recent entries become the candidate node pool. We start the seed
-  // at the highest-hit entry once recent loads.
   const { data: recent } = useQuery({
-    queryKey: ["graph-recent"],
+    queryKey: ["graph-recent", activeProjectId ?? "global"],
     queryFn: async () => {
-      const r = await api<RecentResp>("POST", "/v1/me/recent", { k: 30 });
+      const r = await api<RecentResp>("POST", "/v1/me/recent", {
+        k: 30,
+        ...(includeProjects ? { includeProjects } : {}),
+      });
       if (!r.ok || !r.body) throw new Error(r.error ?? `recent ${r.status}`);
       return r.body;
     },
@@ -63,13 +70,14 @@ export function GraphPage() {
   }, [recent, seed]);
 
   const { data: neighborsResp, isFetching } = useQuery({
-    queryKey: ["graph-neighbors", seed],
+    queryKey: ["graph-neighbors", seed, activeProjectId ?? "global"],
     queryFn: async () => {
       if (!seed) return { seed: "", results: [] };
       const r = await api<NeighborsResp>("POST", "/v1/me/neighbors", {
         id: seed,
         depth: 1,
         k: 6,
+        ...(includeProjects ? { includeProjects } : {}),
       });
       if (!r.ok || !r.body) throw new Error(r.error ?? `neighbors ${r.status}`);
       return r.body;

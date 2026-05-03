@@ -177,30 +177,53 @@ export class MemoryEngine {
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
     const namespace = req.namespace ?? "default";
     const k = req.k ?? 10;
-    const projectId = req.project ?? null;
     const weights = { ...DEFAULT_WEIGHTS, ...(req.weights ?? {}) };
 
+    // Active-project mode: when `includeProjects` is set, fan out across
+    // (user-global) ∪ (each project) and merge before fusion. Single-
+    // scope queries (project, or no project) collapse to one fanout.
+    const scopes: Array<string | null> = req.includeProjects?.length
+      ? [null, ...req.includeProjects]
+      : [req.project ?? null];
+
     const [embedding] = await this.embedder.embed(req.query);
-    const [keywordHits, vectorHits] = await Promise.all([
-      this.warm.ftsSearch({
-        userId,
-        projectId,
-        query: req.query,
-        namespace,
-        k: k * 3,
-        agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
-      }),
+    const [keywordHitsAll, vectorHitsAll] = await Promise.all([
+      Promise.all(
+        scopes.map((projectId) =>
+          this.warm.ftsSearch({
+            userId,
+            projectId,
+            query: req.query,
+            namespace,
+            k: k * 3,
+            agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
+          }),
+        ),
+      ),
       embedding
-        ? this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 })
-        : Promise.resolve([]),
+        ? Promise.all(
+            scopes.map((projectId) =>
+              this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 }),
+            ),
+          )
+        : Promise.resolve([] as Array<Array<{ id: string; score: number }>>),
     ]);
+    const keywordHits = keywordHitsAll.flat();
+    const vectorHits = vectorHitsAll.flat();
+    // Single-scope path keeps the original projectId for downstream lookups
+    // (entries / neighbors). Multi-scope path uses null + per-id resolution.
+    const projectId = scopes.length === 1 ? scopes[0]! : null;
 
     let graphHits: Array<{ id: string; score: number }> = [];
     let degraded = false;
     if (this.graph?.isConnected() && vectorHits.length > 0) {
       const seed = vectorHits[0]!.id;
       try {
-        graphHits = await this.graph.neighbors(userId, seed, 1, k, projectId);
+        // Graph neighbours scope: when in active-project mode the seed is
+        // ambiguous, so skip the project scope (project_id is null) — entry
+        // resolution below will still filter to the visible scope set.
+        const seedScope = scopes.length === 1 ? scopes[0]! : null;
+        graphHits = await this.graph.neighbors(userId, seed, 1, k, seedScope);
       } catch (err) {
         degraded = true;
         this.logger.warn("[engine] graph neighbours failed: " + (err as Error).message);
@@ -223,7 +246,10 @@ export class MemoryEngine {
     // search hot path from 2N+1 round-trips to ~3 (one entry lookup, one
     // bump, plus per-cold-entry promotion stats which are typically few).
     const fusedIds = fused.map((f) => f.id);
-    const entries = await this.warm.getEntries(userId, fusedIds, { projectId });
+    const entries = await this.warm.getEntries(userId, fusedIds, {
+      projectId,
+      includeProjects: req.includeProjects,
+    });
     const results: SearchResult[] = [];
     const idsToBump: string[] = [];
     for (let i = 0; i < fused.length; i++) {
@@ -329,20 +355,34 @@ export class MemoryEngine {
    *  ISO-8601 lower bound for time-windowed queries ("since yesterday"). */
   async recent(
     userId: string,
-    args: { namespace?: string; k?: number; since?: string; project?: string | null },
+    args: {
+      namespace?: string;
+      k?: number;
+      since?: string;
+      project?: string | null;
+      includeProjects?: string[];
+    },
   ): Promise<{ results: SearchResult[] }> {
     const namespace = args.namespace ?? "default";
     const k = args.k ?? 20;
     const projectId = args.project ?? null;
+    const includeProjects = args.includeProjects ?? null;
     // Same isolation rule as ftsSearch / getEntry: project-set queries scope
     // by project_id only (members may be cross-user). User-wide queries
-    // scope by user_id with project_id IS NULL.
-    const params: Array<string | number> = [namespace, k];
+    // scope by user_id with project_id IS NULL. Active-project mode unions
+    // the user-global view with the listed (membership-checked) projects.
+    const params: Array<string | number | string[]> = [namespace, k];
     let sql =
       `SELECT id, content, namespace, project_id, source, metadata, cold, created_at
          FROM memory_entries
         WHERE namespace = $1`;
-    if (projectId === null) {
+    if (includeProjects && includeProjects.length > 0) {
+      params.push(userId);
+      const userParam = `$${params.length}`;
+      params.push(includeProjects);
+      const listParam = `$${params.length}`;
+      sql += ` AND ((user_id = ${userParam} AND project_id IS NULL) OR project_id = ANY(${listParam}::text[]))`;
+    } else if (projectId === null) {
       params.push(userId);
       sql += ` AND user_id = $${params.length} AND project_id IS NULL`;
     } else {
@@ -378,20 +418,34 @@ export class MemoryEngine {
   /** Graph-neighbour traversal from a seed memory id. Depth defaults to 1. */
   async neighbors(
     userId: string,
-    args: { id: string; depth?: number; k?: number; project?: string | null },
+    args: {
+      id: string;
+      depth?: number;
+      k?: number;
+      project?: string | null;
+      includeProjects?: string[];
+    },
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
     const depth = args.depth ?? 1;
     const k = args.k ?? 10;
     const projectId = args.project ?? null;
+    const includeProjects = args.includeProjects;
     if (!this.graph?.isConnected()) return { results: [], degraded: true };
-    // Cross-user + cross-project guard: refuse to traverse from a seed the
-    // caller can't see in their (user, project) scope.
-    const seedEntry = await this.warm.getEntry(userId, args.id, { projectId });
+    // Cross-user + cross-project guard. In active-project mode the seed
+    // may belong to user-global or any included project — resolve it once
+    // and bind further traversal to its actual scope.
+    const seedRows = includeProjects?.length
+      ? await this.warm.getEntries(userId, [args.id], { includeProjects })
+      : [await this.warm.getEntry(userId, args.id, { projectId })];
+    const seedEntry = seedRows[0];
     if (!seedEntry) return { results: [], degraded: false };
-    const hits = await this.graph.neighbors(userId, args.id, depth, k, projectId);
+    const seedScope = seedEntry.projectId ?? null;
+    const hits = await this.graph.neighbors(userId, args.id, depth, k, seedScope);
     const results: SearchResult[] = [];
     for (const h of hits) {
-      const e = await this.warm.getEntry(userId, h.id, { projectId });
+      const e = includeProjects?.length
+        ? (await this.warm.getEntries(userId, [h.id], { includeProjects }))[0]
+        : await this.warm.getEntry(userId, h.id, { projectId });
       if (!e) continue;
       results.push({
         id: h.id,

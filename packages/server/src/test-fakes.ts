@@ -50,19 +50,39 @@ export class FakeWarmStore {
     query: async (sql: string, params: unknown[] = []): Promise<{ rows: any[] }> => {
       // recent()
       if (sql.includes("FROM memory_entries") && sql.includes("namespace = $1")) {
-        // Engine SQL: params[0] = namespace, params[1] = k, params[2] = userId or projectId,
-        // optional params[3] = since.
+        // Engine SQL shapes:
+        //  - user-only:    namespace = $1 AND user_id = $X AND project_id IS NULL
+        //  - project-only: namespace = $1 AND project_id = $X
+        //  - active mode:  namespace = $1 AND ((user_id = $X AND project_id IS NULL)
+        //                                       OR project_id = ANY($Y::text[]))
         const namespace = String(params[0]);
         const k = Number(params[1]);
-        const projectScoped = sql.includes("project_id = $");
-        const userScoped = sql.includes("user_id = $");
-        const userId = userScoped ? String(params[2]) : null;
-        const projectId = projectScoped ? String(params[2]) : null;
-        const since = sql.includes("created_at >= $") ? new Date(String(params[3])) : null;
+        const activeMode = sql.includes("project_id = ANY(");
+        const projectOnly = !activeMode && sql.includes("project_id = $") && !sql.includes("project_id IS NULL");
+        let userId: string | null = null;
+        let projectId: string | null = null;
+        let includeProjects: string[] | null = null;
+        let sinceParamIdx = -1;
+        if (activeMode) {
+          userId = String(params[2]);
+          includeProjects = params[3] as string[];
+          sinceParamIdx = 4;
+        } else if (projectOnly) {
+          projectId = String(params[2]);
+          sinceParamIdx = 3;
+        } else {
+          userId = String(params[2]);
+          sinceParamIdx = 3;
+        }
+        const since = sql.includes("created_at >= $") ? new Date(String(params[sinceParamIdx])) : null;
         const filtered = [...this.rows.values()]
           .filter((r) => r.namespace === namespace)
           .filter((r) => {
-            if (projectScoped) return r.projectId === projectId;
+            if (activeMode) {
+              if (r.projectId === null) return r.userId === userId;
+              return includeProjects!.includes(r.projectId);
+            }
+            if (projectOnly) return r.projectId === projectId;
             return r.projectId === null && r.userId === userId;
           })
           .filter((r) => !since || r.createdAt >= since)
@@ -655,12 +675,13 @@ export class FakeWarmStore {
 
   // ─── Projects ───────────────────────────────────────────────────────────
 
-  async createProject(args: { id: string; name: string; ownerUserId: string }) {
-    const row = { ...args, createdAt: new Date() };
-    this.projects.set(args.id, row);
+  async createProject(args: { name: string; ownerUserId: string }) {
+    const id = ulid();
+    const row = { id, ...args, createdAt: new Date() };
+    this.projects.set(id, row);
     const m = new Map<string, { role: string; joinedAt: Date }>();
     m.set(args.ownerUserId, { role: "owner", joinedAt: new Date() });
-    this.projectMembers.set(args.id, m);
+    this.projectMembers.set(id, m);
     return row;
   }
 
@@ -705,19 +726,7 @@ export class FakeWarmStore {
 
   async removeProjectMember(projectId: string, userId: string) {
     const removed = this.projectMembers.get(projectId)?.delete(userId) ?? false;
-    let tokensRevoked = 0;
-    if (removed) {
-      for (const v of this.tokens.values()) {
-        // Tokens belong to a user; project-scoped tokens that belonged
-        // to the kicked member must be revoked so they can't keep
-        // accessing the project.
-        if (v.projectId === projectId && v.userId === userId && !v.revoked) {
-          v.revoked = true;
-          tokensRevoked++;
-        }
-      }
-    }
-    return { removed, tokensRevoked };
+    return { removed };
   }
 
   async getProjectMembership(projectId: string, userId: string) {

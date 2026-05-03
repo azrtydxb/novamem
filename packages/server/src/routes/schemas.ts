@@ -15,12 +15,15 @@ import { z } from "zod";
  *  for any reasonable memory entry. */
 export const MAX_CONTENT_BYTES = 256 * 1024;
 
-/** Slug-safe project / username rules. */
+/** Project ids are server-assigned ULIDs (26-char Crockford base32) but
+ *  the wire schema accepts any short string — clients may have older ids
+ *  or test fixtures. The membership check at the route layer is the real
+ *  access boundary; this is just a length / character-class sanity gate. */
 export const ProjectIdRule = z
   .string()
-  .min(2)
+  .min(1)
   .max(64)
-  .regex(/^[a-z0-9][a-z0-9._-]*$/i, { message: "must be a slug" });
+  .regex(/^[A-Za-z0-9._-]+$/, { message: "project id contains invalid characters" });
 
 export const UsernameRule = z
   .string()
@@ -38,6 +41,10 @@ export const SearchBody = z.object({
   namespace: z.string().max(128).optional(),
   agentName: z.string().max(128).optional().nullable(),
   project: ProjectIdRule.optional().nullable(),
+  /** Active-project mode: merge results from the caller's user-global
+   *  store with the listed projects (membership enforced at the route
+   *  layer). Capped at 16 to bound the per-request fan-out. */
+  includeProjects: z.array(ProjectIdRule).max(16).optional(),
   weights: z
     .object({
       keyword: z.number().optional(),
@@ -71,6 +78,7 @@ export const RecentBody = z.object({
     .datetime({ offset: true, message: "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)" })
     .optional(),
   project: ProjectIdRule.optional().nullable(),
+  includeProjects: z.array(ProjectIdRule).max(16).optional(),
 });
 
 export const NeighborsBody = z.object({
@@ -78,6 +86,7 @@ export const NeighborsBody = z.object({
   depth: z.number().int().positive().max(3).optional(),
   k: z.number().int().positive().max(50).optional(),
   project: ProjectIdRule.optional().nullable(),
+  includeProjects: z.array(ProjectIdRule).max(16).optional(),
 });
 
 export const ForgetBody = z.object({
@@ -86,32 +95,6 @@ export const ForgetBody = z.object({
 });
 
 // ─── Admin bodies ──────────────────────────────────────────────────────
-//
-// The user id regex is *narrower* than a generic slug: the cold store
-// derives qdrant collection names as `novamem_<userId>_<namespace>` for
-// user-wide entries and `novamem_p_<projectId>_<namespace>` for project-
-// scoped entries. A user id starting with `p_` would make a user's
-// collections indistinguishable from project collections at prefix-scan
-// time (see review finding P0-1). Forbid `p_` prefix explicitly + the
-// bare value `p` for the same reason. Also forbid `__` (used as a
-// separator-with-margin in a future migration).
-export const AdminCreateUserBody = z.object({
-  id: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9][a-z0-9_-]*$/, {
-      message: "user id must be lowercase alphanumeric / underscore / hyphen",
-    })
-    .refine((v) => v !== "p" && !v.startsWith("p_"), {
-      message:
-        "user id cannot start with 'p_' or be exactly 'p' (collides with project collection naming)",
-    })
-    .refine((v) => !v.includes("__"), {
-      message: "user id cannot contain '__' (reserved separator)",
-    }),
-  name: z.string().min(1).max(128),
-});
 
 export const AdminCreateTokenBody = z.object({
   label: z.string().max(128).optional(),
@@ -140,11 +123,10 @@ export const SetRoleBody = z.object({
 
 export const MintMyTokenBody = z.object({
   label: z.string().max(128).optional(),
-  projectId: ProjectIdRule.optional().nullable(),
 });
 
 export const CreateProjectBody = z.object({
-  id: ProjectIdRule,
+  // Project ids are server-assigned ULIDs — clients send only the name.
   name: z.string().min(1).max(128),
 });
 
