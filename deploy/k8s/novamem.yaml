@@ -62,29 +62,12 @@ metadata:
   name: novamem
   namespace: novamem
 spec:
+  # LoadBalancer + k3s ServiceLB (Klipper) binds the service port directly
+  # on every node's host network. So 7778 is reachable on
+  # http://<node-ip>:7778 with no ingress in front. Production with a
+  # real LB swaps Klipper for MetalLB or cloud-native LBs without
+  # changing this manifest.
+  type: LoadBalancer
   selector: { app: novamem }
   ports:
     - { port: 7778, targetPort: http }
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: novamem
-  namespace: novamem
-  annotations:
-    # k3s ships Traefik as the default ingress controller. Allow long-lived
-    # SSE connections so /mcp/sse doesn't time out at 60s.
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-spec:
-  ingressClassName: traefik
-  rules:
-    - host: novamem.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: novamem
-                port:
-                  number: 7778
