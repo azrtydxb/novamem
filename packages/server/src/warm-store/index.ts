@@ -86,10 +86,12 @@ export class WarmStore {
         role text NOT NULL DEFAULT 'user',
         tenant_id text REFERENCES tenants(id) ON DELETE CASCADE,
         created_at timestamptz NOT NULL DEFAULT now(),
-        last_login_at timestamptz
+        last_login_at timestamptz,
+        password_changed_at timestamptz
       )`,
       `CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users(username)`,
       `CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id)`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz`,
       `CREATE TABLE IF NOT EXISTS sessions (
         token_hash text PRIMARY KEY,
         user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -522,12 +524,12 @@ export class WarmStore {
     passwordHash: string;
     role: "admin" | "user";
     tenantId: string | null;
-  }): Promise<{ id: string; username: string; role: string; tenantId: string | null; createdAt: Date }> {
+  }): Promise<{ id: string; username: string; role: string; tenantId: string | null; createdAt: Date; passwordChangedAt: Date | null }> {
     const id = ulid();
-    const r = await this.pool.query<{ created_at: Date }>(
+    const r = await this.pool.query<{ created_at: Date; password_changed_at: Date | null }>(
       `INSERT INTO users (id, username, password_hash, role, tenant_id)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING created_at`,
+       RETURNING created_at, password_changed_at`,
       [id, args.username, args.passwordHash, args.role, args.tenantId],
     );
     return {
@@ -536,6 +538,7 @@ export class WarmStore {
       role: args.role,
       tenantId: args.tenantId,
       createdAt: r.rows[0]!.created_at,
+      passwordChangedAt: r.rows[0]!.password_changed_at,
     };
   }
 
@@ -545,6 +548,7 @@ export class WarmStore {
     passwordHash: string;
     role: string;
     tenantId: string | null;
+    passwordChangedAt: Date | null;
   } | null> {
     const r = await this.pool.query<{
       id: string;
@@ -552,7 +556,8 @@ export class WarmStore {
       password_hash: string;
       role: string;
       tenant_id: string | null;
-    }>(`SELECT id, username, password_hash, role, tenant_id FROM users WHERE username = $1`, [username]);
+      password_changed_at: Date | null;
+    }>(`SELECT id, username, password_hash, role, tenant_id, password_changed_at FROM users WHERE username = $1`, [username]);
     const row = r.rows[0];
     if (!row) return null;
     return {
@@ -561,6 +566,7 @@ export class WarmStore {
       passwordHash: row.password_hash,
       role: row.role,
       tenantId: row.tenant_id,
+      passwordChangedAt: row.password_changed_at,
     };
   }
 
@@ -1059,6 +1065,20 @@ export class WarmStore {
    *
    *  P0-4: the previous magic-string `"*"` bypass was removed; there is no
    *  way for an external caller to disable both checks. */
+  /** Return the entry's `tenant_id` and `project_id` by id alone — no
+   *  scope filter. Used by /v1/me/forget to recheck the actual project
+   *  membership before deletion (the regular `getEntry` filters by the
+   *  caller-supplied scope, which an attacker can game by passing null). */
+  async getEntryScope(id: string): Promise<{ tenantId: string; projectId: string | null } | undefined> {
+    const r = await this.pool.query<{ tenant_id: string; project_id: string | null }>(
+      `SELECT tenant_id, project_id FROM memory_entries WHERE id = $1`,
+      [id],
+    );
+    const row = r.rows[0];
+    if (!row) return undefined;
+    return { tenantId: row.tenant_id, projectId: row.project_id };
+  }
+
   async getEntry(tenantId: string, id: string, opts: { projectId?: string | null } = {}) {
     const rows = await this.db
       .select()

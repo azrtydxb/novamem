@@ -1150,6 +1150,124 @@ describe("http: P0 regression tests", () => {
     expect(recent.json().results.find((r: { id: string }) => r.id === id)).toBeUndefined();
   });
 
+  // P0-6: cookie-authed /v1/me/* mirrors must check project membership.
+  // Without this guard, any user in tenant `acme` could read/write any
+  // project under `acme` by passing the project id in the body — even
+  // projects they're not a member of.
+  it("P0-6: /v1/me/search refuses non-members of the requested project", async () => {
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { hashPassword } = await import("./auth.js");
+    await warm.createTenant("acme", "Acme");
+    const aliceHash = await hashPassword("alicepass1");
+    const bobHash = await hashPassword("bobpass1");
+    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", tenantId: "acme" });
+    const login = (u: string, p: string) => app.inject({
+      method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
+    });
+    const aliceSession = (await login("alice", "alicepass1")).json().token as string;
+    const bobSession = (await login("bob", "bobpass1")).json().token as string;
+    const aliceAuth = { authorization: `Bearer ${aliceSession}` };
+    const bobAuth = { authorization: `Bearer ${bobSession}` };
+
+    // Alice creates a private project; Bob is not a member.
+    const created = await app.inject({
+      method: "POST", url: "/v1/me/projects",
+      payload: { id: "alice-secret", name: "Alice Secret" },
+      headers: aliceAuth,
+    });
+    expect(created.statusCode).toBe(201);
+
+    // Each /v1/me/* mirror must 403 when Bob targets Alice's project.
+    const search = await app.inject({
+      method: "POST", url: "/v1/me/search",
+      payload: { query: "x", project: "alice-secret" },
+      headers: bobAuth,
+    });
+    expect(search.statusCode).toBe(403);
+
+    const recent = await app.inject({
+      method: "POST", url: "/v1/me/recent",
+      payload: { project: "alice-secret" },
+      headers: bobAuth,
+    });
+    expect(recent.statusCode).toBe(403);
+
+    const remember = await app.inject({
+      method: "POST", url: "/v1/me/remember",
+      payload: { content: "bob's intrusion", project: "alice-secret" },
+      headers: bobAuth,
+    });
+    expect(remember.statusCode).toBe(403);
+
+    const forget = await app.inject({
+      method: "POST", url: "/v1/me/forget",
+      payload: { id: "01HXXX", project: "alice-secret" },
+      headers: bobAuth,
+    });
+    expect(forget.statusCode).toBe(403);
+
+    const neighbors = await app.inject({
+      method: "POST", url: "/v1/me/neighbors",
+      payload: { id: "01HXXX", project: "alice-secret" },
+      headers: bobAuth,
+    });
+    expect(neighbors.statusCode).toBe(403);
+
+    // Alice (the owner) can still use her own project.
+    const okSearch = await app.inject({
+      method: "POST", url: "/v1/me/search",
+      payload: { query: "x", project: "alice-secret" },
+      headers: aliceAuth,
+    });
+    expect(okSearch.statusCode).toBe(200);
+  });
+
+  // P0-6 follow-up: /v1/me/forget can't be tricked into deleting a
+  // project-scoped entry by passing project: null. The handler looks up
+  // the actual entry's project_id and re-checks membership.
+  it("P0-6: /v1/me/forget rechecks the entry's real project", async () => {
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const { hashPassword } = await import("./auth.js");
+    await warm.createTenant("acme", "Acme");
+    const aliceHash = await hashPassword("alicepass1");
+    const bobHash = await hashPassword("bobpass1");
+    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", tenantId: "acme" });
+    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", tenantId: "acme" });
+    const login = (u: string, p: string) => app.inject({
+      method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
+    });
+    const aliceSession = (await login("alice", "alicepass1")).json().token as string;
+    const bobSession = (await login("bob", "bobpass1")).json().token as string;
+    const aliceAuth = { authorization: `Bearer ${aliceSession}` };
+    const bobAuth = { authorization: `Bearer ${bobSession}` };
+
+    await app.inject({
+      method: "POST", url: "/v1/me/projects",
+      payload: { id: "alice-secret", name: "Alice Secret" },
+      headers: aliceAuth,
+    });
+    const aliceTok = (await app.inject({
+      method: "POST", url: "/v1/me/tokens",
+      payload: { projectId: "alice-secret" }, headers: aliceAuth,
+    })).json().token;
+    const created = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "alice's secret", project: "alice-secret" },
+      headers: { authorization: `Bearer ${aliceTok}` },
+    });
+    const id = created.json().id;
+
+    // Bob tries to delete the entry by passing project: null. The first
+    // membership check passes (null is allowed — tenant-wide is OK), but
+    // the entry-resolution recheck must catch it.
+    const r = await app.inject({
+      method: "POST", url: "/v1/me/forget",
+      payload: { id }, headers: bobAuth,
+    });
+    expect(r.statusCode).toBe(403);
+  });
+
   // P1-S6: admin actions write to the audit log
   it("P1-S6: tenant.create writes an audit-log entry", async () => {
     const { app, warm } = makeApp({ authMode: "tenant" });
