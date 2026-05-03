@@ -3,7 +3,7 @@
  * first-run bootstrap that seeds an initial admin from env vars when the
  * users table is empty.
  *
- * Tenants/agents continue to use bearer tokens for the data-plane API. This
+ * Users/agents continue to use bearer tokens for the data-plane API. This
  * module is strictly for the dashboard control plane (login, RBAC).
  */
 

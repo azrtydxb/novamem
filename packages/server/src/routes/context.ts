@@ -22,7 +22,7 @@ export interface RouteContext {
   engine: MemoryEngine;
   warm?: WarmStore;
   metrics?: MetricsCollector;
-  auth: { mode: "none" | "bearer" | "tenant"; token?: string };
+  auth: { mode: "none" | "bearer" | "user"; token?: string };
   /** Master switch for /admin/* + /v1/admin/metrics. */
   adminDashboard: boolean;
   /** In-memory per-username login throttle. */
@@ -44,7 +44,7 @@ export interface RouteContext {
 /** Resolve the project a request should be scoped to. Rules:
  *  - Project-scoped bearer: forced to that project. A different `project`
  *    in body → 403.
- *  - Tenant-wide bearer (no project on token): tenant-wide entries only.
+ *  - User-wide bearer (no project on token): user-wide entries only.
  *    A `project` in body → 403 ("mint a project-scoped token").
  *  Returns the project id (or null) on success, or undefined after
  *  sending a 403 reply. Centralised here so the rule cannot drift between
@@ -67,7 +67,7 @@ export function resolveRequestProject(
   }
   if (requested) {
     reply.code(403).send({
-      error: "this bearer is tenant-wide; mint a project-scoped token to access a project",
+      error: "this bearer is user-wide; mint a project-scoped token to access a project",
     });
     return undefined;
   }

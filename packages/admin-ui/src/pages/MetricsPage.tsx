@@ -74,8 +74,8 @@ function tokenShortLabel(row: { tokenHash: string; label: string | null }): stri
 }
 
 /** Discriminated union: admins fetch the global snapshot which includes
- *  lifecycle counters + orphans gauge. Users fetch a tenant-scoped snapshot
- *  which omits those (decay/promotions are cross-tenant). */
+ *  lifecycle counters + orphans gauge. Users fetch a user-scoped snapshot
+ *  which omits those (decay/promotions are cross-user). */
 type AnySnapshot =
   | { kind: "admin"; data: MetricsSnapshot }
   | { kind: "user"; data: UserMetricsSnapshot };
@@ -88,7 +88,7 @@ export function MetricsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   // Always call /v1/me/metrics so we get the per-token series (admin
-  // gets the global counters + their own tokens; user gets tenant-scoped
+  // gets the global counters + their own tokens; user gets user-scoped
   // counters + their own tokens). The admin-only /v1/admin/metrics
   // endpoint still exists for Prometheus / scripts.
   const endpoint = "/v1/me/metrics";
@@ -190,7 +190,7 @@ export function MetricsPage() {
         subtitle={
           isAdmin
             ? "Operational counters, gauges, and rates. In-memory; resets on restart."
-            : "Activity for your tenant only. In-memory; resets on restart."
+            : "Activity for you only. In-memory; resets on restart."
         }
         actions={
           <>
@@ -429,7 +429,7 @@ export function MetricsPage() {
           <CardHeader>
             <CardTitle>Store sizes</CardTitle>
             <CardDescription>
-              {isAdmin ? "Live counts sampled at request time." : "Counts for your tenant only."}
+              {isAdmin ? "Live counts sampled at request time." : "Counts for you only."}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
@@ -444,7 +444,7 @@ export function MetricsPage() {
                 g.graph_edges == null
                   ? isAdmin
                     ? "graph unreachable"
-                    : "tenant scope unavailable"
+                    : "user scope unavailable"
                   : undefined
               }
             />
@@ -455,12 +455,12 @@ export function MetricsPage() {
         </Card>
       </div>
 
-      {/* Lifecycle counters — admin-only (decay/promotions are cross-tenant) */}
+      {/* Lifecycle counters — admin-only (decay/promotions are cross-user) */}
       {isAdminSnapshot(snap) ? (
         <Card>
           <CardHeader>
             <CardTitle>System lifecycle</CardTitle>
-            <CardDescription>Memory transitions and cleanup events (cross-tenant).</CardDescription>
+            <CardDescription>Memory transitions and cleanup events (cross-user).</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <StatCard label="Remembers" value={fmtNumber(snap.data.counters.remembers_total)} icon={Zap} />

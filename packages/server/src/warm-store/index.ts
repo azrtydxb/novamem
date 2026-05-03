@@ -57,11 +57,11 @@ export class WarmStore {
     // Idempotent schema creation. In production we'd use drizzle-kit migrations;
     // for v0 we keep CREATE IF NOT EXISTS inline so docker-compose just works.
     // ALTERs are also idempotent (`ADD COLUMN IF NOT EXISTS`) so existing
-    // single-tenant installs upgrade in place — pre-tenant rows backfill to
+    // single-user installs upgrade in place — pre-user rows backfill to
     // `public` via the column DEFAULT.
     const ddl = [
       // Users are the only first-class memory owner — no separate
-      // tenants table. The synthetic id "public" is the implicit owner
+      // owner table. The synthetic id "public" is the implicit owner
       // for `auth.mode = none|bearer` deployments.
       `CREATE TABLE IF NOT EXISTS users (
         id text PRIMARY KEY,
@@ -125,7 +125,7 @@ export class WarmStore {
       )`,
       // Upgrade path for installs that pre-date multi-tenancy:
       `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_tenant ON memory_entries(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_user ON memory_entries(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_namespace ON memory_entries(namespace)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_agent ON memory_entries(agent_name)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_cold ON memory_entries(cold)`,
@@ -146,7 +146,7 @@ export class WarmStore {
         UNIQUE (from_id, to_id, relation)
       )`,
       `ALTER TABLE memory_relations ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_relations_tenant ON memory_relations(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_relations_user ON memory_relations(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_id)`,
       `CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_id)`,
       `CREATE TABLE IF NOT EXISTS memory_fts (
@@ -159,7 +159,7 @@ export class WarmStore {
       )`,
       `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
       `CREATE INDEX IF NOT EXISTS idx_fts_tsv ON memory_fts USING gin(tsv)`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_tenant ON memory_fts(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_fts_user ON memory_fts(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_fts_namespace ON memory_fts(namespace)`,
       `CREATE INDEX IF NOT EXISTS idx_fts_entry ON memory_fts(entry_id)`,
       `CREATE TABLE IF NOT EXISTS cold_orphans (
@@ -208,7 +208,7 @@ export class WarmStore {
       `CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor_user_id)`,
       // ─── Performance: composite indexes flagged in review (P1-P2) ───
-      `CREATE INDEX IF NOT EXISTS idx_entries_tenant_cold ON memory_entries(user_id, cold)`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_user_cold ON memory_entries(user_id, cold)`,
       `CREATE INDEX IF NOT EXISTS idx_orphans_attempt_lastattempt ON cold_orphans(attempts, last_attempt_at)`,
     ];
     for (const stmt of ddl) {
@@ -239,7 +239,7 @@ export class WarmStore {
     return { token, userId, projectId: projectId ?? null, createdAt: r.rows[0]!.created_at };
   }
 
-  /** Resolve a plaintext bearer token to its tenant id. Touches `last_used_at`
+  /** Resolve a plaintext bearer token to its user id. Touches `last_used_at`
    *  on success so dormant tokens are visible to operators. Returns null on
    *  unknown or revoked tokens — never throw, the auth hook decides what 4xx
    *  to send. */
@@ -301,7 +301,7 @@ export class WarmStore {
 
   /** Activity feed for the user dashboard "Today" page. Returns the
    *  last N events of mixed kinds (`remember` + `token` + project member
-   *  joins) ranked by timestamp. Tenant-scoped. Auth audit log entries
+   *  joins) ranked by timestamp. User-scoped. Auth audit log entries
    *  for this user are also included so the user can see their own
    *  password resets / role changes / etc. */
   async listRecentActivity(
@@ -411,12 +411,12 @@ export class WarmStore {
     }));
   }
 
-  /** Rotate a tenant's bearer token: revoke the current plaintext and mint a
-   *  new one for the same tenant. Returns the new plaintext (shown once) or
+  /** Rotate a user's bearer token: revoke the current plaintext and mint a
+   *  new one for the same user. Returns the new plaintext (shown once) or
    *  null when the supplied plaintext is unknown / already revoked. Used by
-   *  the user-facing `POST /v1/me/rotate-token` endpoint — tenants don't
+   *  the user-facing `POST /v1/me/rotate-token` endpoint — users don't
    *  have a dashboard, this is their only self-service operation. */
-  async rotateTenantToken(
+  async rotateUserToken(
     plaintext: string,
   ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
     const oldHash = hashToken(plaintext);
@@ -716,7 +716,7 @@ export class WarmStore {
   }
 
   // ─── Projects (sub-brains) ───────────────────────────────────────────────
-  // Each entry can belong to at most one project; projects can span tenants
+  // Each entry can belong to at most one project; projects can span users
   // via `project_members`. The owner is also a member-row (role='owner').
 
   async createProject(args: {
@@ -957,9 +957,9 @@ export class WarmStore {
     userId: string;
     /** When set, project IS the isolation unit — user_id is NOT filtered
      *  on (membership has already been verified at the auth layer, and
-     *  project members may belong to different tenants). When null/
-     *  undefined, scope to tenant-wide entries (project_id IS NULL) for
-     *  the supplied tenant. */
+     *  project members may belong to different users). When null/
+     *  undefined, scope to user-wide entries (project_id IS NULL) for
+     *  the supplied user. */
     projectId?: string | null;
     query: string;
     namespace: string;
@@ -1008,13 +1008,13 @@ export class WarmStore {
     return rows.rows.map((r) => ({ id: r.entry_id, score: Number(r.score) }));
   }
 
-  /** Look up a single entry, scoped to a tenant or project. This is the
+  /** Look up a single entry, scoped to a user or project. This is the
    *  choke-point that enforces isolation on every read path that takes an
    *  id (search, neighbors, forget).
    *
    *  - `opts.projectId` is a non-empty string → the entry must match that
-   *    project; user_id is decorative (cross-tenant members allowed).
-   *  - `opts.projectId` is null/undefined → tenant-wide entries only, scoped
+   *    project; user_id is decorative (cross-user members allowed).
+   *  - `opts.projectId` is null/undefined → user-wide entries only, scoped
    *    to `userId`.
    *
    *  P0-4: the previous magic-string `"*"` bypass was removed; there is no
@@ -1044,7 +1044,7 @@ export class WarmStore {
       // Project IS the access boundary when set.
       return row.projectId === opts.projectId ? row : undefined;
     }
-    // No project requested → tenant-wide entries only, scoped to userId.
+    // No project requested → user-wide entries only, scoped to userId.
     if (row.projectId !== null) return undefined;
     return row.userId === userId ? row : undefined;
   }
@@ -1130,8 +1130,8 @@ export class WarmStore {
   }
 
   async listColdCandidates(_effectiveDays: number, limit = 1000) {
-    // Decay is a global, cross-tenant operation: idle entries from any
-    // tenant are demoted by the same maths. The per-row user_id stays put
+    // Decay is a global, cross-user operation: idle entries from any
+    // user are demoted by the same maths. The per-row user_id stays put
     // — engine queries use it on read-side, but decay doesn't need to scope.
     return this.pool.query<{ id: string; user_id: string; namespace: string; hits: number; idle_days: number }>(
       `SELECT e.id,

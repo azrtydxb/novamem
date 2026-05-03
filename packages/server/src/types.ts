@@ -21,7 +21,7 @@ export interface SearchRequest {
   k?: number;
   namespace?: string;
   agentName?: string | null;
-  /** Project (sub-brain) id. When omitted, scope is tenant-wide entries
+  /** Project (sub-brain) id. When omitted, scope is user-wide entries
    *  (entries with no project). When set, scope is just this project. */
   project?: string | null;
   /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour. */
@@ -34,7 +34,7 @@ export interface SearchResult {
   content: string;
   tier: "warm" | "cold";
   namespace: string;
-  /** Project this entry belongs to, or null for tenant-wide entries. */
+  /** Project this entry belongs to, or null for user-wide entries. */
   project: string | null;
   source: string;
   metadata: Record<string, unknown>;
@@ -46,7 +46,7 @@ export interface RememberRequest {
   namespace?: string;
   source?: string;
   agentName?: string | null;
-  /** Project (sub-brain) id. Null/omitted = tenant-wide entry. */
+  /** Project (sub-brain) id. Null/omitted = user-wide entry. */
   project?: string | null;
   metadata?: Record<string, unknown>;
 }

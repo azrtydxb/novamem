@@ -335,7 +335,7 @@ export class MemoryEngine {
     const k = args.k ?? 20;
     const projectId = args.project ?? null;
     // Same isolation rule as ftsSearch / getEntry: project-set queries scope
-    // by project_id only (members may be cross-tenant). Tenant-wide queries
+    // by project_id only (members may be cross-user). User-wide queries
     // scope by user_id with project_id IS NULL.
     const params: Array<string | number> = [namespace, k];
     let sql =
@@ -384,8 +384,8 @@ export class MemoryEngine {
     const k = args.k ?? 10;
     const projectId = args.project ?? null;
     if (!this.graph?.isConnected()) return { results: [], degraded: true };
-    // Cross-tenant + cross-project guard: refuse to traverse from a seed the
-    // caller can't see in their (tenant, project) scope.
+    // Cross-user + cross-project guard: refuse to traverse from a seed the
+    // caller can't see in their (user, project) scope.
     const seedEntry = await this.warm.getEntry(userId, args.id, { projectId });
     if (!seedEntry) return { results: [], degraded: false };
     const hits = await this.graph.neighbors(userId, args.id, depth, k, projectId);
@@ -410,12 +410,12 @@ export class MemoryEngine {
 
   /** Explicit deletion. Removes warm row, FTS shadow, cold vector, graph
    *  edges. Idempotent — missing ids return `deleted:false`. The access
-   *  check is the `getEntry` above: it returns `undefined` for cross-tenant
+   *  check is the `getEntry` above: it returns `undefined` for cross-user
    *  ids and (for project-scoped queries) for entries in a different
    *  project. The DELETEs that follow MUST scope by the same boundary —
    *  P0-5: when the entry is project-scoped, scope by project_id (NOT
-   *  user_id, because cross-tenant project members must be able to
-   *  delete shared rows); when tenant-wide, scope by user_id. */
+   *  user_id, because cross-user project members must be able to
+   *  delete shared rows); when user-wide, scope by user_id. */
   async forget(
     userId: string,
     id: string,
@@ -428,8 +428,8 @@ export class MemoryEngine {
     const isProject = e.projectId !== null;
     // Scope clause for the by-id DELETEs. When the row is project-scoped,
     // project_id = entry's project_id is the correct access boundary;
-    // user_id is decorative (and may differ from the bearer's tenant
-    // for shared projects). When tenant-wide, user_id is the boundary.
+    // user_id is decorative (and may differ from the bearer's owning user
+    // for shared projects). When user-wide, user_id is the boundary.
     const scopeClause = isProject ? "project_id = $2" : "user_id = $2";
     const scopeValue = isProject ? e.projectId! : userId;
     await pool.query(
@@ -543,10 +543,10 @@ export class MemoryEngine {
     };
   }
 
-  /** Delete a tenant and every artefact it owns across warm, cold, and
+  /** Delete a user and every artefact it owns across warm, cold, and
    *  graph. The warm purge is transactional; cold and graph are best-effort
-   *  but always attempted. Refuses to delete the synthetic `public` tenant
-   *  (would orphan legacy single-tenant rows). */
+   *  but always attempted. Refuses to delete the synthetic `public` user
+   *  (would orphan legacy single-user rows). */
   async deleteUser(userId: string): Promise<{
     deleted: boolean;
     entriesRemoved: number;
@@ -559,7 +559,7 @@ export class MemoryEngine {
     }
     let coldCollectionsDropped: string[] = [];
     try {
-      coldCollectionsDropped = await this.cold.deleteAllForTenant(userId);
+      coldCollectionsDropped = await this.cold.deleteAllForUser(userId);
     } catch (err) {
       this.logger.warn(`[engine] deleteUser(${userId}): cold cleanup failed: ${(err as Error).message}`);
     }
@@ -567,9 +567,9 @@ export class MemoryEngine {
     if (this.graph?.isConnected()) {
       // graph-store now returns whether the DELETE actually ran (it logs
       // its own error on failure). Don't claim graphCleared falsely.
-      graphCleared = await this.graph.removeAllForTenant(userId);
+      graphCleared = await this.graph.removeAllForUser(userId);
     }
-    // P2-5: drop the tenant's MetricsCollector slot so the in-memory Map
+    // P2-5: drop the user's MetricsCollector slot so the in-memory Map
     // doesn't accumulate dead entries.
     this.metrics?.forgetUser(userId);
     return {

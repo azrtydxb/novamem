@@ -3,8 +3,8 @@
  * monotonic, gauges are read-through to the stores at snapshot time, and
  * rates are computed from a 60-second ring of event timestamps.
  *
- * Tracks both per-tenant (search/remember/forget/hits) and global counters
- * (decay/promotions/demotions/orphan reaping). Per-tenant counters power
+ * Tracks both per-user (search/remember/forget/hits) and global counters
+ * (decay/promotions/demotions/orphan reaping). Per-user counters power
  * the user-scoped /v1/me/metrics endpoint; global counters stay in the
  * admin /v1/admin/metrics view.
  *
@@ -14,10 +14,10 @@
 
 const RATE_WINDOW_MS = 60_000;
 
-/** Counters tracked per-tenant. The remaining lifecycle counters
+/** Counters tracked per-user. The remaining lifecycle counters
  *  (`promotions_total`, `demotions_total`, `decay_runs_total`,
  *  `orphans_reaped_total`) are global only — the decay loop and reaper
- *  are cross-tenant operations. */
+ *  are cross-user operations. */
 export type UserCounterName =
   | "queries_total"
   | "queries_zero_hit"
@@ -92,7 +92,7 @@ export interface GaugeSources {
   orphansPending(): Promise<number>;
 }
 
-/** Source for per-tenant gauges. Same contract as GaugeSources but scoped. */
+/** Source for per-user gauges. Same contract as GaugeSources but scoped. */
 export interface UserGaugeSources {
   warmEntries(userId: string): Promise<number>;
   coldEntries(userId: string): Promise<number>;
@@ -120,7 +120,7 @@ class TimestampRing {
   }
 }
 
-const ZERO_TENANT_COUNTERS: Record<UserCounterName, number> = {
+const ZERO_USER_COUNTERS: Record<UserCounterName, number> = {
   queries_total: 0,
   queries_zero_hit: 0,
   remembers_total: 0,
@@ -130,15 +130,15 @@ const ZERO_TENANT_COUNTERS: Record<UserCounterName, number> = {
   hits_graph_total: 0,
 };
 
-interface TenantSlot {
+interface UserSlot {
   counters: Record<UserCounterName, number>;
   queryRing: TimestampRing;
   rememberRing: TimestampRing;
 }
 
-function newTenantSlot(): TenantSlot {
+function newUserSlot(): UserSlot {
   return {
-    counters: { ...ZERO_TENANT_COUNTERS },
+    counters: { ...ZERO_USER_COUNTERS },
     queryRing: new TimestampRing(),
     rememberRing: new TimestampRing(),
   };
@@ -162,7 +162,7 @@ function newTokenSlot(userId: string, label: string | null): TokenSlot {
   };
 }
 
-/** Identity for a tenant token in metrics. We carry the hash (stable id)
+/** Identity for a user bearer in metrics. We carry the hash (stable id)
  *  and the label so the admin UI can render a human-readable line in the
  *  per-token chart without a follow-up DB query. */
 export interface TokenIdentity {
@@ -171,7 +171,7 @@ export interface TokenIdentity {
 }
 
 export class MetricsCollector {
-  /** Global lifecycle counters — process-wide, not attributable to a tenant. */
+  /** Global lifecycle counters — process-wide, not attributable to a single user. */
   private readonly globalCounters = {
     promotions_total: 0,
     demotions_total: 0,
@@ -179,18 +179,18 @@ export class MetricsCollector {
     orphans_reaped_total: 0,
   };
 
-  /** Per-tenant counters + rate rings. Created lazily on first observation. */
-  private readonly perTenant = new Map<string, TenantSlot>();
+  /** Per-user counters + rate rings. Created lazily on first observation. */
+  private readonly perUser = new Map<string, UserSlot>();
 
   /** Per-token slots, keyed by token hash. Created lazily on first
-   *  observation and dropped when the parent tenant is forgotten or the
+   *  observation and dropped when the parent user is forgotten or the
    *  token is revoked. */
   private readonly perToken = new Map<string, TokenSlot>();
 
   private lastDecayAt: Date | null = null;
   private readonly startedAt = Date.now();
   private gaugeSources: GaugeSources | null = null;
-  private tenantGaugeSources: UserGaugeSources | null = null;
+  private userGaugeSources: UserGaugeSources | null = null;
   private readonly now: () => number;
 
   constructor(opts: { now?: () => number } = {}) {
@@ -202,14 +202,14 @@ export class MetricsCollector {
   }
 
   bindUserGaugeSources(sources: UserGaugeSources): void {
-    this.tenantGaugeSources = sources;
+    this.userGaugeSources = sources;
   }
 
-  private slot(userId: string): TenantSlot {
-    let s = this.perTenant.get(userId);
+  private slot(userId: string): UserSlot {
+    let s = this.perUser.get(userId);
     if (!s) {
-      s = newTenantSlot();
-      this.perTenant.set(userId, s);
+      s = newUserSlot();
+      this.perUser.set(userId, s);
     }
     return s;
   }
@@ -227,7 +227,7 @@ export class MetricsCollector {
   }
 
   /** Record a search call. Pass userId + per-tier hit counts. When the
-   *  request was authenticated by a tenant bearer token, pass `token` so
+   *  request was authenticated by a user bearer token, pass `token` so
    *  the per-token series in /v1/me/metrics reflects this call. */
   recordQuery(
     userId: string,
@@ -283,12 +283,12 @@ export class MetricsCollector {
     this.lastDecayAt = at;
   }
 
-  /** Free a tenant's in-memory slot. Called from `engine.deleteTenant`
-   *  so the perTenant Map doesn't accumulate dead entries forever
+  /** Free a user's in-memory slot. Called from `engine.deleteUser`
+   *  so the perUser Map doesn't accumulate dead entries forever
    *  (review finding P2-5). Also clears any per-token slots scoped to
-   *  the tenant. */
+   *  the user. */
   forgetUser(userId: string): void {
-    this.perTenant.delete(userId);
+    this.perUser.delete(userId);
     for (const [hash, slot] of this.perToken) {
       if (slot.userId === userId) this.perToken.delete(hash);
     }
@@ -300,10 +300,10 @@ export class MetricsCollector {
     this.perToken.delete(tokenHash);
   }
 
-  /** Aggregate per-tenant counters across all tenants. */
+  /** Aggregate per-user counters across all users. */
   private aggregate(): Record<UserCounterName, number> {
-    const out: Record<UserCounterName, number> = { ...ZERO_TENANT_COUNTERS };
-    for (const slot of this.perTenant.values()) {
+    const out: Record<UserCounterName, number> = { ...ZERO_USER_COUNTERS };
+    for (const slot of this.perUser.values()) {
       out.queries_total += slot.counters.queries_total;
       out.queries_zero_hit += slot.counters.queries_zero_hit;
       out.remembers_total += slot.counters.remembers_total;
@@ -315,11 +315,11 @@ export class MetricsCollector {
     return out;
   }
 
-  /** Aggregate rolling rates across all tenants. */
+  /** Aggregate rolling rates across all users. */
   private aggregateRates(now: number): { qps: number; rps: number } {
     let qCount = 0;
     let rCount = 0;
-    for (const slot of this.perTenant.values()) {
+    for (const slot of this.perUser.values()) {
       qCount += slot.queryRing.count(now);
       rCount += slot.rememberRing.count(now);
     }
@@ -419,11 +419,11 @@ export class MetricsCollector {
       cold_entries: null,
       graph_edges: null,
     };
-    if (this.tenantGaugeSources) {
+    if (this.userGaugeSources) {
       const [warm, cold, edges] = await Promise.all([
-        this.tenantGaugeSources.warmEntries(userId).catch(() => null),
-        this.tenantGaugeSources.coldEntries(userId).catch(() => null),
-        this.tenantGaugeSources.graphEdges(userId).catch(() => null),
+        this.userGaugeSources.warmEntries(userId).catch(() => null),
+        this.userGaugeSources.coldEntries(userId).catch(() => null),
+        this.userGaugeSources.graphEdges(userId).catch(() => null),
       ]);
       gauges = { warm_entries: warm, cold_entries: cold, graph_edges: edges };
     }
