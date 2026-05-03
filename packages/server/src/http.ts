@@ -72,6 +72,10 @@ declare module "fastify" {
      *  default to this project; explicit `project` in body that mismatches
      *  is rejected by the engine layer. Null for tenant-wide tokens. */
     bearerProjectId?: string | null;
+    /** Identity of the tenant token that authenticated this request — set
+     *  in `tenant` auth mode after the bearer resolves. Used to attribute
+     *  search/remember/forget calls to per-token metrics. */
+    bearerToken?: { hash: string; label: string | null };
     /** Resolved dashboard user — populated by the dashboard auth hook for
      *  /v1/auth/* /v1/me/* /v1/admin/* /v1/decay routes when a session
      *  bearer is present. Undefined for data-plane requests authed by a
@@ -374,6 +378,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
     req.tenantId = resolved.tenantId;
     req.bearerProjectId = resolved.projectId;
+    req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
   });
 
   // ─── Admin dashboard (static SPA) ────────────────────────────────────
@@ -447,7 +452,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = SearchBody.parse(req.body);
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
-    const r = await opts.engine.search(req.tenantId, { ...body, project });
+    const r = await opts.engine.search(req.tenantId, { ...body, project }, req.bearerToken);
     reply.send(r);
   });
 
@@ -455,7 +460,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = RememberBody.parse(req.body);
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
-    const r = await opts.engine.remember(req.tenantId, { ...body, project });
+    const r = await opts.engine.remember(req.tenantId, { ...body, project }, req.bearerToken);
     reply.code(201).send(r);
   });
 
@@ -490,7 +495,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = ForgetBody.parse(req.body);
     const project = resolveRequestProject(req, body.project ?? null, reply);
     if (project === undefined) return reply;
-    reply.send(await opts.engine.forget(req.tenantId, body.id, { project }));
+    reply.send(
+      await opts.engine.forget(req.tenantId, body.id, { project, token: req.bearerToken }),
+    );
   });
 
   app.get("/v1/stats", async (req, reply) => {
@@ -746,11 +753,43 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (!opts.metrics) return reply.code(404).send({ error: "metrics disabled" });
     if (u.role === "admin") {
       // Admins use /v1/admin/metrics; this endpoint exists for the user
-      // dashboard. Redirect-by-content: return the global snapshot.
-      return reply.send(await opts.metrics.snapshot());
+      // dashboard. Redirect-by-content: return the global snapshot. Also
+      // attach per-token series for the admin's own tokens so the
+      // throughput chart on the admin Metrics page can break out
+      // individual tokens too.
+      const myTokens = opts.warm
+        ? (await opts.warm.listTokensCreatedByUser(u.id)).map((t) => ({
+            hash: t.tokenHash,
+            label: t.label,
+          }))
+        : [];
+      const global = await opts.metrics.snapshot();
+      // Hand-attach token series — `snapshot()` is the global view and
+      // doesn't take a token filter, so compute it via snapshotForTenant
+      // on each tenant the admin's tokens belong to. In practice an admin
+      // creates tokens against PUBLIC_TENANT only, so this is one call.
+      const tokensByTenant = new Map<string, Array<{ hash: string; label: string | null }>>();
+      if (opts.warm) {
+        for (const row of await opts.warm.listTokensCreatedByUser(u.id)) {
+          const arr = tokensByTenant.get(row.tenantId) ?? [];
+          arr.push({ hash: row.tokenHash, label: row.label });
+          tokensByTenant.set(row.tenantId, arr);
+        }
+      }
+      const tokenRows = [];
+      for (const [tenantId, list] of tokensByTenant) {
+        const t = await opts.metrics.snapshotForTenant(tenantId, { tokens: list });
+        if (t.tokens) tokenRows.push(...t.tokens);
+      }
+      return reply.send({ ...global, tokens: tokenRows, _hasMyTokens: myTokens.length > 0 });
     }
     if (!u.tenantId) return reply.code(400).send({ error: "user has no tenant assigned" });
-    reply.send(await opts.metrics.snapshotForTenant(u.tenantId));
+    const myTokens = opts.warm
+      ? (await opts.warm.listTokensCreatedByUser(u.id))
+          .filter((t) => t.tenantId === u.tenantId)
+          .map((t) => ({ hash: t.tokenHash, label: t.label }))
+      : [];
+    reply.send(await opts.metrics.snapshotForTenant(u.tenantId, { tokens: myTokens }));
   });
 
   app.get("/v1/me/tokens", async (req, reply) => {
@@ -791,6 +830,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     if (!/^[a-f0-9]{64}$/i.test(hash)) return reply.code(400).send({ error: "invalid hash" });
     const ok = await opts.warm.revokeTenantTokenByHash(u.tenantId, hash);
     if (!ok) return reply.code(404).send({ error: "token not found or already revoked" });
+    opts.metrics?.forgetToken(hash);
     reply.send({ revoked: true });
   });
 
