@@ -30,7 +30,7 @@ export class FakeWarmStore {
   rows = new Map<string, FakeWarmRow>();
   relations: Array<{ userId: string; projectId: string | null; fromId: string; toId: string; relation: string; strength: number }> = [];
   tenants = new Map<string, { id: string; name: string }>([["public", { id: "public", name: "public" }]]);
-  tokens = new Map<string, { userId: string; label: string | null; createdByUserId: string | null; projectId: string | null; revoked: boolean }>();
+  tokens = new Map<string, { userId: string; label: string | null; projectId: string | null; revoked: boolean }>();
   users = new Map<string, { id: string; username: string; passwordHash: string; role: string; userId: string | null; createdAt: Date; lastLoginAt: Date | null }>();
   sessions = new Map<string, { userId: string; expiresAt: Date }>();
   projects = new Map<string, { id: string; name: string; ownerUserId: string; ownerTenantId: string; createdAt: Date }>();
@@ -453,7 +453,7 @@ export class FakeWarmStore {
   async listTokensCreatedByUser(userId: string) {
     const out: Array<{ tokenHash: string; label: string | null; userId: string }> = [];
     for (const [plain, v] of this.tokens.entries()) {
-      if (v.createdByUserId === userId && !v.revoked) {
+      if (v.userId === userId && !v.revoked) {
         out.push({ tokenHash: this.fakeHash(plain), label: v.label, userId: v.userId });
       }
     }
@@ -516,7 +516,6 @@ export class FakeWarmStore {
       .map(([plain, v]) => ({
         tokenHash: this.fakeHash(plain),
         label: v.label,
-        createdByUserId: v.createdByUserId,
         projectId: v.projectId,
         createdAt: new Date(),
         lastUsedAt: null,

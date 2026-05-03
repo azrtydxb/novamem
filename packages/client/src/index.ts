@@ -281,7 +281,6 @@ export class NovamemClient {
     tokens: Array<{
       tokenHash: string;
       label: string | null;
-      createdByUserId: string | null;
       projectId: string | null;
       createdAt: string;
       lastUsedAt: string | null;
