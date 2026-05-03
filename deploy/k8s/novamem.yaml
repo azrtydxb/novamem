@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: novamem-config
+  namespace: novamem
+data:
+  NOVAMEM_AUTH_MODE: "tenant"
+  NOVAMEM_ADMIN_DASHBOARD: "1"
+  NOVAMEM_HOST: "0.0.0.0"
+  NOVAMEM_PORT: "7778"
+  NOVAMEM_EMBEDDINGS_PROVIDER: "local-transformers"
+  # In-cluster service DNS — k3s registers `<name>.<ns>.svc.cluster.local`.
+  NOVAMEM_WARM_URL: "postgres://novamem:novamempg@postgres.novamem.svc.cluster.local:5432/novamem"
+  NOVAMEM_COLD_URL: "http://qdrant.novamem.svc.cluster.local:6333"
+  NOVAMEM_GRAPH_URL: "redis://falkordb.novamem.svc.cluster.local:6379"
+  # Behind an HTTP-only Ingress for now — flip to 0 (and set Ingress TLS)
+  # when there's a real cert.
+  NOVAMEM_INSECURE_COOKIES: "1"
+  LOG_LEVEL: "info"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: novamem
+  namespace: novamem
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: novamem }
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels: { app: novamem }
+    spec:
+      containers:
+        - name: novamem
+          image: novamem:0.1.0
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef: { name: novamem-config }
+            - secretRef: { name: novamem-secrets }
+          ports:
+            - { containerPort: 7778, name: http }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: 2000m, memory: 2Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: novamem
+  namespace: novamem
+spec:
+  selector: { app: novamem }
+  ports:
+    - { port: 7778, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: novamem
+  namespace: novamem
+  annotations:
+    # k3s ships Traefik as the default ingress controller. Allow long-lived
+    # SSE connections so /mcp/sse doesn't time out at 60s.
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: novamem.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: novamem
+                port:
+                  number: 7778
