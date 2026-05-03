@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronRight,
@@ -22,19 +23,18 @@ import { useToast } from "../components/Toast";
 import { fmtRelative } from "../lib/utils";
 
 export function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[] | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    const r = await api<{ projects: Project[] }>("GET", "/v1/me/projects");
-    setBusy(false);
-    if (r.body) setProjects(r.body.projects);
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const queryClient = useQueryClient();
+  const { data: projects = null, isFetching: busy } = useQuery({
+    queryKey: ["me", "projects"],
+    queryFn: async () => {
+      const r = await api<{ projects: Project[] }>("GET", "/v1/me/projects");
+      if (!r.ok || !r.body) throw new Error(r.error ?? `projects ${r.status}`);
+      return r.body.projects;
+    },
+  });
+  const refresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["me", "projects"] });
+  }, [queryClient]);
 
   return (
     <div className="space-y-6">
