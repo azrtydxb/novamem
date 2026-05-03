@@ -16,21 +16,24 @@ export function openapiSpec() {
       title: "novamem",
       version: "0.1.0",
       description:
-        "Tiered memory service with hybrid search (keyword + vector + graph), per-tenant " +
-        "isolation, and project-scoped sub-brains.\n\n" +
-        "**Auth**: data-plane routes accept tenant tokens (`nm_…`); control-plane and " +
-        "admin routes accept dashboard session tokens (`ns_…`) — log in via " +
-        "`POST /v1/auth/login` first.",
+        "Tiered memory service with hybrid search (keyword + vector + graph), " +
+        "per-user isolation, and project-scoped sub-brains.\n\n" +
+        "**Auth**: data-plane routes accept user bearer tokens (`nm_…`) minted " +
+        "for a user's devices/agents; control-plane and admin routes accept " +
+        "dashboard session tokens (`ns_…`) — log in via `POST /v1/auth/login` " +
+        "first.",
       license: { name: "MIT" },
     },
     servers: [{ url: "/", description: "this server" }],
     components: {
       securitySchemes: {
-        TenantBearer: {
+        UserBearer: {
           type: "http",
           scheme: "bearer",
           bearerFormat: "nm_…",
-          description: "Tenant API token. Used for memory data plane.",
+          description:
+            "Per-device API token belonging to one user. Used for the memory " +
+            "data plane (search/remember/recent/forget/neighbors).",
         },
         SessionBearer: {
           type: "http",
@@ -60,7 +63,7 @@ export function openapiSpec() {
             project: {
               type: "string",
               nullable: true,
-              description: "Project (sub-brain) id. Omit for tenant-wide entries.",
+              description: "Project (sub-brain) id. Omit for the user's whole-namespace entries.",
             },
             weights: {
               type: "object",
@@ -214,21 +217,12 @@ export function openapiSpec() {
             uptime_ms: { type: "integer" },
           },
         },
-        // ─── Admin / Tenants ────────────────────────────────────────────
-        Tenant: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            name: { type: "string" },
-            createdAt: { type: "string", format: "date-time" },
-          },
-        },
-        TenantToken: {
+        // ─── Tokens ─────────────────────────────────────────────────────
+        UserToken: {
           type: "object",
           properties: {
             tokenHash: { type: "string" },
             label: { type: "string", nullable: true },
-            createdByUserId: { type: "string", nullable: true },
             projectId: { type: "string", nullable: true },
             createdAt: { type: "string", format: "date-time" },
             lastUsedAt: { type: "string", format: "date-time", nullable: true },
@@ -308,7 +302,6 @@ export function openapiSpec() {
             name: { type: "string" },
             role: { type: "string", enum: ["owner", "member"] },
             ownerUserId: { type: "string" },
-            ownerTenantId: { type: "string" },
             createdAt: { type: "string", format: "date-time" },
           },
         },
@@ -342,7 +335,7 @@ export function openapiSpec() {
       { name: "Health", description: "Liveness probes and operational metrics." },
       { name: "Auth", description: "Dashboard sign-in and self-service token rotation." },
       { name: "Me", description: "User-scoped self-service: tokens, projects, metrics." },
-      { name: "Admin", description: "Tenant + user management, system metrics." },
+      { name: "Admin", description: "User management and system metrics." },
       { name: "MCP", description: "SSE-MCP transport for remote MCP-aware hosts." },
     ],
     paths: buildPaths(),
@@ -357,7 +350,7 @@ function buildPaths() {
   const authError = { 401: errorResponse, 403: errorResponse };
   const adminError = { ...authError, 404: errorResponse };
 
-  const tenant = [{ TenantBearer: [] as string[] }];
+  const userBearer = [{ UserBearer: [] as string[] }];
   const session = [{ SessionBearer: [] as string[] }];
   const admin = [{ AdminBearer: [] as string[] }];
 
@@ -382,7 +375,7 @@ function buildPaths() {
       post: {
         tags: ["Memory"],
         summary: "Hybrid search (keyword + vector + graph)",
-        security: tenant,
+        security: userBearer,
         requestBody: jsonBody("SearchRequest"),
         responses: { 200: jsonResponse("SearchResponse"), ...authError },
       },
@@ -391,7 +384,7 @@ function buildPaths() {
       post: {
         tags: ["Memory"],
         summary: "Store a new memory entry",
-        security: tenant,
+        security: userBearer,
         requestBody: jsonBody("RememberRequest"),
         responses: { 201: jsonResponse("RememberResponse", "Created"), ...authError },
       },
@@ -400,7 +393,7 @@ function buildPaths() {
       post: {
         tags: ["Memory"],
         summary: "Recent entries by namespace, newest first",
-        security: tenant,
+        security: userBearer,
         requestBody: jsonBody("RecentRequest"),
         responses: { 200: jsonResponse("SearchResponse"), ...authError },
       },
@@ -409,7 +402,7 @@ function buildPaths() {
       post: {
         tags: ["Memory"],
         summary: "Graph-neighbour traversal from a seed entry",
-        security: tenant,
+        security: userBearer,
         requestBody: jsonBody("NeighborsRequest"),
         responses: { 200: jsonResponse("SearchResponse"), ...authError },
       },
@@ -418,7 +411,7 @@ function buildPaths() {
       post: {
         tags: ["Memory"],
         summary: "Hard-delete a memory entry",
-        security: tenant,
+        security: userBearer,
         requestBody: jsonBody("ForgetRequest"),
         responses: { 200: jsonResponse("ForgetResponse"), ...authError },
       },
@@ -427,7 +420,7 @@ function buildPaths() {
       post: {
         tags: ["Health"],
         summary: "Run the decay (warm→cold) pass",
-        security: tenant,
+        security: userBearer,
         requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/DecayRequest" } } } },
         responses: { 200: jsonResponse("DecayResponse") },
       },
@@ -436,7 +429,7 @@ function buildPaths() {
       post: {
         tags: ["Health"],
         summary: "Drain the cold-orphan queue",
-        security: tenant,
+        security: userBearer,
         responses: { 200: { description: "Reaper run summary" } },
       },
     },
@@ -444,7 +437,7 @@ function buildPaths() {
       get: {
         tags: ["Health"],
         summary: "Per-namespace counts and last decay timestamp",
-        security: tenant,
+        security: userBearer,
         responses: { 200: jsonResponse("StatsResponse") },
       },
     },
@@ -489,15 +482,15 @@ function buildPaths() {
     "/v1/auth/rotate-token": {
       post: {
         tags: ["Auth"],
-        summary: "Rotate a tenant token (CLI / device path)",
-        security: tenant,
+        summary: "Rotate a user bearer token (CLI / device path)",
+        security: userBearer,
         responses: { 201: jsonResponse("MintTokenResponse"), 400: errorResponse, 401: errorResponse },
       },
     },
     "/v1/me/metrics": {
       get: {
         tags: ["Me"],
-        summary: "Operational metrics scoped to the user's tenant",
+        summary: "Operational metrics scoped to the user",
         security: session,
         responses: { 200: jsonResponse("MetricsSnapshot") },
       },
@@ -505,9 +498,9 @@ function buildPaths() {
     "/v1/me/tokens": {
       get: {
         tags: ["Me"],
-        summary: "List the user's tenant's API tokens",
+        summary: "List the user's API tokens",
         security: session,
-        responses: { 200: { description: "{ tokens }", content: { "application/json": { schema: { type: "object", properties: { tokens: { type: "array", items: { $ref: "#/components/schemas/TenantToken" } } } } } } } },
+        responses: { 200: { description: "{ tokens }", content: { "application/json": { schema: { type: "object", properties: { tokens: { type: "array", items: { $ref: "#/components/schemas/UserToken" } } } } } } } },
       },
       post: {
         tags: ["Me"],
@@ -604,63 +597,10 @@ function buildPaths() {
         responses: { 200: { description: "{ removed: true }" }, ...adminError },
       },
     },
-    "/v1/admin/tenants": {
-      get: {
-        tags: ["Admin"],
-        summary: "List tenants",
-        security: admin,
-        responses: { 200: { description: "{ tenants }", content: { "application/json": { schema: { type: "object", properties: { tenants: { type: "array", items: { $ref: "#/components/schemas/Tenant" } } } } } } } },
-      },
-      post: {
-        tags: ["Admin"],
-        summary: "Create a tenant",
-        security: admin,
-        requestBody: { content: { "application/json": { schema: { type: "object", required: ["id", "name"], properties: { id: { type: "string" }, name: { type: "string" } } } } } },
-        responses: { 201: jsonResponse("Tenant") },
-      },
-    },
-    "/v1/admin/tenants/{id}": {
-      delete: {
-        tags: ["Admin"],
-        summary: "Delete a tenant + purge all its memory data and tokens",
-        security: admin,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "Purge summary" }, 400: errorResponse, ...adminError },
-      },
-    },
-    "/v1/admin/tenants/{id}/tokens": {
-      get: {
-        tags: ["Admin"],
-        summary: "List tokens for a tenant (sha256 hashes only)",
-        security: admin,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "{ tokens }" } },
-      },
-      post: {
-        tags: ["Admin"],
-        summary: "Mint a new tenant token (plaintext shown once)",
-        security: admin,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        requestBody: { content: { "application/json": { schema: { type: "object", properties: { label: { type: "string" } } } } } },
-        responses: { 201: jsonResponse("MintTokenResponse"), 404: errorResponse },
-      },
-    },
-    "/v1/admin/tenants/{userId}/tokens/{hash}/revoke": {
-      post: {
-        tags: ["Admin"],
-        summary: "Revoke a tenant token by sha256 hash",
-        security: admin,
-        parameters: [
-          { name: "userId", in: "path", required: true, schema: { type: "string" } },
-          { name: "hash", in: "path", required: true, schema: { type: "string" } },
-        ],
-        responses: { 200: { description: "{ revoked: true }" }, ...adminError },
-      },
-    },
     "/v1/admin/tokens/revoke": {
       post: {
         tags: ["Admin"],
-        summary: "Revoke a token by plaintext (legacy / CLI path)",
+        summary: "Revoke a user bearer token by its plaintext value (CLI path)",
         security: admin,
         requestBody: { content: { "application/json": { schema: { type: "object", required: ["token"], properties: { token: { type: "string" } } } } } },
         responses: { 200: { description: "{ revoked: boolean }" } },
@@ -712,7 +652,7 @@ function buildPaths() {
       get: {
         tags: ["MCP"],
         summary: "Open an SSE event stream for an MCP session",
-        security: tenant,
+        security: userBearer,
         responses: { 200: { description: "text/event-stream — long-lived connection" } },
       },
     },
