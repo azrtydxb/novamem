@@ -109,7 +109,7 @@ export async function verifyPassword(plaintext: string, hash: string): Promise<b
 
 /** Minimum bootstrap-admin password length. Operators are encouraged to
  *  use `openssl rand -hex 16` or similar; the floor is conservative. */
-export const BOOTSTRAP_PASSWORD_MIN_LENGTH = 12;
+export const BOOTSTRAP_PASSWORD_MIN_LENGTH = 8;
 
 /** Seed an initial admin if (a) the users table is empty AND (b) bootstrap
  *  env vars are set. This makes the first deploy work end-to-end without a
@@ -153,7 +153,9 @@ export async function bootstrapAdmin(
     return null;
   }
   const hash = await hashPassword(password);
-  await warm.createUser({ username, passwordHash: hash, role: "admin", tenantId: null });
+  await warm.createUser({ username, passwordHash: hash, role: "admin" });
+  // Leave password_changed_at as NULL so the user is required to change
+  // their password on first login.
   // P1-S5: scrub the password from the environment so `docker inspect`
   // and any debug dump can't recover it for the lifetime of the process.
   if (envObj.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD) {

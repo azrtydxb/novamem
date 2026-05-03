@@ -88,7 +88,7 @@ export const ForgetBody = z.object({
 // ─── Admin bodies ──────────────────────────────────────────────────────
 //
 // The tenant id regex is *narrower* than a generic slug: the cold store
-// derives qdrant collection names as `novamem_<tenantId>_<namespace>` for
+// derives qdrant collection names as `novamem_<userId>_<namespace>` for
 // tenant-wide entries and `novamem_p_<projectId>_<namespace>` for project-
 // scoped entries. A tenant id starting with `p_` would make a tenant's
 // collections indistinguishable from project collections at prefix-scan
@@ -128,27 +128,15 @@ export const LoginBody = z.object({
   password: z.string().min(1).max(256),
 });
 
-export const CreateUserBody = z
-  .object({
-    username: UsernameRule,
-    password: z.string().min(8).max(256),
-    role: z.enum(["admin", "user"]),
-    tenantId: z.string().min(1).max(64).optional().nullable(),
-  })
-  .refine((v) => v.role === "admin" || (typeof v.tenantId === "string" && v.tenantId.length > 0), {
-    message: "role 'user' requires a tenantId",
-    path: ["tenantId"],
-  });
+export const CreateUserBody = z.object({
+  username: UsernameRule,
+  password: z.string().min(8).max(256),
+  role: z.enum(["admin", "user"]),
+});
 
-export const SetRoleBody = z
-  .object({
-    role: z.enum(["admin", "user"]),
-    tenantId: z.string().min(1).max(64).optional().nullable(),
-  })
-  .refine((v) => v.role === "admin" || (typeof v.tenantId === "string" && v.tenantId.length > 0), {
-    message: "role 'user' requires a tenantId",
-    path: ["tenantId"],
-  });
+export const SetRoleBody = z.object({
+  role: z.enum(["admin", "user"]),
+});
 
 export const MintMyTokenBody = z.object({
   label: z.string().max(128).optional(),
@@ -163,4 +151,9 @@ export const CreateProjectBody = z.object({
 export const AddMemberBody = z.object({
   username: z.string().min(1).max(64),
   role: z.enum(["owner", "member"]).optional(),
+});
+
+export const ChangePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: z.string().min(8).max(256),
 });

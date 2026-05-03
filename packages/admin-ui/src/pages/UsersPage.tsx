@@ -104,7 +104,7 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
-  const [tenantId, setTenantId] = useState<string>("");
+  const [userId, setTenantId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
@@ -116,7 +116,7 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
     const body =
       role === "admin"
         ? { username: username.trim(), password, role }
-        : { username: username.trim(), password, role, tenantId };
+        : { username: username.trim(), password, role, userId };
     const r = await api("POST", "/v1/admin/users", body);
     setBusy(false);
     if (r.ok) {
@@ -136,7 +136,7 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
   const canSubmit =
     username.trim().length >= 2 &&
     password.length >= 8 &&
-    (role === "admin" || tenantId);
+    (role === "admin" || userId);
 
   return (
     <Card>
@@ -171,7 +171,7 @@ function CreateUserCard({ tenants, onCreated }: { tenants: Tenant[]; onCreated: 
             <RoleSelector role={role} onChange={setRole} />
             <TenantSelector
               tenants={tenants}
-              value={tenantId}
+              value={userId}
               onChange={setTenantId}
               disabled={role === "admin"}
             />
@@ -276,16 +276,16 @@ function UserRow({
 }) {
   const { user: me } = useAuth();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmRole, setConfirmRole] = useState<{ to: "admin" | "user"; tenantId: string } | null>(
+  const [confirmRole, setConfirmRole] = useState<{ to: "admin" | "user"; userId: string } | null>(
     null,
   );
   const toast = useToast();
 
   const isMe = me?.id === user.id;
 
-  const setRole = async (to: "admin" | "user", tenantId: string | null) => {
+  const setRole = async (to: "admin" | "user", userId: string | null) => {
     setConfirmRole(null);
-    const r = await api("POST", `/v1/admin/users/${user.id}/role`, { role: to, tenantId });
+    const r = await api("POST", `/v1/admin/users/${user.id}/role`, { role: to, userId });
     if (r.ok) {
       toast.success(to === "admin" ? "Promoted to admin" : "Demoted to user");
       onChange();
@@ -333,8 +333,8 @@ function UserRow({
         )}
       </td>
       <td className="px-4 py-3 text-dim">
-        {user.tenantId ? (
-          <code className="font-mono text-xs">{user.tenantId}</code>
+        {user.userId ? (
+          <code className="font-mono text-xs">{user.userId}</code>
         ) : (
           <span className="text-faint">—</span>
         )}
@@ -348,7 +348,7 @@ function UserRow({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setConfirmRole({ to: "admin", tenantId: user.tenantId ?? "" })}
+              onClick={() => setConfirmRole({ to: "admin", userId: user.userId ?? "" })}
             >
               Promote
             </Button>
@@ -356,7 +356,7 @@ function UserRow({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setConfirmRole({ to: "user", tenantId: "" })}
+              onClick={() => setConfirmRole({ to: "user", userId: "" })}
               disabled={isMe}
             >
               Demote
@@ -416,10 +416,10 @@ function UserRow({
                   confirmRole &&
                   setRole(
                     confirmRole.to,
-                    confirmRole.to === "admin" ? null : confirmRole.tenantId || null,
+                    confirmRole.to === "admin" ? null : confirmRole.userId || null,
                   )
                 }
-                disabled={confirmRole?.to === "user" && !confirmRole?.tenantId}
+                disabled={confirmRole?.to === "user" && !confirmRole?.userId}
               >
                 {confirmRole?.to === "admin" ? "Promote" : "Demote"}
               </Button>
@@ -429,8 +429,8 @@ function UserRow({
           {confirmRole?.to === "user" ? (
             <TenantSelector
               tenants={tenants}
-              value={confirmRole.tenantId}
-              onChange={(id) => setConfirmRole({ to: "user", tenantId: id })}
+              value={confirmRole.userId}
+              onChange={(id) => setConfirmRole({ to: "user", userId: id })}
             />
           ) : null}
         </Modal>

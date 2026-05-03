@@ -182,8 +182,8 @@ export function MetricsPage() {
             <Pill tone="accent" dot pulse>
               live · {POLL_MS / 1000}s
             </Pill>
-            {!isAdmin && user?.tenantId ? (
-              <Pill tone="neutral">tenant: {user.tenantId}</Pill>
+            {!isAdmin && user?.userId ? (
+              <Pill tone="neutral">tenant: {user.userId}</Pill>
             ) : null}
           </div>
         }

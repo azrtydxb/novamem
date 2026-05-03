@@ -145,7 +145,7 @@ export interface Project {
 export interface ProjectMember {
   userId: string;
   username: string;
-  tenantId: string | null;
+  userId: string | null;
   role: "owner" | "member";
   joinedAt: string;
 }
@@ -154,7 +154,7 @@ export interface DashUser {
   id: string;
   username: string;
   role: "admin" | "user";
-  tenantId: string | null;
+  userId: string | null;
   createdAt: string;
   lastLoginAt: string | null;
 }
@@ -163,17 +163,19 @@ export interface SessionUser {
   id: string;
   username: string;
   role: "admin" | "user";
-  tenantId: string | null;
+  userId: string | null;
 }
 
 export interface LoginResponse {
   token: string;
   expiresAt: string;
+  csrfToken: string;
+  needsPasswordChange: boolean;
   user: SessionUser;
 }
 
 export interface TenantMetricsSnapshot {
-  tenantId: string;
+  userId: string;
   counters: {
     queries_total: number;
     queries_zero_hit: number;
@@ -250,5 +252,5 @@ export interface OnboardingState {
   tenantDone: boolean;
   mintedToken: boolean;
   remembered: boolean;
-  tenantId: string;
+  userId: string;
 }

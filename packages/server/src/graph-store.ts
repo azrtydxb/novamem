@@ -45,7 +45,7 @@ export class GraphStore {
    *  cross-project edges can't be created (nodes are scoped by both keys)
    *  and can't be followed (MATCH joins on whichever key the caller passed). */
   async addEdge(
-    tenantId: string,
+    userId: string,
     fromId: string,
     toId: string,
     relation: string,
@@ -61,7 +61,7 @@ export class GraphStore {
         params: {
           from: fromId,
           to: toId,
-          tenant: tenantId,
+          tenant: userId,
           project: projectId ?? "",
           rel: relation,
           strength,
@@ -75,7 +75,7 @@ export class GraphStore {
    *  collapse `graphLinkFanout` round-trips per `remember()` to one
    *  (review finding P1-P3 / P-H4). */
   async addEdgesBatch(
-    tenantId: string,
+    userId: string,
     fromId: string,
     edges: Array<{ to: string; relation: string; strength?: number }>,
     projectId: string | null = null,
@@ -83,7 +83,7 @@ export class GraphStore {
     if (!this.graph || edges.length === 0) return;
     const params = {
       from: fromId,
-      tenant: tenantId,
+      tenant: userId,
       project: projectId ?? "",
       edges: edges.map((e) => ({
         to: e.to,
@@ -103,17 +103,17 @@ export class GraphStore {
 
   /** Drop a node and all its incident edges. Called on `forget()` so graph
    *  state stays consistent with warm/cold deletions. */
-  async removeNode(tenantId: string, id: string): Promise<void> {
+  async removeNode(userId: string, id: string): Promise<void> {
     if (!this.graph) return;
     await this.graph.query("MATCH (n:Memory {id: $id, tenant: $tenant}) DETACH DELETE n", {
-      params: { id, tenant: tenantId },
+      params: { id, tenant: userId },
     });
   }
 
   /** Return graph-neighbour ids for a seed id, with edge strengths as scores.
    *  Filters on tenant + project (project = "" for tenant-wide entries). */
   async neighbors(
-    tenantId: string,
+    userId: string,
     seedId: string,
     depth = 1,
     limit = 20,
@@ -126,7 +126,7 @@ export class GraphStore {
                     RETURN b.id AS id, MAX(reduce(s = 1.0, e IN r | s * e.strength)) AS score
                     LIMIT ${limit}`;
     const r = await this.graph.query<{ id: string; score: number }>(cypher, {
-      params: { id: seedId, tenant: tenantId, project },
+      params: { id: seedId, tenant: userId, project },
     });
     return (r.data ?? []).map((row) => ({ id: row.id, score: Number(row.score ?? 0) }));
   }
@@ -145,16 +145,16 @@ export class GraphStore {
    *  uses this to decide whether to surface `graphCleared: true` to the
    *  client — silently swallowing the error here used to make the engine
    *  report `graphCleared: true` falsely (review finding P1-A6). */
-  async removeAllForTenant(tenantId: string): Promise<boolean> {
+  async removeAllForTenant(userId: string): Promise<boolean> {
     if (!this.graph || !this.connected) return false;
     try {
       await this.graph.query("MATCH (n:Memory {tenant: $tenant}) DETACH DELETE n", {
-        params: { tenant: tenantId },
+        params: { tenant: userId },
       });
       return true;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn(`[graph-store] removeAllForTenant(${tenantId}) failed: ${(err as Error).message}`);
+      console.warn(`[graph-store] removeAllForTenant(${userId}) failed: ${(err as Error).message}`);
       return false;
     }
   }

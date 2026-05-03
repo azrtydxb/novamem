@@ -406,7 +406,7 @@ function MemberTable({
             <tr key={m.userId}>
               <td className="px-4 py-3 font-medium text-ink">{m.username}</td>
               <td className="px-4 py-3 text-dim">
-                {m.tenantId ? <code className="font-mono text-xs">{m.tenantId}</code> : "—"}
+                {m.userId ? <code className="font-mono text-xs">{m.userId}</code> : "—"}
               </td>
               <td className="px-4 py-3">
                 {m.role === "owner" ? (
