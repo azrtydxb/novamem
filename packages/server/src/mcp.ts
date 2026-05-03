@@ -15,7 +15,7 @@ import type { WarmStore } from "./warm-store/index.js";
 
 export interface McpContext {
   /** Memory-owner id. For session callers this equals the dashboard
-   *  user's id; for tenant-bearer callers it's the user the bearer is
+   *  user's id; for user-bearer callers it's the user the bearer is
    *  scoped to. */
   userId: string;
   /** Project the bearer/session is bound to (or null for whole-user). */
@@ -28,16 +28,16 @@ export interface McpContext {
   dashUserId?: string | null;
 }
 
-/** Build the MCP server. `ctxOrTenant` accepts either a context object (new
- *  shape with tenant + project + user) or a bare userId string for back-
- *  compat with existing callers. */
+/** Build the MCP server. `ctxOrUserId` accepts either a context object
+ *  (new shape with user + project + dashboard-user) or a bare userId
+ *  string for back-compat with existing callers. */
 export function buildMcpServer(
   engine: MemoryEngine,
-  ctxOrTenant: McpContext | string,
+  ctxOrUserId: McpContext | string,
   warm?: WarmStore,
 ): Server {
   const ctx: McpContext =
-    typeof ctxOrTenant === "string" ? { userId: ctxOrTenant } : ctxOrTenant;
+    typeof ctxOrUserId === "string" ? { userId: ctxOrUserId } : ctxOrUserId;
   const userId = ctx.userId;
   const bearerProject = ctx.projectId ?? null;
   const server = new Server(
@@ -59,7 +59,7 @@ export function buildMcpServer(
             namespace: { type: "string" },
             project: {
               type: "string",
-              description: "Optional project (sub-brain) to scope to. Omit for tenant-wide entries.",
+              description: "Optional project (sub-brain) to scope to. Omit for user-wide entries.",
             },
             weights: {
               type: "object",
@@ -169,7 +169,7 @@ export function buildMcpServer(
 
   /** Resolve the project to use for a memory call. Same rules as the HTTP
    *  layer (centralised in routes/context.ts to prevent drift): bearer-
-   *  bound project wins; tenant-wide bearer can't pass a project. The
+   *  bound project wins; user-wide bearer can't pass a project. The
    *  HTTP variant accepts a Fastify reply; the MCP variant throws (the
    *  outer try/catch turns the throw into an MCP isError result). */
   function resolveProject(arg: unknown): string | null {
@@ -184,7 +184,7 @@ export function buildMcpServer(
     }
     if (requested) {
       throw new Error(
-        "this bearer is tenant-wide; mint a project-scoped token to access a project",
+        "this bearer is user-wide; mint a project-scoped token to access a project",
       );
     }
     return null;

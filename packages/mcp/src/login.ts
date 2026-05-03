@@ -85,9 +85,7 @@ async function main() {
     const r = await client.login({ username, password });
     process.stdout.write(r.token + "\n");
     errOut.write(
-      `# logged in as ${r.user.username} (${r.user.role}` +
-        (r.user.tenantId ? ", tenant=" + r.user.tenantId : "") +
-        `); session expires ${r.expiresAt}\n`,
+      `# logged in as ${r.user.username} (${r.user.role}); session expires ${r.expiresAt}\n`,
     );
   } catch (err) {
     errOut.write(`novamem-login: ${(err as Error).message}\n`);

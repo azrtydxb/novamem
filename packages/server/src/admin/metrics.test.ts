@@ -46,7 +46,7 @@ describe("MetricsCollector: counters", () => {
     expect(s.counters.queries_zero_hit).toBe(1);
   });
 
-  it("per-tenant snapshot isolates one tenant's slice", async () => {
+  it("per-user snapshot isolates one user's slice", async () => {
     const m = new MetricsCollector();
     m.recordQuery("acme", { warm: 1, cold: 0, graph: 0 });
     m.recordQuery("acme", { warm: 1, cold: 1, graph: 0 });

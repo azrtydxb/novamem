@@ -4,7 +4,7 @@ metadata:
   name: novamem-config
   namespace: novamem
 data:
-  NOVAMEM_AUTH_MODE: "tenant"
+  NOVAMEM_AUTH_MODE: "user"
   NOVAMEM_ADMIN_DASHBOARD: "1"
   NOVAMEM_HOST: "0.0.0.0"
   NOVAMEM_PORT: "7778"

@@ -15,7 +15,7 @@ interface Props {
 }
 
 /** Welcome wizard. Reads server-derived state from /v1/me/onboarding
- *  (which steps are objectively done — bootstrap, tenant, first token,
+ *  (which steps are objectively done — bootstrap, account, first token,
  *  first remember). Renders the canonical 5-step list from the design
  *  guide. The "Continue" button on the active step navigates to the
  *  page that completes that step. */
@@ -35,12 +35,12 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
       n: 2,
       label: "Account ready",
       hint: data?.userId ? `signed in as ${data.userId}` : "—",
-      done: data?.tenantDone ?? false,
+      done: data?.userDone ?? false,
     },
     {
       n: 3,
       label: "Mint your first token",
-      hint: "Scope it to a project, or tenant-wide",
+      hint: "Scope it to a project, or user-wide",
       done: data?.mintedToken ?? false,
     },
     {

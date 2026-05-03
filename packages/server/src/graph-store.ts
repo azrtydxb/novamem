@@ -39,9 +39,9 @@ export class GraphStore {
     return this.connected;
   }
 
-  /** Every Memory node carries `tenant` and (optionally) `project` properties.
-   *  Tenant-isolation traversals filter on `tenant`; project-isolation
-   *  traversals additionally filter on `project`. Cross-tenant /
+  /** Every Memory node carries `user` and (optionally) `project` properties.
+   *  User-isolation traversals filter on `user`; project-isolation
+   *  traversals additionally filter on `project`. Cross-user /
    *  cross-project edges can't be created (nodes are scoped by both keys)
    *  and can't be followed (MATCH joins on whichever key the caller passed). */
   async addEdge(
@@ -54,14 +54,14 @@ export class GraphStore {
   ): Promise<void> {
     if (!this.graph) return;
     await this.graph.query(
-      "MERGE (a:Memory {id: $from, tenant: $tenant, project: $project}) " +
-        "MERGE (b:Memory {id: $to, tenant: $tenant, project: $project}) " +
+      "MERGE (a:Memory {id: $from, user: $user, project: $project}) " +
+        "MERGE (b:Memory {id: $to, user: $user, project: $project}) " +
         "MERGE (a)-[r:RELATES {kind: $rel}]->(b) SET r.strength = $strength",
       {
         params: {
           from: fromId,
           to: toId,
-          tenant: userId,
+          user: userId,
           project: projectId ?? "",
           rel: relation,
           strength,
@@ -83,7 +83,7 @@ export class GraphStore {
     if (!this.graph || edges.length === 0) return;
     const params = {
       from: fromId,
-      tenant: userId,
+      user: userId,
       project: projectId ?? "",
       edges: edges.map((e) => ({
         to: e.to,
@@ -92,9 +92,9 @@ export class GraphStore {
       })),
     };
     await this.graph.query(
-      "MERGE (a:Memory {id: $from, tenant: $tenant, project: $project}) " +
+      "MERGE (a:Memory {id: $from, user: $user, project: $project}) " +
         "WITH a UNWIND $edges AS edge " +
-        "MERGE (b:Memory {id: edge.to, tenant: $tenant, project: $project}) " +
+        "MERGE (b:Memory {id: edge.to, user: $user, project: $project}) " +
         "MERGE (a)-[r:RELATES {kind: edge.rel}]->(b) " +
         "SET r.strength = edge.strength",
       { params },
@@ -105,13 +105,13 @@ export class GraphStore {
    *  state stays consistent with warm/cold deletions. */
   async removeNode(userId: string, id: string): Promise<void> {
     if (!this.graph) return;
-    await this.graph.query("MATCH (n:Memory {id: $id, tenant: $tenant}) DETACH DELETE n", {
-      params: { id, tenant: userId },
+    await this.graph.query("MATCH (n:Memory {id: $id, user: $user}) DETACH DELETE n", {
+      params: { id, user: userId },
     });
   }
 
   /** Return graph-neighbour ids for a seed id, with edge strengths as scores.
-   *  Filters on tenant + project (project = "" for tenant-wide entries). */
+   *  Filters on user + project (project = "" for user-wide entries). */
   async neighbors(
     userId: string,
     seedId: string,
@@ -121,12 +121,12 @@ export class GraphStore {
   ): Promise<Array<{ id: string; score: number }>> {
     if (!this.graph) return [];
     const project = projectId ?? "";
-    const cypher = `MATCH (a:Memory {id: $id, tenant: $tenant, project: $project})-[r:RELATES*1..${depth}]-(b:Memory)
-                    WHERE b.tenant = $tenant AND b.project = $project
+    const cypher = `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES*1..${depth}]-(b:Memory)
+                    WHERE b.user = $user AND b.project = $project
                     RETURN b.id AS id, MAX(reduce(s = 1.0, e IN r | s * e.strength)) AS score
                     LIMIT ${limit}`;
     const r = await this.graph.query<{ id: string; score: number }>(cypher, {
-      params: { id: seedId, tenant: userId, project },
+      params: { id: seedId, user: userId, project },
     });
     return (r.data ?? []).map((row) => ({ id: row.id, score: Number(row.score ?? 0) }));
   }
@@ -135,32 +135,32 @@ export class GraphStore {
     return this.connected;
   }
 
-  /** Drop every Memory node (and its edges) belonging to a given tenant.
-   *  Called when a tenant is deleted — keeps the graph aligned with the
+  /** Drop every Memory node (and its edges) belonging to a given user.
+   *  Called when a user is deleted — keeps the graph aligned with the
    *  warm + cold purges. No-op when the graph is unreachable: the warm-side
    *  delete is the source of truth, and the next time the graph comes back
-   *  the orphaned nodes are harmless (they're filterable by tenant anyway,
+   *  the orphaned nodes are harmless (they're filterable by user anyway,
    *  but we still try to clean them now). */
   /** Returns `true` only when the delete actually ran. The caller (engine)
    *  uses this to decide whether to surface `graphCleared: true` to the
    *  client — silently swallowing the error here used to make the engine
    *  report `graphCleared: true` falsely (review finding P1-A6). */
-  async removeAllForTenant(userId: string): Promise<boolean> {
+  async removeAllForUser(userId: string): Promise<boolean> {
     if (!this.graph || !this.connected) return false;
     try {
-      await this.graph.query("MATCH (n:Memory {tenant: $tenant}) DETACH DELETE n", {
-        params: { tenant: userId },
+      await this.graph.query("MATCH (n:Memory {user: $user}) DETACH DELETE n", {
+        params: { user: userId },
       });
       return true;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn(`[graph-store] removeAllForTenant(${userId}) failed: ${(err as Error).message}`);
+      console.warn(`[graph-store] removeAllForUser(${userId}) failed: ${(err as Error).message}`);
       return false;
     }
   }
 
   /** Drop every Memory node belonging to a project. Returns `true` only
-   *  when the delete actually ran — see `removeAllForTenant`. */
+   *  when the delete actually ran — see `removeAllForUser`. */
   async removeAllForProject(projectId: string): Promise<boolean> {
     if (!this.graph || !this.connected) return false;
     try {
@@ -175,7 +175,7 @@ export class GraphStore {
     }
   }
 
-  /** Total RELATES edge count across all tenants — used by the admin
+  /** Total RELATES edge count across all users — used by the admin
    *  metrics gauge. Returns null when the graph is unreachable so the
    *  caller can render "—" instead of zero. */
   async edgeCount(): Promise<number | null> {

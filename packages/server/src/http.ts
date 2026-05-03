@@ -63,21 +63,21 @@ export interface DashboardUser {
 
 declare module "fastify" {
   interface FastifyRequest {
-    /** Resolved tenant for this request — populated by the auth hook.
+    /** Resolved user for this request — populated by the auth hook.
      *  In `none` and `bearer` modes this is always `SYSTEM_USER`. */
     userId: string;
     /** Project (sub-brain) the bearer is bound to. When set, requests
      *  default to this project; explicit `project` in body that mismatches
-     *  is rejected by the engine layer. Null for tenant-wide tokens. */
+     *  is rejected by the engine layer. Null for user-wide tokens. */
     bearerProjectId?: string | null;
-    /** Identity of the tenant token that authenticated this request — set
-     *  in `tenant` auth mode after the bearer resolves. Used to attribute
+    /** Identity of the user bearer that authenticated this request — set
+     *  in `user` auth mode after the bearer resolves. Used to attribute
      *  search/remember/forget calls to per-token metrics. */
     bearerToken?: { hash: string; label: string | null };
     /** Resolved dashboard user — populated by the dashboard auth hook for
      *  /v1/auth/* /v1/me/* /v1/admin/* /v1/decay routes when a session
      *  bearer is present. Undefined for data-plane requests authed by a
-     *  tenant token. */
+     *  user bearer. */
     dashUser?: DashboardUser;
   }
 }
@@ -88,10 +88,10 @@ declare module "fastify" {
 
 export interface HttpOptions {
   engine: MemoryEngine;
-  /** Warm store — only used by the auth hook to resolve tenant tokens.
-   *  Required when auth.mode = 'tenant'; optional otherwise. */
+  /** Warm store — only used by the auth hook to resolve user bearers.
+   *  Required when auth.mode = 'user'; optional otherwise. */
   warm?: WarmStore;
-  auth: { mode: "none" | "bearer" | "tenant"; token?: string };
+  auth: { mode: "none" | "bearer" | "user"; token?: string };
   /** Per-IP requests-per-minute. Default 600 (10/sec sustained). */
   rateLimitPerMinute?: number;
   /** Metrics collector — when set, /v1/admin/metrics is available (subject
@@ -108,9 +108,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   if (opts.auth.mode === "bearer" && !opts.auth.token) {
     throw new Error("auth.mode = 'bearer' requires auth.token to be set (NOVAMEM_AUTH_TOKEN)");
   }
-  if (opts.auth.mode === "tenant") {
+  if (opts.auth.mode === "user") {
     if (!opts.warm) {
-      throw new Error("auth.mode = 'tenant' requires the warm store to resolve tenant tokens");
+      throw new Error("auth.mode = 'user' requires the warm store to resolve user bearers");
     }
   }
 
@@ -236,13 +236,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     return mismatch === 0;
   }
 
-  // Auth hook — resolves either a tenant bearer (data plane) or a session
+  // Auth hook — resolves either a user bearer (data plane) or a session
   // bearer (control plane). Public routes skip. Dashboard control-plane
   // routes (/v1/auth, /v1/me, /v1/admin) do their own RBAC checks inside
   // their handlers using `req.dashUser`.
   //
   // Bearer prefixes:
-  //   nm_<...>   tenant token (data plane)
+  //   nm_<...>   user bearer (data plane)
   //   ns_<...>   dashboard session token (control plane)
   //   anything else → `bearer`-mode shared token (only when auth.mode = 'bearer').
   app.addHook("onRequest", async (req, reply) => {
@@ -337,13 +337,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
 
     // /v1/admin/* — handlers do their own check (session-admin only).
-    // Tenant id is irrelevant for admin routes.
+    // User id is irrelevant for admin routes.
     if (req.url.startsWith("/v1/admin/")) {
       req.userId = SYSTEM_USER;
       return;
     }
 
-    // Data-plane (search/remember/forget/etc.) — tenant bearer required
+    // Data-plane (search/remember/forget/etc.) — user bearer required
     // unless mode = none/bearer.
     if (opts.auth.mode === "none") {
       req.userId = SYSTEM_USER;
@@ -361,7 +361,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       req.userId = SYSTEM_USER;
       return;
     }
-    // tenant mode
+    // user mode
     const resolved = await opts.warm!.resolveUserToken(token);
     if (!resolved) {
       reply.code(401).send({ error: "unauthorized" });
@@ -463,7 +463,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   app.post("/v1/reap-orphans", async (_req, reply) => {
     // Manual trigger for the cold-orphan reaper. The same pass also runs
-    // automatically inside the decay loop (main.ts). Cross-tenant by design —
+    // automatically inside the decay loop (main.ts). Cross-user by design —
     // each orphan row carries its own user_id.
     reply.send(await opts.engine.reapOrphans());
   });
@@ -495,9 +495,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send(await opts.engine.stats(req.userId));
   });
 
-  // ─── Admin: tenant + token bootstrap ──────────────────────────────────
-  // Available in any auth mode (so you can seed tenants before flipping
-  // the service into 'tenant' mode), but if mode != 'tenant' the warm
+  // ─── Admin: user + token bootstrap ──────────────────────────────────
+  // Available in any auth mode (so you can seed users before flipping
+  // the service into 'user' mode), but if mode != 'user' the warm
   // store may not be configured — handlers hard-require it.
 
   /** Admin gate for /v1/admin/*. Requires a logged-in admin dashboard
@@ -666,7 +666,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // ─── Admin: user management ────────────────────────────────────────────
-  // Distinct from /v1/admin/tenants/* — these are dashboard logins.
+  // Distinct from /v1/admin/users/* — these are dashboard logins.
   // Only a logged-in admin can manage them.
 
   app.get("/v1/admin/users", async (req, reply) => {
@@ -749,7 +749,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send({ updated: ok });
   });
 
-  // ─── User self-service: scoped metrics + own-tenant tokens ─────────────
+  // ─── User self-service: scoped metrics + own-user bearers ─────────────
 
   app.get("/v1/me/metrics", async (req, reply) => {
     const u = req.dashUser!;
@@ -769,24 +769,24 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       const global = await opts.metrics.snapshot();
       // Hand-attach token series — `snapshot()` is the global view and
       // doesn't take a token filter, so compute it via snapshotForUser
-      // on each tenant the admin's tokens belong to. In practice an admin
+      // on each user the admin's tokens belong to. In practice an admin
       // creates tokens against SYSTEM_USER only, so this is one call.
-      const tokensByTenant = new Map<string, Array<{ hash: string; label: string | null }>>();
+      const tokensByUser = new Map<string, Array<{ hash: string; label: string | null }>>();
       if (opts.warm) {
         for (const row of await opts.warm.listTokensCreatedByUser(u.id)) {
-          const arr = tokensByTenant.get(row.userId) ?? [];
+          const arr = tokensByUser.get(row.userId) ?? [];
           arr.push({ hash: row.tokenHash, label: row.label });
-          tokensByTenant.set(row.userId, arr);
+          tokensByUser.set(row.userId, arr);
         }
       }
       const tokenRows = [];
-      for (const [userId, list] of tokensByTenant) {
+      for (const [userId, list] of tokensByUser) {
         const t = await opts.metrics.snapshotForUser(userId, { tokens: list });
         if (t.tokens) tokenRows.push(...t.tokens);
       }
       return reply.send({ ...global, tokens: tokenRows, _hasMyTokens: myTokens.length > 0 });
     }
-    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
+    if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
     const myTokens = opts.warm
       ? (await opts.warm.listTokensCreatedByUser(u.id))
           .filter((t) => t.userId === u.id)
@@ -798,14 +798,14 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.get("/v1/me/tokens", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
     const u = req.dashUser!;
-    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
+    if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
     reply.send({ tokens: await opts.warm.listUserTokens(u.id) });
   });
 
   app.post("/v1/me/tokens", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
     const u = req.dashUser!;
-    if (!u.id) return reply.code(400).send({ error: "user has no tenant assigned" });
+    if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
     const body = MintMyTokenBody.parse(req.body ?? {});
     // If a project is specified, the user must be a member.
     if (body.projectId) {
@@ -931,20 +931,20 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // ─── User self-service: data-plane proxies ──────────────────────────
-  // The dashboard SPA is authenticated by cookie session, not a tenant
+  // The dashboard SPA is authenticated by cookie session, not a user-bearer
   // bearer, so it can't hit /v1/search etc. directly. These /v1/me/*
   // mirrors invoke the engine on behalf of the calling user, scoping
-  // automatically to their tenant. Admin variants (no tenant) get
+  // automatically to their user namespace. Admin variants get
   // SYSTEM_USER, mirroring the bearer-mode behaviour.
   //
   // ── Project access guard ─────────────────────────────────────────────
   // Bearer-token routes enforce project scope by minting tokens only for
   // members. Cookie-authed mirrors don't go through token mint, so they
-  // must check membership themselves — otherwise any user in tenant
+  // must check membership themselves — otherwise any user in
   // `acme` could read/modify another user's project entries by passing
   // the project id in the body. Returns true if access ok; sends a 403
-  // and returns false otherwise. `null` projectId means tenant-wide and
-  // is always allowed (the existing tenant boundary still applies).
+  // and returns false otherwise. `null` projectId means user-wide and
+  // is always allowed (the existing user boundary still applies).
   async function requireProjectAccess(
     user: DashboardUser,
     projectId: string | null,
@@ -1021,8 +1021,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     // This stops an attacker who knows an entry id from deleting it by
     // passing `project: null` when the entry is actually project-scoped,
     // or by passing a project they're a member of when the entry belongs
-    // to a different (non-member) project. Tenant-wide entries
-    // (project_id null) need only the tenant boundary, which the engine
+    // to a different (non-member) project. User-wide entries
+    // (project_id null) need only the user boundary, which the engine
     // enforces. We use `getEntryScope` (no scope filter) instead of
     // `getEntry` because the latter filters by the caller-supplied
     // project, which is exactly the value we don't trust.
@@ -1033,8 +1033,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
           const m = await opts.warm.getProjectMembership(scope.projectId, u.id);
           if (!m) return reply.code(403).send({ error: "not a member of this project" });
         } else if (scope.userId !== userId) {
-          // Tenant-wide entry in a different tenant — refuse.
-          return reply.code(403).send({ error: "entry not in your tenant" });
+          // User-wide entry owned by a different user — refuse.
+          return reply.code(403).send({ error: "entry not in your user namespace" });
         }
       }
     }
@@ -1064,7 +1064,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       : { results: [] as unknown[] };
     reply.send({
       bootstrapDone: true,
-      tenantDone: u.role === "admin" || !!u.id,
+      userExists: u.role === "admin" || !!u.id,
       mintedToken: tokens.length > 0,
       remembered: recent.results.length > 0,
       userId,
@@ -1087,23 +1087,23 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send({ entries: await opts.warm.listAuditLog({ limit }) });
   });
 
-  // ─── Tenant token self-rotation (CLI / device path) ────────────────────
-  // Holders of a tenant bearer (devices, CLIs) can rotate their own token
+  // ─── User bearer self-rotation (CLI / device path) ────────────────────
+  // Holders of a user bearer (devices, CLIs) can rotate their own token
   // without needing admin access: present the current bearer, get a new
   // plaintext back (shown once), old one revoked atomically. Only meaningful
-  // in tenant mode. Note: distinct from the dashboard's /v1/me/tokens —
+  // in user mode. Note: distinct from the dashboard's /v1/me/tokens —
   // this endpoint is for the *bearer* itself to roll over, the dashboard
   // is for user-facing CRUD.
   app.post("/v1/auth/rotate-token", async (req, reply) => {
-    if (opts.auth.mode !== "tenant" || !opts.warm) {
-      return reply.code(400).send({ error: "rotate-token is only available in tenant mode" });
+    if (opts.auth.mode !== "user" || !opts.warm) {
+      return reply.code(400).send({ error: "rotate-token is only available in user mode" });
     }
     const header = req.headers.authorization;
     if (!header || !header.startsWith("Bearer ")) {
       return reply.code(401).send({ error: "unauthorized" });
     }
     const current = header.slice("Bearer ".length);
-    const result = await opts.warm.rotateTenantToken(current);
+    const result = await opts.warm.rotateUserToken(current);
     if (!result) return reply.code(401).send({ error: "unauthorized" });
     reply.code(201).send({
       ...result,
@@ -1126,7 +1126,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   // P2-18: Prometheus exposition format for scraping. Uses the same
   // gauges + counters as the JSON endpoint; admin-token gated so a
-  // public scraper can't enumerate tenants/projects via the dashboard.
+  // public scraper can't enumerate users/projects via the dashboard.
   app.get("/v1/admin/metrics/prom", async (req, reply) => {
     if (!dashboardEnabled || !opts.metrics) {
       return reply.code(404).send({ error: "admin disabled" });
@@ -1150,10 +1150,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // Per-session transports live in this map for the lifetime of the
   // SSE connection. They're disposed when the client disconnects.
 
-  // SSE-MCP: tenant is captured at the GET /mcp/sse handshake (when the
+  // SSE-MCP: user is captured at the GET /mcp/sse handshake (when the
   // bearer auth hook ran and populated req.userId) and persisted with
   // the transport for the session's lifetime. Subsequent POST /mcp/messages
-  // calls inherit that tenant — they're authenticated by sessionId, not
+  // calls inherit that user id — they're authenticated by sessionId, not
   // by a new bearer header on every JSON-RPC call.
   const sseTransports = new Map<string, {
     transport: SSEServerTransport;

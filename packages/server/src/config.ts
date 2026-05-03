@@ -15,10 +15,10 @@ export const ConfigSchema = z
     }),
     auth: z
       .object({
-        // - "none": dev only, every request becomes the synthetic `public` tenant.
-        // - "bearer": single shared token, single implicit `public` tenant — back-compat.
-        // - "tenant": one-token-per-tenant via user_tokens table, real isolation.
-        mode: z.enum(["none", "bearer", "tenant"]).default("none"),
+        // - "none": dev only, every request becomes the synthetic `public` user.
+        // - "bearer": single shared token, single implicit `public` user — back-compat.
+        // - "user": per-user bearers via user_tokens table, real isolation.
+        mode: z.enum(["none", "bearer", "user"]).default("none"),
         token: z.string().optional(),
       })
       .refine((v) => v.mode !== "bearer" || !!v.token, {

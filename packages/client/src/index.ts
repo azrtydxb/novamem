@@ -2,7 +2,7 @@
  * NovamemClient — typed HTTP client for the novamem service. Works in
  * Node.js ≥ 20 and any modern browser (uses global fetch).
  *
- * Auth: the `token` option accepts either a tenant bearer (`nm_…`) for
+ * Auth: the `token` option accepts either a user bearer (`nm_…`) for
  * data-plane calls or a dashboard session bearer (`ns_…`) for control-plane
  * calls (project CRUD, token mint, user-scoped operations). The wire format
  * is identical — `Authorization: Bearer <token>` — so the same client works
@@ -11,7 +11,7 @@
 
 export interface NovamemClientOptions {
   baseUrl: string;
-  /** Bearer token: tenant (`nm_…`) for data-plane calls, or session
+  /** Bearer token: user bearer (`nm_…`) for data-plane calls, or session
    *  (`ns_…`) for dashboard control-plane calls. */
   token?: string;
   /** Optional fetch implementation override (useful for tests). */
@@ -23,7 +23,7 @@ export interface SearchRequest {
   k?: number;
   namespace?: string;
   agentName?: string | null;
-  /** Project (sub-brain) to scope to. Omit for tenant-wide entries. */
+  /** Project (sub-brain) to scope to. Omit for user-wide entries. */
   project?: string | null;
   weights?: { keyword?: number; vector?: number; graph?: number };
 }
@@ -34,7 +34,7 @@ export interface SearchResult {
   content: string;
   tier: "warm" | "cold";
   namespace: string;
-  /** Project this entry belongs to, or null for tenant-wide entries. */
+  /** Project this entry belongs to, or null for user-wide entries. */
   project: string | null;
   source: string;
   metadata: Record<string, unknown>;
@@ -79,7 +79,7 @@ export interface HealthResponse {
 export interface LoginResponse {
   token: string;
   expiresAt: string;
-  user: { id: string; username: string; role: "admin" | "user"; tenantId: string | null };
+  user: { id: string; username: string; role: "admin" | "user" };
 }
 
 export interface Project {
@@ -87,21 +87,21 @@ export interface Project {
   name: string;
   role: "owner" | "member";
   ownerUserId: string;
-  ownerTenantId: string;
+
   createdAt: string;
 }
 
 export interface ProjectMember {
   userId: string;
   username: string;
-  tenantId: string | null;
+
   role: "owner" | "member";
   joinedAt: string;
 }
 
 export interface MintTokenResponse {
   token: string;
-  tenantId: string;
+
   projectId: string | null;
   createdAt: string;
   warning: string;

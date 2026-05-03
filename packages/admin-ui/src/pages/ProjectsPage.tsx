@@ -42,7 +42,7 @@ export function ProjectsPage() {
       <PageHeader
         kicker="Sub-brains · scoped memory"
         title="Projects"
-        subtitle="A project is a sub-brain — its memories live separately from your tenant-wide entries. Share with another user (any tenant) by adding them as a member."
+        subtitle="A project is a sub-brain — its memories live separately from your global memory. Share with another user by adding them as a member."
         actions={
           <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
             <RefreshCw className="h-3.5 w-3.5" /> Refresh

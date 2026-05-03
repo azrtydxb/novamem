@@ -633,7 +633,7 @@ function buildPaths() {
     "/v1/admin/users/{id}/role": {
       post: {
         tags: ["Admin"],
-        summary: "Change a user's role / tenant",
+        summary: "Change a user's role",
         security: admin,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: { content: { "application/json": { schema: { type: "object", required: ["role"], properties: { role: { type: "string", enum: ["admin", "user"] }, userId: { type: "string", nullable: true } } } } } },
@@ -643,7 +643,7 @@ function buildPaths() {
     "/v1/admin/metrics": {
       get: {
         tags: ["Admin"],
-        summary: "Operational metrics snapshot (cross-tenant)",
+        summary: "Operational metrics snapshot (cross-user)",
         security: admin,
         responses: { 200: jsonResponse("MetricsSnapshot") },
       },

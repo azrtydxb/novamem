@@ -1,6 +1,6 @@
 /**
  * Warm-store schema. The product treats *user* as the only first-class
- * memory owner — there is no separate "tenant" concept. A user's id is
+ * memory owner — there is no separate "user" concept. A user's id is
  * their isolation key for memory entries / FTS / graph relations / cold
  * collections. Projects let multiple users share a sub-brain; otherwise
  * memory belongs to exactly one user.
@@ -116,7 +116,7 @@ export const memoryEntries = pgTable(
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull().default("public"),
-    /** Optional project scope. Null = the user's tenant-wide entries. */
+    /** Optional project scope. Null = the user's user-wide entries. */
     projectId: text("project_id"),
     content: text("content").notNull(),
     namespace: text("namespace").notNull().default("default"),

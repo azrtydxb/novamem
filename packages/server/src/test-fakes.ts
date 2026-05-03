@@ -29,11 +29,13 @@ export interface FakeWarmRow {
 export class FakeWarmStore {
   rows = new Map<string, FakeWarmRow>();
   relations: Array<{ userId: string; projectId: string | null; fromId: string; toId: string; relation: string; strength: number }> = [];
-  tenants = new Map<string, { id: string; name: string }>([["public", { id: "public", name: "public" }]]);
   tokens = new Map<string, { userId: string; label: string | null; projectId: string | null; revoked: boolean }>();
-  users = new Map<string, { id: string; username: string; passwordHash: string; role: string; userId: string | null; createdAt: Date; lastLoginAt: Date | null }>();
+  users = new Map<string, { id: string; username: string; passwordHash: string; role: string; createdAt: Date; lastLoginAt: Date | null }>([
+    // Synthetic public user — exists for `none`/`bearer` auth modes.
+    ["public", { id: "public", username: "public", passwordHash: "unused", role: "user", createdAt: new Date(), lastLoginAt: null }],
+  ]);
   sessions = new Map<string, { userId: string; expiresAt: Date }>();
-  projects = new Map<string, { id: string; name: string; ownerUserId: string; ownerTenantId: string; createdAt: Date }>();
+  projects = new Map<string, { id: string; name: string; ownerUserId: string; createdAt: Date }>();
   projectMembers = new Map<string, Map<string, { role: string; joinedAt: Date }>>();
   decayRunsInserted = 0;
   decayRunsUpdated = 0;
@@ -53,8 +55,8 @@ export class FakeWarmStore {
         const namespace = String(params[0]);
         const k = Number(params[1]);
         const projectScoped = sql.includes("project_id = $");
-        const tenantScoped = sql.includes("user_id = $");
-        const userId = tenantScoped ? String(params[2]) : null;
+        const userScoped = sql.includes("user_id = $");
+        const userId = userScoped ? String(params[2]) : null;
         const projectId = projectScoped ? String(params[2]) : null;
         const since = sql.includes("created_at >= $") ? new Date(String(params[3])) : null;
         const filtered = [...this.rows.values()]
@@ -299,10 +301,10 @@ export class FakeWarmStore {
     const r = this.rows.get(id);
     if (!r) return undefined;
     if (typeof opts.projectId === "string") {
-      // Project IS the isolation unit when set (cross-tenant members allowed).
+      // Project IS the isolation unit when set (cross-user members allowed).
       if (r.projectId !== opts.projectId) return undefined;
     } else {
-      // Tenant-wide queries: project must be null AND tenant must match.
+      // User-wide queries: project must be null AND user must match.
       if (r.projectId !== null) return undefined;
       if (r.userId !== userId) return undefined;
     }
@@ -401,15 +403,7 @@ export class FakeWarmStore {
     return { rows, lastDecayAt: null };
   }
 
-  // ─── Tenant ops (used by HTTP auth hook + admin routes) ───────────────
-  async createTenant(id: string, name: string) {
-    if (!this.tenants.has(id)) this.tenants.set(id, { id, name });
-    return this.tenants.get(id)!;
-  }
-
-  async listTenants() {
-    return [...this.tenants.values()].map((t) => ({ ...t, createdAt: new Date() }));
-  }
+  // (Legacy owner-table CRUD removed — users own memory directly.)
 
   async createUserToken(
     userId: string,
@@ -493,12 +487,12 @@ export class FakeWarmStore {
     return false;
   }
 
-  async rotateTenantToken(plaintext: string) {
+  async rotateUserToken(plaintext: string) {
     const t = this.tokens.get(plaintext);
     if (!t || t.revoked) return null;
     t.revoked = true;
     const newToken = "nm_test_" + Math.random().toString(36).slice(2, 18);
-    this.tokens.set(newToken, { userId: t.userId, label: "rotated", revoked: false });
+    this.tokens.set(newToken, { userId: t.userId, label: "rotated", projectId: null, revoked: false });
     return { token: newToken, userId: t.userId, createdAt: new Date() };
   }
 
@@ -661,7 +655,7 @@ export class FakeWarmStore {
 
   // ─── Projects ───────────────────────────────────────────────────────────
 
-  async createProject(args: { id: string; name: string; ownerUserId: string; ownerTenantId: string }) {
+  async createProject(args: { id: string; name: string; ownerUserId: string }) {
     const row = { ...args, createdAt: new Date() };
     this.projects.set(args.id, row);
     const m = new Map<string, { role: string; joinedAt: Date }>();
@@ -675,7 +669,7 @@ export class FakeWarmStore {
   }
 
   async listProjectsForUser(userId: string) {
-    const out: Array<{ id: string; name: string; role: string; ownerUserId: string; ownerTenantId: string; createdAt: Date }> = [];
+    const out: Array<{ id: string; name: string; role: string; ownerUserId: string; createdAt: Date }> = [];
     for (const p of this.projects.values()) {
       const m = this.projectMembers.get(p.id)?.get(userId);
       if (m) out.push({ ...p, role: m.role });
@@ -820,7 +814,7 @@ export class FakeColdStore {
     }
   }
 
-  async deleteAllForTenant(userId: string): Promise<string[]> {
+  async deleteAllForUser(userId: string): Promise<string[]> {
     if (this.fail) return [];
     const dropped = new Set<string>();
     for (const [id, v] of [...this.vectors.entries()]) {
@@ -847,8 +841,8 @@ export class FakeColdStore {
 
 export class FakeGraphStore {
   // Edges keyed by `${userId}:${projectId ?? "_"}:${fromId}` so cross-
-  // tenant + cross-project traversal is structurally impossible — same
-  // approach as the real graph store's tenant + project node properties.
+  // user + cross-project traversal is structurally impossible — same
+  // approach as the real graph store's user + project node properties.
   edges = new Map<
     string,
     Array<{ userId: string; projectId: string | null; to: string; strength: number }>
@@ -914,7 +908,7 @@ export class FakeGraphStore {
     return n;
   }
 
-  async removeAllForTenant(userId: string): Promise<boolean> {
+  async removeAllForUser(userId: string): Promise<boolean> {
     if (!this.connected) return false;
     for (const [k, list] of [...this.edges.entries()]) {
       if (k.startsWith(`${userId}:`)) this.edges.delete(k);
