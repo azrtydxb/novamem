@@ -204,3 +204,51 @@ export interface TokenMetricsRow {
   counters: { queries_total: number; remembers_total: number; forgets_total: number };
   rates: { queries_per_sec_60s: number; remembers_per_sec_60s: number };
 }
+
+export interface SearchResult {
+  id: string;
+  score: number;
+  content: string;
+  tier: "warm" | "cold";
+  namespace: string;
+  project: string | null;
+  source: string;
+  metadata: Record<string, unknown>;
+  signals: { keyword: number; vector: number; graph: number };
+}
+
+export interface RecentEntry {
+  id: string;
+  content: string;
+  namespace: string;
+  source: string;
+  tier: "warm" | "cold";
+  hits: number;
+  age: string;
+  project: string | null;
+  signals: { keyword: number; vector: number; graph: number };
+  score: number;
+  /** 0..1 fraction of the entry's "lifespan" remaining before decay
+   *  promotes it. Computed by the server from hits + lastAccessed. */
+  decay?: number;
+}
+
+export interface NeighborsResult {
+  id: string;
+  neighbors: Array<{ id: string; weight: number; tier: "warm" | "cold" }>;
+}
+
+export interface ActivityEvent {
+  kind: "remember" | "token" | "project" | "audit";
+  at: string;
+  text: string;
+  project: string | null;
+}
+
+export interface OnboardingState {
+  bootstrapDone: boolean;
+  tenantDone: boolean;
+  mintedToken: boolean;
+  remembered: boolean;
+  tenantId: string;
+}

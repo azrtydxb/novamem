@@ -12,6 +12,12 @@ const TenantsPage = lazy(() => import("./pages/TenantsPage").then((m) => ({ defa
 const UsersPage = lazy(() => import("./pages/UsersPage").then((m) => ({ default: m.UsersPage })));
 const MyTokensPage = lazy(() => import("./pages/MyTokensPage").then((m) => ({ default: m.MyTokensPage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
+const BrowsePage = lazy(() => import("./pages/BrowsePage").then((m) => ({ default: m.BrowsePage })));
+const TodayPage = lazy(() => import("./pages/TodayPage").then((m) => ({ default: m.TodayPage })));
+const GraphPage = lazy(() => import("./pages/GraphPage").then((m) => ({ default: m.GraphPage })));
+const OnboardingPage = lazy(() =>
+  import("./pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })),
+);
 
 export function App() {
   return (
@@ -39,7 +45,7 @@ function Authed() {
   if (loading) {
     return (
       <div className="min-h-full flex items-center justify-center">
-        <div className="h-6 w-6 rounded-full border-2 border-text-subtle border-t-transparent animate-spin" />
+        <div className="h-6 w-6 rounded-full border-2 border-faint border-t-transparent animate-spin" />
       </div>
     );
   }
@@ -55,6 +61,12 @@ function Authed() {
         {isAdmin && tab === "users" && <UsersPage />}
         {tab === "projects" && <ProjectsPage />}
         {tab === "tokens" && <MyTokensPage />}
+        {tab === "browse" && <BrowsePage />}
+        {tab === "today" && <TodayPage />}
+        {tab === "graph" && <GraphPage />}
+        {tab === "onboarding" && (
+          <OnboardingPage onSkip={() => setTab("metrics")} onContinue={() => setTab("tokens")} />
+        )}
       </Suspense>
     </AppShell>
   );
@@ -62,8 +74,8 @@ function Authed() {
 
 function PageSkeleton() {
   return (
-    <div className="flex items-center justify-center py-16 text-text-muted">
-      <div className="h-5 w-5 rounded-full border-2 border-text-subtle border-t-transparent animate-spin" />
+    <div className="flex items-center justify-center py-16 text-dim">
+      <div className="h-5 w-5 rounded-full border-2 border-faint border-t-transparent animate-spin" />
     </div>
   );
 }

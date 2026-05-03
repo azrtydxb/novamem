@@ -1,19 +1,7 @@
-import { ReactNode } from "react";
-import {
-  Activity,
-  BookOpen,
-  Building2,
-  Database,
-  ExternalLink,
-  FolderKanban,
-  KeyRound,
-  LogOut,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
+import { ReactNode, useEffect, useState } from "react";
+import { ExternalLink, LogOut, Moon, Sun } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../lib/auth-context";
-import { Badge } from "./Badge";
 
 export type Tab =
   | "metrics"
@@ -21,27 +9,36 @@ export type Tab =
   | "tenants"
   | "users"
   | "tokens"
-  | "projects";
+  | "projects"
+  | "browse"
+  | "graph"
+  | "today"
+  | "onboarding";
 
 interface NavItem {
   id: Tab;
   label: string;
-  icon: typeof Activity;
+  /** Mono glyph for the Grid sidebar — kept in sync with the design
+   *  handoff README so the sidebar reads identically against the spec. */
+  glyph: string;
 }
 
 const ADMIN_NAV: NavItem[] = [
-  { id: "metrics", label: "Metrics", icon: Activity },
-  { id: "health", label: "Health", icon: Database },
-  { id: "tenants", label: "Tenants", icon: Building2 },
-  { id: "users", label: "Users", icon: Users },
-  { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "tokens", label: "API tokens", icon: KeyRound },
+  { id: "metrics", label: "Metrics", glyph: "◐" },
+  { id: "health", label: "Health", glyph: "◇" },
+  { id: "tenants", label: "Tenants", glyph: "▢" },
+  { id: "users", label: "Users", glyph: "○" },
+  { id: "projects", label: "Projects", glyph: "▢" },
+  { id: "tokens", label: "API Tokens", glyph: "⌘" },
 ];
 
 const USER_NAV: NavItem[] = [
-  { id: "metrics", label: "Metrics", icon: Activity },
-  { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "tokens", label: "API tokens", icon: KeyRound },
+  { id: "metrics", label: "Metrics", glyph: "◐" },
+  { id: "browse", label: "Browse", glyph: "≡" },
+  { id: "graph", label: "Graph", glyph: "✦" },
+  { id: "today", label: "Today", glyph: "◷" },
+  { id: "projects", label: "Projects", glyph: "▢" },
+  { id: "tokens", label: "API Tokens", glyph: "⌘" },
 ];
 
 interface Props {
@@ -50,108 +47,147 @@ interface Props {
   children: ReactNode;
 }
 
+/** Theme hook — reads `<html class>` (set in main.tsx pre-mount), and
+ *  writes back to localStorage so the choice persists. */
+function useTheme(): ["dark" | "light", () => void] {
+  const [theme, setTheme] = useState<"dark" | "light">(
+    () =>
+      typeof document !== "undefined" && document.documentElement.classList.contains("light")
+        ? "light"
+        : "dark",
+  );
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", theme === "light");
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    localStorage.setItem("nm-theme", theme);
+  }, [theme]);
+  return [theme, () => setTheme((t) => (t === "dark" ? "light" : "dark"))];
+}
+
 export function AppShell({ active, onChange, children }: Props) {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
   const nav = isAdmin ? ADMIN_NAV : USER_NAV;
+  const [theme, toggleTheme] = useTheme();
 
   return (
     <div className="flex h-full">
-      {/* Skip-link for keyboard / screen reader users — hidden until focused. */}
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:bg-accent focus:text-white focus:px-3 focus:py-1.5 focus:rounded-md focus:shadow-lg"
       >
         Skip to main content
       </a>
-      <aside className="w-60 flex-none border-r border-border bg-bg-panel/40 flex flex-col">
-        <div className="px-5 py-5 border-b border-border">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-md bg-gradient-to-br from-accent to-accent/40 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">n</span>
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-text leading-tight">novamem</div>
-              <div className="text-[11px] text-text-muted leading-tight">
-                {isAdmin ? "admin console" : "tenant console"}
-              </div>
+      <aside className="w-56 flex-none border-r border-rule bg-panel flex flex-col">
+        {/* Brand block — synapse logo + name + role/tenant caption. */}
+        <div className="px-4 py-4 border-b border-rule-soft flex items-center gap-2.5">
+          <div className="h-7 w-7 rounded-lg bg-accent flex items-center justify-center">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 6 L12 12 M20 6 L12 12 M4 18 L12 12 M20 18 L12 12"
+                stroke="white"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                fill="none"
+              />
+              <circle cx="12" cy="12" r="2.6" fill="white" />
+            </svg>
+          </div>
+          <div className="leading-tight">
+            <div className="text-sm font-semibold text-ink tracking-tight">NovaMem</div>
+            <div className="font-mono text-[10px] text-dim">
+              {isAdmin ? "admin" : user?.tenantId ?? "tenant"}
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-0.5">
-          {nav.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.id === active;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onChange(item.id)}
-                className={cn(
-                  "w-full flex items-center gap-2.5 px-3 h-9 rounded-md text-sm transition-colors",
-                  isActive
-                    ? "bg-accent-subtle text-text font-medium"
-                    : "text-text-muted hover:bg-bg-hover hover:text-text",
-                )}
-              >
-                <Icon className={cn("h-4 w-4", isActive ? "text-accent" : "text-text-subtle")} />
-                {item.label}
-              </button>
-            );
-          })}
+        {/* Nav */}
+        <nav className="flex-1 p-2.5 overflow-y-auto scroll-thin">
+          <div className="px-2.5 pt-1.5 pb-1 font-mono text-[10px] uppercase tracking-[0.10em] text-faint">
+            {isAdmin ? "Operations" : "Workspace"}
+          </div>
+          <div className="space-y-0.5">
+            {nav.map((item) => {
+              const isActive = item.id === active;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onChange(item.id)}
+                  className={cn(
+                    "w-full flex items-center gap-2.5 px-2.5 h-9 rounded-md text-[13px] transition-colors",
+                    isActive
+                      ? "bg-subtle text-ink font-medium"
+                      : "text-dim hover:bg-subtle/60 hover:text-ink",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "w-3.5 font-mono text-xs",
+                      isActive ? "text-accent" : "text-faint",
+                    )}
+                  >
+                    {item.glyph}
+                  </span>
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
-        {/* API docs — external link to Swagger UI; admin + user both see it */}
-        <div className="px-3 pb-2">
+        {/* API docs + theme toggle */}
+        <div className="px-2.5 pb-2">
           <a
             href="/api-docs"
             target="_blank"
             rel="noreferrer"
-            className="w-full flex items-center gap-2.5 px-3 h-9 rounded-md text-sm text-text-muted hover:bg-bg-hover hover:text-text transition-colors"
+            className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-md text-[13px] text-dim hover:bg-subtle/60 hover:text-ink transition-colors"
           >
-            <BookOpen className="h-4 w-4 text-text-subtle" />
+            <span className="w-3.5 font-mono text-xs text-faint">⌖</span>
             <span className="flex-1">API docs</span>
-            <ExternalLink className="h-3 w-3 text-text-subtle" />
+            <ExternalLink className="h-3 w-3 text-faint" />
           </a>
+          <button
+            onClick={toggleTheme}
+            className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-md text-[13px] text-dim hover:bg-subtle/60 hover:text-ink transition-colors"
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? (
+              <Sun className="h-3.5 w-3.5 text-faint" />
+            ) : (
+              <Moon className="h-3.5 w-3.5 text-faint" />
+            )}
+            <span className="flex-1 text-left">{theme === "dark" ? "Light theme" : "Dark theme"}</span>
+          </button>
         </div>
 
         {/* User card + sign-out */}
-        <div className="p-3 border-t border-border space-y-2">
+        <div className="p-3 border-t border-rule-soft">
           {user ? (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-bg-subtle/60">
-              <div className="h-7 w-7 rounded-full bg-accent/20 flex-none flex items-center justify-center">
-                <span className="text-[11px] font-semibold text-accent uppercase">
-                  {user.username.charAt(0)}
-                </span>
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="h-7 w-7 rounded-full bg-accent-soft flex items-center justify-center text-xs font-semibold text-accent uppercase">
+                {user.username.charAt(0)}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-text truncate">{user.username}</div>
-                <div className="flex items-center gap-1 mt-0.5">
-                  {isAdmin ? (
-                    <Badge tone="accent" className="text-[10px] py-0 px-1">
-                      <ShieldCheck className="h-2.5 w-2.5" /> admin
-                    </Badge>
-                  ) : (
-                    <Badge tone="neutral" className="text-[10px] py-0 px-1">
-                      {user.tenantId ?? "—"}
-                    </Badge>
-                  )}
+              <div className="flex-1 min-w-0 leading-tight">
+                <div className="text-xs font-medium text-ink truncate">{user.username}</div>
+                <div className="font-mono text-[10px] text-dim truncate">
+                  {isAdmin ? "admin" : `tenant·${user.tenantId ?? "—"}`}
                 </div>
               </div>
             </div>
           ) : null}
           <button
             onClick={() => { void logout(); }}
-            className="w-full flex items-center gap-2.5 px-3 h-9 rounded-md text-sm text-text-muted hover:bg-bg-hover hover:text-text transition-colors"
+            className="w-full flex items-center gap-2.5 px-2.5 h-8 rounded-md text-[12px] text-dim hover:bg-subtle/60 hover:text-ink transition-colors"
           >
-            <LogOut className="h-4 w-4 text-text-subtle" />
+            <LogOut className="h-3.5 w-3.5 text-faint" />
             Sign out
           </button>
         </div>
       </aside>
 
       <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto scroll-thin">
-        <div className="max-w-6xl mx-auto p-8">{children}</div>
+        {children}
       </main>
     </div>
   );

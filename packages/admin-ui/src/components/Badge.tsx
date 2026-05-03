@@ -8,11 +8,11 @@ interface Props extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const TONE: Record<Tone, string> = {
-  neutral: "bg-bg-subtle text-text-muted border-border",
-  success: "bg-success-subtle text-success border-success/30",
-  warning: "bg-warning-subtle text-warning border-warning/30",
-  danger: "bg-danger-subtle text-danger border-danger/30",
-  accent: "bg-accent-subtle text-accent border-accent/30",
+  neutral: "bg-subtle text-dim border-rule",
+  success: "bg-graph-soft text-graph border-graph/30",
+  warning: "bg-warn-soft text-warn border-warn/30",
+  danger: "bg-err-soft text-err border-err/30",
+  accent: "bg-accent-soft text-accent border-accent/30",
 };
 
 export function Badge({ className, tone = "neutral", ...rest }: Props) {

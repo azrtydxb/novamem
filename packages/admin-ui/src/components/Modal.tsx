@@ -79,17 +79,17 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       <div
         ref={dialogRef}
         className={cn(
-          "relative w-full rounded-xl border border-border bg-bg-panel shadow-modal animate-scale-in",
+          "relative w-full rounded-xl border border-rule bg-panel shadow-modal animate-scale-in",
           SIZE[size],
         )}
       >
         <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-3">
           <div className="space-y-1">
-            <h2 id="modal-title" className="text-base font-semibold text-text">
+            <h2 id="modal-title" className="text-base font-semibold text-ink">
               {title}
             </h2>
             {description ? (
-              <div className="text-sm text-text-muted">{description}</div>
+              <div className="text-sm text-dim">{description}</div>
             ) : null}
           </div>
           <Button
@@ -105,7 +105,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
         </div>
         {children ? <div className="px-5 pb-4">{children}</div> : null}
         {footer ? (
-          <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-bg-subtle/40 rounded-b-xl">
+          <div className="flex items-center justify-end gap-2 border-t border-rule px-5 py-3 bg-subtle/40 rounded-b-xl">
             {footer}
           </div>
         ) : null}

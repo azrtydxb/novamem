@@ -434,6 +434,17 @@ export class FakeWarmStore {
     };
   }
 
+  async listRecentActivity(_tenantId: string, _userId: string, _limit?: number) {
+    // Tests don't exercise the activity feed — return empty so the
+    // /v1/me/today route resolves without a real Postgres query plan.
+    return [] as Array<{
+      kind: "remember" | "token" | "project" | "audit";
+      at: string;
+      text: string;
+      project: string | null;
+    }>;
+  }
+
   async listTokensCreatedByUser(userId: string) {
     const out: Array<{ tokenHash: string; label: string | null; tenantId: string }> = [];
     for (const [plain, v] of this.tokens.entries()) {

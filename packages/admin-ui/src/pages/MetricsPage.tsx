@@ -177,12 +177,12 @@ export function MetricsPage() {
       <header className="flex items-end justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-text">Metrics</h1>
+            <h1 className="text-2xl font-semibold text-ink">Metrics</h1>
             {!isAdmin && user?.tenantId ? (
               <Badge tone="accent">tenant: {user.tenantId}</Badge>
             ) : null}
           </div>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-dim mt-1">
             {isAdmin
               ? "Operational counters, gauges, and rates. In-memory; resets on restart."
               : "Activity for your tenant only. In-memory; resets on restart."}
@@ -329,7 +329,7 @@ export function MetricsPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-xs text-text-muted border-b border-border">
+                  <tr className="text-xs text-dim border-b border-rule">
                     <th className="text-left font-medium py-2 pl-2">Token</th>
                     <th className="text-right font-medium py-2">Queries</th>
                     <th className="text-right font-medium py-2">Remembers</th>
@@ -340,32 +340,32 @@ export function MetricsPage() {
                 </thead>
                 <tbody>
                   {snap.data.tokens.map((tok, i) => (
-                    <tr key={tok.tokenHash} className="border-b border-border/40">
+                    <tr key={tok.tokenHash} className="border-b border-rule/40">
                       <td className="py-2 pl-2">
                         <div className="flex items-center gap-2">
                           <span
                             className="inline-block h-2 w-3 rounded-sm"
                             style={{ background: tokenColor(i) }}
                           />
-                          <span className="text-text">{tokenShortLabel(tok)}</span>
-                          <span className="text-[10px] text-text-subtle font-mono">
+                          <span className="text-ink">{tokenShortLabel(tok)}</span>
+                          <span className="text-[10px] text-faint font-mono">
                             {tok.tokenHash.slice(0, 8)}
                           </span>
                         </div>
                       </td>
-                      <td className="py-2 text-right tabular-nums text-text">
+                      <td className="py-2 text-right tabular-nums text-ink">
                         {fmtNumber(tok.counters.queries_total)}
                       </td>
-                      <td className="py-2 text-right tabular-nums text-text">
+                      <td className="py-2 text-right tabular-nums text-ink">
                         {fmtNumber(tok.counters.remembers_total)}
                       </td>
-                      <td className="py-2 text-right tabular-nums text-text">
+                      <td className="py-2 text-right tabular-nums text-ink">
                         {fmtNumber(tok.counters.forgets_total)}
                       </td>
-                      <td className="py-2 text-right tabular-nums text-text-muted">
+                      <td className="py-2 text-right tabular-nums text-dim">
                         {tok.rates.queries_per_sec_60s.toFixed(2)}
                       </td>
-                      <td className="py-2 text-right tabular-nums text-text-muted pr-2">
+                      <td className="py-2 text-right tabular-nums text-dim pr-2">
                         {tok.rates.remembers_per_sec_60s.toFixed(2)}
                       </td>
                     </tr>
@@ -386,23 +386,23 @@ export function MetricsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {[
-              { label: "Warm", icon: Flame, color: "bg-warning", hex: "#fbbf24", val: c.hits_warm_total },
+              { label: "Warm", icon: Flame, color: "bg-warn", hex: "#fbbf24", val: c.hits_warm_total },
               { label: "Cold", icon: Snowflake, color: "bg-accent", hex: "#7c9cff", val: c.hits_cold_total },
-              { label: "Graph", icon: Network, color: "bg-success", hex: "#4ade80", val: c.hits_graph_total },
+              { label: "Graph", icon: Network, color: "bg-graph", hex: "#4ade80", val: c.hits_graph_total },
             ].map((row) => {
               const Icon = row.icon;
               return (
                 <div key={row.label}>
                   <div className="flex items-center justify-between text-xs mb-1.5">
-                    <div className="flex items-center gap-1.5 text-text">
+                    <div className="flex items-center gap-1.5 text-ink">
                       <Icon className="h-3.5 w-3.5" style={{ color: row.hex }} />
                       <span className="font-medium">{row.label}</span>
                     </div>
-                    <div className="text-text-muted tabular-nums">
-                      {fmtNumber(row.val)} <span className="text-text-subtle">({pct(row.val).toFixed(0)}%)</span>
+                    <div className="text-dim tabular-nums">
+                      {fmtNumber(row.val)} <span className="text-faint">({pct(row.val).toFixed(0)}%)</span>
                     </div>
                   </div>
-                  <div className="h-2 bg-bg-subtle rounded-full overflow-hidden">
+                  <div className="h-2 bg-subtle rounded-full overflow-hidden">
                     <div
                       className="h-full transition-all duration-300"
                       style={{ width: `${pct(row.val)}%`, backgroundColor: row.hex }}
@@ -422,13 +422,13 @@ export function MetricsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
-            <StatCard label="Warm entries" value={fmtNumber(g.warm_entries)} icon={Flame} tone="warning" />
-            <StatCard label="Cold entries" value={fmtNumber(g.cold_entries)} icon={Snowflake} tone="accent" />
+            <StatCard label="Warm entries" value={fmtNumber(g.warm_entries)} icon={Flame} tone="warm" />
+            <StatCard label="Cold entries" value={fmtNumber(g.cold_entries)} icon={Snowflake} tone="cold" />
             <StatCard
               label="Graph edges"
               value={g.graph_edges == null ? "—" : fmtNumber(g.graph_edges)}
               icon={Network}
-              tone={g.graph_edges == null ? "default" : "success"}
+              tone={g.graph_edges == null ? "default" : "graph"}
               sublabel={
                 g.graph_edges == null
                   ? isAdmin
@@ -454,8 +454,8 @@ export function MetricsPage() {
           <CardContent className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <StatCard label="Remembers" value={fmtNumber(snap.data.counters.remembers_total)} icon={Zap} />
             <StatCard label="Forgets" value={fmtNumber(snap.data.counters.forgets_total)} icon={Trash2} />
-            <StatCard label="Promotions" value={fmtNumber(snap.data.counters.promotions_total)} icon={ArrowUpToLine} tone="success" />
-            <StatCard label="Demotions" value={fmtNumber(snap.data.counters.demotions_total)} icon={ArrowDownToLine} tone="warning" />
+            <StatCard label="Promotions" value={fmtNumber(snap.data.counters.promotions_total)} icon={ArrowUpToLine} tone="graph" />
+            <StatCard label="Demotions" value={fmtNumber(snap.data.counters.demotions_total)} icon={ArrowDownToLine} tone="warm" />
             <StatCard label="Orphans reaped" value={fmtNumber(snap.data.counters.orphans_reaped_total)} icon={Trash2} />
           </CardContent>
         </Card>
@@ -468,14 +468,14 @@ function SkeletonMetrics() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold text-text">Metrics</h1>
-        <p className="text-sm text-text-muted mt-1">Loading…</p>
+        <h1 className="text-2xl font-semibold text-ink">Metrics</h1>
+        <p className="text-sm text-dim mt-1">Loading…</p>
       </header>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className="p-4 animate-pulse">
-            <div className="h-3 w-24 bg-bg-subtle rounded mb-3" />
-            <div className="h-7 w-16 bg-bg-subtle rounded" />
+            <div className="h-3 w-24 bg-subtle rounded mb-3" />
+            <div className="h-7 w-16 bg-subtle rounded" />
           </Card>
         ))}
       </div>
