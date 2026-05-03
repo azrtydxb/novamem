@@ -8,6 +8,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
+import { PageHeader } from "../components/PageHeader";
 import { useToast } from "../components/Toast";
 import { fmtRelative, fmtTimestamp, shortHash } from "../lib/utils";
 
@@ -58,24 +59,23 @@ export function MyTokensPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between">
-        <div>
+    <>
+      <PageHeader
+        kicker="Per-device · plaintext shown once"
+        title={
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-ink">API tokens</h1>
+            <span>API tokens</span>
             {user?.tenantId ? <Badge tone="accent">tenant: {user.tenantId}</Badge> : null}
           </div>
-          <p className="text-sm text-dim mt-1">
-            Mint a token per device. All tokens authenticate as the same tenant — only the label
-            distinguishes them. Plaintext is shown <span className="text-ink">once</span> at mint
-            and is unrecoverable; revoke and mint again if you lose it.
-          </p>
-        </div>
-        <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </Button>
-      </header>
-
+        }
+        subtitle="Mint a token per device. Plaintext is shown once at mint — revoke and mint again if you lose it."
+        actions={
+          <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        }
+      />
+      <div className="p-5 space-y-3">
       <MintCard
         projects={projects}
         onMinted={(token, label, projectId) => {
@@ -235,7 +235,8 @@ export function MyTokensPage() {
           </>
         }
       />
-    </div>
+      </div>
+    </>
   );
 }
 

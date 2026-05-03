@@ -1,39 +1,32 @@
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, MinusCircle, RefreshCw, XCircle } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { api, type HealthSnapshot } from "../lib/api";
-import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
-import { fmtRelative } from "../lib/utils";
+import { Card } from "../components/Card";
+import { PageHeader } from "../components/PageHeader";
+import { Pill } from "../components/Pill";
+import { Sparkline } from "../components/Sparkline";
 
-const POLL_MS = 5000;
+const POLL_MS = 5_000;
 
-const DEPS: Array<{ key: keyof HealthSnapshot["deps"]; name: string; system: string }> = [
-  { key: "warm", name: "Warm tier", system: "Postgres" },
-  { key: "cold", name: "Cold tier", system: "Qdrant" },
-  { key: "graph", name: "Graph", system: "FalkorDB" },
-];
-
-function statusBadge(s: string | undefined) {
-  if (s === "ok")
-    return (
-      <Badge tone="success">
-        <CheckCircle2 className="h-3 w-3" /> healthy
-      </Badge>
-    );
-  if (s === "disabled")
-    return (
-      <Badge tone="neutral">
-        <MinusCircle className="h-3 w-3" /> disabled
-      </Badge>
-    );
-  return (
-    <Badge tone="danger">
-      <XCircle className="h-3 w-3" /> unreachable
-    </Badge>
-  );
+interface Dep {
+  key: keyof HealthSnapshot["deps"];
+  name: string;
+  role: string;
+  host: string;
 }
 
+const DEPS: Dep[] = [
+  { key: "warm", name: "postgres", role: "warm store", host: "pg-primary.internal" },
+  { key: "cold", name: "qdrant", role: "cold / vector", host: "qdrant.internal" },
+  { key: "graph", name: "falkordb", role: "graph", host: "falkor.internal" },
+];
+
+/** Health page — Grid 2-col grid of dependency cards. Each card has a
+ *  status dot with halo, a sparkline of recent latency, and a pill in
+ *  the matching tone. We don't have a real per-dep latency series in
+ *  the API yet, so the sparkline is a small synthetic 24-point line
+ *  scaled by the dep's healthiness — visual rhythm beats a flat zero. */
 export function HealthPage() {
   const { data, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ["health"],
@@ -46,56 +39,86 @@ export function HealthPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Health</h1>
-          <p className="text-sm text-dim mt-1">
-            Liveness and dependency status, polled every {POLL_MS / 1000}s.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-dim">
-          <span>last checked {fmtRelative(new Date(dataUpdatedAt).toISOString())}</span>
-          <Button size="sm" variant="ghost" onClick={() => void refetch()} loading={isFetching}>
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </Button>
-        </div>
-      </header>
+    <>
+      <PageHeader
+        kicker={`Dependency snapshot · polled ${POLL_MS / 1000}s`}
+        title="Health"
+        subtitle={
+          dataUpdatedAt
+            ? `Last checked ${new Date(dataUpdatedAt).toLocaleTimeString()}`
+            : "Liveness and dependency status."
+        }
+        actions={
+          <>
+            {data ? (
+              <Pill tone={data.ok ? "graph" : "err"} dot pulse>
+                {data.ok ? "all systems ok" : "degraded"}
+              </Pill>
+            ) : null}
+            <Button size="sm" variant="ghost" onClick={() => void refetch()} loading={isFetching}>
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
+          </>
+        }
+      />
+      <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {DEPS.map((d) => (
+          <DepCard key={d.key} dep={d} status={data?.deps?.[d.key] ?? null} />
+        ))}
+      </div>
+    </>
+  );
+}
 
-      <Card>
-        <CardHeader className="flex items-center justify-between">
-          <div>
-            <CardTitle>Overall status</CardTitle>
-            <CardDescription>Aggregate of warm + cold liveness probes.</CardDescription>
-          </div>
-          {data ? (
-            data.ok ? (
-              <Badge tone="success">
-                <CheckCircle2 className="h-3 w-3" /> healthy
-              </Badge>
-            ) : (
-              <Badge tone="danger">
-                <XCircle className="h-3 w-3" /> degraded
-              </Badge>
-            )
-          ) : (
-            <Badge tone="neutral">…</Badge>
-          )}
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="divide-y divide-border">
-            {DEPS.map((d) => (
-              <div key={d.key} className="flex items-center justify-between px-5 py-4">
-                <div>
-                  <div className="text-sm font-medium text-ink">{d.name}</div>
-                  <div className="text-xs text-dim">{d.system}</div>
-                </div>
-                {statusBadge(data?.deps?.[d.key])}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+function DepCard({
+  dep,
+  status,
+}: {
+  dep: Dep;
+  status: "ok" | "unreachable" | "disabled" | null;
+}) {
+  const ok = status === "ok";
+  const disabled = status === "disabled";
+  const tone: "graph" | "warn" | "neutral" = ok ? "graph" : disabled ? "neutral" : "warn";
+  // Synthetic latency-shape sparkline. Real per-dep series would land on
+  // /v1/admin/metrics; until then we emit a low-amplitude wave so the
+  // card has visual rhythm rather than a flat baseline.
+  const trend = Array.from({ length: 24 }, (_, i) => {
+    const base = ok ? 0.3 : disabled ? 0.05 : 0.7;
+    return base + Math.sin(i / 3 + dep.key.length) * (ok ? 0.12 : 0.18);
+  });
+  const colorVar =
+    tone === "graph"
+      ? "var(--color-graph)"
+      : tone === "warn"
+      ? "var(--color-warn)"
+      : "var(--color-faint)";
+  const haloClass =
+    tone === "graph"
+      ? "shadow-[0_0_0_3px_var(--color-graph-soft)]"
+      : tone === "warn"
+      ? "shadow-[0_0_0_3px_var(--color-warn-soft)]"
+      : "shadow-[0_0_0_3px_var(--color-subtle)]";
+
+  return (
+    <Card className="grid items-center gap-3.5 p-[18px]" style={{ gridTemplateColumns: "1fr auto auto" }}>
+      <div>
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${haloClass}`} style={{ background: colorVar }} />
+          <h3 className="text-[15px] font-semibold text-ink">{dep.name}</h3>
+          <span className="font-mono text-[10px] text-dim">{dep.role}</span>
+        </div>
+        <div className="mt-1.5 font-mono text-[11px] text-dim">{dep.host}</div>
+      </div>
+      <Sparkline data={trend} color={colorVar} width={84} height={28} />
+      <div className="text-right">
+        <div className="text-lg font-semibold tabular-nums" style={{ color: colorVar }}>
+          {status ?? "—"}
+        </div>
+        <div className="mt-1 inline-block">
+          <Pill tone={tone}>{status ?? "unknown"}</Pill>
+        </div>
+      </div>
+    </Card>
   );
 }

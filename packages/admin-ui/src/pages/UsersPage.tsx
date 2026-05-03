@@ -16,6 +16,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
+import { PageHeader } from "../components/PageHeader";
 import { useToast } from "../components/Toast";
 import { fmtRelative } from "../lib/utils";
 
@@ -46,19 +47,18 @@ export function UsersPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Users</h1>
-          <p className="text-sm text-dim mt-1">
-            Manage dashboard logins. Admins see everything; users are scoped to one tenant.
-          </p>
-        </div>
-        <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </Button>
-      </header>
-
+    <>
+      <PageHeader
+        kicker="Dashboard auth · username + password"
+        title="Users"
+        subtitle="Manage dashboard logins. Admins see everything; users are scoped to one tenant."
+        actions={
+          <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        }
+      />
+      <div className="p-5 space-y-3">
       <CreateUserCard tenants={tenants} onCreated={refresh} />
 
       <div className="space-y-3">
@@ -93,7 +93,8 @@ export function UsersPage() {
           </Card>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
