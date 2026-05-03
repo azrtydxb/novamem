@@ -50,6 +50,21 @@ export interface MetricsSnapshot {
   uptime_ms: number;
 }
 
+export interface TokenMetricsRow {
+  /** Hash, not the plaintext — never expose plaintext tokens. */
+  tokenHash: string;
+  label: string | null;
+  counters: {
+    queries_total: number;
+    remembers_total: number;
+    forgets_total: number;
+  };
+  rates: {
+    queries_per_sec_60s: number;
+    remembers_per_sec_60s: number;
+  };
+}
+
 export interface TenantMetricsSnapshot {
   tenantId: string;
   counters: Record<TenantCounterName, number>;
@@ -62,6 +77,9 @@ export interface TenantMetricsSnapshot {
     queries_per_sec_60s: number;
     remembers_per_sec_60s: number;
   };
+  /** Optional per-token breakdown — populated when the caller passes a
+   *  `tokenHashes` filter (typically the requesting user's own tokens). */
+  tokens?: TokenMetricsRow[];
   uptime_ms: number;
 }
 
@@ -126,6 +144,32 @@ function newTenantSlot(): TenantSlot {
   };
 }
 
+interface TokenSlot {
+  tenantId: string;
+  label: string | null;
+  counters: { queries_total: number; remembers_total: number; forgets_total: number };
+  queryRing: TimestampRing;
+  rememberRing: TimestampRing;
+}
+
+function newTokenSlot(tenantId: string, label: string | null): TokenSlot {
+  return {
+    tenantId,
+    label,
+    counters: { queries_total: 0, remembers_total: 0, forgets_total: 0 },
+    queryRing: new TimestampRing(),
+    rememberRing: new TimestampRing(),
+  };
+}
+
+/** Identity for a tenant token in metrics. We carry the hash (stable id)
+ *  and the label so the admin UI can render a human-readable line in the
+ *  per-token chart without a follow-up DB query. */
+export interface TokenIdentity {
+  hash: string;
+  label: string | null;
+}
+
 export class MetricsCollector {
   /** Global lifecycle counters — process-wide, not attributable to a tenant. */
   private readonly globalCounters = {
@@ -137,6 +181,11 @@ export class MetricsCollector {
 
   /** Per-tenant counters + rate rings. Created lazily on first observation. */
   private readonly perTenant = new Map<string, TenantSlot>();
+
+  /** Per-token slots, keyed by token hash. Created lazily on first
+   *  observation and dropped when the parent tenant is forgotten or the
+   *  token is revoked. */
+  private readonly perToken = new Map<string, TokenSlot>();
 
   private lastDecayAt: Date | null = null;
   private readonly startedAt = Date.now();
@@ -165,25 +214,56 @@ export class MetricsCollector {
     return s;
   }
 
-  /** Record a search call. Pass tenantId + per-tier hit counts. */
-  recordQuery(tenantId: string, hits: { warm: number; cold: number; graph: number }): void {
+  private tokenSlot(tenantId: string, token: TokenIdentity): TokenSlot {
+    let s = this.perToken.get(token.hash);
+    if (!s) {
+      s = newTokenSlot(tenantId, token.label);
+      this.perToken.set(token.hash, s);
+    } else if (s.label !== token.label) {
+      // Re-label if the operator renames a token between observations.
+      s.label = token.label;
+    }
+    return s;
+  }
+
+  /** Record a search call. Pass tenantId + per-tier hit counts. When the
+   *  request was authenticated by a tenant bearer token, pass `token` so
+   *  the per-token series in /v1/me/metrics reflects this call. */
+  recordQuery(
+    tenantId: string,
+    hits: { warm: number; cold: number; graph: number },
+    token?: TokenIdentity,
+  ): void {
+    const now = this.now();
     const s = this.slot(tenantId);
     s.counters.queries_total += 1;
     s.counters.hits_warm_total += hits.warm;
     s.counters.hits_cold_total += hits.cold;
     s.counters.hits_graph_total += hits.graph;
     if (hits.warm + hits.cold + hits.graph === 0) s.counters.queries_zero_hit += 1;
-    s.queryRing.record(this.now());
+    s.queryRing.record(now);
+    if (token) {
+      const t = this.tokenSlot(tenantId, token);
+      t.counters.queries_total += 1;
+      t.queryRing.record(now);
+    }
   }
 
-  recordRemember(tenantId: string): void {
+  recordRemember(tenantId: string, token?: TokenIdentity): void {
+    const now = this.now();
     const s = this.slot(tenantId);
     s.counters.remembers_total += 1;
-    s.rememberRing.record(this.now());
+    s.rememberRing.record(now);
+    if (token) {
+      const t = this.tokenSlot(tenantId, token);
+      t.counters.remembers_total += 1;
+      t.rememberRing.record(now);
+    }
   }
 
-  recordForget(tenantId: string): void {
+  recordForget(tenantId: string, token?: TokenIdentity): void {
     this.slot(tenantId).counters.forgets_total += 1;
+    if (token) this.tokenSlot(tenantId, token).counters.forgets_total += 1;
   }
 
   recordPromotion(n = 1): void {
@@ -205,9 +285,19 @@ export class MetricsCollector {
 
   /** Free a tenant's in-memory slot. Called from `engine.deleteTenant`
    *  so the perTenant Map doesn't accumulate dead entries forever
-   *  (review finding P2-5). */
+   *  (review finding P2-5). Also clears any per-token slots scoped to
+   *  the tenant. */
   forgetTenant(tenantId: string): void {
     this.perTenant.delete(tenantId);
+    for (const [hash, slot] of this.perToken) {
+      if (slot.tenantId === tenantId) this.perToken.delete(hash);
+    }
+  }
+
+  /** Drop a token's slot — called when the token is revoked so the
+   *  /v1/me/metrics view stops including it. */
+  forgetToken(tokenHash: string): void {
+    this.perToken.delete(tokenHash);
   }
 
   /** Aggregate per-tenant counters across all tenants. */
@@ -316,7 +406,10 @@ export class MetricsCollector {
     return lines.join("\n") + "\n";
   }
 
-  async snapshotForTenant(tenantId: string): Promise<TenantMetricsSnapshot> {
+  async snapshotForTenant(
+    tenantId: string,
+    opts: { tokens?: Array<{ hash: string; label: string | null }> } = {},
+  ): Promise<TenantMetricsSnapshot> {
     const now = this.now();
     const slot = this.slot(tenantId);
     const seconds = RATE_WINDOW_MS / 1000;
@@ -335,6 +428,33 @@ export class MetricsCollector {
       gauges = { warm_entries: warm, cold_entries: cold, graph_edges: edges };
     }
 
+    let tokens: TokenMetricsRow[] | undefined;
+    if (opts.tokens) {
+      // Always emit a row per requested token — even if it has no observed
+      // traffic yet — so the UI can show a zero-line for freshly-minted
+      // tokens. Use the caller-supplied label as the source of truth.
+      tokens = opts.tokens.map(({ hash, label }) => {
+        const t = this.perToken.get(hash);
+        if (!t) {
+          return {
+            tokenHash: hash,
+            label,
+            counters: { queries_total: 0, remembers_total: 0, forgets_total: 0 },
+            rates: { queries_per_sec_60s: 0, remembers_per_sec_60s: 0 },
+          };
+        }
+        return {
+          tokenHash: hash,
+          label,
+          counters: { ...t.counters },
+          rates: {
+            queries_per_sec_60s: t.queryRing.count(now) / seconds,
+            remembers_per_sec_60s: t.rememberRing.count(now) / seconds,
+          },
+        };
+      });
+    }
+
     return {
       tenantId,
       counters: { ...slot.counters },
@@ -343,6 +463,7 @@ export class MetricsCollector {
         queries_per_sec_60s: slot.queryRing.count(now) / seconds,
         remembers_per_sec_60s: slot.rememberRing.count(now) / seconds,
       },
+      ...(tokens ? { tokens } : {}),
       uptime_ms: now - this.startedAt,
     };
   }

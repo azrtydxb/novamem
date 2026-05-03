@@ -276,18 +276,27 @@ export class WarmStore {
    *  to send. */
   async resolveTenantToken(
     plaintext: string,
-  ): Promise<{ tenantId: string; projectId: string | null } | null> {
+  ): Promise<{
+    tenantId: string;
+    projectId: string | null;
+    tokenHash: string;
+    label: string | null;
+  } | null> {
     if (!plaintext) return null;
     const tokenHash = hashToken(plaintext);
-    const r = await this.pool.query<{ tenant_id: string; project_id: string | null }>(
+    const r = await this.pool.query<{
+      tenant_id: string;
+      project_id: string | null;
+      label: string | null;
+    }>(
       `UPDATE tenant_tokens SET last_used_at = now()
         WHERE token_hash = $1 AND revoked_at IS NULL
-        RETURNING tenant_id, project_id`,
+        RETURNING tenant_id, project_id, label`,
       [tokenHash],
     );
     const row = r.rows[0];
     if (!row) return null;
-    return { tenantId: row.tenant_id, projectId: row.project_id };
+    return { tenantId: row.tenant_id, projectId: row.project_id, tokenHash, label: row.label };
   }
 
   async revokeTenantToken(plaintext: string): Promise<boolean> {
@@ -311,6 +320,28 @@ export class WarmStore {
       [tokenHash, tenantId],
     );
     return (r.rowCount ?? 0) > 0;
+  }
+
+  /** Tokens created by a specific user — used to scope per-token metrics
+   *  to "my own tokens" on the user dashboard. Excludes revoked. */
+  async listTokensCreatedByUser(
+    userId: string,
+  ): Promise<Array<{ tokenHash: string; label: string | null; tenantId: string }>> {
+    const r = await this.pool.query<{
+      token_hash: string;
+      label: string | null;
+      tenant_id: string;
+    }>(
+      `SELECT token_hash, label, tenant_id FROM tenant_tokens
+        WHERE created_by_user_id = $1 AND revoked_at IS NULL
+        ORDER BY created_at ASC`,
+      [userId],
+    );
+    return r.rows.map((row) => ({
+      tokenHash: row.token_hash,
+      label: row.label,
+      tenantId: row.tenant_id,
+    }));
   }
 
   async listTenantTokens(

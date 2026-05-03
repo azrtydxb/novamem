@@ -110,6 +110,10 @@ export interface MetricsSnapshot {
     queries_per_sec_60s: number;
     remembers_per_sec_60s: number;
   };
+  /** Per-token rates for the calling user's tokens. Only set when the
+   *  snapshot was returned from /v1/me/metrics; admin /v1/admin/metrics
+   *  has no notion of "my tokens". */
+  tokens?: TokenMetricsRow[];
   uptime_ms: number;
 }
 
@@ -188,5 +192,15 @@ export interface TenantMetricsSnapshot {
     queries_per_sec_60s: number;
     remembers_per_sec_60s: number;
   };
+  /** Per-token rolling rates — present on the /v1/me/metrics response so
+   *  the dashboard can chart individual token usage alongside the total. */
+  tokens?: TokenMetricsRow[];
   uptime_ms: number;
+}
+
+export interface TokenMetricsRow {
+  tokenHash: string;
+  label: string | null;
+  counters: { queries_total: number; remembers_total: number; forgets_total: number };
+  rates: { queries_per_sec_60s: number; remembers_per_sec_60s: number };
 }

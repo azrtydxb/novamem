@@ -7,7 +7,7 @@ import { ColdStore } from "../cold-store.js";
 import { GraphStore } from "../graph-store.js";
 import { WarmStore } from "../warm-store/index.js";
 import type { Embedder } from "../embeddings.js";
-import type { MetricsCollector } from "../admin/metrics.js";
+import type { MetricsCollector, TokenIdentity } from "../admin/metrics.js";
 import type {
   HealthSnapshot,
   MemoryStats,
@@ -94,7 +94,11 @@ export class MemoryEngine {
     this.logger.warn("[engine] graph store unreachable — search degraded to keyword + vector only");
   }
 
-  async remember(tenantId: string, req: RememberRequest): Promise<{ id: string }> {
+  async remember(
+    tenantId: string,
+    req: RememberRequest,
+    token?: TokenIdentity,
+  ): Promise<{ id: string }> {
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
     const id = await this.warm.insertEntry({
@@ -120,7 +124,7 @@ export class MemoryEngine {
         await this.linkVectorNeighbors(tenantId, projectId, id, namespace, embedding);
       }
     }
-    this.metrics?.recordRemember(tenantId);
+    this.metrics?.recordRemember(tenantId, token);
     return { id };
   }
 
@@ -166,7 +170,11 @@ export class MemoryEngine {
     }
   }
 
-  async search(tenantId: string, req: SearchRequest): Promise<{ results: SearchResult[]; degraded: boolean }> {
+  async search(
+    tenantId: string,
+    req: SearchRequest,
+    token?: TokenIdentity,
+  ): Promise<{ results: SearchResult[]; degraded: boolean }> {
     const namespace = req.namespace ?? "default";
     const k = req.k ?? 10;
     const projectId = req.project ?? null;
@@ -259,7 +267,7 @@ export class MemoryEngine {
         if (f.signals.vector) coldHits++;
         if (f.signals.graph) graphHits++;
       }
-      this.metrics.recordQuery(tenantId, { warm: warmHits, cold: coldHits, graph: graphHits });
+      this.metrics.recordQuery(tenantId, { warm: warmHits, cold: coldHits, graph: graphHits }, token);
     }
     return { results, degraded };
   }
@@ -411,11 +419,11 @@ export class MemoryEngine {
   async forget(
     tenantId: string,
     id: string,
-    opts: { project?: string | null } = {},
+    opts: { project?: string | null; token?: TokenIdentity } = {},
   ): Promise<{ deleted: boolean; coldDeleteOk: boolean }> {
     const e = await this.warm.getEntry(tenantId, id, { projectId: opts.project ?? null });
     if (!e) return { deleted: false, coldDeleteOk: true };
-    this.metrics?.recordForget(tenantId);
+    this.metrics?.recordForget(tenantId, opts.token);
     const pool = this.warm.pool;
     const isProject = e.projectId !== null;
     // Scope clause for the by-id DELETEs. When the row is project-scoped,

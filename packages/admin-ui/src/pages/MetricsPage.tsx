@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -41,6 +42,34 @@ interface HistoryPoint {
   warmHits: number;
   coldHits: number;
   graphHits: number;
+  /** Per-token qps keyed by tokenHash. Sparse — only tokens that existed
+   *  in this snapshot have a value; `undefined` is rendered as a gap by
+   *  recharts so a freshly-revoked token disappears cleanly from the chart. */
+  byToken: Record<string, number>;
+}
+
+/** Stable colour palette for per-token lines. Cycles after 8 tokens —
+ *  more than enough for a typical user, and we'd switch to a hash-based
+ *  scheme if anyone hit that wall. */
+const TOKEN_COLORS = [
+  "#fbbf24",
+  "#f87171",
+  "#a78bfa",
+  "#34d399",
+  "#60a5fa",
+  "#f472b6",
+  "#fb923c",
+  "#22d3ee",
+];
+
+function tokenColor(idx: number): string {
+  return TOKEN_COLORS[idx % TOKEN_COLORS.length]!;
+}
+
+function tokenShortLabel(row: { tokenHash: string; label: string | null }): string {
+  return row.label && row.label.trim() !== ""
+    ? row.label
+    : `token ${row.tokenHash.slice(0, 6)}`;
 }
 
 /** Discriminated union: admins fetch the global snapshot which includes
@@ -57,7 +86,11 @@ function isAdminSnapshot(s: AnySnapshot): s is { kind: "admin"; data: MetricsSna
 export function MetricsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const endpoint = isAdmin ? "/v1/admin/metrics" : "/v1/me/metrics";
+  // Always call /v1/me/metrics so we get the per-token series (admin
+  // gets the global counters + their own tokens; user gets tenant-scoped
+  // counters + their own tokens). The admin-only /v1/admin/metrics
+  // endpoint still exists for Prometheus / scripts.
+  const endpoint = "/v1/me/metrics";
 
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const lastCountersRef = useRef<AnySnapshot["data"]["counters"] | null>(null);
@@ -91,6 +124,11 @@ export function MetricsPage() {
     setHistory((cur) => {
       const last = cur[cur.length - 1];
       const t = Date.now();
+      const byToken: Record<string, number> = {};
+      const tokenRows = snap.data.tokens;
+      if (tokenRows) {
+        for (const row of tokenRows) byToken[row.tokenHash] = row.rates.queries_per_sec_60s;
+      }
       const point: HistoryPoint = {
         t,
         qps: snap.data.rates.queries_per_sec_60s,
@@ -98,6 +136,7 @@ export function MetricsPage() {
         warmHits: prev ? snap.data.counters.hits_warm_total - prev.hits_warm_total : 0,
         coldHits: prev ? snap.data.counters.hits_cold_total - prev.hits_cold_total : 0,
         graphHits: prev ? snap.data.counters.hits_graph_total - prev.hits_graph_total : 0,
+        byToken,
       };
       const out = last && t - last.t < 1000 ? cur : [...cur, point];
       return out.slice(-HISTORY_POINTS);
@@ -200,26 +239,23 @@ export function MetricsPage() {
         )}
       </div>
 
-      {/* Activity chart */}
+      {/* Activity chart — total queries/remembers as filled areas, plus a
+          dashed line per individual token so the user can see their
+          breakdown alongside the aggregate. */}
       <Card>
         <CardHeader>
           <CardTitle>Throughput</CardTitle>
-          <CardDescription>Queries and remembers per second, last {HISTORY_POINTS * (POLL_MS / 1000)}s.</CardDescription>
+          <CardDescription>
+            Queries and remembers per second, last {HISTORY_POINTS * (POLL_MS / 1000)}s.
+            {snap.data.tokens && snap.data.tokens.length > 0
+              ? " Dashed lines show per-token query rates."
+              : null}
+          </CardDescription>
         </CardHeader>
         <CardContent className="pt-2">
-          <div className="h-48">
+          <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={history} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="qps" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7c9cff" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#7c9cff" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="rps" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#4ade80" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#4ade80" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <LineChart data={history} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                 <CartesianGrid stroke="#222836" strokeDasharray="2 4" />
                 <XAxis
                   dataKey="t"
@@ -238,29 +274,108 @@ export function MetricsPage() {
                     fontSize: 12,
                   }}
                   labelFormatter={(t) => new Date(t as number).toLocaleTimeString()}
-                  formatter={(v: number) => v.toFixed(2)}
+                  formatter={(v: number) => (typeof v === "number" ? v.toFixed(2) : v)}
                 />
-                <Area
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
+                <Line
                   type="monotone"
                   dataKey="qps"
-                  name="queries/s"
+                  name="queries/s (total)"
                   stroke="#7c9cff"
                   strokeWidth={2}
-                  fill="url(#qps)"
+                  dot={false}
+                  isAnimationActive={false}
                 />
-                <Area
+                <Line
                   type="monotone"
                   dataKey="rps"
-                  name="remembers/s"
+                  name="remembers/s (total)"
                   stroke="#4ade80"
                   strokeWidth={2}
-                  fill="url(#rps)"
+                  dot={false}
+                  isAnimationActive={false}
                 />
-              </AreaChart>
+                {(snap.data.tokens ?? []).map((tok, i) => (
+                  <Line
+                    key={tok.tokenHash}
+                    type="monotone"
+                    dataKey={(p: HistoryPoint) => p.byToken[tok.tokenHash] ?? 0}
+                    name={tokenShortLabel(tok)}
+                    stroke={tokenColor(i)}
+                    strokeWidth={1.5}
+                    strokeDasharray="3 3"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                ))}
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
+
+      {/* Per-token totals — a small table beneath the chart so it's clear
+          which row maps to which line, and so the lifetime totals show
+          even when current rolling rate is zero. */}
+      {snap.data.tokens && snap.data.tokens.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Per-token usage</CardTitle>
+            <CardDescription>
+              Lifetime counters and rolling 60s rates for each of your tokens.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-text-muted border-b border-border">
+                    <th className="text-left font-medium py-2 pl-2">Token</th>
+                    <th className="text-right font-medium py-2">Queries</th>
+                    <th className="text-right font-medium py-2">Remembers</th>
+                    <th className="text-right font-medium py-2">Forgets</th>
+                    <th className="text-right font-medium py-2">Q/s</th>
+                    <th className="text-right font-medium py-2 pr-2">R/s</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snap.data.tokens.map((tok, i) => (
+                    <tr key={tok.tokenHash} className="border-b border-border/40">
+                      <td className="py-2 pl-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block h-2 w-3 rounded-sm"
+                            style={{ background: tokenColor(i) }}
+                          />
+                          <span className="text-text">{tokenShortLabel(tok)}</span>
+                          <span className="text-[10px] text-text-subtle font-mono">
+                            {tok.tokenHash.slice(0, 8)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-text">
+                        {fmtNumber(tok.counters.queries_total)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-text">
+                        {fmtNumber(tok.counters.remembers_total)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-text">
+                        {fmtNumber(tok.counters.forgets_total)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-text-muted">
+                        {tok.rates.queries_per_sec_60s.toFixed(2)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-text-muted pr-2">
+                        {tok.rates.remembers_per_sec_60s.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Hits per tier + Store sizes side-by-side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
