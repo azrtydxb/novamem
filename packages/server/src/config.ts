@@ -20,17 +20,10 @@ export const ConfigSchema = z
         // - "tenant": one-token-per-tenant via tenant_tokens table, real isolation.
         mode: z.enum(["none", "bearer", "tenant"]).default("none"),
         token: z.string().optional(),
-        /** Admin token unlocks /v1/admin/* (create tenants, mint tokens).
-         *  Required when mode = "tenant" — without it, you can't bootstrap. */
-        adminToken: z.string().optional(),
       })
       .refine((v) => v.mode !== "bearer" || !!v.token, {
         message: "auth.mode = 'bearer' requires auth.token (NOVAMEM_AUTH_TOKEN)",
         path: ["token"],
-      })
-      .refine((v) => v.mode !== "tenant" || !!v.adminToken, {
-        message: "auth.mode = 'tenant' requires auth.adminToken (NOVAMEM_ADMIN_TOKEN) for tenant bootstrap",
-        path: ["adminToken"],
       }),
     warm: z.object({
       url: z.string(),
@@ -86,7 +79,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     auth: {
       mode: env.NOVAMEM_AUTH_MODE,
       token: env.NOVAMEM_AUTH_TOKEN,
-      adminToken: env.NOVAMEM_ADMIN_TOKEN,
     },
     warm: {
       url: env.NOVAMEM_WARM_URL ?? "postgres://novamem:novamem@localhost:5432/novamem",

@@ -23,7 +23,7 @@ async function main() {
     // eslint-disable-next-line no-console
     console.warn(
       "[novamem] WARNING: auth.mode=none — every request is accepted as the 'public' tenant. " +
-        "Set NOVAMEM_AUTH_MODE=tenant + NOVAMEM_ADMIN_TOKEN for real isolation, " +
+        "Set NOVAMEM_AUTH_MODE=tenant for real isolation, " +
         "or =bearer + NOVAMEM_AUTH_TOKEN for a shared single-tenant token.",
     );
   } else if (cfg.auth.mode === "bearer") {

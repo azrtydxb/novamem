@@ -17,7 +17,6 @@ function makeApp(
   opts: {
     authMode?: "none" | "bearer" | "tenant";
     token?: string;
-    adminToken?: string;
     adminDashboard?: boolean;
     withMetrics?: boolean;
   } = {},
@@ -45,12 +44,38 @@ function makeApp(
   const app = buildHttpServer({
     engine,
     warm: asWarm(warm),
-    auth: { mode: opts.authMode ?? "none", token: opts.token, adminToken: opts.adminToken },
+    auth: { mode: opts.authMode ?? "none", token: opts.token },
     rateLimitPerMinute: 100_000, // effectively off for tests
     metrics,
     adminDashboard: opts.adminDashboard,
   });
   return { app, warm, cold, graph, metrics };
+}
+
+/** Mint a session-admin Bearer header directly via the fake warm store —
+ *  bypasses the login + bcrypt path (tested separately) so admin-route
+ *  tests don't have to do round-trips. The legacy NOVAMEM_ADMIN_TOKEN
+ *  was removed; admin auth is now always per-user via session. */
+async function adminAuth(
+  warm: FakeWarmStore,
+): Promise<{ authorization: string }> {
+  const id = `admin-${Math.random().toString(36).slice(2, 10)}`;
+  await warm.createUser({
+    username: id,
+    passwordHash: "test-bcrypt-not-checked-for-session-resolve",
+    role: "admin",
+    tenantId: null,
+  });
+  // Look up the row to get its real id (createUser assigns one).
+  let userId = id;
+  for (const u of warm.users.values()) {
+    if (u.username === id) {
+      userId = u.id;
+      break;
+    }
+  }
+  const sess = await warm.createSession(userId, 24 * 3600 * 1000);
+  return { authorization: `Bearer ${sess.token}` };
 }
 
 describe("http: /health", () => {
@@ -226,30 +251,31 @@ describe("http: SSE/MCP transport routes", () => {
 
 describe("http: tenant mode + admin routes", () => {
   async function setupTenantApp() {
-    const { app, warm } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     // Bootstrap two tenants and a token each.
     const mkTenant = async (id: string) => {
       await app.inject({
         method: "POST",
         url: "/v1/admin/tenants",
         payload: { id, name: id },
-        headers: { authorization: "Bearer admin-secret" },
+        headers: adminH,
       });
       const tok = await app.inject({
         method: "POST",
         url: `/v1/admin/tenants/${id}/tokens`,
         payload: { label: "test" },
-        headers: { authorization: "Bearer admin-secret" },
+        headers: adminH,
       });
       return tok.json().token as string;
     };
     const tokenA = await mkTenant("tenant_a");
     const tokenB = await mkTenant("tenant_b");
-    return { app, warm, tokenA, tokenB };
+    return { app, warm, tokenA, tokenB, adminH };
   }
 
   it("rejects requests without a recognised token", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app } = makeApp({ authMode: "tenant" });
     const r = await app.inject({
       method: "POST",
       url: "/v1/search",
@@ -324,7 +350,7 @@ describe("http: tenant mode + admin routes", () => {
   });
 
   it("revoked tokens stop working immediately", async () => {
-    const { app, tokenA } = await setupTenantApp();
+    const { app, tokenA, adminH } = await setupTenantApp();
     // Confirm it works.
     const r1 = await app.inject({
       method: "POST",
@@ -338,7 +364,7 @@ describe("http: tenant mode + admin routes", () => {
       method: "POST",
       url: "/v1/admin/tokens/revoke",
       payload: { token: tokenA },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     // Same call now 401s.
     const r2 = await app.inject({
@@ -351,18 +377,19 @@ describe("http: tenant mode + admin routes", () => {
   });
 
   it("create-token response carries the warning that it's shown once", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     await app.inject({
       method: "POST",
       url: "/v1/admin/tenants",
       payload: { id: "t1", name: "t1" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const r = await app.inject({
       method: "POST",
       url: "/v1/admin/tenants/t1/tokens",
       payload: {},
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(201);
     expect(r.json().token).toMatch(/^nm_/);
@@ -370,30 +397,27 @@ describe("http: tenant mode + admin routes", () => {
   });
 
   it("rejects invalid tenant ids at creation", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     const r = await app.inject({
       method: "POST",
       url: "/v1/admin/tenants",
       payload: { id: "Has Spaces!", name: "x" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(400);
-  });
-
-  it("throws at construction when tenant mode lacks admin token", () => {
-    expect(() => makeApp({ authMode: "tenant" })).toThrow(/admin/i);
   });
 });
 
 describe("http: /v1/admin/metrics", () => {
   it("401 without admin token", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret" });
+    const { app } = makeApp({});
     const r = await app.inject({ method: "GET", url: "/v1/admin/metrics" });
     expect(r.statusCode).toBe(401);
   });
 
   it("401 with the wrong admin token", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret" });
+    const { app } = makeApp({});
     const r = await app.inject({
       method: "GET",
       url: "/v1/admin/metrics",
@@ -403,11 +427,12 @@ describe("http: /v1/admin/metrics", () => {
   });
 
   it("200 with admin token, returns counters/gauges/rates shape", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret" });
+    const { app, warm } = makeApp({});
+    const adminH = await adminAuth(warm);
     const r = await app.inject({
       method: "GET",
       url: "/v1/admin/metrics",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(200);
     const body = r.json();
@@ -418,7 +443,8 @@ describe("http: /v1/admin/metrics", () => {
   });
 
   it("counters reflect engine activity end-to-end", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret" });
+    const { app, warm } = makeApp({});
+    const adminH = await adminAuth(warm);
     // Zero-hit query first, against an empty store, so neither warm FTS
     // nor cold can produce results.
     await app.inject({
@@ -446,7 +472,7 @@ describe("http: /v1/admin/metrics", () => {
     const r = await app.inject({
       method: "GET",
       url: "/v1/admin/metrics",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const body = r.json();
     expect(body.counters.remembers_total).toBe(1);
@@ -459,32 +485,35 @@ describe("http: /v1/admin/metrics", () => {
   });
 
   it("404 when NOVAMEM_ADMIN_DASHBOARD=0 (adminDashboard=false)", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret", adminDashboard: false });
+    const { app, warm } = makeApp({ adminDashboard: false });
+    const adminH = await adminAuth(warm);
     const r = await app.inject({
       method: "GET",
       url: "/v1/admin/metrics",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(404);
   });
 
   it("404 when no metrics collector is wired", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret", withMetrics: false });
+    const { app, warm } = makeApp({ withMetrics: false });
+    const adminH = await adminAuth(warm);
     const r = await app.inject({
       method: "GET",
       url: "/v1/admin/metrics",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(404);
   });
 
   it("graph_edges is null when graph store is unreachable", async () => {
-    const { app, graph } = makeApp({ adminToken: "admin-secret" });
+    const { app, graph, warm } = makeApp({});
+    const adminH = await adminAuth(warm);
     graph.connected = false;
     const r = await app.inject({
       method: "GET",
       url: "/v1/admin/metrics",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(200);
     expect(r.json().gauges.graph_edges).toBeNull();
@@ -493,7 +522,7 @@ describe("http: /v1/admin/metrics", () => {
 
 describe("http: /admin dashboard mount", () => {
   it("GET /admin returns 200 + HTML", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret" });
+    const { app } = makeApp({});
     const r = await app.inject({ method: "GET", url: "/admin" });
     expect(r.statusCode).toBe(200);
     expect(r.headers["content-type"]).toMatch(/text\/html/);
@@ -501,14 +530,14 @@ describe("http: /admin dashboard mount", () => {
   });
 
   it("GET /admin/ also returns 200 + HTML", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret" });
+    const { app } = makeApp({});
     const r = await app.inject({ method: "GET", url: "/admin/" });
     expect(r.statusCode).toBe(200);
     expect(r.headers["content-type"]).toMatch(/text\/html/);
   });
 
   it("a built JS asset is served with strict CSP header", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret" });
+    const { app } = makeApp({});
     // Vite hashes asset filenames; pull the actual entry path out of the
     // index.html so this test stays robust across rebuilds.
     const html = await app.inject({ method: "GET", url: "/admin" });
@@ -523,13 +552,13 @@ describe("http: /admin dashboard mount", () => {
   });
 
   it("/admin returns 404 when adminDashboard is disabled", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret", adminDashboard: false });
+    const { app } = makeApp({ adminDashboard: false });
     const r = await app.inject({ method: "GET", url: "/admin" });
     expect(r.statusCode).toBe(404);
   });
 
   it("/admin/assets/* returns 404 when adminDashboard is disabled", async () => {
-    const { app } = makeApp({ adminToken: "admin-secret", adminDashboard: false });
+    const { app } = makeApp({ adminDashboard: false });
     const r = await app.inject({ method: "GET", url: "/admin/assets/anything.js" });
     expect(r.statusCode).toBe(404);
   });
@@ -537,7 +566,7 @@ describe("http: /admin dashboard mount", () => {
   it("dashboard HTML is reachable in tenant mode without a tenant token", async () => {
     // The HTML shell must load before the user can paste their admin token.
     // The auth hook explicitly skips /admin/* — verify it doesn't 401.
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app } = makeApp({ authMode: "tenant" });
     const r = await app.inject({ method: "GET", url: "/admin" });
     expect(r.statusCode).toBe(200);
   });
@@ -545,25 +574,26 @@ describe("http: /admin dashboard mount", () => {
 
 describe("http: tenant CRUD — full lifecycle (admin)", () => {
   async function bootstrap() {
-    const { app, warm } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     await app.inject({
       method: "POST", url: "/v1/admin/tenants",
       payload: { id: "acme", name: "Acme" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const tk = await app.inject({
       method: "POST", url: "/v1/admin/tenants/acme/tokens",
       payload: { label: "first" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
-    return { app, warm, token: tk.json().token as string };
+    return { app, warm, adminH, token: tk.json().token as string };
   }
 
   it("listTenantTokens returns the tokenHash", async () => {
-    const { app } = await bootstrap();
+    const { app, adminH } = await bootstrap();
     const r = await app.inject({
       method: "GET", url: "/v1/admin/tenants/acme/tokens",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(200);
     expect(r.json().tokens[0].tokenHash).toBeDefined();
@@ -571,10 +601,10 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
   });
 
   it("revoke-by-hash invalidates the token without needing plaintext", async () => {
-    const { app, token } = await bootstrap();
+    const { app, token, adminH } = await bootstrap();
     const list = await app.inject({
       method: "GET", url: "/v1/admin/tenants/acme/tokens",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const hash = list.json().tokens[0].tokenHash as string;
 
@@ -588,7 +618,7 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
     // Revoke by hash (the dashboard path).
     const revoke = await app.inject({
       method: "POST", url: `/v1/admin/tenants/acme/tokens/${hash}/revoke`,
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(revoke.statusCode).toBe(200);
     expect(revoke.json().revoked).toBe(true);
@@ -602,29 +632,29 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
   });
 
   it("revoke-by-hash 404s on unknown hash", async () => {
-    const { app } = await bootstrap();
+    const { app, adminH } = await bootstrap();
     const fakeHash = "f".repeat(64);
     const r = await app.inject({
       method: "POST", url: `/v1/admin/tenants/acme/tokens/${fakeHash}/revoke`,
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(404);
   });
 
   it("revoke-by-hash 400s on a malformed hash", async () => {
-    const { app } = await bootstrap();
+    const { app, adminH } = await bootstrap();
     const r = await app.inject({
       method: "POST", url: `/v1/admin/tenants/acme/tokens/not-a-hash/revoke`,
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(400);
   });
 
-  it("revoke-by-hash requires the admin token", async () => {
-    const { app, token } = await bootstrap();
+  it("revoke-by-hash requires admin auth", async () => {
+    const { app, token, adminH } = await bootstrap();
     const list = await app.inject({
       method: "GET", url: "/v1/admin/tenants/acme/tokens",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const hash = list.json().tokens[0].tokenHash as string;
     const r = await app.inject({
@@ -635,7 +665,7 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
   });
 
   it("DELETE /v1/admin/tenants/:id purges the tenant + tokens + memories", async () => {
-    const { app, token } = await bootstrap();
+    const { app, token, adminH } = await bootstrap();
     // Add a memory so we can verify it gets purged.
     await app.inject({
       method: "POST", url: "/v1/remember",
@@ -645,7 +675,7 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
 
     const del = await app.inject({
       method: "DELETE", url: "/v1/admin/tenants/acme",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(del.statusCode).toBe(200);
     const body = del.json();
@@ -655,7 +685,7 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
     // Tenant gone from listing.
     const list = await app.inject({
       method: "GET", url: "/v1/admin/tenants",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(list.json().tenants.find((t: { id: string }) => t.id === "acme")).toBeUndefined();
 
@@ -668,24 +698,24 @@ describe("http: tenant CRUD — full lifecycle (admin)", () => {
   });
 
   it("DELETE refuses to delete the public tenant", async () => {
-    const { app } = await bootstrap();
+    const { app, adminH } = await bootstrap();
     const r = await app.inject({
       method: "DELETE", url: "/v1/admin/tenants/public",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(400);
   });
 
   it("DELETE on unknown tenant 404s", async () => {
-    const { app } = await bootstrap();
+    const { app, adminH } = await bootstrap();
     const r = await app.inject({
       method: "DELETE", url: "/v1/admin/tenants/does-not-exist",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(404);
   });
 
-  it("DELETE requires the admin token", async () => {
+  it("DELETE requires admin auth", async () => {
     const { app, token } = await bootstrap();
     const r = await app.inject({
       method: "DELETE", url: "/v1/admin/tenants/acme",
@@ -718,7 +748,7 @@ describe("http: OpenAPI + Swagger UI", () => {
   });
 
   it("/api-docs is reachable in tenant mode without a bearer", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app } = makeApp({ authMode: "tenant" });
     const r = await app.inject({ method: "GET", url: "/api-docs/static/index.html" });
     expect([200, 301, 302]).toContain(r.statusCode);
   });
@@ -726,7 +756,7 @@ describe("http: OpenAPI + Swagger UI", () => {
 
 describe("http: dashboard auth + RBAC", () => {
   async function setupWithAdmin(adminPwd = "supersecret") {
-    const { app, warm } = makeApp({ authMode: "tenant", adminToken: "legacy-admin" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
     const { hashPassword } = await import("./auth.js");
     const hash = await hashPassword(adminPwd);
     await warm.createUser({ username: "alice", passwordHash: hash, role: "admin", tenantId: null });
@@ -734,7 +764,7 @@ describe("http: dashboard auth + RBAC", () => {
   }
 
   it("/v1/auth/status reports bootstrap state", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "legacy-admin" });
+    const { app } = makeApp({ authMode: "tenant" });
     const r1 = await app.inject({ method: "GET", url: "/v1/auth/status" });
     expect(r1.statusCode).toBe(200);
     expect(r1.json()).toEqual({ ready: false, bootstrapNeeded: true });
@@ -939,7 +969,7 @@ describe("http: dashboard auth + RBAC", () => {
 
 describe("http: P0 regression tests", () => {
   async function setupBobInAcme() {
-    const { app, warm } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
     const { hashPassword } = await import("./auth.js");
     await warm.createTenant("acme", "Acme");
     await warm.createTenant("contoso", "Contoso");
@@ -957,32 +987,35 @@ describe("http: P0 regression tests", () => {
 
   // P0-1: tenant id `p_*` collision with project collection prefix
   it("P0-1: tenant id starting with `p_` is refused", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     const r = await app.inject({
       method: "POST", url: "/v1/admin/tenants",
       payload: { id: "p_evil", name: "Evil" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(400);
     expect(r.json().error).toMatch(/invalid request/i);
   });
 
   it("P0-1: tenant id exactly `p` is refused", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     const r = await app.inject({
       method: "POST", url: "/v1/admin/tenants",
       payload: { id: "p", name: "Just P" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(400);
   });
 
   it("P0-1: normal tenant ids still work", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     const r = await app.inject({
       method: "POST", url: "/v1/admin/tenants",
       payload: { id: "phoenix", name: "Phoenix" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(r.statusCode).toBe(201);
   });
@@ -1027,15 +1060,15 @@ describe("http: P0 regression tests", () => {
   // P0-3: per-username login throttle locks an account out after 5 failures
   // Backoff sleeps add up; allow extra time.
   it("P0-3: 5 wrong passwords lock the account out (429)", { timeout: 15_000 }, async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app } = makeApp({ authMode: "tenant" });
     const { hashPassword } = await import("./auth.js");
     const w = (app as unknown as { warmFake?: unknown }) as never;
     void w;
     // Register bob
-    const { warm } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { warm } = makeApp({ authMode: "tenant" });
     void warm; // throwaway — main test uses the throttle on the original app
     // Fresh app for an isolated throttle.
-    const { app: app2, warm: warm2 } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app: app2, warm: warm2 } = makeApp({ authMode: "tenant" });
     const hash = await hashPassword("right-password");
     await warm2.createUser({ username: "bob", passwordHash: hash, role: "user", tenantId: null });
     for (let i = 0; i < 5; i++) {
@@ -1119,22 +1152,23 @@ describe("http: P0 regression tests", () => {
 
   // P1-S6: admin actions write to the audit log
   it("P1-S6: tenant.create writes an audit-log entry", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     await app.inject({
       method: "POST", url: "/v1/admin/tenants",
       payload: { id: "audited", name: "Audited" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const log = await app.inject({
       method: "GET", url: "/v1/admin/audit-log",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     expect(log.statusCode).toBe(200);
     const e = log.json().entries.find((x: { action: string; target: string }) =>
       x.action === "tenant.create" && x.target === "audited",
     );
     expect(e).toBeDefined();
-    expect(e.actorLabel).toBe("legacy-admin-token");
+    expect(e.actorLabel).toMatch(/^user:admin-/);
   });
 
   // P2-1: Zod errors → 400 (covered by existing test rewritten earlier).
@@ -1142,7 +1176,7 @@ describe("http: P0 regression tests", () => {
 
 describe("http: projects (sub-brains)", () => {
   async function setupBobInAcme() {
-    const { app, warm } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
     const { hashPassword } = await import("./auth.js");
     await warm.createTenant("acme", "Acme");
     await warm.createTenant("contoso", "Contoso");
@@ -1416,15 +1450,16 @@ describe("http: projects (sub-brains)", () => {
 
 describe("http: /v1/auth/rotate-token (user self-service)", () => {
   it("rotates the caller's token and revokes the old one", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app, warm } = makeApp({ authMode: "tenant" });
+    const adminH = await adminAuth(warm);
     await app.inject({
       method: "POST", url: "/v1/admin/tenants",
       payload: { id: "acme", name: "Acme" },
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const tk = await app.inject({
       method: "POST", url: "/v1/admin/tenants/acme/tokens",
-      headers: { authorization: "Bearer admin-secret" },
+      headers: adminH,
     });
     const oldToken = tk.json().token as string;
 
@@ -1453,7 +1488,7 @@ describe("http: /v1/auth/rotate-token (user self-service)", () => {
   });
 
   it("401s without a valid bearer", async () => {
-    const { app } = makeApp({ authMode: "tenant", adminToken: "admin-secret" });
+    const { app } = makeApp({ authMode: "tenant" });
     const r = await app.inject({
       method: "POST", url: "/v1/auth/rotate-token",
       headers: { authorization: "Bearer not-a-real-token" },
