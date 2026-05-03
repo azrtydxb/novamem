@@ -34,7 +34,6 @@ function Authed() {
   useEffect(() => {
     if (!user) return;
     if (!isAdmin && (tab === "tenants" || tab === "users" || tab === "health")) setTab("metrics");
-    if (isAdmin && (tab === "tokens" || tab === "projects")) setTab("metrics");
   }, [user, isAdmin, tab]);
 
   if (loading) {
@@ -54,8 +53,8 @@ function Authed() {
         {isAdmin && tab === "health" && <HealthPage />}
         {isAdmin && tab === "tenants" && <TenantsPage />}
         {isAdmin && tab === "users" && <UsersPage />}
-        {!isAdmin && tab === "projects" && <ProjectsPage />}
-        {!isAdmin && tab === "tokens" && <MyTokensPage />}
+        {tab === "projects" && <ProjectsPage />}
+        {tab === "tokens" && <MyTokensPage />}
       </Suspense>
     </AppShell>
   );

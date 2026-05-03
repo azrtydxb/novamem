@@ -34,6 +34,8 @@ const ADMIN_NAV: NavItem[] = [
   { id: "health", label: "Health", icon: Database },
   { id: "tenants", label: "Tenants", icon: Building2 },
   { id: "users", label: "Users", icon: Users },
+  { id: "projects", label: "Projects", icon: FolderKanban },
+  { id: "tokens", label: "API tokens", icon: KeyRound },
 ];
 
 const USER_NAV: NavItem[] = [
