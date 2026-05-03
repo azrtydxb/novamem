@@ -1,19 +1,24 @@
-/** Thin wrapper around `fetch` that injects the dashboard session token
- *  from sessionStorage and returns a structured result. Never throws.
- *
- *  Sessions are minted by `POST /v1/auth/login`; the SPA stores the
- *  bearer here for the tab's lifetime. `setToken("")` revokes locally
- *  (server revocation is handled by `POST /v1/auth/logout`). */
+/** Thin wrapper around `fetch` for the dashboard SPA. Sessions live in
+ *  an HttpOnly cookie set by `POST /v1/auth/login` so this module never
+ *  touches the bearer; we just `credentials: "include"` and the browser
+ *  attaches the cookie automatically. CSRF protection: server sets a
+ *  JS-readable `novamem_csrf` cookie at login + on every /v1/auth/me;
+ *  we read it and echo it back as X-CSRF-Token on state-changing
+ *  requests. */
 
-const TOKEN_KEY = "novamem_session_token";
+const CSRF_COOKIE = "novamem_csrf";
+const CSRF_HEADER = "X-CSRF-Token";
 
-export function getToken(): string {
-  return sessionStorage.getItem(TOKEN_KEY) ?? "";
-}
-
-export function setToken(t: string): void {
-  if (t) sessionStorage.setItem(TOKEN_KEY, t);
-  else sessionStorage.removeItem(TOKEN_KEY);
+/** Read the (signed) CSRF cookie value. @fastify/cookie signs cookies
+ *  in the form `<value>.<sig>`; the SPA only needs to echo the whole
+ *  cookie value back unchanged — the server unsigns on receipt. */
+function readCsrfCookie(): string {
+  const raw = document.cookie
+    .split(";")
+    .map((s) => s.trim())
+    .find((s) => s.startsWith(`${CSRF_COOKIE}=`));
+  if (!raw) return "";
+  return decodeURIComponent(raw.slice(CSRF_COOKIE.length + 1));
 }
 
 export interface ApiResult<T> {
@@ -32,13 +37,22 @@ export async function api<T = unknown>(
   // Only declare content-type when there's a body — Fastify's JSON parser
   // 400s on `content-type: application/json` with empty payload.
   if (body !== undefined && body !== null) headers["content-type"] = "application/json";
-  const tok = getToken();
-  if (tok) headers["authorization"] = `Bearer ${tok}`;
+  // Echo back the CSRF cookie on state-changing requests. Bearer-auth
+  // callers (CLI / MCP) skip this entirely; for the SPA the cookie is
+  // present whenever there's an active session.
+  const isStateChanging = method === "POST" || method === "DELETE";
+  if (isStateChanging) {
+    const csrf = readCsrfCookie();
+    if (csrf) headers[CSRF_HEADER] = csrf;
+  }
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       headers,
+      // credentials: "include" tells the browser to attach the
+      // novamem_session HttpOnly cookie on same-origin requests.
+      credentials: "include",
       body: body == null ? undefined : JSON.stringify(body),
     });
   } catch (err) {

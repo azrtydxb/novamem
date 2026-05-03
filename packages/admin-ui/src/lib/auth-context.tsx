@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
-import { api, getToken, setToken, SessionUser } from "./api";
+import { api, SessionUser } from "./api";
 
 interface AuthState {
   user: SessionUser | null;
@@ -7,7 +7,9 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (token: string, user: SessionUser) => void;
+  /** Called after a successful login — caller passes the user from the
+   *  login response; the server has already set the HttpOnly cookie. */
+  login: (user: SessionUser) => void;
   logout: () => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -20,21 +22,17 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-/** Resolves the currently-stored session token to a user object. Calls
- *  /v1/auth/me on mount. Empty token → logged out. */
+/** Resolves the current session by calling /v1/auth/me. The session lives
+ *  in an HttpOnly cookie (the SPA never sees it directly); the only way
+ *  to know if there's a session is to ask the server. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, loading: true });
 
   const reload = useCallback(async () => {
-    if (!getToken()) {
-      setState({ user: null, loading: false });
-      return;
-    }
     const r = await api<{ user: SessionUser }>("GET", "/v1/auth/me");
     if (r.ok && r.body?.user) {
       setState({ user: r.body.user, loading: false });
     } else {
-      setToken("");
       setState({ user: null, loading: false });
     }
   }, []);
@@ -43,14 +41,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void reload();
   }, [reload]);
 
-  const login = useCallback((token: string, user: SessionUser) => {
-    setToken(token);
+  const login = useCallback((user: SessionUser) => {
     setState({ user, loading: false });
   }, []);
 
   const logout = useCallback(async () => {
     await api("POST", "/v1/auth/logout");
-    setToken("");
     setState({ user: null, loading: false });
   }, []);
 
