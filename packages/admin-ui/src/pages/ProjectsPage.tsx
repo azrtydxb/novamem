@@ -19,6 +19,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
+import { PageHeader } from "../components/PageHeader";
 import { useToast } from "../components/Toast";
 import { fmtRelative } from "../lib/utils";
 
@@ -37,20 +38,18 @@ export function ProjectsPage() {
   }, [queryClient]);
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Projects</h1>
-          <p className="text-sm text-dim mt-1">
-            A project is a sub-brain — its memories live separately from your tenant-wide entries.
-            Share with another user (any tenant) by adding them as a member.
-          </p>
-        </div>
-        <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </Button>
-      </header>
-
+    <>
+      <PageHeader
+        kicker="Sub-brains · scoped memory"
+        title="Projects"
+        subtitle="A project is a sub-brain — its memories live separately from your tenant-wide entries. Share with another user (any tenant) by adding them as a member."
+        actions={
+          <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        }
+      />
+      <div className="p-5 space-y-3">
       <CreateProjectCard onCreated={refresh} />
 
       {projects === null ? (
@@ -70,7 +69,8 @@ export function ProjectsPage() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
