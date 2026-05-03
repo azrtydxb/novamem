@@ -1,4 +1,5 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Copy, KeyRound, Plus, RefreshCw, ShieldOff, Smartphone } from "lucide-react";
 import { api, Project, TenantToken } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
@@ -12,9 +13,31 @@ import { fmtRelative, fmtTimestamp, shortHash } from "../lib/utils";
 
 export function MyTokensPage() {
   const { user } = useAuth();
-  const [tokens, setTokens] = useState<TenantToken[] | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
+  const tokensQ = useQuery({
+    queryKey: ["me", "tokens"],
+    queryFn: async () => {
+      const r = await api<{ tokens: TenantToken[] }>("GET", "/v1/me/tokens");
+      if (!r.ok || !r.body) throw new Error(r.error ?? `tokens ${r.status}`);
+      return r.body.tokens;
+    },
+  });
+  const projectsQ = useQuery({
+    queryKey: ["me", "projects"],
+    queryFn: async () => {
+      const r = await api<{ projects: Project[] }>("GET", "/v1/me/projects");
+      if (!r.ok || !r.body) return [] as Project[];
+      return r.body.projects;
+    },
+  });
+  const tokens: TenantToken[] | null = tokensQ.data ?? null;
+  const projects: Project[] = projectsQ.data ?? [];
+  const busy = tokensQ.isFetching || projectsQ.isFetching;
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["me", "tokens"] });
+    void queryClient.invalidateQueries({ queryKey: ["me", "projects"] });
+  };
+
   const [mintedPlaintext, setMintedPlaintext] = useState<{
     token: string;
     label: string;
@@ -22,21 +45,6 @@ export function MyTokensPage() {
   } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<TenantToken | null>(null);
   const toast = useToast();
-
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    const [t, p] = await Promise.all([
-      api<{ tokens: TenantToken[] }>("GET", "/v1/me/tokens"),
-      api<{ projects: Project[] }>("GET", "/v1/me/projects"),
-    ]);
-    setBusy(false);
-    if (t.body) setTokens(t.body.tokens);
-    if (p.body) setProjects(p.body.projects);
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   const revoke = async (hash: string) => {
     const r = await api("POST", `/v1/me/tokens/${hash}/revoke`);

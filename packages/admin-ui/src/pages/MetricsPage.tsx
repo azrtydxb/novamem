@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Area,
   AreaChart,
@@ -58,62 +59,73 @@ export function MetricsPage() {
   const isAdmin = user?.role === "admin";
   const endpoint = isAdmin ? "/v1/admin/metrics" : "/v1/me/metrics";
 
-  const [snap, setSnap] = useState<AnySnapshot | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [decayBusy, setDecayBusy] = useState(false);
   const lastCountersRef = useRef<AnySnapshot["data"]["counters"] | null>(null);
   const toast = useToast();
+  const queryClient = useQueryClient();
 
-  const load = async () => {
-    setBusy(true);
-    const r = await api<MetricsSnapshot | TenantMetricsSnapshot>("GET", endpoint);
-    setBusy(false);
-    if (!r.body) return;
-    const next: AnySnapshot = isAdmin
-      ? { kind: "admin", data: r.body as MetricsSnapshot }
-      : { kind: "user", data: r.body as TenantMetricsSnapshot };
-    setSnap(next);
+  // TanStack Query handles polling, retries, and refetch-on-focus. The
+  // `useEffect` block below derives the chart history from each snapshot
+  // — that's the one piece of bespoke state still needed.
+  const {
+    data: snap,
+    isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ["metrics", endpoint],
+    queryFn: async () => {
+      const r = await api<MetricsSnapshot | TenantMetricsSnapshot>("GET", endpoint);
+      if (!r.ok || !r.body) throw new Error(r.error ?? `metrics ${r.status}`);
+      return isAdmin
+        ? ({ kind: "admin", data: r.body as MetricsSnapshot } as AnySnapshot)
+        : ({ kind: "user", data: r.body as TenantMetricsSnapshot } as AnySnapshot);
+    },
+    refetchInterval: POLL_MS,
+  });
+
+  // Append a chart point each time a snapshot lands.
+  useEffect(() => {
+    if (!snap) return;
     const prev = lastCountersRef.current;
-    lastCountersRef.current = next.data.counters;
+    lastCountersRef.current = snap.data.counters;
     setHistory((cur) => {
       const last = cur[cur.length - 1];
       const t = Date.now();
       const point: HistoryPoint = {
         t,
-        qps: next.data.rates.queries_per_sec_60s,
-        rps: next.data.rates.remembers_per_sec_60s,
-        warmHits: prev ? next.data.counters.hits_warm_total - prev.hits_warm_total : 0,
-        coldHits: prev ? next.data.counters.hits_cold_total - prev.hits_cold_total : 0,
-        graphHits: prev ? next.data.counters.hits_graph_total - prev.hits_graph_total : 0,
+        qps: snap.data.rates.queries_per_sec_60s,
+        rps: snap.data.rates.remembers_per_sec_60s,
+        warmHits: prev ? snap.data.counters.hits_warm_total - prev.hits_warm_total : 0,
+        coldHits: prev ? snap.data.counters.hits_cold_total - prev.hits_cold_total : 0,
+        graphHits: prev ? snap.data.counters.hits_graph_total - prev.hits_graph_total : 0,
       };
       const out = last && t - last.t < 1000 ? cur : [...cur, point];
       return out.slice(-HISTORY_POINTS);
     });
-  };
+  }, [snap]);
 
-  useEffect(() => {
-    void load();
-    const id = window.setInterval(load, POLL_MS);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint]);
-
-  const runDecay = async () => {
-    setDecayBusy(true);
-    const r = await api<{ demoted: number; promoted: number }>("POST", "/v1/decay", {});
-    setDecayBusy(false);
-    if (r.ok && r.body) {
-      toast.success("Decay run complete", `demoted ${r.body.demoted}, promoted ${r.body.promoted}`);
-      void load();
-    } else {
-      toast.error("Decay run failed", r.error ?? `status ${r.status}`);
-    }
-  };
+  const decay = useMutation({
+    mutationFn: async () => {
+      const r = await api<{ demoted: number; promoted: number }>("POST", "/v1/decay", {});
+      if (!r.ok || !r.body) throw new Error(r.error ?? `decay ${r.status}`);
+      return r.body;
+    },
+    onSuccess: (body) => {
+      toast.success("Decay run complete", `demoted ${body.demoted}, promoted ${body.promoted}`);
+      void queryClient.invalidateQueries({ queryKey: ["metrics"] });
+    },
+    onError: (err) => {
+      toast.error("Decay run failed", (err as Error).message);
+    },
+  });
 
   if (!snap) {
     return <SkeletonMetrics />;
   }
+  const busy = isFetching;
+  const decayBusy = decay.isPending;
+  const load = () => void refetch();
+  const runDecay = () => decay.mutate();
 
   const c = snap.data.counters;
   const g = snap.data.gauges;
