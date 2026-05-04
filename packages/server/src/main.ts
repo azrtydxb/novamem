@@ -190,7 +190,10 @@ async function main() {
     adminDashboard: cfg.admin.dashboard,
     betterAuth: {
       handler: (req) => ba.handler(req),
-      getSession: (headers) => ba.api.getSession({ headers }) as Promise<{ user?: { id: string }; session?: { id: string } } | null>,
+      // Type derived from Better Auth's actual API shape — a BA upgrade
+      // that changes the session payload becomes a compile error here
+      // (and in HttpOptions) instead of a silent runtime mismatch.
+      getSession: (headers) => ba.api.getSession({ headers }),
     },
   });
 

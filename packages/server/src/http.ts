@@ -30,6 +30,13 @@ import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
 import { openapiSpec } from "./openapi.js";
 import { SYSTEM_USER, type WarmStore } from "./warm-store/index.js";
+import type { Auth } from "./auth-betterauth.js";
+
+/** Better Auth `getSession` return shape, derived directly from the
+ *  configured BA instance's API surface. A BA version bump that changes
+ *  the user/session payload becomes a compile error here instead of a
+ *  silent runtime mismatch behind a structural cast. */
+type BAGetSessionResult = Awaited<ReturnType<Auth["api"]["getSession"]>>;
 
 import {
   type AuthFailLimiter,
@@ -94,9 +101,7 @@ export interface HttpOptions {
    *  cookie/bearer. */
   betterAuth?: {
     handler: (req: Request) => Promise<Response>;
-    getSession: (
-      headers: Headers,
-    ) => Promise<{ user?: { id: string }; session?: { id: string } } | null | undefined>;
+    getSession: (headers: Headers) => Promise<BAGetSessionResult>;
   };
 }
 
