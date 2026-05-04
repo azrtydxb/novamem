@@ -1,9 +1,9 @@
-# @azertydxb/novamem-mcp
+# @azrtydxb/novamem-mcp
 
 MCP-stdio shim for [novamem](https://github.com/azrtydxb/novamem). Bridges stdio↔HTTP for MCP hosts that haven't shipped remote-MCP support yet (older Claude Desktop, Cursor, …).
 
 ```bash
-npx @azertydxb/novamem-mcp
+npx @azrtydxb/novamem-mcp
 ```
 
 > If your client supports remote MCP, point it directly at `http://<host>:7778/mcp/sse` instead — no shim needed. See the main repo's README for the SSE config shape.
@@ -15,7 +15,7 @@ npx @azertydxb/novamem-mcp
   "mcpServers": {
     "novamem": {
       "command": "npx",
-      "args": ["@azertydxb/novamem-mcp"],
+      "args": ["@azrtydxb/novamem-mcp"],
       "env": {
         "NOVAMEM_BASE_URL": "http://localhost:7778",
         "NOVAMEM_TOKEN": "nm_…"

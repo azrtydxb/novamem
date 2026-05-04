@@ -29,7 +29,7 @@ For older Cursor builds:
   "mcpServers": {
     "novamem": {
       "command": "npx",
-      "args": ["@azertydxb/novamem-mcp"],
+      "args": ["@azrtydxb/novamem-mcp"],
       "env": {
         "NOVAMEM_BASE_URL": "http://localhost:7778",
         "NOVAMEM_TOKEN": "nm_..."

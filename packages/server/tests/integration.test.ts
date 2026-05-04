@@ -2,7 +2,7 @@
  * Real-DB integration suite. Skipped by default; flip on with:
  *
  *   NOVAMEM_INTEGRATION=1 NOVAMEM_BASE_URL=http://localhost:7778 \
- *     pnpm --filter @azertydxb/novamem-server test:integration
+ *     pnpm --filter @azrtydxb/novamem-server test:integration
  *
  * Requires a live `docker compose up -d` from the repo root. These tests
  * exercise the full Postgres + Qdrant + FalkorDB + embedder stack via the

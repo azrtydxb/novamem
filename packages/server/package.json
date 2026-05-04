@@ -1,5 +1,5 @@
 {
-  "name": "@azertydxb/novamem-server",
+  "name": "@azrtydxb/novamem-server",
   "version": "0.1.0",
   "private": true,
   "description": "Standalone tiered memory service — HTTP + MCP transports",
@@ -45,7 +45,7 @@
     "zod": "^4.4.2"
   },
   "devDependencies": {
-    "@azertydxb/novamem-admin-ui": "workspace:*",
+    "@azrtydxb/novamem-admin-ui": "workspace:*",
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2"
   },

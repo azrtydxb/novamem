@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { NovamemClient } from "@azertydxb/novamem";
+import { NovamemClient } from "@azrtydxb/novamem";
 import { startRemoteMcpStdio } from "./index.js";
 
 const baseUrl = process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";

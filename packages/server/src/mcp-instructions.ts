@@ -7,7 +7,7 @@
  *
  * Used by both:
  *   - the in-process MCP server (`/mcp/sse` for direct-SSE clients)
- *   - the stdio shim in `@azertydxb/novamem-mcp` for legacy clients (kept in
+ *   - the stdio shim in `@azrtydxb/novamem-mcp` for legacy clients (kept in
  *     sync via its own copy — manually re-paste on changes)
  *
  * Trade-off: the token cost is paid every turn the connector is loaded.
