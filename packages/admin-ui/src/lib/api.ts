@@ -12,6 +12,29 @@ export interface ApiResult<T> {
   error: string | null;
 }
 
+/**
+ * Recoverable HTTP failure thrown by `api()` on non-2xx responses.
+ *
+ * Distinct from bare `Error` (which we reserve for unrecoverable
+ * provider-not-mounted invariants in main.tsx / context files). A
+ * consumer can `instanceof ApiError` to render `code`/`status` in a
+ * toast vs. crashing the boundary.
+ *
+ * The `message` is the server's `error` field when present, otherwise
+ * `HTTP <status>`. `code` is the optional machine-readable error code
+ * the server may include alongside `error` (issue #23).
+ */
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    if (code !== undefined) this.code = code;
+  }
+}
+
 export async function api<T = unknown>(
   method: "GET" | "POST" | "DELETE",
   path: string,
@@ -36,6 +59,7 @@ export async function api<T = unknown>(
   }
   let parsed: T | null = null;
   let errMsg: string | null = null;
+  let errCode: string | undefined;
   const text = await res.text();
   if (text) {
     try {
@@ -44,8 +68,15 @@ export async function api<T = unknown>(
       errMsg = text.slice(0, 200);
     }
   }
-  if (!res.ok && parsed && typeof parsed === "object" && "error" in (parsed as Record<string, unknown>)) {
-    errMsg = String((parsed as Record<string, unknown>).error);
+  if (!res.ok && parsed && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    if ("error" in obj) errMsg = String(obj.error);
+    if ("code" in obj && typeof obj.code === "string") errCode = obj.code;
+  }
+  if (!res.ok) {
+    // Throw ApiError so call sites no longer need to re-wrap with
+    // `throw new Error(r.error ?? \`… ${r.status}\`)` (issue #23).
+    throw new ApiError(errMsg ?? `HTTP ${res.status}`, res.status, errCode);
   }
   return { status: res.status, ok: res.ok, body: parsed, error: errMsg };
 }
