@@ -23,6 +23,9 @@
     "test": "vitest run",
     "test:integration": "NOVAMEM_INTEGRATION=1 vitest run --dir tests",
     "docs:api": "node ./scripts/gen-openapi.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
+    "db:introspect": "drizzle-kit introspect",
     "typecheck": "tsc --noEmit",
     "dev": "tsx watch src/main.ts"
   },
@@ -47,6 +50,7 @@
   "devDependencies": {
     "@azrtydxb/novamem-admin-ui": "workspace:*",
     "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.2"
   },
   "engines": {

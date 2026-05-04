@@ -5,8 +5,11 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
@@ -55,177 +58,54 @@ export class WarmStore {
   }
 
   async initialize(): Promise<void> {
-    // Idempotent schema creation. In production we'd use drizzle-kit migrations;
-    // for v0 we keep CREATE IF NOT EXISTS inline so docker-compose just works.
-    // ALTERs are also idempotent (`ADD COLUMN IF NOT EXISTS`) so existing
-    // single-user installs upgrade in place — pre-user rows backfill to
-    // `public` via the column DEFAULT.
-    const ddl = [
-      // Legacy auth tables (`users`, `sessions`) are gone — Better Auth's
-      // `"user"` / `"session"` replaced them. Drop the FK constraints
-      // that referenced `users(id)` from existing data-plane tables, on
-      // pre-existing databases. CREATE TABLE IF NOT EXISTS doesn't touch
-      // an already-present schema, so without these ALTERs the FK
-      // survives and writes 500 with a 23503 violation when Better Auth
-      // ids don't exist in `users`.
+    // Three phases on every boot:
+    //   1. Legacy cleanups — pre-Better-Auth FK constraints + dropped
+    //      `users` / `sessions` tables. Idempotent; no-op on already-
+    //      cutover databases.
+    //   2. Better Auth + Postgres-FTS scaffolding. Tables Better Auth
+    //      owns and the GENERATED `tsv` column on memory_fts that
+    //      drizzle's schema DSL doesn't model.
+    //   3. drizzle-kit `migrate()` over our 12 owned tables. Reads
+    //      `dist/warm-store/migrations/` (or `src/.../migrations/` in
+    //      dev under tsx) and applies anything new since the last run.
+    //      The first migration uses CREATE … IF NOT EXISTS so it's a
+    //      no-op on databases that pre-date drizzle-kit; subsequent
+    //      migrations are plain.
+    await this.runLegacyCleanups();
+    await this.bootstrapBetterAuthAndFts();
+    await migrate(this.db, { migrationsFolder: WarmStore.migrationsFolder() });
+    await this.ensureFtsExtras();
+  }
+
+  /** Resolve the on-disk path of the migrations folder. The folder ships
+   *  alongside the compiled JS in `dist/warm-store/migrations/`; in dev
+   *  (tsx) it's the source path, which co-locates the same way. */
+  private static migrationsFolder(): string {
+    return resolve(dirname(fileURLToPath(import.meta.url)), "migrations");
+  }
+
+  /** Idempotent legacy DDL — drops constraints + tables left over from
+   *  the pre-Better-Auth schema. CREATE TABLE IF NOT EXISTS isn't enough
+   *  because the constraints survive on already-existing tables. */
+  private async runLegacyCleanups(): Promise<void> {
+    const stmts = [
       `ALTER TABLE IF EXISTS user_tokens DROP CONSTRAINT IF EXISTS user_tokens_user_id_fkey`,
       `ALTER TABLE IF EXISTS projects DROP CONSTRAINT IF EXISTS projects_owner_user_id_fkey`,
       `ALTER TABLE IF EXISTS project_members DROP CONSTRAINT IF EXISTS project_members_user_id_fkey`,
-      // The legacy users + sessions tables aren't useful anymore. Drop
-      // them so they can't drift (e.g. a stale row tricking somebody
-      // into thinking we still have a user). DROP TABLE IF EXISTS is a
-      // no-op on already-cutover databases.
+      // Legacy bcrypt + cookie path was retired with the Better Auth
+      // cutover. Drop so they can't drift.
       `DROP TABLE IF EXISTS sessions`,
       `DROP TABLE IF EXISTS users`,
-      // user_tokens — `nm_…` API keys for non-browser callers (MCP, CLI,
-      // scripts). user_id is a free-text reference to whoever Better
-      // Auth's "user" table calls the owner; we do not enforce an FK
-      // because Better Auth's table is on a different naming convention
-      // and the dashboard's "delete user" flow uses Better Auth's own
-      // cascades. Stale tokens whose owner is gone get rejected at
-      // resolveUserToken time anyway.
-      `CREATE TABLE IF NOT EXISTS user_tokens (
-        token_hash text PRIMARY KEY,
-        user_id text NOT NULL,
-        label text,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        last_used_at timestamptz,
-        revoked_at timestamptz
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id)`,
-      `CREATE TABLE IF NOT EXISTS projects (
-        id text PRIMARY KEY,
-        name text NOT NULL,
-        owner_user_id text NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_projects_owner_user ON projects(owner_user_id)`,
-      `CREATE TABLE IF NOT EXISTS project_members (
-        project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        user_id text NOT NULL,
-        role text NOT NULL DEFAULT 'member',
-        joined_at timestamptz NOT NULL DEFAULT now(),
-        UNIQUE (project_id, user_id)
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)`,
-      // NB: project_id ALTERs for memory_entries / memory_fts / memory_relations /
-      // cold_orphans are issued AFTER those tables are created — see below.
-      `CREATE TABLE IF NOT EXISTS memory_entries (
-        id text PRIMARY KEY,
-        user_id text NOT NULL DEFAULT 'public',
-        content text NOT NULL,
-        namespace text NOT NULL DEFAULT 'default',
-        source text NOT NULL DEFAULT 'manual',
-        agent_name text,
-        metadata jsonb DEFAULT '{}'::jsonb,
-        cold boolean NOT NULL DEFAULT false,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        updated_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      // Upgrade path for installs that pre-date multi-tenancy:
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_user ON memory_entries(user_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_namespace ON memory_entries(namespace)`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_agent ON memory_entries(agent_name)`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_cold ON memory_entries(cold)`,
-      // Provenance fields (May 2026): structured filters complementing
-      // the free-text `source` column. `source_type` is an open-string
-      // vocabulary (`chat / email / code-review / doc / inference /
-      // observation / system / manual`); `captured_from` is operator-
-      // defined free text; `confidence` is 0..1 with default 1.0 so
-      // pre-existing rows keep returning at full weight.
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS source_type text`,
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS captured_from text`,
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS confidence real NOT NULL DEFAULT 1.0`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_source_type ON memory_entries(source_type)`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_confidence ON memory_entries(confidence)`,
-      // Sha256 of the normalized content — used by the worthiness filter
-      // to fast-reject exact duplicates without recomputing FTS or
-      // burning an embedder call.
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS content_hash text`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_content_hash ON memory_entries(user_id, content_hash)`,
-      `CREATE TABLE IF NOT EXISTS memory_access (
-        entry_id text PRIMARY KEY,
-        hits int NOT NULL DEFAULT 1,
-        last_accessed timestamptz NOT NULL DEFAULT now(),
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_access_last ON memory_access(last_accessed)`,
-      `CREATE TABLE IF NOT EXISTS memory_relations (
-        user_id text NOT NULL DEFAULT 'public',
-        from_id text NOT NULL,
-        to_id text NOT NULL,
-        relation text NOT NULL DEFAULT 'co_occurs',
-        strength real NOT NULL DEFAULT 1.0,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        UNIQUE (from_id, to_id, relation)
-      )`,
-      `ALTER TABLE memory_relations ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_relations_user ON memory_relations(user_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_id)`,
-      `CREATE TABLE IF NOT EXISTS memory_fts (
-        id serial PRIMARY KEY,
-        entry_id text NOT NULL,
-        user_id text NOT NULL DEFAULT 'public',
-        content text NOT NULL,
-        namespace text NOT NULL DEFAULT 'default',
-        tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-      )`,
-      `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_tsv ON memory_fts USING gin(tsv)`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_user ON memory_fts(user_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_namespace ON memory_fts(namespace)`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_entry ON memory_fts(entry_id)`,
-      `CREATE TABLE IF NOT EXISTS cold_orphans (
-        id text PRIMARY KEY,
-        user_id text NOT NULL DEFAULT 'public',
-        namespace text NOT NULL,
-        attempts int NOT NULL DEFAULT 0,
-        last_error text,
-        first_seen timestamptz NOT NULL DEFAULT now(),
-        last_attempt_at timestamptz
-      )`,
-      `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'public'`,
-      `CREATE INDEX IF NOT EXISTS idx_orphans_attempts ON cold_orphans(attempts)`,
-      `CREATE TABLE IF NOT EXISTS decay_runs (
-        id serial PRIMARY KEY,
-        started_at timestamptz NOT NULL DEFAULT now(),
-        finished_at timestamptz,
-        demoted int NOT NULL DEFAULT 0,
-        promoted int NOT NULL DEFAULT 0,
-        effective_days real
-      )`,
-      // ─── Project-id retrofits (after all base tables exist) ─────────
-      // These ALTERs come last because they reference tables created above.
-      // The original placement (before the CREATEs) crashed on a fresh DB
-      // — see review finding P1-A7. Issued idempotently.
-      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_entries_project ON memory_entries(project_id)`,
-      `ALTER TABLE memory_relations ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_relations_project ON memory_relations(project_id)`,
-      `ALTER TABLE memory_fts ADD COLUMN IF NOT EXISTS project_id text`,
-      `CREATE INDEX IF NOT EXISTS idx_fts_project ON memory_fts(project_id)`,
-      `ALTER TABLE cold_orphans ADD COLUMN IF NOT EXISTS project_id text`,
-      // ─── Audit log of admin actions (P1-S6) ─────────────────────────
-      `CREATE TABLE IF NOT EXISTS admin_audit_log (
-        id serial PRIMARY KEY,
-        ts timestamptz NOT NULL DEFAULT now(),
-        actor_user_id text,
-        actor_label text NOT NULL,
-        action text NOT NULL,
-        target text,
-        metadata jsonb,
-        request_ip text
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts DESC)`,
-      `CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor_user_id)`,
-      // ─── Better Auth tables (Phase 1: scaffolded alongside) ──────────
-      // The dashboard's control plane is migrating to Better Auth. These
-      // tables hold its users/sessions/accounts; the existing `users`/
-      // `sessions` tables stay live until the cutover. Identifiers are
-      // double-quoted because Better Auth uses camelCase column names
-      // and the singular `user` is a reserved word in some contexts.
+    ];
+    for (const s of stmts) await this.pool.query(s);
+  }
+
+  /** Tables Better Auth owns + Postgres-specific bits drizzle can't
+   *  model. Better Auth's own DDL would create these too, but keeping
+   *  them here lets the server boot independently of when Better Auth
+   *  initializes its handler. */
+  private async bootstrapBetterAuthAndFts(): Promise<void> {
+    const stmts = [
       `CREATE TABLE IF NOT EXISTS "user" (
         id text PRIMARY KEY,
         name text NOT NULL,
@@ -282,40 +162,27 @@ export class WarmStore {
         "privateKey" text NOT NULL,
         "createdAt" timestamptz NOT NULL DEFAULT now()
       )`,
-      // ─── Performance: composite indexes flagged in review (P1-P2) ───
-      `CREATE INDEX IF NOT EXISTS idx_entries_user_cold ON memory_entries(user_id, cold)`,
-      `CREATE INDEX IF NOT EXISTS idx_orphans_attempt_lastattempt ON cold_orphans(attempts, last_attempt_at)`,
-      // ─── Per-user active project ──────────────────────────────────────
-      // Per-MCP-session "current sub-brain" pointer. When set, memory.*
-      // calls without an explicit `project` / `includeProjects` arg
-      // default to this project (union with user-global for reads,
-      // direct write for remember/forget). One row per user; deactivate
-      // = delete the row. project_id has no FK because Better Auth's
-      // "user" table is on a different naming convention; stale rows
-      // get rejected at activate-time membership check anyway.
-      `CREATE TABLE IF NOT EXISTS user_active_project (
-        user_id text PRIMARY KEY,
-        project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        updated_at timestamptz NOT NULL DEFAULT now()
-      )`,
-      // ─── 24h persistent throughput (1-min buckets) ────────────────────
-      // Each row: counts observed in the (sampled_at, sampled_at + 1min)
-      // window for the given user. Bucket boundary is sampled_at floored
-      // to the minute; the unique constraint stops a double-flush from
-      // producing two rows for the same minute.
-      `CREATE TABLE IF NOT EXISTS metrics_samples (
-        user_id text NOT NULL,
-        sampled_at timestamptz NOT NULL,
-        queries int NOT NULL DEFAULT 0,
-        remembers int NOT NULL DEFAULT 0,
-        PRIMARY KEY (user_id, sampled_at)
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_metrics_samples_at ON metrics_samples(sampled_at DESC)`,
+      // Postgres-FTS shadow column on memory_fts. drizzle's schema DSL
+      // doesn't have GENERATED-column syntax, so we ALTER it in
+      // post-migration. The ADD COLUMN IF NOT EXISTS makes this a no-op
+      // on already-bootstrapped databases. Applied AFTER migrate() in
+      // the no-op-after-first-boot case is fine because migrate() only
+      // creates the bare memory_fts table (without tsv) on first run.
     ];
-    for (const stmt of ddl) {
-      await this.pool.query(stmt);
-    }
+    for (const s of stmts) await this.pool.query(s);
   }
+
+  /** Postgres-specific FTS additions that drizzle doesn't model.
+   *  Called after `migrate()` so the memory_fts table exists. */
+  private async ensureFtsExtras(): Promise<void> {
+    await this.pool.query(
+      `ALTER TABLE memory_fts
+         ADD COLUMN IF NOT EXISTS tsv tsvector
+         GENERATED ALWAYS AS (to_tsvector('english', content)) STORED`,
+    );
+    await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_fts_tsv ON memory_fts USING gin(tsv)`);
+  }
+
 
   // ─── Tokens ───────────────────────────────────────────────────────────
 

@@ -24,3 +24,20 @@ if (existsSync(dst)) rmSync(dst, { recursive: true, force: true });
 mkdirSync(dst, { recursive: true });
 cpSync(src, dst, { recursive: true });
 console.log(`[build:assets] copied admin-ui -> ${dst}`);
+
+// drizzle-kit migrations — needed at runtime for migrate() in
+// WarmStore.initialize(). tsc doesn't copy non-.ts files into dist; do it
+// here. The migration files (and the meta/_journal.json drizzle uses for
+// ordering) sit next to the compiled warm-store output.
+const migrationsSrc = resolve(here, "../src/warm-store/migrations");
+const migrationsDst = resolve(here, "../dist/warm-store/migrations");
+if (existsSync(migrationsSrc)) {
+  if (existsSync(migrationsDst)) rmSync(migrationsDst, { recursive: true, force: true });
+  mkdirSync(migrationsDst, { recursive: true });
+  cpSync(migrationsSrc, migrationsDst, { recursive: true });
+  console.log(`[build:assets] copied migrations -> ${migrationsDst}`);
+} else {
+  console.error(`[build:assets] missing ${migrationsSrc}`);
+  console.error(`               run \`pnpm --filter @azrtydxb/novamem-server db:generate\` first.`);
+  process.exit(1);
+}
