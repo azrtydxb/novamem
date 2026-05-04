@@ -5,7 +5,8 @@
     "version": "0.1.0",
     "description": "Tiered memory service with hybrid search (keyword + vector + graph), per-user isolation, and project-scoped sub-brains.\n\n**Auth**: every authenticated route accepts either an `nm_…` user bearer (created from the dashboard's API Tokens page) or a Better Auth session cookie/bearer (set by `POST /api/auth/sign-in/email`). Both flow through the same auth hook and resolve to the same user. Better Auth's own routes are mounted at `/api/auth/*` — see the Better Auth documentation for their shapes.",
     "license": {
-      "name": "MIT"
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
     }
   },
   "servers": [

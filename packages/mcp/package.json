@@ -2,7 +2,7 @@
   "name": "@azrtydxb/novamem-mcp",
   "version": "0.1.0",
   "description": "MCP-stdio shim for the novamem memory service",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
