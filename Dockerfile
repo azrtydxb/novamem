@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:22-bookworm-slim AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
@@ -8,39 +8,45 @@ COPY packages/server/package.json packages/server/
 COPY packages/client/package.json packages/client/
 COPY packages/mcp/package.json packages/mcp/
 COPY packages/admin-ui/package.json packages/admin-ui/
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
 RUN pnpm -r build
+# Generate a runtime package.json with devDependencies stripped — keeps
+# `dependencies` only so npm in the runtime stage doesn't choke on
+# `workspace:*` URL schemes it doesn't understand. Writing to a fresh
+# path so we don't mutate the source tree.
+# Generate a runtime package.json: drop devDependencies + scripts, and
+# inject npm `overrides` for transitive deps with known HIGH/CRITICAL CVEs
+# (the pnpm.overrides at workspace root don't carry to a fresh npm install
+# in the runtime stage). Versions chosen from Trivy's fixed-version field.
+RUN node -e "const p=require('./packages/server/package.json');delete p.devDependencies;delete p.scripts;p.overrides={protobufjs:'>=7.5.5',picomatch:'>=4.0.4',underscore:'>=1.13.8'};require('fs').writeFileSync('/tmp/runtime-package.json',JSON.stringify(p,null,2));"
 
-FROM node:20-slim AS runtime
-RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
-# P1-O2: ship only the built artifacts + production dependencies. The
-# previous image baked dev tools (tsx, vitest, @types/*) and `src/*.ts`
-# into the runtime — bigger image, broader attack surface.
-COPY --from=build /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml* ./
-COPY --from=build /app/packages/server/package.json ./packages/server/package.json
-COPY --from=build /app/packages/server/dist ./packages/server/dist
-COPY --from=build /app/packages/client/package.json ./packages/client/package.json
-COPY --from=build /app/packages/client/dist ./packages/client/dist
-COPY --from=build /app/packages/mcp/package.json ./packages/mcp/package.json
-COPY --from=build /app/packages/mcp/dist ./packages/mcp/dist
-RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
+# Ship only the server's compiled JS + a *fresh* prod-only node_modules
+# resolved from the server's own dependencies (not the shared workspace
+# lockfile, which would otherwise drag in dev tooling like esbuild/vite/
+# vitest). Smaller image, smaller attack surface.
+COPY --from=build /tmp/runtime-package.json ./package.json
+COPY --from=build /app/packages/server/dist ./dist
+RUN npm install --omit=dev --omit=optional --no-audit --no-fund --no-package-lock \
+ && npm cache clean --force \
+ # Drop the global npm tree once install is done — we run plain `node` at
+ # runtime, not npm. Keeps Trivy from flagging CVEs in npm's own bundled
+ # deps (picomatch, etc.) that aren't part of our application.
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
-# P2-15: declare a HEALTHCHECK so orchestrators (Docker Swarm, plain Docker,
-# K8s livenessProbe via `exec`) can use the stack-aware /health endpoint.
+# Stack-aware healthcheck against the server's /health endpoint.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:7778/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-# P1-O1: drop privileges. The `node` user ships in the upstream node:20-slim
-# image with uid/gid 1000:1000 — adjust to taste. Container-escape blast
-# radius is significantly smaller as a non-root process.
+# Drop privileges. `node` ships uid/gid 1000:1000 in the base image.
 RUN chown -R node:node /app
 USER node
 
 ENV NODE_ENV=production
 EXPOSE 7778
-CMD ["node", "packages/server/dist/main.js"]
+CMD ["node", "dist/main.js"]
