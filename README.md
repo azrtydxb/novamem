@@ -1,5 +1,10 @@
 # novamem
 
+[![CI](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
+[![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0-orange.svg)](#status)
+
 Standalone tiered memory service for AI agents. Hybrid keyword + vector + graph search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard.
 
 ```bash
