@@ -187,9 +187,7 @@ async function main() {
   // setRole; we do that immediately after sign-up so the dashboard's
   // role-gated routes work on the first login.
   try {
-    const adminEmail =
-      process.env.NOVAMEM_BOOTSTRAP_ADMIN_EMAIL ??
-      process.env.NOVAMEM_BOOTSTRAP_ADMIN_USERNAME ?? null;
+    const adminEmail = process.env.NOVAMEM_BOOTSTRAP_ADMIN_EMAIL ?? null;
     const adminPassword = process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD ?? null;
     if (adminEmail && adminPassword) {
       // Seed when the system has no admin yet — even if regular users
@@ -200,14 +198,9 @@ async function main() {
       );
       const adminCount = Number(probe.rows[0]?.count ?? "0");
       if (adminCount === 0) {
-        // Treat the env value as an email when it contains '@', else
-        // synthesise a placeholder domain so Better Auth's email-format
-        // validator accepts it. Operators get a sensible default for
-        // username-style identifiers (legacy "admin" → admin@local).
-        const email = adminEmail.includes("@") ? adminEmail : `${adminEmail}@local`;
         const r = await ba.api.signUpEmail({
           body: {
-            email,
+            email: adminEmail,
             password: adminPassword,
             name: adminEmail,
           },
@@ -224,7 +217,7 @@ async function main() {
             [newUserId],
           );
           // eslint-disable-next-line no-console
-          console.log(`[novamem] seeded bootstrap admin "${email}" via Better Auth`);
+          console.log(`[novamem] seeded bootstrap admin "${adminEmail}" via Better Auth`);
         }
         // Scrub the bootstrap password from the env so docker inspect
         // can't recover it for the lifetime of the process.

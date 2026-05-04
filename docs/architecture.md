@@ -4,39 +4,89 @@ A 10-minute tour for new contributors.
 
 ## System shape
 
+```mermaid
+flowchart TB
+    subgraph clients["Clients"]
+        DASH["Browser dashboard"]
+        MCP["MCP host<br/>(Claude Code, Cursor, …)"]
+        CLI["HTTP CLI / SDK"]
+    end
+
+    subgraph server["@azrty/novamem-server (Fastify · :7778 · HTTP + SSE)"]
+        ROUTES["/admin · /api-docs · /api/auth/* · /v1/* · /mcp/sse"]
+        ENGINE["MemoryEngine"]
+        BA["Better Auth<br/>sessions · admin RBAC · JWT"]
+        ROUTES --> ENGINE
+        ROUTES --> BA
+    end
+
+    subgraph stores["Storage"]
+        PG[("Postgres<br/>warm + audit + auth")]
+        QD[("Qdrant<br/>cold · vector")]
+        FK[("FalkorDB<br/>graph")]
+    end
+
+    DASH --> ROUTES
+    MCP --> ROUTES
+    CLI --> ROUTES
+    ENGINE --> PG
+    ENGINE --> QD
+    ENGINE --> FK
+    BA --> PG
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Clients                           │
-│  Browser dashboard │ MCP host │ HTTP CLI │ SDK       │
-└──────────┬───────────────┬──────────┬──────┬────────┘
-           │               │          │      │
-           ▼               ▼          ▼      ▼
-        ┌────────────────────────────────────────┐
-        │          @azrty/novamem-server          │
-        │       (Fastify, port 7778, HTTP+SSE)    │
-        │                                         │
-        │   /admin   /api-docs   /api/auth/*      │
-        │   /v1/me/* /v1/admin/* /v1/search etc.  │
-        │   /v1/dream-cycle  /v1/memories/:id     │
-        │                                         │
-        │   ┌──────────────┐  ┌────────────────┐  │
-        │   │ MemoryEngine │  │  Better Auth   │  │
-        │   └──────┬───────┘  │  (sessions,    │  │
-        │          │          │   admin RBAC,  │  │
-        │          │          │   JWT issuer)  │  │
-        │          │          └────────────────┘  │
-        │   ┌──────┴───────────────────────┐      │
-        │   ▼          ▼            ▼     ▼      │
-        │  Warm     Cold        Graph    Audit    │
-        │  store   store        store    log      │
-        └────┬─────────┬──────────┬────────┬──────┘
-             │         │          │        │
-        ┌────▼───┐ ┌───▼────┐ ┌───▼────┐  │
-        │Postgres│ │ Qdrant │ │FalkorDB│  │
-        │  warm  │ │  cold  │ │ graph  │  │
-        └────────┘ └────────┘ └────────┘  │
-                                          │
-        Pino logs (stdout) ←──────────────┘
+
+### Read path (memory.search)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server (engine.search)
+    participant W as Warm (Postgres FTS)
+    participant K as Cold (Qdrant)
+    participant G as Graph (FalkorDB)
+    C->>S: query, weights, scope
+    par parallel signals
+        S->>W: ftsSearch
+        S->>K: vector cosine
+        S->>G: neighbours of recent hits
+    end
+    W-->>S: keyword hits
+    K-->>S: cosine hits
+    G-->>S: graph hits
+    S->>S: min-max normalise → weighted fuse
+    S->>W: bumpHits (batched)
+    S-->>C: top-K hits + per-signal subscores
+```
+
+### Write path (memory.remember)
+
+```mermaid
+flowchart LR
+    A[remember] --> B{shouldReject?}
+    B -- yes --> Z["{ rejected, id: null }"]
+    B -- no --> C{content_hash<br/>seen in scope?}
+    C -- yes --> Y["{ id: existing, deduplicated: true }"]
+    C -- no --> D[insert warm row<br/>+ FTS]
+    D --> E[embed + upsert<br/>cold vector]
+    E --> F[link top-3 vector neighbours<br/>RELATES edges in graph]
+    F --> X["{ id: new ULID }"]
+```
+
+### Tier lifecycle (decay + dream cycle)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Warm: remember
+    Warm --> Cold: decay loop · idle > effectiveDays
+    Cold --> Warm: search hit re-promotes
+    Warm --> [*]: forget
+    Cold --> [*]: forget · or orphan reaper
+    note right of Warm
+      effectiveDays(hits) =<br/>7 · log₂(hits + 1)
+    end note
+    note right of Cold
+      Dream cycle:<br/>dedup-merge (cosine ≥ 0.97<br/>+ Jaccard ≥ 0.5)<br/>edge promote (≥3 neighbours)
+    end note
 ```
 
 ## Data tiering
@@ -143,6 +193,38 @@ Sign-in calls `POST /api/auth/sign-in/email`. Better Auth sets the HttpOnly sess
 Admin sidebar: Metrics · Health · Users.
 User sidebar: Metrics · Browse · Graph · Today · Projects · API Tokens.
 
+### Design system (Grid direction)
+
+Modern technical SaaS aesthetic (Linear / Vercel-grade polish). Fixed 224px sidebar, content area with 20px page padding.
+
+**Colors** (CSS custom properties, light + dark modes):
+
+Light: `--bg: #fafbfc` · `--panel: #ffffff` · `--subtle: #f3f5f8` · `--ink: #0d1117` · `--dim: #5b6470` · `--faint: #8b94a3` · `--rule: #e6e9ee` · `--rule-soft: #eef0f4`
+
+Dark: `--bg: #0a0d12` · `--panel: #11151c` · `--subtle: #161b24` · `--ink: #e6ebf2` · `--dim: #8a93a3` · `--faint: #5a6373` · `--rule: #1f2530` · `--rule-soft: #171c25`
+
+**Brand tones** (oklch):
+- `--accent` (primary action) — light `oklch(58% 0.15 250)` / dark `oklch(70% 0.16 250)`
+- `--warm` (warm-tier signal) — light `oklch(62% 0.16 35)` / dark `oklch(72% 0.17 35)`
+- `--cold` (cold-tier signal) — light `oklch(58% 0.13 220)` / dark `oklch(72% 0.14 220)`
+- `--graph` (graph-tier, ok status) — light `oklch(60% 0.16 165)` / dark `oklch(72% 0.16 165)`
+- `--err` (error) — light `oklch(58% 0.20 25)` / dark `oklch(70% 0.20 25)`
+- `--warn` (degraded) — light `oklch(70% 0.16 80)` / dark `oklch(78% 0.16 80)`
+
+Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 28% lightness).
+
+**Typography:** `Inter` 400/500/600/700 (sans) + `JetBrains Mono` 400/500/600 (mono for ids, hashes, timestamps, chips, metric labels). Tabular numerals everywhere in tables/KPIs (`font-variant-numeric: tabular-nums`). Letter-spacing −0.02em on headings/big values.
+
+**Spacing:** 4 · 6 · 8 · 10 · 12 · 14 · 18 · 20 · 24 · 28 · 32 px. Card padding: 14–18px.
+
+**Radii:** 4 (chips) · 6 (buttons, inputs) · 8 (cards) · 12 (auth modal) · 99 (pills).
+
+**Key patterns:**
+- KPI card: label + delta pill + big value + sparkline
+- DataTable: header strip on `subtle` bg + grid rows with soft rules
+- Status pill: `font-weight 600 10px/1 mono`, `uppercase`, `padding 2px 8px`, `border-radius 99px`
+- Tier color encoding: single `tone` prop drives pills, dots, fills, strokes everywhere
+
 ## Build + deploy
 
 - pnpm workspaces. `pnpm -r build` builds in dependency order (client → mcp → admin-ui → server).
@@ -157,4 +239,4 @@ User sidebar: Metrics · Browse · Graph · Today · Projects · API Tokens.
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
 
-See [CHANGELOG.md](CHANGELOG.md) for behaviour shifts and [SECURITY.md](SECURITY.md) for the production hardening checklist.
+See [../CHANGELOG.md](../CHANGELOG.md) for behaviour shifts and [../SECURITY.md](../SECURITY.md) for the production hardening checklist.
