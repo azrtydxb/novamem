@@ -273,6 +273,38 @@ export class NovamemClient {
     );
   }
 
+  /** Convenience for the MCP shim: remove a member by their human handle
+   *  (email or display name). Resolves the username to an id via the
+   *  members listing rather than exposing a separate user-lookup API. */
+  async removeProjectMemberByUsername(
+    project: string,
+    username: string,
+  ): Promise<{ removed: boolean }> {
+    const { members } = await this.listProjectMembers(project);
+    const target = members.find((m) => m.username === username);
+    if (!target) throw new Error(`unknown member '${username}'`);
+    return this.removeProjectMember(project, target.userId);
+  }
+
+  // ─── Active project ────────────────────────────────────────────────────
+
+  async getActiveProject(): Promise<{ active: { id: string; name: string } | null }> {
+    return this.request<{ active: { id: string; name: string } | null }>(
+      "/v1/me/active-project",
+    );
+  }
+
+  async setActiveProject(project: string): Promise<{ active: { id: string } }> {
+    return this.request<{ active: { id: string } }>("/v1/me/active-project", {
+      method: "PUT",
+      body: { project },
+    });
+  }
+
+  async clearActiveProject(): Promise<void> {
+    await this.request("/v1/me/active-project", { method: "DELETE" });
+  }
+
   // ─── Tokens (per-device API keys) ──────────────────────────────────────
 
   async mintToken(opts: { label?: string } = {}): Promise<MintTokenResponse> {

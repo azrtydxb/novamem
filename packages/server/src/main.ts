@@ -123,6 +123,27 @@ async function main() {
     }
   }, cfg.decay.intervalMs);
 
+  // Dream cycle — periodic compaction. Runs daily at the same cadence
+  // as decay (the heavy work is the per-entry vector lookup; we don't
+  // want to fire it more often than once per cold-store-write batch).
+  // No-op on small stores, useful on large ones.
+  const dreamTimer = setInterval(async () => {
+    try {
+      const r = await engine.dreamCycle();
+      if (r.merged > 0 || r.edgesPromoted > 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[novamem] dream cycle: walked=${r.walked} merged=${r.merged} ` +
+            `edgesPromoted=${r.edgesPromoted} durationMs=${r.durationMs}`,
+        );
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("dream cycle error", err);
+    }
+  }, 24 * 60 * 60 * 1000);
+  dreamTimer.unref?.();
+
   // 24h persistent throughput: every minute, flush pending per-user
   // counters from the in-mem MetricsCollector to metrics_samples so the
   // history chart survives reboots. Same loop also prunes >25h-old rows
@@ -234,6 +255,7 @@ async function main() {
 
   const shutdown = async () => {
     clearInterval(decayTimer);
+    clearInterval(dreamTimer);
     await app.close();
     if (graph) await graph.close();
     await warm.close();

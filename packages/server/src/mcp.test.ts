@@ -65,6 +65,7 @@ describe("mcp: tools/list", () => {
       [
         "memory.search",
         "memory.remember",
+        "memory.update",
         "memory.today",
         "memory.recent",
         "memory.neighbors",
@@ -72,6 +73,11 @@ describe("mcp: tools/list", () => {
         "memory.stats",
         "project.list",
         "project.create",
+        "project.delete",
+        "project.activate",
+        "project.deactivate",
+        "project.share",
+        "project.unshare",
       ].sort(),
     );
   });
@@ -94,7 +100,7 @@ describe("mcp: tool dispatch", () => {
   it("memory.remember stores via engine and returns id", async () => {
     const { engine, warm } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    const r = (await callTool(server, "memory.remember", { content: "via mcp" })) as {
+    const r = (await callTool(server, "memory.remember", { content: "via mcp", force: true })) as {
       content: Array<{ text: string }>;
     };
     const payload = JSON.parse(r.content[0]!.text);
@@ -104,7 +110,7 @@ describe("mcp: tool dispatch", () => {
   it("memory.search finds the just-stored entry", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    await callTool(server, "memory.remember", { content: "Pascal likes coffee" });
+    await callTool(server, "memory.remember", { content: "Pascal likes coffee", force: true });
     const r = (await callTool(server, "memory.search", { query: "coffee" })) as {
       content: Array<{ text: string }>;
     };
@@ -117,12 +123,12 @@ describe("mcp: tool dispatch", () => {
     const { engine, warm } = makeEngine();
     const server = buildMcpServer(engine, "public");
     // Fresh entry
-    const fresh = (await callTool(server, "memory.remember", { content: "fresh" })) as {
+    const fresh = (await callTool(server, "memory.remember", { content: "fresh", force: true })) as {
       content: Array<{ text: string }>;
     };
     const freshId = JSON.parse(fresh.content[0]!.text).id;
     // Inject an old entry, force createdAt 2 days ago
-    const old = (await callTool(server, "memory.remember", { content: "ancient" })) as {
+    const old = (await callTool(server, "memory.remember", { content: "ancient", force: true })) as {
       content: Array<{ text: string }>;
     };
     const oldId = JSON.parse(old.content[0]!.text).id;
@@ -139,7 +145,7 @@ describe("mcp: tool dispatch", () => {
   it("memory.forget deletes the entry", async () => {
     const { engine, warm } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    const created = (await callTool(server, "memory.remember", { content: "to delete" })) as {
+    const created = (await callTool(server, "memory.remember", { content: "to delete", force: true })) as {
       content: Array<{ text: string }>;
     };
     const id = JSON.parse(created.content[0]!.text).id;
@@ -150,8 +156,8 @@ describe("mcp: tool dispatch", () => {
   it("memory.stats returns aggregate counts", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    await callTool(server, "memory.remember", { content: "a" });
-    await callTool(server, "memory.remember", { content: "b" });
+    await callTool(server, "memory.remember", { content: "a", force: true });
+    await callTool(server, "memory.remember", { content: "b", force: true });
     const r = (await callTool(server, "memory.stats", {})) as { content: Array<{ text: string }> };
     const payload = JSON.parse(r.content[0]!.text);
     expect(payload.totalWarm).toBe(2);

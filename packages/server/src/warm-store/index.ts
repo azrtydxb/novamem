@@ -127,6 +127,22 @@ export class WarmStore {
       `CREATE INDEX IF NOT EXISTS idx_entries_namespace ON memory_entries(namespace)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_agent ON memory_entries(agent_name)`,
       `CREATE INDEX IF NOT EXISTS idx_entries_cold ON memory_entries(cold)`,
+      // Provenance fields (May 2026): structured filters complementing
+      // the free-text `source` column. `source_type` is an open-string
+      // vocabulary (`chat / email / code-review / doc / inference /
+      // observation / system / manual`); `captured_from` is operator-
+      // defined free text; `confidence` is 0..1 with default 1.0 so
+      // pre-existing rows keep returning at full weight.
+      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS source_type text`,
+      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS captured_from text`,
+      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS confidence real NOT NULL DEFAULT 1.0`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_source_type ON memory_entries(source_type)`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_confidence ON memory_entries(confidence)`,
+      // Sha256 of the normalized content — used by the worthiness filter
+      // to fast-reject exact duplicates without recomputing FTS or
+      // burning an embedder call.
+      `ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS content_hash text`,
+      `CREATE INDEX IF NOT EXISTS idx_entries_content_hash ON memory_entries(user_id, content_hash)`,
       `CREATE TABLE IF NOT EXISTS memory_access (
         entry_id text PRIMARY KEY,
         hits int NOT NULL DEFAULT 1,
@@ -268,6 +284,19 @@ export class WarmStore {
       // ─── Performance: composite indexes flagged in review (P1-P2) ───
       `CREATE INDEX IF NOT EXISTS idx_entries_user_cold ON memory_entries(user_id, cold)`,
       `CREATE INDEX IF NOT EXISTS idx_orphans_attempt_lastattempt ON cold_orphans(attempts, last_attempt_at)`,
+      // ─── Per-user active project ──────────────────────────────────────
+      // Per-MCP-session "current sub-brain" pointer. When set, memory.*
+      // calls without an explicit `project` / `includeProjects` arg
+      // default to this project (union with user-global for reads,
+      // direct write for remember/forget). One row per user; deactivate
+      // = delete the row. project_id has no FK because Better Auth's
+      // "user" table is on a different naming convention; stale rows
+      // get rejected at activate-time membership check anyway.
+      `CREATE TABLE IF NOT EXISTS user_active_project (
+        user_id text PRIMARY KEY,
+        project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )`,
       // ─── 24h persistent throughput (1-min buckets) ────────────────────
       // Each row: counts observed in the (sampled_at, sampled_at + 1min)
       // window for the given user. Bucket boundary is sampled_at floored
@@ -577,29 +606,73 @@ export class WarmStore {
     };
   }
 
+  /** Resolve a user by their human handle: tries email exact-match first
+   *  (Better Auth's canonical identifier), then falls back to `name` and
+   *  the email's local-part. Used by the project-membership flow so an
+   *  admin can invite "alice" instead of typing "alice@example.com".
+   *  Returns the Better Auth "user" row shape (id + email + role); the
+   *  legacy fields (passwordHash, passwordChangedAt) are gone — Better
+   *  Auth manages them in `account.password`. */
   async findUserByUsername(username: string): Promise<{
     id: string;
     username: string;
-    passwordHash: string;
     role: string;
-    passwordChangedAt: Date | null;
   } | null> {
     const r = await this.pool.query<{
       id: string;
-      username: string;
-      password_hash: string;
-      role: string;
-      password_changed_at: Date | null;
-    }>(`SELECT id, username, password_hash, role, password_changed_at FROM users WHERE username = $1`, [username]);
+      email: string;
+      name: string;
+      role: string | null;
+    }>(
+      `SELECT id, email, name, role FROM "user"
+        WHERE email = $1
+           OR name = $1
+           OR split_part(email, '@', 1) = $1
+        ORDER BY (CASE WHEN email = $1 THEN 0
+                       WHEN name  = $1 THEN 1
+                       ELSE 2 END)
+        LIMIT 1`,
+      [username],
+    );
     const row = r.rows[0];
     if (!row) return null;
     return {
       id: row.id,
-      username: row.username,
-      passwordHash: row.password_hash,
-      role: row.role,
-      passwordChangedAt: row.password_changed_at,
+      // Surface email as the username (callers display it, agents
+      // recognise it). The local-part is too lossy when we have the
+      // full email available.
+      username: row.email,
+      role: row.role ?? "user",
     };
+  }
+
+  /** Active-project pointer for the agent's current "scope" — see the
+   *  user_active_project table comment in the DDL block. */
+  async getActiveProject(userId: string): Promise<string | null> {
+    const r = await this.pool.query<{ project_id: string }>(
+      `SELECT project_id FROM user_active_project WHERE user_id = $1`,
+      [userId],
+    );
+    return r.rows[0]?.project_id ?? null;
+  }
+
+  /** Set or clear the active-project pointer. Pass null to deactivate. */
+  async setActiveProject(userId: string, projectId: string | null): Promise<void> {
+    if (projectId === null) {
+      await this.pool.query(
+        `DELETE FROM user_active_project WHERE user_id = $1`,
+        [userId],
+      );
+      return;
+    }
+    await this.pool.query(
+      `INSERT INTO user_active_project (user_id, project_id, updated_at)
+         VALUES ($1, $2, now())
+       ON CONFLICT (user_id) DO UPDATE
+         SET project_id = EXCLUDED.project_id,
+             updated_at = now()`,
+      [userId, projectId],
+    );
   }
 
   async findUserById(id: string): Promise<{
@@ -1078,6 +1151,10 @@ export class WarmStore {
     source: string;
     agentName?: string | null;
     metadata?: Record<string, unknown>;
+    sourceType?: string | null;
+    capturedFrom?: string | null;
+    confidence?: number;
+    contentHash?: string | null;
   }): Promise<string> {
     const id = ulid();
     await this.db.insert(schema.memoryEntries).values({
@@ -1090,6 +1167,31 @@ export class WarmStore {
       agentName: args.agentName ?? null,
       metadata: args.metadata ?? {},
     });
+    // Provenance + content_hash live in columns added via ALTER; we
+    // fill them with a follow-up UPDATE to keep the drizzle insert
+    // shape unchanged (these columns aren't in the drizzle schema).
+    if (
+      args.sourceType ||
+      args.capturedFrom ||
+      args.confidence !== undefined ||
+      args.contentHash
+    ) {
+      await this.pool.query(
+        `UPDATE memory_entries
+            SET source_type = COALESCE($2, source_type),
+                captured_from = COALESCE($3, captured_from),
+                confidence = COALESCE($4, confidence),
+                content_hash = COALESCE($5, content_hash)
+          WHERE id = $1`,
+        [
+          id,
+          args.sourceType ?? null,
+          args.capturedFrom ?? null,
+          args.confidence ?? null,
+          args.contentHash ?? null,
+        ],
+      );
+    }
     await this.db.insert(schema.memoryFts).values({
       entryId: id,
       userId: args.userId,
@@ -1099,6 +1201,92 @@ export class WarmStore {
     });
     await this.db.insert(schema.memoryAccess).values({ entryId: id });
     return id;
+  }
+
+  /** Look up an existing entry by content hash within a user's scope.
+   *  Used by the worthiness gate to short-circuit exact duplicates
+   *  without re-embedding. Returns the existing entry's id when found. */
+  async findByContentHash(
+    userId: string,
+    projectId: string | null,
+    contentHash: string,
+  ): Promise<string | null> {
+    const r = await this.pool.query<{ id: string }>(
+      `SELECT id FROM memory_entries
+        WHERE user_id = $1
+          AND content_hash = $2
+          AND ${projectId === null ? "project_id IS NULL" : "project_id = $3"}
+        LIMIT 1`,
+      projectId === null ? [userId, contentHash] : [userId, contentHash, projectId],
+    );
+    return r.rows[0]?.id ?? null;
+  }
+
+  /** Update an existing entry's content and/or metadata in-place.
+   *  Preserves id, created_at, hits, last_accessed, and graph edges.
+   *  Updates updated_at and (when content changed) the FTS shadow row +
+   *  content_hash. Caller is responsible for re-embedding the cold
+   *  vector (engine.update does that). Returns false when no row exists
+   *  in the caller's scope. */
+  async updateEntry(args: {
+    userId: string;
+    id: string;
+    projectId?: string | null;
+    content?: string;
+    namespace?: string;
+    metadata?: Record<string, unknown>;
+    sourceType?: string;
+    capturedFrom?: string;
+    confidence?: number;
+    contentHash?: string;
+  }): Promise<boolean> {
+    // Scope check — same boundary as getEntry. Project members may belong
+    // to different users so projectId is the access boundary when set.
+    const want = args.projectId;
+    const scope = await this.getEntryScope(args.id);
+    if (!scope) return false;
+    if (typeof want === "string") {
+      if (scope.projectId !== want) return false;
+    } else {
+      if (scope.projectId !== null) return false;
+      if (scope.userId !== args.userId) return false;
+    }
+    const sets: string[] = [`updated_at = now()`];
+    const params: unknown[] = [args.id];
+    const next = (v: unknown) => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    if (args.content !== undefined) sets.push(`content = ${next(args.content)}`);
+    if (args.namespace !== undefined) sets.push(`namespace = ${next(args.namespace)}`);
+    if (args.metadata !== undefined) sets.push(`metadata = ${next(args.metadata)}`);
+    if (args.sourceType !== undefined) sets.push(`source_type = ${next(args.sourceType)}`);
+    if (args.capturedFrom !== undefined) sets.push(`captured_from = ${next(args.capturedFrom)}`);
+    if (args.confidence !== undefined) sets.push(`confidence = ${next(args.confidence)}`);
+    if (args.contentHash !== undefined) sets.push(`content_hash = ${next(args.contentHash)}`);
+    await this.pool.query(
+      `UPDATE memory_entries SET ${sets.join(", ")} WHERE id = $1`,
+      params,
+    );
+    // FTS shadow has its own row keyed by entry_id — refresh content +
+    // namespace when they change so keyword search picks up the rewrite.
+    if (args.content !== undefined || args.namespace !== undefined) {
+      const fSets: string[] = [];
+      const fParams: unknown[] = [args.id];
+      if (args.content !== undefined) {
+        fParams.push(args.content);
+        fSets.push(`content = $${fParams.length}`);
+      }
+      if (args.namespace !== undefined) {
+        fParams.push(args.namespace);
+        fSets.push(`namespace = $${fParams.length}`);
+      }
+      await this.pool.query(
+        `UPDATE memory_fts SET ${fSets.join(", ")} WHERE entry_id = $1`,
+        fParams,
+      );
+    }
+    return true;
   }
 
   /** Full-text keyword search via Postgres tsvector. Optional `agentName`

@@ -263,6 +263,10 @@ export class FakeWarmStore {
     source: string;
     agentName?: string | null;
     metadata?: Record<string, unknown>;
+    sourceType?: string | null;
+    capturedFrom?: string | null;
+    confidence?: number;
+    contentHash?: string | null;
   }): Promise<string> {
     const id = ulid();
     this.rows.set(id, {
@@ -279,6 +283,12 @@ export class FakeWarmStore {
       hits: 0,
       lastAccessed: new Date(),
     });
+    if (args.contentHash) {
+      this.contentHashIdx.set(
+        `${args.userId}:${args.projectId ?? ""}:${args.contentHash}`,
+        id,
+      );
+    }
     return id;
   }
 
@@ -698,6 +708,55 @@ export class FakeWarmStore {
       if (m) return p;
     }
     return null;
+  }
+
+  // Per-(user, project, hash) shadow map for the dedup fast-path.
+  contentHashIdx = new Map<string, string>();
+  async findByContentHash(
+    userId: string,
+    projectId: string | null,
+    contentHash: string,
+  ): Promise<string | null> {
+    return this.contentHashIdx.get(`${userId}:${projectId ?? ""}:${contentHash}`) ?? null;
+  }
+
+  async updateEntry(args: {
+    userId: string;
+    id: string;
+    projectId?: string | null;
+    content?: string;
+    namespace?: string;
+    metadata?: Record<string, unknown>;
+    sourceType?: string;
+    capturedFrom?: string;
+    confidence?: number;
+    contentHash?: string;
+  }): Promise<boolean> {
+    const r = this.rows.get(args.id);
+    if (!r) return false;
+    const want = args.projectId;
+    if (typeof want === "string") {
+      if (r.projectId !== want) return false;
+    } else {
+      if (r.projectId !== null) return false;
+      if (r.userId !== args.userId) return false;
+    }
+    if (args.content !== undefined) r.content = args.content;
+    if (args.namespace !== undefined) r.namespace = args.namespace;
+    if (args.metadata !== undefined) r.metadata = args.metadata;
+    return true;
+  }
+
+  // Per-user active project pointer. In-memory; reset between fake
+  // instances. Tests that exercise the activate/deactivate flow assert
+  // against this directly.
+  activeProject = new Map<string, string>();
+  async getActiveProject(userId: string): Promise<string | null> {
+    return this.activeProject.get(userId) ?? null;
+  }
+  async setActiveProject(userId: string, projectId: string | null): Promise<void> {
+    if (projectId === null) this.activeProject.delete(userId);
+    else this.activeProject.set(userId, projectId);
   }
 
   async recordMetricsSamples(): Promise<void> { /* no-op in fake */ }
