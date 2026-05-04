@@ -8,7 +8,6 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import type { MemoryEngine } from "../engine/index.js";
 import type { MetricsCollector } from "../admin/metrics.js";
-import type { LoginThrottle } from "../auth.js";
 import type { WarmStore } from "../warm-store/index.js";
 
 export interface DashboardUser {
@@ -24,8 +23,6 @@ export interface RouteContext {
   auth: { mode: "none" | "bearer" | "user"; token?: string };
   /** Master switch for /admin/* + /v1/admin/metrics. */
   adminDashboard: boolean;
-  /** In-memory per-username login throttle. */
-  loginThrottle: LoginThrottle;
   /** Shared safe-equal — protects token compares against timing oracles. */
   safeEqual: (a: string, b: string) => boolean;
   /** Admin gate for /v1/admin/*. Requires a session-admin user. */

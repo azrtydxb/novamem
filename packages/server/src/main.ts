@@ -11,7 +11,6 @@ import { makeEmbedder } from "./embeddings.js";
 import { buildHttpServer } from "./http.js";
 import { loadConfig } from "./config.js";
 import { MetricsCollector } from "./admin/metrics.js";
-import { bootstrapAdmin, gcExpiredSessions } from "./auth.js";
 import { buildAuth } from "./auth-betterauth.js";
 
 async function main() {
@@ -38,18 +37,6 @@ async function main() {
 
   const warm = new WarmStore({ url: cfg.warm.url });
   await warm.initialize();
-
-  // Seed the bootstrap admin if there are no users and the env vars are set.
-  // Keeps the first-deploy "set env, restart, log in" path zero-touch.
-  await bootstrapAdmin(
-    warm,
-    process.env.NOVAMEM_BOOTSTRAP_ADMIN_USERNAME,
-    process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD,
-    {
-      info: (m) => console.log(m), // eslint-disable-line no-console
-      warn: (m) => console.warn(m), // eslint-disable-line no-console
-    },
-  );
 
   const cold = new ColdStore({ url: cfg.cold.url, vectorSize: cfg.cold.vectorSize });
 
@@ -119,22 +106,6 @@ async function main() {
     metrics,
   });
 
-  // P1-S4: daily session GC sweep. Sessions don't slide; expired rows
-  // would otherwise accumulate forever.
-  const sessionGcTimer = setInterval(async () => {
-    try {
-      const n = await gcExpiredSessions(warm);
-      if (n > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[novamem] gc-expired-sessions: ${n} rows removed`);
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("session GC failed", err);
-    }
-  }, 24 * 60 * 60 * 1000);
-  // Don't keep the process alive just for the GC timer.
-  sessionGcTimer.unref?.();
 
   const decayTimer = setInterval(async () => {
     try {
@@ -200,11 +171,14 @@ async function main() {
       process.env.NOVAMEM_BOOTSTRAP_ADMIN_USERNAME ?? null;
     const adminPassword = process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD ?? null;
     if (adminEmail && adminPassword) {
+      // Seed when the system has no admin yet — even if regular users
+      // already exist. Admin is the operator account (user management +
+      // health checks); regular users sign in for memory operations.
       const probe = await warm.pool.query<{ count: string }>(
-        `SELECT count(*)::text FROM "user"`,
+        `SELECT count(*)::text FROM "user" WHERE role = 'admin'`,
       );
-      const userCount = Number(probe.rows[0]?.count ?? "0");
-      if (userCount === 0) {
+      const adminCount = Number(probe.rows[0]?.count ?? "0");
+      if (adminCount === 0) {
         // Treat the env value as an email when it contains '@', else
         // synthesise a placeholder domain so Better Auth's email-format
         // validator accepts it. Operators get a sensible default for
@@ -260,7 +234,6 @@ async function main() {
 
   const shutdown = async () => {
     clearInterval(decayTimer);
-    clearInterval(sessionGcTimer);
     await app.close();
     if (graph) await graph.close();
     await warm.close();
