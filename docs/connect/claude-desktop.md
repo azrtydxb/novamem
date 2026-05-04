@@ -21,7 +21,7 @@ Edit `claude_desktop_config.json`:
 }
 ```
 
-Quit and relaunch Claude Desktop. The novamem tools (`memory.*`, `project.*`) appear under the 🔌 menu.
+Quit and relaunch Claude Desktop. The novamem tools (`memory_*`, `project_*`) appear under the 🔌 menu.
 
 ## Stdio shim (legacy builds)
 
@@ -50,11 +50,11 @@ Open a chat and ask:
 
 > What MCP tools do you have available?
 
-Claude should list `memory.search`, `memory.remember`, etc. Then:
+Claude should list `memory_search`, `memory_remember`, etc. Then:
 
 > Remember that my preferred timezone is UTC.
 
-It should call `memory.remember` and confirm.
+It should call `memory_remember` and confirm.
 
 ## Troubleshooting
 

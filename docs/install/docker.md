@@ -93,4 +93,4 @@ For multi-node use [Kubernetes](kubernetes.md) instead.
 - `novamem` container restarting → `docker compose logs novamem`. Most common: `NOVAMEM_COOKIE_SECRET` missing, or Postgres still warming up (compose waits on the healthcheck, but slow disks can race).
 - `403 Invalid origin` on sign-in → set `NOVAMEM_BASE_URL` to the exact URL the browser uses and restart.
 - Sign-in works but session doesn't stick → set `NOVAMEM_INSECURE_COOKIES=1` for dev, or terminate TLS in front for prod.
-- First `memory.search` is slow → the local embedder is downloading the model on first call; subsequent calls are fast.
+- First `memory_search` is slow → the local embedder is downloading the model on first call; subsequent calls are fast.

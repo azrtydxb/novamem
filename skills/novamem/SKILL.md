@@ -20,25 +20,25 @@ The server ships these same rules to compliant clients via the MCP `instructions
 15 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
 
 **Read / recall** — see [references/search.md](references/search.md):
-- `memory.search` — hybrid relevance (keyword + vector + graph fusion)
-- `memory.recent` — newest-first feed, optional `since` cutoff
-- `memory.today` — sugar for `recent` with a 24h window
-- `memory.neighbors` — graph traversal from a seed entry id
-- `memory.stats` — per-namespace + per-tier counts
+- `memory_search` — hybrid relevance (keyword + vector + graph fusion)
+- `memory_recent` — newest-first feed, optional `since` cutoff
+- `memory_today` — sugar for `recent` with a 24h window
+- `memory_neighbors` — graph traversal from a seed entry id
+- `memory_stats` — per-namespace + per-tier counts
 
 **Write / mutate** — see [references/remember.md](references/remember.md):
-- `memory.remember` — store a new entry (subject to the worthiness gate)
-- `memory.update` — rewrite an entry in place; preserves id + hits + edges
-- `memory.forget` — hard delete across warm + cold + graph
+- `memory_remember` — store a new entry (subject to the worthiness gate)
+- `memory_update` — rewrite an entry in place; preserves id + hits + edges
+- `memory_forget` — hard delete across warm + cold + graph
 
 **Project (sub-brain) lifecycle** — see [references/projects.md](references/projects.md):
-- `project.list` — projects you're a member of
-- `project.create` — new project, you become owner
-- `project.delete` — owner-only purge
-- `project.activate` / `project.deactivate` — set or clear the active project; `memory.*` calls then default to it
-- `project.share` / `project.unshare` — owner adds / removes members by email or display name
+- `project_list` — projects you're a member of
+- `project_create` — new project, you become owner
+- `project_delete` — owner-only purge
+- `project_activate` / `project_deactivate` — set or clear the active project; `memory_*` calls then default to it
+- `project_share` / `project_unshare` — owner adds / removes members by email or display name
 
-## When to call `memory.search`
+## When to call `memory_search`
 
 Search BEFORE any of these:
 
@@ -54,7 +54,7 @@ Default weights are tuned for prose. Useful overrides:
 
 If every hit is below ~0.4, treat it as a miss.
 
-## When to call `memory.remember`
+## When to call `memory_remember`
 
 Save things that will still matter next session:
 
@@ -74,9 +74,9 @@ The server applies a **worthiness gate**. Inputs shorter than 12 chars or matchi
 
 When you remember something proactively, mention it in one short sentence ("Saved that as a memory.") so the user can correct or veto.
 
-## When to call `memory.update`
+## When to call `memory_update`
 
-Facts evolve. When the user says "I now live in Singapore", search for the existing "lives in" memory and call `memory.update` instead of `remember` (which would leave the old fact alongside the new one). Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
+Facts evolve. When the user says "I now live in Singapore", search for the existing "lives in" memory and call `memory_update` instead of `remember` (which would leave the old fact alongside the new one). Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
 
 ## Provenance fields
 
@@ -90,11 +90,11 @@ When known, set these on `remember` and `update`:
 
 A project is a *sub-brain* — its memories are a separate shelf from your user-global memory.
 
-- When passing `project` to a `memory.*` call, an id (ULID) **or** human name both work
+- When passing `project` to a `memory_*` call, an id (ULID) **or** human name both work
 - Omit `project` to use whatever's currently active (or user-global if none is active)
 - `includeProjects[]` (search / recent / neighbors) unions user-global with the listed projects, capped at 16
 
-Use `project.activate({ project })` when the user signals they're working on a specific project — `memory.*` calls then default to it: `search` / `recent` / `neighbors` union it with user-global; `remember` / `forget` / `update` target it directly.
+Use `project_activate({ project })` when the user signals they're working on a specific project — `memory_*` calls then default to it: `search` / `recent` / `neighbors` union it with user-global; `remember` / `forget` / `update` target it directly.
 
 ## Decay & reinforcement
 

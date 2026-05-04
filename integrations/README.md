@@ -66,8 +66,8 @@ After install, from any session:
 
 The rules file (`CLAUDE.md` fragment) tells the agent:
 
-- when to call `memory.remember` (durable info, not transient state)
-- when to call `memory.search` (before exploring the codebase, when the
+- when to call `memory_remember` (durable info, not transient state)
+- when to call `memory_search` (before exploring the codebase, when the
   user references prior work, when a decision was likely already made)
 - how to use weights (`{ keyword: 1 }` for ids/symbols, default for prose)
 - how project scope works (omit for user-wide, set for sub-brain)

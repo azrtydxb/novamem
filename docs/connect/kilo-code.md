@@ -42,7 +42,7 @@ This repo ships a Kilo-shaped bundle. Run from your project root:
 ```bash
 mkdir -p .kilocode/rules .kilocode/commands
 
-# Behaviour rules (when to call memory.* / project.*)
+# Behaviour rules (when to call memory_* / project_*)
 cp /path/to/novamem/integrations/claude-code/CLAUDE.md \
    .kilocode/rules/novamem.md
 
@@ -61,7 +61,7 @@ Open a session in the project and ask:
 
 > Remember that this repo uses pnpm workspaces.
 
-Kilo should call `memory.remember`. Then `/recall pnpm` to check it round-trips.
+Kilo should call `memory_remember`. Then `/recall pnpm` to check it round-trips.
 
 ## Troubleshooting
 

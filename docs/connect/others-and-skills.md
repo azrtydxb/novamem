@@ -44,13 +44,13 @@ For hosts that only speak stdio MCP, the [@azrty/novamem-mcp](https://www.npmjs.
 }
 ```
 
-Same tool surface (15 tools — `memory.*` + `project.*`).
+Same tool surface (15 tools — `memory_*` + `project_*`).
 
 ## Agent Skills add-on
 
 If your client supports the [Agent Skills](https://agentskills.io) format — Goose, OpenCode, OpenHands, Junie, Roo Code, Factory, and a growing list — you can drop the bundled skill into the client's skills directory **alongside** or **instead of** the MCP server.
 
-The skill teaches the agent *when* to call the tools and *how* to phrase saves; MCP exposes the tools themselves. With both, the skill loads at startup (\~100 tokens for `name` + `description`), expands on demand, and the agent calls `memory.*` / `project.*` over MCP.
+The skill teaches the agent *when* to call the tools and *how* to phrase saves; MCP exposes the tools themselves. With both, the skill loads at startup (\~100 tokens for `name` + `description`), expands on demand, and the agent calls `memory_*` / `project_*` over MCP.
 
 ### Layout
 
@@ -60,9 +60,9 @@ The bundle lives at [`skills/novamem/`](../../skills/novamem) and follows the ag
 skills/novamem/
 ├── SKILL.md                 # name, description, when-to-use rules
 └── references/
-    ├── search.md            # memory.search / recent / today / neighbors / stats
-    ├── remember.md          # memory.remember / update / forget + worthiness gate
-    └── projects.md          # all 7 project.* tools
+    ├── search.md            # memory_search / recent / today / neighbors / stats
+    ├── remember.md          # memory_remember / update / forget + worthiness gate
+    └── projects.md          # all 7 project_* tools
 ```
 
 ### Install
