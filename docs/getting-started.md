@@ -38,7 +38,15 @@ In the dashboard, switch to **API Tokens** and click **New token**. Copy the pla
 
 ## 4. Connect your AI tool
 
-Pick your host:
+**Easiest** — let the installer do it for you. From your project root:
+
+```bash
+npx @azrty/novamem-init
+```
+
+It asks for the server URL, your dashboard email + password, mints a fresh bearer, detects every AI tool you have installed, and writes the right MCP config + skill bundle + slash commands per host. See [`@azrty/novamem-init`](../packages/init/README.md) for the full flag reference.
+
+**Manual** — pick your host:
 
 - [Claude Code](connect/claude-code.md)
 - [Claude Desktop](connect/claude-desktop.md)
