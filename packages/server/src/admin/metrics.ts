@@ -390,7 +390,7 @@ export class MetricsCollector {
 
   /** Render the global snapshot in Prometheus exposition format. Cheap
    *  enough to compute on every scrape — gauges resolve via the same
-   *  read-through sources as the JSON snapshot (review finding P2-18). */
+   *  read-through sources as the JSON snapshot. */
   async renderProm(): Promise<string> {
     const s = await this.snapshot();
     const lines: string[] = [];
