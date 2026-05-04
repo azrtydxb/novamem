@@ -1,5 +1,5 @@
 {
-  "name": "@azrty/novamem-monorepo",
+  "name": "@azertydxb/novamem-monorepo",
   "version": "0.1.0",
   "private": true,
   "description": "Standalone tiered memory service for AI agents",
@@ -14,7 +14,7 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "docs:api": "pnpm --filter @azrty/novamem-server build && pnpm --filter @azrty/novamem-server docs:api"
+    "docs:api": "pnpm --filter @azertydxb/novamem-server build && pnpm --filter @azertydxb/novamem-server docs:api"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

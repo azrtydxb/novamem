@@ -15,7 +15,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { NovamemClient } from "@azrty/novamem";
+import { NovamemClient } from "@azertydxb/novamem";
 
 /** Behaviour rules surfaced to the host LLM via the MCP `instructions`
  *  field on `initialize`. Compliant clients (Claude Code, Claude Desktop,

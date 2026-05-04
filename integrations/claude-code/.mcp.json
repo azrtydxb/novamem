@@ -4,7 +4,7 @@
     "novamem": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@azrty/novamem-mcp"],
+      "args": ["-y", "@azertydxb/novamem-mcp"],
       "env": {
         "NOVAMEM_BASE_URL": "http://localhost:7778",
         "NOVAMEM_TOKEN": "${NOVAMEM_TOKEN}"

@@ -90,7 +90,7 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@azrty/novamem':
+      '@azertydxb/novamem':
         specifier: workspace:*
         version: link:../client
       '@modelcontextprotocol/sdk':
@@ -148,7 +148,7 @@ importers:
         specifier: ^4.4.2
         version: 4.4.2
     devDependencies:
-      '@azrty/novamem-admin-ui':
+      '@azertydxb/novamem-admin-ui':
         specifier: workspace:*
         version: link:../admin-ui
       '@types/pg':
