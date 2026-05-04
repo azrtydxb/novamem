@@ -48,11 +48,11 @@ In a Claude Code session:
 /mcp
 ```
 
-You should see `novamem` listed with 15 tools (`memory.*` + `project.*`). Then ask:
+You should see `novamem` listed with 15 tools (`memory_*` + `project_*`). Then ask:
 
 > Remember that I prefer pnpm over npm.
 
-Claude should call `memory.remember` and confirm.
+Claude should call `memory_remember` and confirm.
 
 ## Troubleshooting
 

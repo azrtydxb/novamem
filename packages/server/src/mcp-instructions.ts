@@ -20,7 +20,7 @@ exposes hybrid search (keyword + vector + graph) over durable entries the
 user has accumulated across sessions. **Use it.** Don't re-derive things the
 user already told you.
 
-## When to call \`memory.search\`
+## When to call \`memory_search\`
 
 Search before any of these:
 - The user references prior work or a past decision.
@@ -36,7 +36,7 @@ Default weights are tuned for prose. Useful overrides:
 
 If every hit is below ~0.4, treat it as a miss.
 
-## When to call \`memory.remember\`
+## When to call \`memory_remember\`
 
 Save things that will still matter next session:
 - Decisions with reasoning ("chose drizzle over knex because…").
@@ -67,10 +67,10 @@ Provenance — when known, set:
 When you remember something proactively, mention it in one short
 sentence ("Saved that as a memory.") so the user can correct or veto.
 
-## When to call \`memory.update\`
+## When to call \`memory_update\`
 
 Facts evolve. When the user says "I now live in Singapore", search for
-the existing "lives in" memory and \`memory.update\` it instead of
+the existing "lives in" memory and \`memory_update\` it instead of
 calling remember (which would leave the old fact alongside the new
 one). Update preserves the entry's id, hit count, and graph edges; it
 re-embeds when content changes. Skip the embedder by omitting
@@ -81,21 +81,21 @@ re-embeds when content changes. Skip the embedder by omitting
 A project is a *sub-brain* — its memories are a separate shelf from your
 user-global memory. Lifecycle:
 
-- \`project.list\` — what you have access to (id + name + role).
-- \`project.create({name})\` — own a new project.
-- \`project.delete({project})\` — purge it (owner only).
-- \`project.activate({project})\` — set the active project. Subsequent
-  memory.* calls without an explicit \`project\` arg default to it:
+- \`project_list\` — what you have access to (id + name + role).
+- \`project_create({name})\` — own a new project.
+- \`project_delete({project})\` — purge it (owner only).
+- \`project_activate({project})\` — set the active project. Subsequent
+  memory_* calls without an explicit \`project\` arg default to it:
   search/recent/neighbors union user-global with the active project,
   remember/forget target it directly. Use this when the user signals
   they're working on a specific project ("I'm working on Apollo
   today" / "context: Phoenix migration").
-- \`project.deactivate\` — clear the active project.
-- \`project.share({project, username})\` — invite another user (email
+- \`project_deactivate\` — clear the active project.
+- \`project_share({project, username})\` — invite another user (email
   or display name). Owner only.
-- \`project.unshare({project, username})\` — remove a member. Owner only.
+- \`project_unshare({project, username})\` — remove a member. Owner only.
 
-When passing \`project\` explicitly to a memory.* call, an id (ULID)
+When passing \`project\` explicitly to a memory_* call, an id (ULID)
 or human name both work. Omit \`project\` to use whatever's active.
 
 ## Decay & reinforcement
@@ -104,7 +104,7 @@ Entries decay if not accessed: \`effectiveDays = 7 · log₂(hits + 1)\`.
 Searching counts as access — re-finding important memories keeps them warm.
 
 ## Tools available
-\`memory.search\`, \`memory.remember\`, \`memory.recent\`, \`memory.today\`,
-\`memory.neighbors\`, \`memory.forget\`, \`memory.stats\`, \`project.list\`,
-\`project.create\`.
+\`memory_search\`, \`memory_remember\`, \`memory_recent\`, \`memory_today\`,
+\`memory_neighbors\`, \`memory_forget\`, \`memory_stats\`, \`project_list\`,
+\`project_create\`.
 `;

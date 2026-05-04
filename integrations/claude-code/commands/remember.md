@@ -5,7 +5,7 @@ allowed-tools: mcp__novamem__memory_remember
 ---
 
 Store the following as a NovaMem memory entry by calling
-`mcp__novamem__memory.remember`. If the user is currently working in a
+`mcp__novamem__memory_remember`. If the user is currently working in a
 specific project (visible in their recent context), pass `project: <id>`
 to scope it; otherwise leave project unset for a user-wide entry.
 

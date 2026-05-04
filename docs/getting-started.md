@@ -66,11 +66,11 @@ Ask your AI tool:
 
 > Remember that I prefer pnpm over npm.
 
-It should call `memory.remember`. Then start a fresh session and ask:
+It should call `memory_remember`. Then start a fresh session and ask:
 
 > What package manager do I prefer?
 
-It should call `memory.search` and surface the answer.
+It should call `memory_search` and surface the answer.
 
 ## What next
 

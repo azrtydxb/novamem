@@ -581,7 +581,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       const resolved = await resolveProjectRef(userId, ref.value);
       if (!resolved) {
         reply.code(404).send({
-          error: `no such project '${ref.value}' — call project.list to see ids`,
+          error: `no such project '${ref.value}' — call project_list to see ids`,
         });
         return false;
       }

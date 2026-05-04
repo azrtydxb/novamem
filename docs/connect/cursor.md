@@ -45,11 +45,11 @@ Open the Composer / Agent and ask:
 
 > Remember that this project uses Tailwind v4 (CSS-native config, not tailwind.config.js).
 
-Cursor should call `memory.remember`. Then in a fresh session:
+Cursor should call `memory_remember`. Then in a fresh session:
 
 > What styling system does this project use?
 
-It should call `memory.search` and surface the answer.
+It should call `memory_search` and surface the answer.
 
 ## Project-scoped memories
 
@@ -57,7 +57,7 @@ If you want every memory written from this Cursor workspace to land in a specifi
 
 > Activate the "phoenix" project for memory.
 
-Cursor will call `project.activate({ project: "phoenix" })`. Subsequent `memory.*` calls without an explicit `project` arg default to that project until you call `project.deactivate` or change workspaces.
+Cursor will call `project_activate({ project: "phoenix" })`. Subsequent `memory_*` calls without an explicit `project` arg default to that project until you call `project_deactivate` or change workspaces.
 
 ## Troubleshooting
 

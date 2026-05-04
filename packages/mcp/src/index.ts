@@ -31,7 +31,7 @@ exposes hybrid search (keyword + vector + graph) over durable entries the
 user has accumulated across sessions. **Use it.** Don't re-derive things the
 user already told you.
 
-## When to call \`memory.search\`
+## When to call \`memory_search\`
 
 Search before any of these:
 - The user references prior work or a past decision.
@@ -47,7 +47,7 @@ Default weights are tuned for prose. Useful overrides:
 
 If every hit is below ~0.4, treat it as a miss.
 
-## When to call \`memory.remember\`
+## When to call \`memory_remember\`
 
 Save things that will still matter next session:
 - Decisions with reasoning ("chose drizzle over knex because…").
@@ -68,7 +68,7 @@ When you remember something proactively, mention it in one short sentence
 ## Project scope
 
 A project is a *sub-brain*. Pass \`project: <id>\` to scope a call to that
-project; omit it for user-wide entries. \`project.list\` returns the
+project; omit it for user-wide entries. \`project_list\` returns the
 projects the caller can access. If a memory clearly belongs to a project
 the user is working on, scope it there.
 
@@ -78,9 +78,9 @@ Entries decay if not accessed: \`effectiveDays = 7 · log₂(hits + 1)\`.
 Searching counts as access — re-finding important memories keeps them warm.
 
 ## Tools available
-\`memory.search\`, \`memory.remember\`, \`memory.recent\`, \`memory.today\`,
-\`memory.neighbors\`, \`memory.forget\`, \`memory.stats\`, \`project.list\`,
-\`project.create\`.
+\`memory_search\`, \`memory_remember\`, \`memory_recent\`, \`memory_today\`,
+\`memory_neighbors\`, \`memory_forget\`, \`memory_stats\`, \`project_list\`,
+\`project_create\`.
 `;
 
 export function buildRemoteMcpServer(client: NovamemClient): Server {
@@ -92,7 +92,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
-        name: "memory.search",
+        name: "memory_search",
         description:
           "Hybrid search across stored memories (remote novamem). Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap. Pass `project` to scope to a sub-brain you have access to (or omit to search user-wide entries).",
         inputSchema: {
@@ -118,7 +118,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "memory.remember",
+        name: "memory_remember",
         description: "Store a new memory entry (remote novamem)",
         inputSchema: {
           type: "object",
@@ -132,7 +132,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "memory.today",
+        name: "memory_today",
         description: "Recent entries (last 24h)",
         inputSchema: {
           type: "object",
@@ -144,7 +144,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "memory.recent",
+        name: "memory_recent",
         description: "Recent entries in a namespace, ordered newest first. Optional ISO-8601 `since` lower bound.",
         inputSchema: {
           type: "object",
@@ -157,7 +157,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "memory.neighbors",
+        name: "memory_neighbors",
         description: "Graph-neighbour traversal from a seed memory id",
         inputSchema: {
           type: "object",
@@ -171,7 +171,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "memory.forget",
+        name: "memory_forget",
         description: "Explicit deletion of a memory entry",
         inputSchema: {
           type: "object",
@@ -183,17 +183,17 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "memory.stats",
+        name: "memory_stats",
         description: "Service-wide stats snapshot",
         inputSchema: { type: "object", properties: {} },
       },
       {
-        name: "project.list",
+        name: "project_list",
         description: "List projects the caller is a member of (id + name + role).",
         inputSchema: { type: "object", properties: {} },
       },
       {
-        name: "project.create",
+        name: "project_create",
         description: "Create a new project and become its owner. Returns the project's id.",
         inputSchema: {
           type: "object",
@@ -204,7 +204,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "project.delete",
+        name: "project_delete",
         description: "Delete a project owned by the caller. Caller must be the owner.",
         inputSchema: {
           type: "object",
@@ -213,9 +213,9 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "project.activate",
+        name: "project_activate",
         description:
-          "Set the caller's active project. Subsequent memory.* calls without an explicit `project` arg default to this scope.",
+          "Set the caller's active project. Subsequent memory_* calls without an explicit `project` arg default to this scope.",
         inputSchema: {
           type: "object",
           properties: { project: { type: "string", description: "Project id or name." } },
@@ -223,12 +223,12 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "project.deactivate",
+        name: "project_deactivate",
         description: "Clear the caller's active project. Reads/writes default to user-global again.",
         inputSchema: { type: "object", properties: {} },
       },
       {
-        name: "project.share",
+        name: "project_share",
         description:
           "Add another user as a member of a project the caller owns. Username may be email or display name.",
         inputSchema: {
@@ -241,7 +241,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         },
       },
       {
-        name: "project.unshare",
+        name: "project_unshare",
         description: "Remove a member from a project. Caller must be the owner.",
         inputSchema: {
           type: "object",
@@ -260,7 +260,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
     const project = typeof args.project === "string" && args.project.length > 0 ? args.project : undefined;
     try {
       switch (req.params.name) {
-        case "memory.search": {
+        case "memory_search": {
           const w = (args.weights ?? {}) as { keyword?: unknown; vector?: unknown; graph?: unknown };
           const weights =
             typeof w.keyword === "number" || typeof w.vector === "number" || typeof w.graph === "number"
@@ -279,7 +279,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "memory.remember": {
+        case "memory_remember": {
           const r = await client.remember({
             content: String(args.content),
             namespace: typeof args.namespace === "string" ? args.namespace : undefined,
@@ -288,7 +288,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "memory.today": {
+        case "memory_today": {
           const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
           const r = await client.recent({
             namespace: typeof args.namespace === "string" ? args.namespace : undefined,
@@ -298,7 +298,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "memory.recent": {
+        case "memory_recent": {
           const r = await client.recent({
             namespace: typeof args.namespace === "string" ? args.namespace : undefined,
             k: typeof args.k === "number" ? args.k : undefined,
@@ -307,7 +307,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "memory.neighbors": {
+        case "memory_neighbors": {
           const r = await client.neighbors({
             id: String(args.id),
             depth: typeof args.depth === "number" ? args.depth : undefined,
@@ -316,41 +316,41 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "memory.forget": {
+        case "memory_forget": {
           const r = await client.forget(String(args.id), { project });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "memory.stats": {
+        case "memory_stats": {
           const r = await client.stats();
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "project.list": {
+        case "project_list": {
           const r = await client.listProjects();
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "project.create": {
+        case "project_create": {
           const r = await client.createProject({ name: String(args.name) });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "project.delete": {
+        case "project_delete": {
           const r = await client.deleteProject(String(args.project));
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "project.activate": {
+        case "project_activate": {
           const r = await client.setActiveProject(String(args.project));
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "project.deactivate": {
+        case "project_deactivate": {
           await client.clearActiveProject();
           return { content: [{ type: "text", text: JSON.stringify({ active: null }) }] };
         }
-        case "project.share": {
+        case "project_share": {
           const r = await client.addProjectMember(String(args.project), {
             username: String(args.username),
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
-        case "project.unshare": {
+        case "project_unshare": {
           const r = await client.removeProjectMemberByUsername(
             String(args.project),
             String(args.username),

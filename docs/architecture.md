@@ -35,7 +35,7 @@ flowchart TB
     BA --> PG
 ```
 
-### Read path (memory.search)
+### Read path (memory_search)
 
 ```mermaid
 sequenceDiagram
@@ -58,7 +58,7 @@ sequenceDiagram
     S-->>C: top-K hits + per-signal subscores
 ```
 
-### Write path (memory.remember)
+### Write path (memory_remember)
 
 ```mermaid
 flowchart LR
@@ -119,7 +119,7 @@ Enforced in three places:
 
 ### Active project
 
-`user_active_project` (one row per user) holds an optional pointer at the user's current sub-brain. When set, memory.* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly. Cleared by deleting the row (`DELETE /v1/me/active-project`, `project.deactivate` over MCP).
+`user_active_project` (one row per user) holds an optional pointer at the user's current sub-brain. When set, memory_* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly. Cleared by deleting the row (`DELETE /v1/me/active-project`, `project_deactivate` over MCP).
 
 ## AuthN / AuthZ
 

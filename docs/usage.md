@@ -21,7 +21,7 @@ flowchart LR
 
 A user-global entry is invisible to anyone else, period. A project entry is visible to every member of that project — that's the whole point of sharing.
 
-## Searching (`memory.search`)
+## Searching (`memory_search`)
 
 Hybrid search runs **keyword (FTS)** + **vector (cosine)** + **graph (neighbour)** in parallel and fuses the three with weighted scoring:
 
@@ -48,9 +48,9 @@ By default a search runs in one `namespace` (default `"default"`) and one `proje
 - `includeNamespaces: ["a", "b"]` — union across namespaces (capped at 16)
 - `includeProjects: ["a", "b"]` — union user-global with each listed project (capped at 16)
 
-Or set an [active project](#active-project-sub-brains) once and `memory.*` defaults to it.
+Or set an [active project](#active-project-sub-brains) once and `memory_*` defaults to it.
 
-## Remembering (`memory.remember`)
+## Remembering (`memory_remember`)
 
 Save things that will still matter next session:
 
@@ -92,11 +92,11 @@ Set these on `remember` (and `update`) when known:
 | `capturedFrom` | free text | agent name, conversation id, channel ref |
 | `confidence` | `0..1`, default `1.0` | lower for inferred facts; usable as a future filter |
 
-## Updating (`memory.update`)
+## Updating (`memory_update`)
 
-Facts evolve. When the user says "I now live in Singapore", search for the existing "lives in" memory and call `memory.update` instead of `forget` + `remember`. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
+Facts evolve. When the user says "I now live in Singapore", search for the existing "lives in" memory and call `memory_update` instead of `forget` + `remember`. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
 
-## Forgetting (`memory.forget`)
+## Forgetting (`memory_forget`)
 
 Hard delete: removes warm row, FTS shadow, cold vector, and graph edges. There is no undo. Use when:
 
@@ -106,11 +106,11 @@ Hard delete: removes warm row, FTS shadow, cold vector, and graph edges. There i
 
 ## Time-windowed recall
 
-`memory.recent` returns newest-first within a namespace, with an optional `since` ISO-8601 lower bound. `memory.today` is sugar for `recent` with `since = now - 24h`. Use these when the user is anchoring on **time**, not relevance ("what did we work on yesterday?").
+`memory_recent` returns newest-first within a namespace, with an optional `since` ISO-8601 lower bound. `memory_today` is sugar for `recent` with `since = now - 24h`. Use these when the user is anchoring on **time**, not relevance ("what did we work on yesterday?").
 
 Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` does); recall is non-mutating.
 
-## Graph traversal (`memory.neighbors`)
+## Graph traversal (`memory_neighbors`)
 
 Walks the FalkorDB graph from a seed entry id and returns the same hit shape as `search`, scored by graph proximity. `depth` defaults to 1; **prefer 1**, larger depths are exponential and noisy.
 
@@ -123,12 +123,12 @@ When the graph store is offline, the response carries `degraded: true` and the n
 
 ## Active project (sub-brains)
 
-A user can `project.activate({ project: <id-or-name> })` to set their active project. Subsequent `memory.*` calls **without** an explicit `project` arg default to it:
+A user can `project_activate({ project: <id-or-name> })` to set their active project. Subsequent `memory_*` calls **without** an explicit `project` arg default to it:
 
 - `search` / `recent` / `neighbors` union the active project with user-global
 - `remember` / `forget` / `update` target the active project directly
 
-Use this when the user signals they're working on a specific project ("let's switch to Phoenix"). `project.deactivate` clears it. The pointer is server-side state per user, so a switch on one device is visible to every other device the user signs in from.
+Use this when the user signals they're working on a specific project ("let's switch to Phoenix"). `project_deactivate` clears it. The pointer is server-side state per user, so a switch on one device is visible to every other device the user signs in from.
 
 ## Decay and reinforcement
 
@@ -164,4 +164,4 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 | `degraded: true` on `search`/`neighbors` | Graph store offline | Mention to the user; warm + cold paths still work |
 | `401` | Bearer missing / revoked | Don't retry; surface to the user |
 | `403 not a member` | Project exists but caller can't reach it | Distinct from `404`; the project name is right but you don't have access |
-| `404 no such project` | Project name/id doesn't resolve | Caller should `project.list` to see what's available |
+| `404 no such project` | Project name/id doesn't resolve | Caller should `project_list` to see what's available |

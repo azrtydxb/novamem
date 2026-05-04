@@ -1,8 +1,8 @@
-# Read / recall — memory.search · memory.recent · memory.today · memory.neighbors · memory.stats
+# Read / recall — memory_search · memory_recent · memory_today · memory_neighbors · memory_stats
 
-Five MCP tools for reading. All are non-mutating except `memory.search`, which counts as an access (warms hits + bumps decay).
+Five MCP tools for reading. All are non-mutating except `memory_search`, which counts as an access (warms hits + bumps decay).
 
-## memory.search — hybrid relevance
+## memory_search — hybrid relevance
 
 Always runs keyword (FTS) + vector (cosine) + graph (neighbour) signals in parallel and fuses them with weighted scoring. Default weights `{ keyword: 0.3, vector: 0.6, graph: 0.1 }` — tuned for prose.
 
@@ -22,7 +22,7 @@ Useful weight overrides:
 
 Hits below ~0.4 are misses.
 
-## memory.recent — time-windowed feed
+## memory_recent — time-windowed feed
 
 Newest-first within a namespace and optional `since` lower bound. Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` does); recall is non-mutating.
 
@@ -34,15 +34,15 @@ Inputs:
 - `project` (string) — id or human name
 - `includeProjects[]` (string[])
 
-## memory.today — last 24h
+## memory_today — last 24h
 
-Sugar for `memory.recent` with `since = now - 24h` baked in. Same return shape.
+Sugar for `memory_recent` with `since = now - 24h` baked in. Same return shape.
 
 Inputs:
 - `namespace` (string)
 - `k` (number)
 
-## memory.neighbors — graph traversal
+## memory_neighbors — graph traversal
 
 Walks the graph store from a seed entry id. Returns the same hit shape as `search`, scored by graph proximity.
 
@@ -54,7 +54,7 @@ Inputs:
 
 If the response carries `degraded: true`, the graph store is offline — results will be empty; tell the user.
 
-## memory.stats — snapshot
+## memory_stats — snapshot
 
 No inputs. Returns counts per namespace + tier (warm vs cold) and an overall total. Use when the user asks "how much have you remembered" or you're triaging whether the store is healthy.
 
@@ -69,7 +69,7 @@ Every hit carries:
 - per-signal sub-scores (`keyword`, `vector`, `graph`) when available
 - `sourceType` / `capturedFrom` / `confidence` when set on the entry
 
-Cite `id` if you plan to follow up with `memory.update`, `memory.forget`, or `memory.neighbors`.
+Cite `id` if you plan to follow up with `memory_update`, `memory_forget`, or `memory_neighbors`.
 
 ## When NOT to use these
 
