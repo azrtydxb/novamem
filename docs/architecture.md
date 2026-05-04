@@ -168,6 +168,26 @@ Every memory entry carries:
 
 The synthetic id `"public"` exists as the implicit owner for `auth.mode=none|bearer` deployments. Better Auth's tables coexist with novamem's; project / user_token tables don't FK to `"user"` directly because Better Auth manages user deletion on its own table — orphaned rows fail-safe at resolve time.
 
+### Drizzle vs raw SQL boundary
+
+The warm store internals are fully on drizzle (query-builder for the
+mechanical CRUD, `db.execute(sql\`…\`)` for Postgres-specific bits like
+FTS, `EXTRACT(EPOCH …)`, and the GENERATED `tsv` column). Drizzle owns
+the schema; that's where the migrations live; that's the table-shape
+source of truth.
+
+The engine layer (`packages/server/src/engine/index.ts`) deliberately
+uses raw `warm.pool.query` for its ~10 cross-cutting queries (decay
+loop, orphan reaper, dream-cycle compaction, edge promotion, the
+transactional `forget`). Reason: tests run against a `FakeWarmStore`
+that mocks `warm.pool.query` by parsing the SQL string and serving
+in-memory results — they don't fake drizzle's query builder. Keeping
+the engine on raw SQL is what lets the test fakes stay simple. The
+boundary is intentional: warm-store is "drizzle-managed schema",
+engine is "business logic with direct SQL access for tests".
+
+### Schema management
+
 Schema is managed by **drizzle-kit migrations** (`packages/server/src/warm-store/migrations/`). On every boot, `WarmStore.initialize()` runs:
 
 1. Idempotent legacy cleanups (`DROP CONSTRAINT IF EXISTS`, `DROP TABLE IF EXISTS`) for pre-Better-Auth artefacts on existing databases.
@@ -245,6 +265,5 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
 - The OpenAPI spec is hand-rolled (`packages/server/src/openapi.ts`), not derived from the route Zod schemas. Route additions need to be reflected manually; CI doesn't catch the drift.
-- Engine layer (decay, dream cycle, orphan reaper, neighbour-edge promotion) still uses raw `warm.pool.query` for ~10 queries; the warm-store layer is fully on drizzle.
 
 See [../CHANGELOG.md](../CHANGELOG.md) for behaviour shifts and [../SECURITY.md](../SECURITY.md) for the production hardening checklist.
