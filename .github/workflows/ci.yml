@@ -127,7 +127,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
       - name: Trivy scan (HIGH+CRITICAL, fail on findings)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: novamem:ci-${{ matrix.arch }}
           severity: HIGH,CRITICAL
