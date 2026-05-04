@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MemoryEngine } from "./index.js";
+import { MemoryEngine, tokenJaccard } from "./index.js";
 import {
   asCold,
   asGraph,
@@ -34,6 +34,30 @@ function bench(opts: { graphConnected?: boolean } = {}): Bench {
   });
   return { warm, cold, graph, embedder, engine };
 }
+
+describe("tokenJaccard (dream-cycle merge gate)", () => {
+  it("strips stopwords so near-contradictions don't clear the 0.5 threshold", () => {
+    // Without stopword filtering, the two strings tokenise to
+    // {pascal, lives, in, dubai} vs {pascal, lives, in, belgium} and
+    // share 3/5 = 0.6 — clearing the 0.5 default threshold and merging
+    // a contradiction. Filtering the stopword `in` drops both sides to
+    // {pascal, lives, X} → 2/4 = 0.5, exactly at the boundary, and the
+    // merge gate (`< jaccardMin`) rejects equality, so no merge.
+    expect(tokenJaccard("Pascal lives in Dubai", "Pascal lives in Belgium")).toBeLessThanOrEqual(
+      0.5,
+    );
+  });
+
+  it("still returns a high score on near-identical content", () => {
+    expect(tokenJaccard("alpha beta gamma delta", "alpha beta gamma delta")).toBeGreaterThanOrEqual(
+      0.99,
+    );
+  });
+
+  it("returns 0 when both sides reduce to nothing", () => {
+    expect(tokenJaccard("the and of", "is are was")).toBe(0);
+  });
+});
 
 describe("engine.remember", () => {
   it("stores warm row and a cold vector", async () => {

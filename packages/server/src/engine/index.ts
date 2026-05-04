@@ -5,6 +5,8 @@
 
 import { createHash } from "node:crypto";
 
+import { and, desc, eq, gte, inArray, isNull, or } from "drizzle-orm";
+
 import { ColdStore } from "../cold-store.js";
 import { GraphStore } from "../graph-store.js";
 import { WarmStore } from "../warm-store/index.js";
@@ -17,7 +19,12 @@ import type {
   SearchRequest,
   SearchResult,
 } from "../types.js";
-import { DEFAULT_WEIGHTS, effectiveDays, fuse } from "./hybrid-search.js";
+import {
+  DEFAULT_WEIGHTS,
+  effectiveDays,
+  EFFECTIVE_LIFESPAN_SQL,
+  fuse,
+} from "./hybrid-search.js";
 
 /** Stable hash of normalized content. Used by the worthiness gate to
  *  detect exact duplicates within a (user, project) scope. */
@@ -25,13 +32,36 @@ function sha256Hex(s: string): string {
   return createHash("sha256").update(s).digest("hex");
 }
 
-/** Token-set Jaccard similarity, lowercased and stop-word-naive. Used by
- *  the dream cycle to gate vector-similarity merges — a high cosine
- *  alone isn't enough; the texts also have to share lexical surface
- *  area or we'd merge contradictions like "Pascal lives in Dubai" with
- *  "Pascal lives in Belgium". */
-function tokenJaccard(a: string, b: string): number {
-  const tokenize = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+/** Lowercased English-stopword shortlist for `tokenJaccard`. Kept small
+ *  and conservative — the goal is to drop the high-frequency glue words
+ *  ("the", "in", "is", …) that otherwise let near-contradictions clear
+ *  the dream cycle's 0.5 threshold. Identifiers and content words stay. */
+const JACCARD_STOPWORDS = new Set([
+  "a", "an", "the",
+  "i", "you", "he", "she", "it", "we", "they",
+  "me", "my", "your", "his", "her", "our", "their",
+  "is", "are", "was", "were", "be", "been", "being", "am",
+  "do", "does", "did", "have", "has", "had",
+  "to", "of", "in", "on", "at", "by", "for", "from", "with", "as",
+  "and", "or", "but", "if", "so", "than", "that", "this",
+  "not", "no", "nor",
+]);
+
+/** Token-set Jaccard similarity, lowercased and stop-word-filtered. Used
+ *  by the dream cycle to gate vector-similarity merges — a high cosine
+ *  alone isn't enough; the texts also have to share content-word
+ *  surface area or we'd merge contradictions like "Pascal lives in
+ *  Dubai" with "Pascal lives in Belgium" (which share only the glue
+ *  words `i`/`in`/`live` — exactly what the stopword filter strips). */
+export function tokenJaccard(a: string, b: string): number {
+  const tokenize = (s: string) => {
+    const out = new Set<string>();
+    for (const t of s.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+      if (JACCARD_STOPWORDS.has(t)) continue;
+      out.add(t);
+    }
+    return out;
+  };
   const ta = tokenize(a);
   const tb = tokenize(b);
   if (ta.size === 0 || tb.size === 0) return 0;
@@ -319,30 +349,43 @@ export class MemoryEngine {
     // FTS supports multi-namespace via `namespace = ANY(...)` in one query
     // per scope, so we fan out only across scopes (not namespaces).
     // Cold-store needs one search per (scope × namespace) collection.
-    const [keywordHitsAll, vectorHitsAll] = await Promise.all([
-      Promise.all(
-        scopes.map((projectId) =>
-          this.warm.ftsSearch({
-            userId,
-            projectId,
-            query: req.query,
-            namespace: namespaces[0]!, // ignored when namespaces array is set
-            namespaces: namespaces.length > 1 ? namespaces : undefined,
-            k: k * 3,
-            agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
-          }),
-        ),
+    //
+    // Per-tier `.catch`: a flaky tier should degrade gracefully — search
+    // still returns whatever the surviving tiers produced, and `degraded`
+    // becomes meaningful for warm/cold (not just graph). Without this,
+    // one Postgres or Qdrant blip rejects the whole top-level Promise.all.
+    let degraded = false;
+    const keywordsPromise = Promise.all(
+      scopes.map((projectId) =>
+        this.warm.ftsSearch({
+          userId,
+          projectId,
+          query: req.query,
+          namespace: namespaces[0]!, // ignored when namespaces array is set
+          namespaces: namespaces.length > 1 ? namespaces : undefined,
+          k: k * 3,
+          agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
+        }),
       ),
-      embedding
-        ? Promise.all(
-            scopes.flatMap((projectId) =>
-              namespaces.map((namespace) =>
-                this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 }),
-              ),
+    ).catch((err) => {
+      degraded = true;
+      this.logger.warn(`[engine] keyword tier failed: ${(err as Error).message}`);
+      return [] as Array<Array<{ id: string; score: number }>>;
+    });
+    const vectorsPromise = embedding
+      ? Promise.all(
+          scopes.flatMap((projectId) =>
+            namespaces.map((namespace) =>
+              this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 }),
             ),
-          )
-        : Promise.resolve([] as Array<Array<{ id: string; score: number }>>),
-    ]);
+          ),
+        ).catch((err) => {
+          degraded = true;
+          this.logger.warn(`[engine] vector tier failed: ${(err as Error).message}`);
+          return [] as Array<Array<{ id: string; score: number }>>;
+        })
+      : Promise.resolve([] as Array<Array<{ id: string; score: number }>>);
+    const [keywordHitsAll, vectorHitsAll] = await Promise.all([keywordsPromise, vectorsPromise]);
     const keywordHits = keywordHitsAll.flat();
     const vectorHits = vectorHitsAll.flat();
     // Single-scope path keeps the original projectId for downstream lookups
@@ -350,7 +393,6 @@ export class MemoryEngine {
     const projectId = scopes.length === 1 ? scopes[0]! : null;
 
     let graphHits: Array<{ id: string; score: number }> = [];
-    let degraded = false;
     if (this.graph?.isConnected() && vectorHits.length > 0) {
       const seed = vectorHits[0]!.id;
       try {
@@ -378,15 +420,26 @@ export class MemoryEngine {
     ).slice(0, k);
 
     // P1-P1: batch the per-result lookups + bump-hits to collapse the
-    // search hot path from 2N+1 round-trips to ~3 (one entry lookup, one
-    // bump, plus per-cold-entry promotion stats which are typically few).
+    // search hot path from 2N+1 round-trips. Cold-entry promotion stats
+    // are now batched too (one query for the cold slice instead of one
+    // per cold hit) — the per-id loop only computes the gate.
     const fusedIds = fused.map((f) => f.id);
     const entries = await this.warm.getEntries(userId, fusedIds, {
       projectId,
       includeProjects: req.includeProjects,
     });
+    // Pre-fetch promotion stats for cold hits in one round-trip.
+    const coldHitIds: string[] = [];
+    for (let i = 0; i < fused.length; i++) {
+      const e = entries[i];
+      if (e?.cold) coldHitIds.push(fused[i]!.id);
+    }
+    const coldStats = coldHitIds.length > 0
+      ? await this.warm.getColdEntryStatsMany(coldHitIds)
+      : new Map<string, { hits: number; idleDays: number }>();
     const results: SearchResult[] = [];
     const idsToBump: string[] = [];
+    const promotionTasks: Array<Promise<{ id: string; promoted: boolean }>> = [];
     for (let i = 0; i < fused.length; i++) {
       const f = fused[i]!;
       const e = entries[i];
@@ -395,12 +448,15 @@ export class MemoryEngine {
 
       // Cold→warm promotion: capture stats *before* bumpHits so the
       // pre-hit idle age is what gates promotion — otherwise every hit
-      // would trivially clear an idle gap of zero.
-      let tier: "warm" | "cold" = e.cold ? "cold" : "warm";
-      const preBump = e.cold ? await this.warm.getColdEntryStats(f.id) : null;
+      // would trivially clear an idle gap of zero. The `markCold(false)`
+      // writes still happen one-per-promotion, but the read side is now
+      // a single query for the whole cold slice.
+      const tier: "warm" | "cold" = e.cold ? "cold" : "warm";
       if (e.cold) {
-        const promoted = await this.maybePromote(f.id, preBump);
-        if (promoted) tier = "warm";
+        const preBump = coldStats.get(f.id) ?? null;
+        promotionTasks.push(
+          this.maybePromote(f.id, preBump).then((promoted) => ({ id: f.id, promoted })),
+        );
       }
 
       results.push({
@@ -415,20 +471,39 @@ export class MemoryEngine {
         signals: f.signals,
       });
     }
+    // Run all cold→warm flips in parallel and apply tier upgrades to the
+    // already-built result rows. Failures are swallowed by maybePromote
+    // upstream of here (it returns false on no-op); this layer just
+    // surfaces the post-promotion tier on the response.
+    if (promotionTasks.length > 0) {
+      const promotionOutcomes = await Promise.all(promotionTasks);
+      const promotedSet = new Set(
+        promotionOutcomes.filter((p) => p.promoted).map((p) => p.id),
+      );
+      if (promotedSet.size > 0) {
+        for (const r of results) if (promotedSet.has(r.id)) r.tier = "warm";
+      }
+    }
     if (idsToBump.length > 0) await this.warm.bumpHitsMany(idsToBump);
     // Per-tier hit counts: each result may have contributed via more than
     // one signal (e.g. keyword + vector), and we count every contributing
     // signal — that's the operator-visible "this tier carried weight".
+    // Naming: warmCount=keyword (FTS), coldCount=vector (cold store),
+    // graphCount=graph. The earlier "graphHits" alias shadowed the outer
+    // graph-hit array; renamed to break the conflation between "cold tier"
+    // and "vector signal".
     if (this.metrics) {
-      let warmHits = 0;
-      let coldHits = 0;
-      let graphHits = 0;
+      const signalCounts = { keyword: 0, vector: 0, graph: 0 };
       for (const f of results) {
-        if (f.signals.keyword) warmHits++;
-        if (f.signals.vector) coldHits++;
-        if (f.signals.graph) graphHits++;
+        if (f.signals?.keyword) signalCounts.keyword++;
+        if (f.signals?.vector) signalCounts.vector++;
+        if (f.signals?.graph) signalCounts.graph++;
       }
-      this.metrics.recordQuery(userId, { warm: warmHits, cold: coldHits, graph: graphHits }, token);
+      this.metrics.recordQuery(
+        userId,
+        { warm: signalCounts.keyword, cold: signalCounts.vector, graph: signalCounts.graph },
+        token,
+      );
     }
     return { results, degraded };
   }
@@ -445,12 +520,14 @@ export class MemoryEngine {
       [startedAt, baseDays],
     );
     const runId = runRow.rows[0]?.id;
-    // P0-6: bulk SQL replaces a per-row loop. The original JS condition was
-    //   lifespan = (effectiveDays(hits) / 7) * baseDays
-    //            = (7 * log2(hits + 1) / 7) * baseDays
-    //            = log2(hits + 1) * baseDays
-    // demote when `idle_days > lifespan`. The whole decay collapses to one
-    // round-trip regardless of candidate count (500–1000× faster at scale).
+    // P0-6: bulk SQL replaces a per-row loop. The lifespan formula lives
+    // in `EFFECTIVE_LIFESPAN_SQL` next to the JS `effectiveDays` so the
+    // two stay in lockstep — substituting `$1::double precision` for the
+    // `$BASE` placeholder yields `($1::double precision) * log(2.0,
+    // GREATEST(hits, 0) + 1)`, the SQL twin of `effectiveDays(hits)` (with
+    // the `7` parameterised so a one-shot pass can override). Demote when
+    // `idle_days > lifespan`. One round-trip regardless of candidate count.
+    const lifespanSql = EFFECTIVE_LIFESPAN_SQL.replace("$BASE", "$1::double precision");
     const r = await this.warm.pool.query<{ id: string }>(
       `WITH candidates AS (
          SELECT e.id,
@@ -462,7 +539,7 @@ export class MemoryEngine {
        ),
        to_demote AS (
          SELECT id FROM candidates
-          WHERE idle_days > ($1::double precision) * log(2.0, GREATEST(hits, 0) + 1)
+          WHERE idle_days > ${lifespanSql}
        )
        UPDATE memory_entries
           SET cold = true, updated_at = now()
@@ -505,50 +582,29 @@ export class MemoryEngine {
     const k = args.k ?? 20;
     const projectId = args.project ?? null;
     const includeProjects = args.includeProjects ?? null;
-    // Same isolation rule as ftsSearch / getEntry: project-set queries scope
-    // by project_id only (members may be cross-user). User-wide queries
-    // scope by user_id with project_id IS NULL. Active-project mode unions
-    // the user-global view with the listed (membership-checked) projects.
-    const params: Array<string | number | string[]> = [namespaces, k];
-    let sql =
-      `SELECT id, content, namespace, project_id, source, metadata, cold, created_at
-         FROM memory_entries
-        WHERE namespace = ANY($1::text[])`;
-    if (includeProjects && includeProjects.length > 0) {
-      params.push(userId);
-      const userParam = `$${params.length}`;
-      params.push(includeProjects);
-      const listParam = `$${params.length}`;
-      sql += ` AND ((user_id = ${userParam} AND project_id IS NULL) OR project_id = ANY(${listParam}::text[]))`;
-    } else if (projectId === null) {
-      params.push(userId);
-      sql += ` AND user_id = $${params.length} AND project_id IS NULL`;
-    } else {
-      params.push(projectId);
-      sql += ` AND project_id = $${params.length}`;
-    }
-    if (args.since) { params.push(args.since); sql += ` AND created_at >= $${params.length}`; }
-    sql += ` ORDER BY created_at DESC LIMIT $2`;
-    const rows = await this.warm.pool.query<{
-      id: string;
-      content: string;
-      namespace: string;
-      project_id: string | null;
-      source: string;
-      metadata: Record<string, unknown> | null;
-      cold: boolean;
-      created_at: Date;
-    }>(sql, params);
-    const results = rows.rows.map((r) => ({
+    // Isolation matches ftsSearch / getEntry / getEntries — see
+    // `WarmStore.listRecent` for the breakdown. Engine just maps the
+    // request shape onto the store call and converts entry rows into
+    // SearchResult shape. `signals` is intentionally omitted: recent()
+    // is ordered, not ranked, so "no signal" is the truth — fabricating
+    // `{keyword:0, vector:0, graph:0}` would misrepresent it as
+    // "scored zero" and is what consumers used to (incorrectly) read.
+    const rows = await this.warm.listRecent(userId, {
+      namespaces,
+      k,
+      projectId,
+      includeProjects,
+      since: args.since ? new Date(args.since) : null,
+    });
+    const results: SearchResult[] = rows.map((r) => ({
       id: r.id,
       score: 1.0,
       content: r.content,
       tier: r.cold ? ("cold" as const) : ("warm" as const),
       namespace: r.namespace,
-      project: r.project_id,
+      project: r.projectId,
       source: r.source,
       metadata: (r.metadata ?? {}) as Record<string, unknown>,
-      signals: { keyword: 0, vector: 0, graph: 0 },
     }));
     return { results };
   }
@@ -598,7 +654,10 @@ export class MemoryEngine {
         project: e.projectId ?? null,
         source: e.source,
         metadata: (e.metadata ?? {}) as Record<string, unknown>,
-        signals: { keyword: 0, vector: 0, graph: h.score },
+        // Only the graph signal is applicable here; keyword / vector
+        // are omitted so consumers can tell "not applicable" from
+        // "scored zero".
+        signals: { graph: h.score },
       });
     }
     return { results, degraded: false };
@@ -833,8 +892,13 @@ export class MemoryEngine {
           rowHits > otherHits || (rowHits === otherHits && rowOlder);
         const keepId = keepRow ? row.id : n.id;
         const dropId = keepRow ? n.id : row.id;
+        // The dream cycle already knows the dropped row's namespace —
+        // it's either `row.namespace` (when `dropId === row.id`) or
+        // `other.namespace` (when the neighbour lost). Pass it through
+        // so `mergeEntries` doesn't re-SELECT it.
+        const dropNamespace = dropId === row.id ? row.namespace : other.namespace;
         try {
-          await this.mergeEntries(row.user_id, row.project_id, keepId, dropId);
+          await this.mergeEntries(row.user_id, row.project_id, keepId, dropId, dropNamespace);
           merged++;
           mergedSet.add(dropId);
           if (dropId === row.id) break; // current row was the loser
@@ -863,6 +927,7 @@ export class MemoryEngine {
     projectId: string | null,
     keepId: string,
     dropId: string,
+    dropNamespace: string,
   ): Promise<void> {
     const pool = this.warm.pool;
     // Sum hit counts onto the canonical.
@@ -891,11 +956,8 @@ export class MemoryEngine {
     // Drop the FTS shadow + access counter + warm row + cold vector.
     await pool.query(`DELETE FROM memory_fts WHERE entry_id = $1`, [dropId]);
     await pool.query(`DELETE FROM memory_access WHERE entry_id = $1`, [dropId]);
-    const namespaceRow = await pool.query<{ namespace: string }>(
-      `SELECT namespace FROM memory_entries WHERE id = $1`,
-      [dropId],
-    );
-    const namespace = namespaceRow.rows[0]?.namespace ?? "default";
+    // Caller already has the namespace — no SELECT needed.
+    const namespace = dropNamespace;
     await pool.query(`DELETE FROM memory_entries WHERE id = $1`, [dropId]);
     if (this.graph?.isConnected()) {
       try {
@@ -916,20 +978,33 @@ export class MemoryEngine {
    *  relation=co_inferred. Uses a single SQL pass that picks the top
    *  candidates by common-neighbour count; cheap on most stores. */
   private async promoteCommonNeighborEdges(minCommon: number): Promise<number> {
+    // Defensive user + project isolation in SQL. The JOIN with
+    // `memory_entries` enforces that `r1.from_id` and `r2.from_id` belong
+    // to the same user AND the same project (treating NULL projects as
+    // equal via COALESCE). The same-user invariant holds in practice for
+    // co_occurs edges (cold-store-derived, always same-user), but pinning
+    // it here means a future code path that adds cross-user co_occurs
+    // edges can't accidentally bleed inferences across users.
     const r = await this.warm.pool.query(
       `WITH co AS (
-         SELECT r1.from_id AS a, r2.from_id AS b, COUNT(*) AS c
+         SELECT r1.from_id AS a, r2.from_id AS b,
+                ea.user_id AS user_id,
+                COUNT(*) AS c
            FROM memory_relations r1
            JOIN memory_relations r2
              ON r1.to_id = r2.to_id
             AND r1.from_id <> r2.from_id
+           JOIN memory_entries ea ON ea.id = r1.from_id
+           JOIN memory_entries eb ON eb.id = r2.from_id
           WHERE r1.relation = 'co_occurs'
             AND r2.relation = 'co_occurs'
-          GROUP BY r1.from_id, r2.from_id
+            AND ea.user_id = eb.user_id
+            AND COALESCE(ea.project_id, '') = COALESCE(eb.project_id, '')
+          GROUP BY r1.from_id, r2.from_id, ea.user_id
          HAVING COUNT(*) >= $1
        )
        INSERT INTO memory_relations (user_id, from_id, to_id, relation, strength)
-       SELECT (SELECT user_id FROM memory_entries e WHERE e.id = co.a), co.a, co.b,
+       SELECT co.user_id, co.a, co.b,
               'co_inferred', LEAST(0.5 + (co.c::real / 20.0), 0.9)
          FROM co
        ON CONFLICT (from_id, to_id, relation) DO NOTHING`,
