@@ -262,14 +262,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       req.userId = SYSTEM_USER;
       return;
     }
-    // Login + bootstrap-status are reached without any auth. The CLI
-    // rotate-token path is also public — it does its own auth by trying
-    // to rotate the supplied bearer.
-    if (
-      req.url === "/v1/auth/login" ||
-      req.url === "/v1/auth/status" ||
-      req.url === "/v1/auth/rotate-token"
-    ) {
+    // The CLI rotate-token path is reached without prior auth — the
+    // route handler itself authenticates by trying to rotate the
+    // supplied bearer. (Better Auth owns /api/auth/* including sign-in
+    // and is gated separately above.)
+    if (req.url === "/v1/auth/rotate-token") {
       req.userId = SYSTEM_USER;
       return;
     }
@@ -674,9 +671,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // store may not be configured — handlers hard-require it.
 
   /** Admin gate for /v1/admin/*. Requires a logged-in admin dashboard
-   *  user — log in via /v1/auth/login first, then the cookie or session
-   *  bearer carries the role through. There is no operator-managed
-   *  shared admin token; admin auth is always per-user. */
+   *  user — sign in via Better Auth at /api/auth/sign-in/email; the
+   *  cookie or session bearer carries the role through. There is no
+   *  operator-managed shared admin token; admin auth is always per-user. */
   const adminAuth = (req: { dashUser?: DashboardUser }): boolean => {
     return req.dashUser?.role === "admin";
   };
