@@ -40,6 +40,10 @@ export type WarmDB = NodePgDatabase<typeof schema>;
 
 export interface WarmStoreConfig {
   url: string;
+  /** Postgres pool max connections. Sourced from `cfg.service.pgPoolMax`
+   *  (default 20). Bounded so a load spike can't exhaust Postgres
+   *  connections silently. */
+  pgPoolMax?: number;
 }
 
 export class WarmStore {
@@ -53,19 +57,11 @@ export class WarmStore {
     // P1-P4: bound the pg connection pool so a load spike can't exhaust
     // Postgres connections silently. Default max=20 is well below typical
     // Postgres `max_connections` of 100 even when several server replicas
-    // share a database. Operators can override via NOVAMEM_PG_POOL_MAX.
-    const rawPoolMax = process.env.NOVAMEM_PG_POOL_MAX;
-    const poolMax = Number(rawPoolMax ?? "20");
-    const poolMaxValid = Number.isFinite(poolMax) && poolMax > 0;
-    if (rawPoolMax !== undefined && !poolMaxValid) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[warm-store] NOVAMEM_PG_POOL_MAX="${rawPoolMax}" is not a positive number; falling back to 20`,
-      );
-    }
+    // share a database. Validation + env parsing happens in
+    // `loadConfig()` (config.ts) — this layer trusts what it's handed.
     this.pool = new Pool({
       connectionString: cfg.url,
-      max: poolMaxValid ? poolMax : 20,
+      max: cfg.pgPoolMax ?? 20,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
     });

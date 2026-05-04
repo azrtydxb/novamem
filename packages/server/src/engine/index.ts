@@ -71,12 +71,18 @@ export function tokenJaccard(a: string, b: string): number {
   return intersect / union;
 }
 
-/** Minimal logger surface — structurally compatible with Pino / Fastify's
- *  logger so callers can plug in either. Defaults to console. */
+/** Minimal logger surface — structurally compatible with Pino /
+ *  Fastify's logger. Object-first: `(obj, msg)` is the idiomatic Pino
+ *  call shape; the bare-string overload is kept for the small handful
+ *  of callers that don't have structured fields to attach.
+ *  Defaults to console when none is supplied. */
 export interface EngineLogger {
-  warn(msg: string, ...rest: unknown[]): void;
-  error(msg: string, ...rest: unknown[]): void;
-  info?(msg: string, ...rest: unknown[]): void;
+  warn(obj: object, msg?: string): void;
+  warn(msg: string): void;
+  error(obj: object, msg?: string): void;
+  error(msg: string): void;
+  info?(obj: object, msg?: string): void;
+  info?(msg: string): void;
 }
 
 export interface EngineConfig {
@@ -104,7 +110,7 @@ export class MemoryEngine {
   private readonly graph: GraphStore | null;
   private readonly embedder: Embedder;
   private readonly defaultDecayDays: number;
-  private readonly logger: EngineLogger;
+  private logger: EngineLogger;
   private readonly graphLinkFanout: number;
   private readonly metrics: MetricsCollector | null;
   /** Reactive promotions since the last decay run — flushed to
@@ -118,9 +124,20 @@ export class MemoryEngine {
     this.graph = cfg.graph;
     this.embedder = cfg.embedder;
     this.defaultDecayDays = cfg.defaultEffectiveDays ?? 7;
-    this.logger = cfg.logger ?? console;
+    // Default-to-console fallback. The cast is safe: console.warn /
+    // .error / .info are structurally compatible with the
+    // (obj|string, msg?) overloads — the second positional arg is just
+    // appended as an extra arg by console, which is fine for fallback.
+    this.logger = cfg.logger ?? (console as unknown as EngineLogger);
     this.graphLinkFanout = cfg.graphLinkFanout ?? 3;
     this.metrics = cfg.metrics ?? null;
+  }
+
+  /** Replace the engine's logger after construction. main.ts uses this
+   *  to swap the boot-time console fallback for `app.log.child({ component: "engine" })`
+   *  once the Fastify server (and thus the Pino logger) exists. */
+  setLogger(logger: EngineLogger): void {
+    this.logger = logger;
   }
 
   /** Reactive promotion: a cold entry earns warm status when its accumulated
@@ -145,7 +162,7 @@ export class MemoryEngine {
     const now = Date.now();
     if (now - this.lastGraphWarn < 5 * 60 * 1000) return;
     this.lastGraphWarn = now;
-    this.logger.warn("[engine] graph store unreachable — search degraded to keyword + vector only");
+    this.logger.warn("graph store unreachable — search degraded to keyword + vector only");
   }
 
   /** Hard-rule worthiness gate. Returns null when the content is fit to
@@ -310,7 +327,10 @@ export class MemoryEngine {
             projectId,
           );
         } catch (err) {
-          this.logger.warn(`[engine] graph addEdgesBatch(${id}) failed: ${(err as Error).message}`);
+          this.logger.warn(
+            { entryId: id, err: (err as Error).message },
+            "graph addEdgesBatch failed",
+          );
         }
       }
       // Warm relations are still per-row (UPSERT semantics differ; volume small).
@@ -318,7 +338,10 @@ export class MemoryEngine {
         await this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId);
       }
     } catch (err) {
-      this.logger.warn(`[engine] linkVectorNeighbors(${id}) failed: ${(err as Error).message}`);
+      this.logger.warn(
+        { entryId: id, err: (err as Error).message },
+        "linkVectorNeighbors failed",
+      );
     }
   }
 
@@ -369,7 +392,7 @@ export class MemoryEngine {
       ),
     ).catch((err) => {
       degraded = true;
-      this.logger.warn(`[engine] keyword tier failed: ${(err as Error).message}`);
+      this.logger.warn({ err: (err as Error).message }, "keyword tier failed");
       return [] as Array<Array<{ id: string; score: number }>>;
     });
     const vectorsPromise = embedding
@@ -381,7 +404,7 @@ export class MemoryEngine {
           ),
         ).catch((err) => {
           degraded = true;
-          this.logger.warn(`[engine] vector tier failed: ${(err as Error).message}`);
+          this.logger.warn({ err: (err as Error).message }, "vector tier failed");
           return [] as Array<Array<{ id: string; score: number }>>;
         })
       : Promise.resolve([] as Array<Array<{ id: string; score: number }>>);
@@ -403,7 +426,7 @@ export class MemoryEngine {
         graphHits = await this.graph.neighbors(userId, seed, 1, k, seedScope);
       } catch (err) {
         degraded = true;
-        this.logger.warn("[engine] graph neighbours failed: " + (err as Error).message);
+        this.logger.warn({ err: (err as Error).message }, "graph neighbours failed");
       }
     } else if (!this.graph || !this.graph.isConnected()) {
       degraded = true;
@@ -705,7 +728,10 @@ export class MemoryEngine {
       try {
         await this.graph.removeNode(userId, id);
       } catch (err) {
-        this.logger.warn(`[engine] forget(${id}): graph removeNode failed: ${(err as Error).message}`);
+        this.logger.warn(
+          { entryId: id, err: (err as Error).message },
+          "forget: graph removeNode failed",
+        );
       }
     }
     let coldDeleteOk = true;
@@ -718,7 +744,10 @@ export class MemoryEngine {
       // reaper knows which collection to delete from.
       coldDeleteOk = false;
       const message = (err as Error).message;
-      this.logger.warn(`[engine] forget(${id}): cold vector survived (${message}); queued for reaper`);
+      this.logger.warn(
+        { entryId: id, err: message },
+        "forget: cold vector survived; queued for reaper",
+      );
       await pool.query(
         `INSERT INTO cold_orphans (id, user_id, namespace, project_id, attempts, last_error, last_attempt_at)
          VALUES ($1, $2, $3, $4, 1, $5, now())
@@ -774,7 +803,10 @@ export class MemoryEngine {
         );
         if (newAttempts >= maxAttempts) {
           abandoned++;
-          this.logger.warn(`[engine] cold orphan ${r.id} abandoned after ${newAttempts} attempts: ${message}`);
+          this.logger.warn(
+            { entryId: r.id, attempts: newAttempts, err: message },
+            "cold orphan abandoned",
+          );
         }
       }
     }
@@ -866,7 +898,7 @@ export class MemoryEngine {
           k: 4,
         });
       } catch (err) {
-        this.logger.warn(`[dream] cold.search failed: ${(err as Error).message}`);
+        this.logger.warn({ err: (err as Error).message }, "dream cold.search failed");
         continue;
       }
       for (const n of neighbours) {
@@ -903,7 +935,10 @@ export class MemoryEngine {
           mergedSet.add(dropId);
           if (dropId === row.id) break; // current row was the loser
         } catch (err) {
-          this.logger.warn(`[dream] merge ${dropId}→${keepId} failed: ${(err as Error).message}`);
+          this.logger.warn(
+            { dropId, keepId, err: (err as Error).message },
+            "dream merge failed",
+          );
         }
       }
     }
@@ -963,13 +998,19 @@ export class MemoryEngine {
       try {
         await this.graph.removeNode(userId, dropId);
       } catch (err) {
-        this.logger.warn(`[dream] graph removeNode(${dropId}) failed: ${(err as Error).message}`);
+        this.logger.warn(
+          { dropId, err: (err as Error).message },
+          "dream graph removeNode failed",
+        );
       }
     }
     try {
       await this.cold.delete(userId, namespace, dropId, projectId);
     } catch (err) {
-      this.logger.warn(`[dream] cold.delete(${dropId}) failed: ${(err as Error).message}`);
+      this.logger.warn(
+        { dropId, err: (err as Error).message },
+        "dream cold.delete failed",
+      );
     }
   }
 
@@ -1031,7 +1072,10 @@ export class MemoryEngine {
     try {
       coldCollectionsDropped = await this.cold.deleteAllForProject(projectId);
     } catch (err) {
-      this.logger.warn(`[engine] deleteProject(${projectId}): cold cleanup failed: ${(err as Error).message}`);
+      this.logger.warn(
+        { projectId, err: (err as Error).message },
+        "deleteProject: cold cleanup failed",
+      );
     }
     let graphCleared = false;
     if (this.graph?.isConnected()) {
