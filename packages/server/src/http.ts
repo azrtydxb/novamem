@@ -435,7 +435,42 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // copying the Response back. All HTTP methods on /api/auth/* go here.
   if (opts.betterAuth) {
     const ba = opts.betterAuth;
+    /** Refuse operations that would leave the system with zero admins.
+     *  Better Auth's admin plugin doesn't enforce this on its own —
+     *  remove-user / set-role accept any target. We intercept the two
+     *  paths that can drop the admin count and 400 when the target is
+     *  the last surviving admin. */
+    const guardLastAdmin = async (
+      req: FastifyRequest,
+      reply: FastifyReply,
+    ): Promise<boolean> => {
+      if (!opts.warm || req.method !== "POST") return true;
+      const path = req.url.split("?")[0] ?? "";
+      const isRemove = path === "/api/auth/admin/remove-user";
+      const isSetRole = path === "/api/auth/admin/set-role";
+      if (!isRemove && !isSetRole) return true;
+      const body = (req.body ?? {}) as { userId?: string; role?: string };
+      const targetId = body.userId;
+      if (!targetId) return true;
+      // Demotion: only block when the new role is non-admin.
+      if (isSetRole && body.role === "admin") return true;
+      const r = await opts.warm.pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "user"
+          WHERE role = 'admin' AND id <> $1`,
+        [targetId],
+      );
+      const remainingAdmins = Number(r.rows[0]?.count ?? "0");
+      if (remainingAdmins > 0) return true;
+      const action = isRemove ? "delete" : "demote";
+      reply.code(400).send({
+        message: `cannot ${action} the last admin — promote another user first`,
+        code: "LAST_ADMIN_PROTECTED",
+      });
+      return false;
+    };
+
     const passthrough = async (req: FastifyRequest, reply: FastifyReply) => {
+      if (!(await guardLastAdmin(req, reply))) return;
       // Build a WHATWG Request. We need the absolute URL, not just the
       // pathname; Better Auth uses it to validate redirects against
       // trustedOrigins. The host header is sufficient since the SPA and
