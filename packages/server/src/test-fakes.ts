@@ -62,7 +62,7 @@ export class FakeWarmStore {
         this.decayRunsUpdated++;
         return { rows: [] };
       }
-      // P0-6 bulk decay SQL: `WITH candidates AS (...) UPDATE memory_entries
+      // Bulk decay SQL: `WITH candidates AS (...) UPDATE memory_entries
       // SET cold = true ...`. Replicate the demote condition in JS.
       if (sql.includes("WITH candidates AS") && sql.includes("UPDATE memory_entries")) {
         const baseDays = Number(params[0]);

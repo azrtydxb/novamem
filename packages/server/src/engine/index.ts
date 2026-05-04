@@ -317,7 +317,7 @@ export class MemoryEngine {
         k: this.graphLinkFanout + 1,
       });
       const neighbours = hits.filter((h) => h.id !== id).slice(0, this.graphLinkFanout);
-      // P1-P3: one batched Cypher round-trip instead of fanout-many.
+      // One batched Cypher round-trip instead of fanout-many.
       if (neighbours.length > 0 && this.graph?.isConnected()) {
         try {
           await this.graph.addEdgesBatch(
@@ -442,7 +442,7 @@ export class MemoryEngine {
       weights,
     ).slice(0, k);
 
-    // P1-P1: batch the per-result lookups + bump-hits to collapse the
+    // Batch the per-result lookups + bump-hits to collapse the
     // search hot path from 2N+1 round-trips. Cold-entry promotion stats
     // are now batched too (one query for the cold slice instead of one
     // per cold hit) — the per-id loop only computes the gate.
@@ -543,7 +543,7 @@ export class MemoryEngine {
       [startedAt, baseDays],
     );
     const runId = runRow.rows[0]?.id;
-    // P0-6: bulk SQL replaces a per-row loop. The lifespan formula lives
+    // Bulk SQL replaces a per-row loop. The lifespan formula lives
     // in `EFFECTIVE_LIFESPAN_SQL` next to the JS `effectiveDays` so the
     // two stay in lockstep — substituting `$1::double precision` for the
     // `$BASE` placeholder yields `($1::double precision) * log(2.0,
@@ -690,8 +690,8 @@ export class MemoryEngine {
    *  edges. Idempotent — missing ids return `deleted:false`. The access
    *  check is the `getEntry` above: it returns `undefined` for cross-user
    *  ids and (for project-scoped queries) for entries in a different
-   *  project. The DELETEs that follow MUST scope by the same boundary —
-   *  P0-5: when the entry is project-scoped, scope by project_id (NOT
+   *  project. The DELETEs that follow MUST scope by the same boundary:
+   *  when the entry is project-scoped, scope by project_id (NOT
    *  user_id, because cross-user project members must be able to
    *  delete shared rows); when user-wide, scope by user_id. */
   async forget(

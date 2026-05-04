@@ -136,7 +136,7 @@ export const RecentBody = z.object({
   namespace: z.string().max(128).optional(),
   k: z.number().int().positive().max(200).optional(),
   /** ISO-8601 lower bound. Validated here so an invalid string doesn't
-   *  reach the SQL layer (review finding P2-14). */
+   *  reach the SQL layer. */
   since: z
     .string()
     .datetime({ offset: true, message: "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)" })
