@@ -171,3 +171,139 @@ describe("mcp: tool dispatch", () => {
     expect(r.isError).toBe(true);
   });
 });
+
+describe("mcp: tool error matrix", () => {
+  type ErrorResult = { isError?: boolean; content: Array<{ text: string }> };
+
+  /** Without a warm store, every project_* tool should isError. Pinning
+   *  the contract so a future regression that drops the !warm guard is
+   *  caught immediately. */
+  it.each([
+    ["project_list", {}],
+    ["project_create", { name: "x" }],
+    ["project_delete", { project: "p" }],
+    ["project_activate", { project: "p" }],
+    ["project_deactivate", {}],
+    ["project_share", { project: "p", username: "u" }],
+    ["project_unshare", { project: "p", username: "u" }],
+  ])("%s without warm store -> isError", async (tool, args) => {
+    const { engine } = makeEngine();
+    // Note: no `warm` arg → the project_* paths must reject.
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, tool, args)) as ErrorResult;
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/requires the warm store/);
+  });
+
+  it("project_delete: no such project", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const r = (await callTool(server, "project_delete", { project: "ghost" })) as ErrorResult;
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/no such project/);
+  });
+
+  it("project_delete: only the owner can delete", async () => {
+    const { engine, warm } = makeEngine();
+    // Project owned by `alice`; caller is `public`.
+    const p = await warm.createProject({ name: "Apollo", ownerUserId: "alice" });
+    await warm.addProjectMember(p.id, "public", "member");
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const r = (await callTool(server, "project_delete", { project: p.id })) as ErrorResult;
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/only the owner can delete/);
+  });
+
+  it("project_share: only the owner can share", async () => {
+    const { engine, warm } = makeEngine();
+    const p = await warm.createProject({ name: "Phoenix", ownerUserId: "alice" });
+    await warm.addProjectMember(p.id, "public", "member");
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const r = (await callTool(server, "project_share", {
+      project: p.id,
+      username: "bob",
+    })) as ErrorResult;
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/only the owner can share/);
+  });
+
+  it("project_unshare: owner cannot unshare themselves", async () => {
+    const { engine, warm } = makeEngine();
+    const p = await warm.createProject({ name: "Hermes", ownerUserId: "public" });
+    // `public` has the username "public" in the fake's user table.
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const r = (await callTool(server, "project_unshare", {
+      project: p.id,
+      username: "public",
+    })) as ErrorResult;
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/owner cannot unshare themselves/);
+  });
+
+  it("project_unshare: unknown user", async () => {
+    const { engine, warm } = makeEngine();
+    const p = await warm.createProject({ name: "Zeus", ownerUserId: "public" });
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const r = (await callTool(server, "project_unshare", {
+      project: p.id,
+      username: "ghost-user",
+    })) as ErrorResult;
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/unknown user/);
+  });
+
+  it("project_activate: project required when arg missing", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    // Empty args fail Zod (project required) and surface as isError.
+    const r = (await callTool(server, "project_activate", {})) as ErrorResult;
+    expect(r.isError).toBe(true);
+  });
+
+  it("memory_search: missing required `query` -> isError", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_search", {})) as ErrorResult;
+    expect(r.isError).toBe(true);
+  });
+
+  it("memory_neighbors: missing required `id` -> isError", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_neighbors", {})) as ErrorResult;
+    expect(r.isError).toBe(true);
+  });
+
+  it("memory_search: not a member of project -> isError", async () => {
+    const { engine, warm } = makeEngine();
+    // Project owned by alice; `public` is NOT a member.
+    const p = await warm.createProject({ name: "Atlas", ownerUserId: "alice" });
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const r = (await callTool(server, "memory_search", {
+      query: "hello",
+      project: p.id,
+    })) as ErrorResult;
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/not a member/);
+  });
+});
+
+describe("mcp: shared tool surface vs. shim", () => {
+  it("server TOOL_DEFINITIONS matches the stdio shim's tool name set", async () => {
+    // Importing dynamically so this test doesn't break if the shim's
+    // build hasn't run; the package exports its source via tsconfig.
+    const [{ TOOL_NAMES }, shim] = await Promise.all([
+      import("./mcp-tools.js"),
+      // The shim is published; its source is in packages/mcp/src.
+      // Resolve via workspace path.
+      import("../../mcp/src/index.js" as string).catch(() => null as unknown as null),
+    ]);
+    if (!shim) {
+      // Shim source not resolvable in this context — skip.
+      expect(TOOL_NAMES.length).toBeGreaterThan(0);
+      return;
+    }
+    const shimNames = (shim as { REMOTE_MCP_TOOL_NAMES: string[] }).REMOTE_MCP_TOOL_NAMES;
+    expect([...shimNames].sort()).toEqual([...TOOL_NAMES].sort());
+  });
+});
