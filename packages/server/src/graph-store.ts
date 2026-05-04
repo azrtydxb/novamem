@@ -6,9 +6,19 @@
 
 import { FalkorDB, type Graph } from "falkordb";
 
+/** Minimal logger surface — structurally compatible with Pino /
+ *  Fastify's logger. Object-first: `(obj, msg)` is the idiomatic Pino
+ *  call shape. Defaults to console when no logger is supplied. */
+export interface GraphStoreLogger {
+  warn(obj: object, msg?: string): void;
+  warn(msg: string): void;
+}
+
 export interface GraphStoreConfig {
   url: string;
   graphName?: string;
+  /** Optional Pino-compatible logger. Defaults to console. */
+  logger?: GraphStoreLogger;
 }
 
 export class GraphStore {
@@ -16,11 +26,23 @@ export class GraphStore {
   private graph: Graph | null = null;
   private readonly url: string;
   private readonly graphName: string;
+  private logger: GraphStoreLogger;
   private connected = false;
 
   constructor(cfg: GraphStoreConfig) {
     this.url = cfg.url;
     this.graphName = cfg.graphName ?? "novamem";
+    this.logger = cfg.logger ?? {
+      // eslint-disable-next-line no-console
+      warn: (...args: unknown[]) => console.warn(...(args as [unknown, ...unknown[]])),
+    } as GraphStoreLogger;
+  }
+
+  /** Replace the logger after construction — main.ts uses this to swap
+   *  the boot-time console fallback for `app.log.child({ component:
+   *  "graph-store" })` once the Fastify Pino logger exists. */
+  setLogger(logger: GraphStoreLogger): void {
+    this.logger = logger;
   }
 
   async connect(): Promise<boolean> {
@@ -33,9 +55,9 @@ export class GraphStore {
       // Surface the cause so operators can distinguish wrong URL / auth /
       // DNS without spelunking. Failure mode is degraded-mode search;
       // we still return false rather than throw.
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[graph-store] connect(${this.url}) failed: ${(err as Error).message}`,
+      this.logger.warn(
+        { url: this.url, err: (err as Error).message },
+        "graph-store connect failed",
       );
       this.connected = false;
       return false;
@@ -169,8 +191,10 @@ export class GraphStore {
       });
       return true;
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`[graph-store] removeAllForProject(${projectId}) failed: ${(err as Error).message}`);
+      this.logger.warn(
+        { projectId, err: (err as Error).message },
+        "graph-store removeAllForProject failed",
+      );
       return false;
     }
   }
