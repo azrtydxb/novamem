@@ -5,7 +5,7 @@
 [![npm: client](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem.svg?label=%40azrtydxb%2Fnovamem)](https://www.npmjs.com/package/@azrtydxb/novamem)
 [![npm: mcp](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-mcp.svg?label=%40azrtydxb%2Fnovamem-mcp)](https://www.npmjs.com/package/@azrtydxb/novamem-mcp)
 [![npm: init](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-init.svg?label=%40azrtydxb%2Fnovamem-init)](https://www.npmjs.com/package/@azrtydxb/novamem-init)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
 
 Standalone tiered memory service for AI agents. Hybrid keyword + vector + graph search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard.
@@ -59,4 +59,4 @@ Pre-1.0 — current release: [`v0.1.0`](https://github.com/azrtydxb/novamem/rele
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

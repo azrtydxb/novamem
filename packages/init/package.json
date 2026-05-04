@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "description": "Interactive installer that signs in to a novamem server, mints a bearer, and wires every supported AI agent host (Claude Code, Cursor, Codex, OpenCode, Cline, Continue, Kilo Code, RooCode, Claude Desktop, …) to use it",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
