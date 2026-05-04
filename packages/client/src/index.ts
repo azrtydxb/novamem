@@ -74,12 +74,6 @@ export interface HealthResponse {
   };
 }
 
-export interface LoginResponse {
-  token: string;
-  expiresAt: string;
-  user: { id: string; username: string; role: "admin" | "user" };
-}
-
 export interface Project {
   id: string;
   name: string;
@@ -203,32 +197,10 @@ export class NovamemClient {
     });
   }
 
-  // ─── Auth (dashboard browser flow only) ────────────────────────────────
-  // The methods below speak to /v1/auth/*. The dashboard SPA uses them
-  // (cookie-based session). Non-browser callers shouldn't need any of
-  // them — mint a bearer once via `/v1/me/tokens` (or the dashboard) and
-  // pass it to the constructor's `token` option.
-
-  /** Sign in with username + password. Stores the returned bearer on this
-   *  client instance and returns the full response. */
-  async login(args: { username: string; password: string }): Promise<LoginResponse> {
-    const res = await this.request<LoginResponse>("/v1/auth/login", {
-      method: "POST",
-      body: args,
-    });
-    this.token = res.token;
-    return res;
-  }
-
-  /** Revoke the current bearer server-side and clear it locally. */
-  async logout(): Promise<void> {
-    await this.request("/v1/auth/logout", { method: "POST" });
-    this.token = undefined;
-  }
-
-  async me(): Promise<{ user: LoginResponse["user"] }> {
-    return this.request<{ user: LoginResponse["user"] }>("/v1/auth/me");
-  }
+  // (Sign-in / sign-out / me are owned by Better Auth at /api/auth/*.
+  // The dashboard SPA calls them directly. Non-browser callers should
+  // mint a bearer via `/v1/me/tokens` (or the dashboard's API Tokens
+  // page) and pass it to the constructor's `token` option.)
 
   // ─── Projects (sub-brains) ─────────────────────────────────────────────
 

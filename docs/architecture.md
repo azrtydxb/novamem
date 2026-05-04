@@ -168,7 +168,14 @@ Every memory entry carries:
 
 The synthetic id `"public"` exists as the implicit owner for `auth.mode=none|bearer` deployments. Better Auth's tables coexist with novamem's; project / user_token tables don't FK to `"user"` directly because Better Auth manages user deletion on its own table — orphaned rows fail-safe at resolve time.
 
-DDL is **idempotent CREATE / ALTER IF NOT EXISTS** with explicit `DROP CONSTRAINT IF EXISTS` for retired FKs; runs on every server boot. Schema is forward-only — no migration tooling, no DROP COLUMN; back up before upgrading.
+Schema is managed by **drizzle-kit migrations** (`packages/server/src/warm-store/migrations/`). On every boot, `WarmStore.initialize()` runs:
+
+1. Idempotent legacy cleanups (`DROP CONSTRAINT IF EXISTS`, `DROP TABLE IF EXISTS`) for pre-Better-Auth artefacts on existing databases.
+2. Better Auth + Postgres-FTS scaffolding (Better Auth's tables and the `tsv tsvector GENERATED ALWAYS AS (...)` column on `memory_fts` — drizzle's schema DSL doesn't model GENERATED columns).
+3. `migrate()` from `drizzle-orm/node-postgres/migrator` over the 12 owned tables, tracked in the standard `__drizzle_migrations` history table.
+4. Post-migration FTS GIN index.
+
+The first migration (`0000_*.sql`) uses `CREATE … IF NOT EXISTS` so it's a no-op against the existing prod database; subsequent migrations are plain. See `CONTRIBUTING.md` for the schema-change workflow (run `pnpm db:generate`, review the diff, commit schema + migration together; CI's `pnpm db:check` enforces lockstep). Data migrations and column renames still need hand-editing the generated SQL — drizzle-kit's diff isn't always right for those.
 
 ### Qdrant (cold)
 
@@ -234,9 +241,10 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 
 ## Things that aren't here yet
 
-- No drizzle-kit migrations folder; schema lives in idempotent DDL strings.
 - No OpenTelemetry exporter (Prometheus exposition is at `/v1/admin/metrics/prom`).
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
+- The OpenAPI spec is hand-rolled (`packages/server/src/openapi.ts`), not derived from the route Zod schemas. Route additions need to be reflected manually; CI doesn't catch the drift.
+- Engine layer (decay, dream cycle, orphan reaper, neighbour-edge promotion) still uses raw `warm.pool.query` for ~10 queries; the warm-store layer is fully on drizzle.
 
 See [../CHANGELOG.md](../CHANGELOG.md) for behaviour shifts and [../SECURITY.md](../SECURITY.md) for the production hardening checklist.
