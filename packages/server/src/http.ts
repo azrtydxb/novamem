@@ -120,7 +120,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   const app = Fastify({
     logger: {
       level: opts.logLevel ?? "info",
-      // P1-S2: never log Authorization headers, login passwords, or minted
+      // Never log Authorization headers, login passwords, or minted
       // token plaintexts. Pino's `redact` is field-path based; cover both
       // request-time fields and response shapes that pass through `req.log`.
       redact: {
@@ -145,7 +145,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     bodyLimit: 2 * 1024 * 1024,
   });
 
-  // P1-S3: tighten CORS. `origin: true` reflects every Origin, which makes
+  // Tighten CORS. `origin: true` reflects every Origin, which makes
   // the API a CSRF surface for any site that knows the URL. The allow-list
   // is parsed in `loadConfig()` from NOVAMEM_CORS_ORIGINS; here we just
   // map the resolved array onto Fastify-CORS' shape:
@@ -161,7 +161,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         : corsList;
   app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false });
 
-  // P1-S3: cookie support for HttpOnly session storage. Cookies are
+  // Cookie support for HttpOnly session storage. Cookies are
   // signed with a server-side secret so any bit-flip / tamper invalidates
   // the value before it reaches our auth hook.
   const cookieSecret = opts.cookieSecret ?? "novamem-dev-cookie-secret-change-me";

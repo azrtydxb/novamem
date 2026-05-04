@@ -6,7 +6,7 @@ import { ActiveProjectProvider } from "./lib/active-project";
 import { SignIn } from "./pages/SignIn";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 
-// P2-3: lazy-load the heavy pages so the SignIn route doesn't pay for
+// Lazy-load the heavy pages so the SignIn route doesn't pay for
 // recharts (~40% of the bundle) before the user is even logged in.
 const HealthPage = lazy(() => import("./pages/HealthPage").then((m) => ({ default: m.HealthPage })));
 const MetricsPage = lazy(() => import("./pages/MetricsPage").then((m) => ({ default: m.MetricsPage })));

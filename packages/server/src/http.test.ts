@@ -655,17 +655,17 @@ describe("http: P0 regression tests", () => {
     return { app, warm, bobSession: bob.sessionToken, carolSession: carol.sessionToken };
   }
 
-  // P0-1 (user id `p_*` collision with project collection prefix) is
-  // obsolete — there are no user ids any more, just user ids; user
-  // creation goes through usernames which can't collide with project
-  // collection naming.
+  // The user-id-collision-with-project-prefix concern is obsolete —
+  // there are no user ids any more, just user ids; user creation goes
+  // through usernames which can't collide with project collection
+  // naming.
 
-  // P0-2: removing a member terminates that user's project access.
+  // Removing a member terminates that user's project access.
   // Tokens themselves have no per-project scope; access flows from the
   // owning user's memberships at request time. So the kicked member's
   // bearer continues to work for their own user-global memory but is
   // refused when it asks for the project they used to be in.
-  it("P0-2: removeProjectMember terminates the kicked user's project access", async () => {
+  it("removeProjectMember terminates the kicked user's project access", async () => {
     const { app, warm, bobSession, carolSession } = await setupBobInAcme();
     const bobAuth = { authorization: `Bearer ${bobSession}` };
     const carolAuth = { authorization: `Bearer ${carolSession}` };
@@ -710,12 +710,12 @@ describe("http: P0 regression tests", () => {
     expect(denied.statusCode).toBe(403);
   });
 
-  // P0-3 (login throttle) was about /v1/auth/login. Better Auth owns
-  // throttling now via its own rate-limit + secondaryStorage hooks;
-  // we no longer ship a hand-rolled per-username throttle.
+  // The login-throttle concern was about /v1/auth/login. Better Auth
+  // owns throttling now via its own rate-limit + secondaryStorage
+  // hooks; we no longer ship a hand-rolled per-username throttle.
 
-  // P0-4: getEntry's `"*"` magic-string bypass is gone
-  it("P0-4: getEntry with projectId='*' is treated as a literal id, not a bypass", async () => {
+  // getEntry's `"*"` magic-string bypass is gone
+  it("getEntry with projectId='*' is treated as a literal id, not a bypass", async () => {
     const { warm } = makeApp({ authMode: "none" });
     const id = await warm.insertEntry({
       userId: "public",
@@ -732,8 +732,8 @@ describe("http: P0 regression tests", () => {
     expect(ok).toBeDefined();
   });
 
-  // P0-5: cross-user project member CAN forget shared rows
-  it("P0-5: cross-user project member can forget a shared entry", async () => {
+  // Cross-user project member CAN forget shared rows
+  it("cross-user project member can forget a shared entry", async () => {
     const { app, bobSession, carolSession } = await setupBobInAcme();
     const bobAuth = { authorization: `Bearer ${bobSession}` };
     const carolAuth = { authorization: `Bearer ${carolSession}` };
@@ -779,11 +779,11 @@ describe("http: P0 regression tests", () => {
     expect(recent.json().results.find((r: { id: string }) => r.id === id)).toBeUndefined();
   });
 
-  // P0-6: cookie-authed /v1/me/* mirrors must check project membership.
+  // Cookie-authed /v1/me/* mirrors must check project membership.
   // Without this guard, any user in `acme` could read/write any
   // project under `acme` by passing the project id in the body — even
   // projects they're not a member of.
-  it("P0-6: /v1/search refuses non-members of the requested project (cookie-authed)", async () => {
+  it("/v1/search refuses non-members of the requested project (cookie-authed)", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
     const aliceHelper = await userAuth(warm, "alice");
     const bobHelper = await userAuth(warm, "bob");
@@ -848,12 +848,12 @@ describe("http: P0 regression tests", () => {
     expect(okSearch.statusCode).toBe(200);
   });
 
-  // P0-6 follow-up: /v1/forget can't be tricked into deleting a
-  // project-scoped entry by passing project: null. The handler looks up
-  // the actual entry's project_id and re-checks membership. (Was
-  // previously only enforced on /v1/me/forget; promoted to the unified
-  // /v1/forget so the protection is universal.)
-  it("P0-6: /v1/forget rechecks the entry's real project", async () => {
+  // /v1/forget can't be tricked into deleting a project-scoped entry
+  // by passing project: null. The handler looks up the actual entry's
+  // project_id and re-checks membership. (Was previously only enforced
+  // on /v1/me/forget; promoted to the unified /v1/forget so the
+  // protection is universal.)
+  it("/v1/forget rechecks the entry's real project", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
     const aliceHelper = await userAuth(warm, "alice");
     const bobHelper = await userAuth(warm, "bob");
@@ -889,13 +889,13 @@ describe("http: P0 regression tests", () => {
     expect(r.statusCode).toBe(403);
   });
 
-  // P1-S6: admin user.create audit log — the legacy /v1/admin/users
-  // route emitted these entries. With user-CRUD moved to Better Auth,
+  // Admin user.create audit log — the legacy /v1/admin/users route
+  // emitted these entries. With user-CRUD moved to Better Auth,
   // user.create audit entries are produced by Better Auth's own hooks
   // (configured separately via its `databaseHooks`); not in scope for
   // this test surface.
 
-  // P2-1: Zod errors → 400 (covered by existing test rewritten earlier).
+  // Zod errors → 400 (covered by existing test rewritten earlier).
 });
 
 describe("http: projects (sub-brains)", () => {

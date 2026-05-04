@@ -101,8 +101,7 @@ export class GraphStore {
 
   /** Batch variant of `addEdge` — one round-trip for all neighbour links
    *  off a single source id. Used by `engine.linkVectorNeighbors` to
-   *  collapse `graphLinkFanout` round-trips per `remember()` to one
-   *  (review finding P1-P3 / P-H4). */
+   *  collapse `graphLinkFanout` round-trips per `remember()` to one. */
   async addEdgesBatch(
     userId: string,
     fromId: string,
@@ -182,7 +181,7 @@ export class GraphStore {
 
   /** Drop every Memory node belonging to a project. Returns `true` only
    *  when the delete actually ran — silently swallowing errors used to
-   *  make the engine report `graphCleared: true` falsely (P1-A6). */
+   *  make the engine report `graphCleared: true` falsely. */
   async removeAllForProject(projectId: string): Promise<boolean> {
     if (!this.graph || !this.connected) return false;
     try {
