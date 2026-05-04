@@ -39,8 +39,11 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
+      # Build before typecheck so workspace packages that consume each
+      # other's `dist/` (e.g. packages/mcp imports @azrty/novamem types)
+      # see compiled .d.ts files.
       - run: pnpm build
+      - run: pnpm typecheck
       - run: pnpm test
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
