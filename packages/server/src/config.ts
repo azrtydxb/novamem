@@ -12,6 +12,27 @@ export const ConfigSchema = z
       host: z.string().default("0.0.0.0"),
       port: z.coerce.number().int().min(1).max(65_535).default(7_778),
       rateLimitPerMinute: z.coerce.number().int().positive().default(600),
+      /** Pino log level for the Fastify logger. Operator override via
+       *  LOG_LEVEL (no NOVAMEM_ prefix — matches the de-facto Pino
+       *  convention). */
+      logLevel: z
+        .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+        .default("info"),
+      /** CORS allow-list. Comma-separated env value is parsed into an
+       *  array; "*" → reflect-any, "" / "self" → same-origin only.
+       *  Default mirrors the dev SPA origin. */
+      corsOrigins: z.array(z.string()).default(["http://localhost:5173"]),
+      /** When true (NOVAMEM_INSECURE_COOKIES=1), session cookies are
+       *  emitted without the Secure attribute so localhost dev over HTTP
+       *  works. Production must leave this false. */
+      insecureCookies: z.coerce.boolean().default(false),
+      /** Public-facing base URL for the service — used by Better Auth as
+       *  its trusted origin / cookie domain. Defaults to
+       *  http://${host}:${port} when unset. */
+      baseUrl: z.string().default("http://0.0.0.0:7778"),
+      /** Postgres pool max connections. Bounded so a load spike can't
+       *  exhaust the database silently. Default 20. */
+      pgPoolMax: z.coerce.number().int().positive().default(20),
     }),
     auth: z
       .object({
@@ -60,6 +81,15 @@ export const ConfigSchema = z
      *  env var in production fails loud instead of silently accepting
      *  attacker-minted sessions. */
     cookieSecret: z.string().min(16),
+    /** Bootstrap admin seeding. When both fields are set and no admin
+     *  user exists yet, main.ts signs up the account via Better Auth and
+     *  promotes it. Idempotent across restarts. */
+    bootstrap: z
+      .object({
+        adminEmail: z.string().optional(),
+        adminPassword: z.string().optional(),
+      })
+      .default({}),
     admin: z.object({
       // Master switch for the admin dashboard UI + /v1/admin/metrics route.
       // Set NOVAMEM_ADMIN_DASHBOARD=0 (or "false") to disable the surface
@@ -102,11 +132,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       );
     }
   }
+  // Derive defaults for service.baseUrl from host:port so operators
+  // don't have to set NOVAMEM_BASE_URL on every dev box. Production
+  // deployments behind a reverse proxy supply the public URL explicitly.
+  const host = env.NOVAMEM_HOST ?? "0.0.0.0";
+  const port = env.NOVAMEM_PORT ?? "7778";
+  const baseUrl = env.NOVAMEM_BASE_URL ?? `http://${host}:${port}`;
+
+  // CORS origins: empty string / "self" → same-origin only (empty array);
+  // "*" → reflect-any (preserved as the literal "*" sentinel); otherwise
+  // a comma-separated allowlist trimmed and filtered.
+  const corsRaw = env.NOVAMEM_CORS_ORIGINS;
+  let corsOrigins: string[] | undefined;
+  if (corsRaw !== undefined) {
+    if (corsRaw === "" || corsRaw === "self") corsOrigins = [];
+    else if (corsRaw === "*") corsOrigins = ["*"];
+    else corsOrigins = corsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
   return ConfigSchema.parse({
     service: {
       host: env.NOVAMEM_HOST,
       port: env.NOVAMEM_PORT,
       rateLimitPerMinute: env.NOVAMEM_RATE_LIMIT_PER_MINUTE,
+      logLevel: env.LOG_LEVEL,
+      corsOrigins,
+      insecureCookies: env.NOVAMEM_INSECURE_COOKIES === "1",
+      baseUrl,
+      pgPoolMax: env.NOVAMEM_PG_POOL_MAX,
     },
     auth: {
       mode: env.NOVAMEM_AUTH_MODE,
@@ -135,6 +188,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       defaultEffectiveDays: env.NOVAMEM_DECAY_DAYS,
     },
     cookieSecret,
+    bootstrap: {
+      adminEmail: env.NOVAMEM_BOOTSTRAP_ADMIN_EMAIL,
+      adminPassword: env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD,
+    },
     admin: {
       dashboard: env.NOVAMEM_ADMIN_DASHBOARD,
     },
