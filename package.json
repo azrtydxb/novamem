@@ -23,5 +23,10 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "pnpm": {
+    "overrides": {
+      "protobufjs@<7.5.5": ">=7.5.5"
+    }
   }
 }
