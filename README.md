@@ -1,9 +1,12 @@
 # novamem
 
 [![CI](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml)
+[![Release](https://github.com/azrtydxb/novamem/actions/workflows/release.yml/badge.svg)](https://github.com/azrtydxb/novamem/actions/workflows/release.yml)
+[![npm: client](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem.svg?label=%40azrtydxb%2Fnovamem)](https://www.npmjs.com/package/@azrtydxb/novamem)
+[![npm: mcp](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-mcp.svg?label=%40azrtydxb%2Fnovamem-mcp)](https://www.npmjs.com/package/@azrtydxb/novamem-mcp)
+[![npm: init](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-init.svg?label=%40azrtydxb%2Fnovamem-init)](https://www.npmjs.com/package/@azrtydxb/novamem-init)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
-[![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0-orange.svg)](#status)
 
 Standalone tiered memory service for AI agents. Hybrid keyword + vector + graph search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard.
 
@@ -52,7 +55,7 @@ Full docs live in [`docs/`](docs/):
 
 ## Status
 
-Pre-1.0. The `/v1/*` API is stable but schema migrations are forward-only — back up Postgres before upgrading in place.
+Pre-1.0 — current release: [`v0.1.0`](https://github.com/azrtydxb/novamem/releases/tag/v0.1.0) (2026-05-04). The `/v1/*` API is stable but schema migrations are forward-only — back up Postgres before upgrading in place.
 
 ## License
 
