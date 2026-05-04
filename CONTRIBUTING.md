@@ -108,6 +108,15 @@ To cut a release:
 
 Re-run with `--dry-run: true` via Actions → Release → Run workflow if you want to preview.
 
+## Per-package source layout
+
+Each package's `src/` follows a flat-by-default convention with folders only when a module genuinely spans multiple files:
+
+- **Multi-file modules**: a folder with `index.ts` as the public entry. Examples: `packages/server/src/engine/`, `packages/server/src/warm-store/`. The folder owns its private helpers and a single `index.ts` re-exports the surface other modules consume.
+- **Single-file modules**: a flat sibling file at the package root. Examples: `packages/server/src/cold-store.ts`, `packages/server/src/graph-store.ts`, `packages/server/src/embeddings.ts`. No wrapper folder — the file IS the module.
+
+When a single-file module grows enough to need internal helpers, promote it to a folder with `index.ts` rather than dropping a `*-helpers.ts` sibling next to it. Mixing the two styles in one package makes import paths inconsistent.
+
 ## Code style
 
 - Format: not enforced (no prettier/eslint run on commit; we rely on TS strict + noUncheckedIndexedAccess)
