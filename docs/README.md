@@ -16,7 +16,9 @@ Tiered long-term memory for AI agents — keyword + vector + graph hybrid search
 
 ## Connect an AI tool
 
-Each guide has the exact MCP config block to paste:
+**One-shot installer**: `npx @azrty/novamem-init` signs you in, mints a bearer, and wires every supported host on your machine. See [`@azrty/novamem-init`](../packages/init/README.md).
+
+Or pick your host manually — each guide has the exact MCP config block to paste:
 
 - [Claude Code](connect/claude-code.md)
 - [Claude Desktop](connect/claude-desktop.md)
