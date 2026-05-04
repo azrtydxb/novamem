@@ -120,6 +120,16 @@ export const memoryEntries = pgTable(
     metadata: jsonb("metadata").default({}),
     /** True if this entry is in the cold tier (vectors only). */
     cold: boolean("cold").notNull().default(false),
+    /** Provenance: open-string vocabulary describing where the memory
+     *  originated (chat / email / code-review / doc / inference / …). */
+    sourceType: text("source_type"),
+    /** Provenance: operator-defined free-text channel reference. */
+    capturedFrom: text("captured_from"),
+    /** Provenance: 0..1 confidence; default 1.0. Lower for inferred facts. */
+    confidence: real("confidence").notNull().default(1.0),
+    /** Sha256 of trimmed content. Powers the exact-duplicate fast-path
+     *  in the worthiness gate. */
+    contentHash: text("content_hash"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -129,6 +139,10 @@ export const memoryEntries = pgTable(
     index("idx_entries_namespace").on(table.namespace),
     index("idx_entries_agent").on(table.agentName),
     index("idx_entries_cold").on(table.cold),
+    index("idx_entries_source_type").on(table.sourceType),
+    index("idx_entries_confidence").on(table.confidence),
+    index("idx_entries_content_hash").on(table.userId, table.contentHash),
+    index("idx_entries_user_cold").on(table.userId, table.cold),
   ],
 );
 

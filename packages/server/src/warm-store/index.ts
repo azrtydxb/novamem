@@ -7,7 +7,8 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
-import { and, asc, count, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { unionAll } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { ulid } from "ulid";
 
@@ -422,39 +423,53 @@ export class WarmStore {
     }>
   > {
     const lim = Math.max(1, Math.min(200, limit));
-    const r = await this.pool.query<{
-      kind: string;
-      at: Date;
-      text: string;
-      project: string | null;
-    }>(
-      `SELECT kind, at, text, project FROM (
-         SELECT 'remember'::text AS kind, created_at AS at,
-                left(content, 160) AS text, project_id AS project
-           FROM memory_entries WHERE user_id = $1
-         UNION ALL
-         SELECT 'token'::text AS kind, created_at AS at,
-                'Minted token: ' || COALESCE(label, '(no label)') AS text,
-                project_id AS project
-           FROM user_tokens
-          WHERE user_id = $1 AND revoked_at IS NULL
-         UNION ALL
-         SELECT 'project'::text AS kind, joined_at AS at,
-                'Joined project: ' || project_id AS text,
-                project_id AS project
-           FROM project_members WHERE user_id = $1
-         UNION ALL
-         SELECT 'audit'::text AS kind, ts AS at,
-                action || ' ' || COALESCE(target, '') AS text,
-                NULL::text AS project
-           FROM admin_audit_log WHERE actor_user_id = $1
-       ) src
-       ORDER BY at DESC
-       LIMIT $2`,
-      [userId, lim],
-    );
-    return r.rows.map((row) => ({
-      kind: row.kind as "remember" | "token" | "project" | "audit",
+    // Four-arm UNION ALL: remembers, token mints, project joins, audit
+    // events for this user. user_tokens has no project_id column, so
+    // we synthesise NULL there. drizzle's `unionAll` requires matching
+    // shapes across all branches.
+    const remembers = this.db
+      .select({
+        kind: sql<"remember" | "token" | "project" | "audit">`'remember'::text`,
+        at: schema.memoryEntries.createdAt,
+        text: sql<string>`left(${schema.memoryEntries.content}, 160)`,
+        project: schema.memoryEntries.projectId,
+      })
+      .from(schema.memoryEntries)
+      .where(eq(schema.memoryEntries.userId, userId));
+    const tokens = this.db
+      .select({
+        kind: sql<"remember" | "token" | "project" | "audit">`'token'::text`,
+        at: schema.userTokens.createdAt,
+        text: sql<string>`'Minted token: ' || COALESCE(${schema.userTokens.label}, '(no label)')`,
+        project: sql<string | null>`NULL::text`,
+      })
+      .from(schema.userTokens)
+      .where(and(eq(schema.userTokens.userId, userId), isNull(schema.userTokens.revokedAt)));
+    const joins = this.db
+      .select({
+        kind: sql<"remember" | "token" | "project" | "audit">`'project'::text`,
+        at: schema.projectMembers.joinedAt,
+        text: sql<string>`'Joined project: ' || ${schema.projectMembers.projectId}`,
+        project: schema.projectMembers.projectId,
+      })
+      .from(schema.projectMembers)
+      .where(eq(schema.projectMembers.userId, userId));
+    const audits = this.db
+      .select({
+        kind: sql<"remember" | "token" | "project" | "audit">`'audit'::text`,
+        at: schema.adminAuditLog.ts,
+        text: sql<string>`${schema.adminAuditLog.action} || ' ' || COALESCE(${schema.adminAuditLog.target}, '')`,
+        project: sql<string | null>`NULL::text`,
+      })
+      .from(schema.adminAuditLog)
+      .where(eq(schema.adminAuditLog.actorUserId, userId));
+    const rows = await unionAll(remembers, tokens)
+      .unionAll(joins)
+      .unionAll(audits)
+      .orderBy(sql`at DESC`)
+      .limit(lim);
+    return rows.map((row) => ({
+      kind: row.kind,
       at: row.at.toISOString(),
       text: row.text,
       project: row.project,
@@ -536,91 +551,38 @@ export class WarmStore {
     });
   }
 
-  /** Delete a user and every memory row owned by them. Caller must purge
-   *  cold collections and graph nodes separately — those live in
-   *  different processes. Returns false for the synthetic `public` user
-   *  (would orphan every legacy row) or an unknown id. */
-  async deleteUserAndMemory(id: string): Promise<{ deleted: boolean; entriesRemoved: number }> {
-    if (id === SYSTEM_USER) return { deleted: false, entriesRemoved: 0 };
-    const exists = await this.pool.query("SELECT 1 FROM users WHERE id = $1", [id]);
-    if (exists.rowCount === 0) return { deleted: false, entriesRemoved: 0 };
-
-    const client = await this.pool.connect();
-    let entriesRemoved = 0;
-    try {
-      await client.query("BEGIN");
-      await client.query(
-        `DELETE FROM memory_access WHERE entry_id IN (SELECT id FROM memory_entries WHERE user_id = $1)`,
-        [id],
-      );
-      await client.query("DELETE FROM memory_fts WHERE user_id = $1", [id]);
-      await client.query("DELETE FROM memory_relations WHERE user_id = $1", [id]);
-      const del = await client.query("DELETE FROM memory_entries WHERE user_id = $1", [id]);
-      entriesRemoved = del.rowCount ?? 0;
-      await client.query("DELETE FROM cold_orphans WHERE user_id = $1", [id]);
-      // user_tokens, sessions, projects cascade via FK ON DELETE CASCADE.
-      await client.query("DELETE FROM users WHERE id = $1", [id]);
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
-    return { deleted: true, entriesRemoved };
-  }
-
   // ─── Users ────────────────────────────────────────────────────────────
-
-  async createUser(args: {
-    username: string;
-    passwordHash: string;
-    role: "admin" | "user";
-  }): Promise<{ id: string; username: string; role: string; createdAt: Date; passwordChangedAt: Date | null }> {
-    const id = ulid();
-    const r = await this.pool.query<{ created_at: Date; password_changed_at: Date | null }>(
-      `INSERT INTO users (id, username, password_hash, role)
-       VALUES ($1, $2, $3, $4)
-       RETURNING created_at, password_changed_at`,
-      [id, args.username, args.passwordHash, args.role],
-    );
-    return {
-      id,
-      username: args.username,
-      role: args.role,
-      createdAt: r.rows[0]!.created_at,
-      passwordChangedAt: r.rows[0]!.password_changed_at,
-    };
-  }
+  // Better Auth owns the user model — its `"user"` table isn't in our
+  // drizzle schema, so the lookups below use `db.execute(sql`…`)`. The
+  // legacy `users` / `sessions` tables and their CRUD methods (createUser,
+  // listUsers, createSession, deleteUserAndMemory, …) were dropped along
+  // with the bcrypt path; tests run against FakeWarmStore which still
+  // implements them in-memory.
 
   /** Resolve a user by their human handle: tries email exact-match first
    *  (Better Auth's canonical identifier), then falls back to `name` and
    *  the email's local-part. Used by the project-membership flow so an
-   *  admin can invite "alice" instead of typing "alice@example.com".
-   *  Returns the Better Auth "user" row shape (id + email + role); the
-   *  legacy fields (passwordHash, passwordChangedAt) are gone — Better
-   *  Auth manages them in `account.password`. */
+   *  admin can invite "alice" instead of typing "alice@example.com". */
   async findUserByUsername(username: string): Promise<{
     id: string;
     username: string;
     role: string;
   } | null> {
-    const r = await this.pool.query<{
+    const r = await this.db.execute<{
       id: string;
       email: string;
       name: string;
       role: string | null;
-    }>(
-      `SELECT id, email, name, role FROM "user"
-        WHERE email = $1
-           OR name = $1
-           OR split_part(email, '@', 1) = $1
-        ORDER BY (CASE WHEN email = $1 THEN 0
-                       WHEN name  = $1 THEN 1
-                       ELSE 2 END)
-        LIMIT 1`,
-      [username],
-    );
+    }>(sql`
+      SELECT id, email, name, role FROM "user"
+       WHERE email = ${username}
+          OR name = ${username}
+          OR split_part(email, '@', 1) = ${username}
+       ORDER BY (CASE WHEN email = ${username} THEN 0
+                      WHEN name  = ${username} THEN 1
+                      ELSE 2 END)
+       LIMIT 1
+    `);
     const row = r.rows[0];
     if (!row) return null;
     return {
@@ -670,12 +632,12 @@ export class WarmStore {
     // synthesise a username from the email's local-part so callers that
     // expect that shape (auth hook fallback for nm_ tokens) continue to
     // work without rewiring.
-    const r = await this.pool.query<{
+    const r = await this.db.execute<{
       id: string;
       email: string;
       name: string;
       role: string | null;
-    }>(`SELECT id, email, name, role FROM "user" WHERE id = $1`, [id]);
+    }>(sql`SELECT id, email, name, role FROM "user" WHERE id = ${id}`);
     const row = r.rows[0];
     if (!row) return null;
     return {
@@ -685,112 +647,7 @@ export class WarmStore {
     };
   }
 
-  async listUsers(): Promise<
-    Array<{
-      id: string;
-      username: string;
-      role: string;
-      createdAt: Date;
-      lastLoginAt: Date | null;
-      passwordChangedAt: Date | null;
-    }>
-  > {
-    const r = await this.pool.query<{
-      id: string;
-      username: string;
-      role: string;
-      created_at: Date;
-      last_login_at: Date | null;
-      password_changed_at: Date | null;
-    }>(`SELECT id, username, role, created_at, last_login_at, password_changed_at FROM users ORDER BY created_at ASC`);
-    return r.rows.map((row) => ({
-      id: row.id,
-      username: row.username,
-      role: row.role,
-      createdAt: row.created_at,
-      lastLoginAt: row.last_login_at,
-      passwordChangedAt: row.password_changed_at,
-    }));
-  }
-
-  async deleteUser(id: string): Promise<boolean> {
-    const r = await this.pool.query("DELETE FROM users WHERE id = $1", [id]);
-    return (r.rowCount ?? 0) > 0;
-  }
-
-  async patchUserPassword(id: string, passwordHash: string, changedAt: Date): Promise<boolean> {
-    const r = await this.pool.query(
-      `UPDATE users SET password_hash = $1, password_changed_at = $2 WHERE id = $3`,
-      [passwordHash, changedAt, id],
-    );
-    return (r.rowCount ?? 0) > 0;
-  }
-
-  async setUserRole(id: string, role: "admin" | "user"): Promise<boolean> {
-    const r = await this.pool.query(
-      `UPDATE users SET role = $1 WHERE id = $2`,
-      [role, id],
-    );
-    return (r.rowCount ?? 0) > 0;
-  }
-
-  async countAdmins(): Promise<number> {
-    const r = await this.pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM users WHERE role = 'admin'`,
-    );
-    return Number(r.rows[0]?.count ?? 0);
-  }
-
-  // ─── Sessions ─────────────────────────────────────────────────────────
-
-  async createSession(userId: string, ttlMs: number): Promise<{ token: string; expiresAt: Date }> {
-    const token = "ns_" + randomBytes(32).toString("base64url");
-    const tokenHash = hashToken(token);
-    const expiresAt = new Date(Date.now() + ttlMs);
-    await this.pool.query(
-      `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)`,
-      [tokenHash, userId, expiresAt],
-    );
-    await this.pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [userId]);
-    return { token, expiresAt };
-  }
-
-  async resolveSession(plaintext: string): Promise<{
-    user: { id: string; username: string; role: string };
-  } | null> {
-    if (!plaintext) return null;
-    const tokenHash = hashToken(plaintext);
-    const r = await this.pool.query<{
-      user_id: string;
-      username: string;
-      role: string;
-    }>(
-      `UPDATE sessions SET last_seen_at = now()
-        WHERE token_hash = $1 AND expires_at > now()
-        RETURNING user_id,
-                  (SELECT username FROM users u WHERE u.id = sessions.user_id) AS username,
-                  (SELECT role FROM users u WHERE u.id = sessions.user_id) AS role`,
-      [tokenHash],
-    );
-    const row = r.rows[0];
-    if (!row) return null;
-    return {
-      user: {
-        id: row.user_id,
-        username: row.username,
-        role: row.role,
-      },
-    };
-  }
-
-  async revokeSession(plaintext: string): Promise<boolean> {
-    if (!plaintext) return false;
-    const tokenHash = hashToken(plaintext);
-    const r = await this.pool.query(`DELETE FROM sessions WHERE token_hash = $1`, [tokenHash]);
-    return (r.rowCount ?? 0) > 0;
-  }
-
-  // ─── Audit log (P1-S6) ────────────────────────────────────────────────
+  // ─── Audit log ────────────────────────────────────────────────────────
 
   async writeAudit(entry: {
     actorUserId?: string | null;
@@ -993,19 +850,24 @@ export class WarmStore {
   ): Promise<
     Array<{ userId: string; username: string; role: string; joinedAt: Date }>
   > {
-    const r = await this.pool.query<{
+    // Better Auth's `"user"` table isn't in our drizzle schema (it owns
+    // its own DDL), so the join uses `sql` for the table reference and
+    // column projection while drizzle handles the rest.
+    const r = await this.db.execute<{
       user_id: string;
       username: string;
       role: string;
       joined_at: Date;
-    }>(
-      `SELECT m.user_id, u.username, m.role, m.joined_at
-         FROM project_members m
-         JOIN users u ON u.id = m.user_id
-        WHERE m.project_id = $1
-        ORDER BY m.joined_at ASC`,
-      [projectId],
-    );
+    }>(sql`
+      SELECT ${schema.projectMembers.userId} AS user_id,
+             u.email AS username,
+             ${schema.projectMembers.role} AS role,
+             ${schema.projectMembers.joinedAt} AS joined_at
+        FROM ${schema.projectMembers}
+        JOIN "user" u ON u.id = ${schema.projectMembers.userId}
+       WHERE ${schema.projectMembers.projectId} = ${projectId}
+       ORDER BY ${schema.projectMembers.joinedAt} ASC
+    `);
     return r.rows.map((row) => ({
       userId: row.user_id,
       username: row.username,
@@ -1121,32 +983,11 @@ export class WarmStore {
       source: args.source,
       agentName: args.agentName ?? null,
       metadata: args.metadata ?? {},
+      sourceType: args.sourceType ?? null,
+      capturedFrom: args.capturedFrom ?? null,
+      ...(args.confidence !== undefined ? { confidence: args.confidence } : {}),
+      contentHash: args.contentHash ?? null,
     });
-    // Provenance + content_hash live in columns added via ALTER; we
-    // fill them with a follow-up UPDATE to keep the drizzle insert
-    // shape unchanged (these columns aren't in the drizzle schema).
-    if (
-      args.sourceType ||
-      args.capturedFrom ||
-      args.confidence !== undefined ||
-      args.contentHash
-    ) {
-      await this.pool.query(
-        `UPDATE memory_entries
-            SET source_type = COALESCE($2, source_type),
-                captured_from = COALESCE($3, captured_from),
-                confidence = COALESCE($4, confidence),
-                content_hash = COALESCE($5, content_hash)
-          WHERE id = $1`,
-        [
-          id,
-          args.sourceType ?? null,
-          args.capturedFrom ?? null,
-          args.confidence ?? null,
-          args.contentHash ?? null,
-        ],
-      );
-    }
     await this.db.insert(schema.memoryFts).values({
       entryId: id,
       userId: args.userId,
@@ -1166,15 +1007,20 @@ export class WarmStore {
     projectId: string | null,
     contentHash: string,
   ): Promise<string | null> {
-    const r = await this.pool.query<{ id: string }>(
-      `SELECT id FROM memory_entries
-        WHERE user_id = $1
-          AND content_hash = $2
-          AND ${projectId === null ? "project_id IS NULL" : "project_id = $3"}
-        LIMIT 1`,
-      projectId === null ? [userId, contentHash] : [userId, contentHash, projectId],
-    );
-    return r.rows[0]?.id ?? null;
+    const [row] = await this.db
+      .select({ id: schema.memoryEntries.id })
+      .from(schema.memoryEntries)
+      .where(
+        and(
+          eq(schema.memoryEntries.userId, userId),
+          eq(schema.memoryEntries.contentHash, contentHash),
+          projectId === null
+            ? isNull(schema.memoryEntries.projectId)
+            : eq(schema.memoryEntries.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
   }
 
   /** Update an existing entry's content and/or metadata in-place.
@@ -1206,40 +1052,32 @@ export class WarmStore {
       if (scope.projectId !== null) return false;
       if (scope.userId !== args.userId) return false;
     }
-    const sets: string[] = [`updated_at = now()`];
-    const params: unknown[] = [args.id];
-    const next = (v: unknown) => {
-      params.push(v);
-      return `$${params.length}`;
+    // Partial update — drizzle's `.set()` accepts undefined-aware
+    // partials, so we just spread the supplied fields.
+    const patch: Partial<typeof schema.memoryEntries.$inferInsert> = {
+      updatedAt: sql`now()` as unknown as Date,
     };
-    if (args.content !== undefined) sets.push(`content = ${next(args.content)}`);
-    if (args.namespace !== undefined) sets.push(`namespace = ${next(args.namespace)}`);
-    if (args.metadata !== undefined) sets.push(`metadata = ${next(args.metadata)}`);
-    if (args.sourceType !== undefined) sets.push(`source_type = ${next(args.sourceType)}`);
-    if (args.capturedFrom !== undefined) sets.push(`captured_from = ${next(args.capturedFrom)}`);
-    if (args.confidence !== undefined) sets.push(`confidence = ${next(args.confidence)}`);
-    if (args.contentHash !== undefined) sets.push(`content_hash = ${next(args.contentHash)}`);
-    await this.pool.query(
-      `UPDATE memory_entries SET ${sets.join(", ")} WHERE id = $1`,
-      params,
-    );
+    if (args.content !== undefined) patch.content = args.content;
+    if (args.namespace !== undefined) patch.namespace = args.namespace;
+    if (args.metadata !== undefined) patch.metadata = args.metadata;
+    if (args.sourceType !== undefined) patch.sourceType = args.sourceType;
+    if (args.capturedFrom !== undefined) patch.capturedFrom = args.capturedFrom;
+    if (args.confidence !== undefined) patch.confidence = args.confidence;
+    if (args.contentHash !== undefined) patch.contentHash = args.contentHash;
+    await this.db
+      .update(schema.memoryEntries)
+      .set(patch)
+      .where(eq(schema.memoryEntries.id, args.id));
     // FTS shadow has its own row keyed by entry_id — refresh content +
     // namespace when they change so keyword search picks up the rewrite.
     if (args.content !== undefined || args.namespace !== undefined) {
-      const fSets: string[] = [];
-      const fParams: unknown[] = [args.id];
-      if (args.content !== undefined) {
-        fParams.push(args.content);
-        fSets.push(`content = $${fParams.length}`);
-      }
-      if (args.namespace !== undefined) {
-        fParams.push(args.namespace);
-        fSets.push(`namespace = $${fParams.length}`);
-      }
-      await this.pool.query(
-        `UPDATE memory_fts SET ${fSets.join(", ")} WHERE entry_id = $1`,
-        fParams,
-      );
+      const fPatch: Partial<typeof schema.memoryFts.$inferInsert> = {};
+      if (args.content !== undefined) fPatch.content = args.content;
+      if (args.namespace !== undefined) fPatch.namespace = args.namespace;
+      await this.db
+        .update(schema.memoryFts)
+        .set(fPatch)
+        .where(eq(schema.memoryFts.entryId, args.id));
     }
     return true;
   }
@@ -1265,49 +1103,44 @@ export class WarmStore {
     k: number;
     agentName?: string | null;
   }): Promise<Array<{ id: string; score: number }>> {
-    const useAgent = args.agentName !== undefined;
     const isProject = args.projectId != null;
     const useNsArray = !!args.namespaces?.length;
-    const params: unknown[] = [args.query, useNsArray ? args.namespaces! : args.namespace, args.k];
-    const ph = (v: unknown): string => {
-      params.push(v);
-      return `$${params.length}`;
-    };
-    const nsClause = useNsArray ? "namespace = ANY($2::text[])" : "namespace = $2";
-    const scopeClause = isProject
-      ? `project_id = ${ph(args.projectId)}`
-      : `user_id = ${ph(args.userId)} AND project_id IS NULL`;
-    const agentClause = !useAgent
-      ? ""
-      : args.agentName === null
-        ? "AND e.agent_name IS NULL"
-        : `AND e.agent_name = ${ph(args.agentName)}`;
+    // ts_rank + tsv + plainto_tsquery are Postgres-specific expressions —
+    // wrap each in `sql` so drizzle binds parameters but emits the raw
+    // operator. Memory_fts.tsv is a GENERATED column not in the schema;
+    // refer to it by raw column name.
+    const score = sql<number>`ts_rank(${schema.memoryFts}.tsv, plainto_tsquery('english', ${args.query}))`;
+    const tsvMatch = sql`${schema.memoryFts}.tsv @@ plainto_tsquery('english', ${args.query})`;
+    const nsMatch = useNsArray
+      ? inArray(schema.memoryFts.namespace, args.namespaces!)
+      : eq(schema.memoryFts.namespace, args.namespace);
+    const scopeMatch = isProject
+      ? eq(schema.memoryFts.projectId, args.projectId!)
+      : and(eq(schema.memoryFts.userId, args.userId), isNull(schema.memoryFts.projectId));
 
-    // For the join variant we need to disambiguate column references with
-    // the table alias `f.` since both sides have project_id / user_id.
-    const fScopeClause = scopeClause.replace(/(project_id|user_id)/g, "f.$1");
-    const fNsClause = nsClause.replace(/^namespace/, "f.namespace");
-    const sql = useAgent
-      ? `SELECT f.entry_id,
-                ts_rank(f.tsv, plainto_tsquery('english', $1)) AS score
-           FROM memory_fts f
-           JOIN memory_entries e ON e.id = f.entry_id
-          WHERE ${fNsClause}
-            AND ${fScopeClause}
-            ${agentClause}
-            AND f.tsv @@ plainto_tsquery('english', $1)
-          ORDER BY score DESC
-          LIMIT $3`
-      : `SELECT entry_id,
-                ts_rank(tsv, plainto_tsquery('english', $1)) AS score
-           FROM memory_fts
-          WHERE ${nsClause}
-            AND ${scopeClause}
-            AND tsv @@ plainto_tsquery('english', $1)
-          ORDER BY score DESC
-          LIMIT $3`;
-    const rows = await this.pool.query<{ entry_id: string; score: number }>(sql, params);
-    return rows.rows.map((r) => ({ id: r.entry_id, score: Number(r.score) }));
+    if (args.agentName !== undefined) {
+      // Agent filter requires the join to memory_entries since agent_name
+      // lives there, not on memory_fts.
+      const agentMatch =
+        args.agentName === null
+          ? isNull(schema.memoryEntries.agentName)
+          : eq(schema.memoryEntries.agentName, args.agentName);
+      const rows = await this.db
+        .select({ id: schema.memoryFts.entryId, score })
+        .from(schema.memoryFts)
+        .innerJoin(schema.memoryEntries, eq(schema.memoryEntries.id, schema.memoryFts.entryId))
+        .where(and(nsMatch, scopeMatch, agentMatch, tsvMatch))
+        .orderBy(desc(score))
+        .limit(args.k);
+      return rows.map((r) => ({ id: r.id, score: Number(r.score) }));
+    }
+    const rows = await this.db
+      .select({ id: schema.memoryFts.entryId, score })
+      .from(schema.memoryFts)
+      .where(and(nsMatch, scopeMatch, tsvMatch))
+      .orderBy(desc(score))
+      .limit(args.k);
+    return rows.map((r) => ({ id: r.id, score: Number(r.score) }));
   }
 
   /** Look up a single entry, scoped to a user or project. This is the
@@ -1388,96 +1221,67 @@ export class WarmStore {
     opts: { projectId?: string | null; includeProjects?: string[] } = {},
   ): Promise<Array<typeof schema.memoryEntries.$inferSelect | undefined>> {
     if (ids.length === 0) return [];
-    const rows = await this.pool.query<{
-      id: string;
-      user_id: string;
-      project_id: string | null;
-      content: string;
-      namespace: string;
-      source: string;
-      agent_name: string | null;
-      metadata: Record<string, unknown> | null;
-      cold: boolean;
-      created_at: Date;
-      updated_at: Date;
-    }>(
-      `SELECT id, user_id, project_id, content, namespace, source, agent_name,
-              metadata, cold, created_at, updated_at
-         FROM memory_entries WHERE id = ANY($1::text[])`,
-      [ids],
-    );
+    const rows = await this.db
+      .select()
+      .from(schema.memoryEntries)
+      .where(inArray(schema.memoryEntries.id, ids));
     const want = opts.projectId;
     const includeSet = opts.includeProjects?.length ? new Set(opts.includeProjects) : null;
-    const byId = new Map<string, (typeof rows.rows)[number]>();
-    for (const r of rows.rows) {
+    const byId = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) {
       if (includeSet) {
         // Active-project mode: row is visible if it's user-global for this
         // caller, OR it's in one of the listed (membership-checked) projects.
         const ok =
-          (r.project_id === null && r.user_id === userId) ||
-          (r.project_id !== null && includeSet.has(r.project_id));
+          (r.projectId === null && r.userId === userId) ||
+          (r.projectId !== null && includeSet.has(r.projectId));
         if (!ok) continue;
       } else if (typeof want === "string") {
-        if (r.project_id !== want) continue;
+        if (r.projectId !== want) continue;
       } else {
-        if (r.project_id !== null) continue;
-        if (r.user_id !== userId) continue;
+        if (r.projectId !== null) continue;
+        if (r.userId !== userId) continue;
       }
       byId.set(r.id, r);
     }
-    return ids.map((id) => {
-      const r = byId.get(id);
-      if (!r) return undefined;
-      return {
-        id: r.id,
-        userId: r.user_id,
-        projectId: r.project_id,
-        content: r.content,
-        namespace: r.namespace,
-        source: r.source,
-        agentName: r.agent_name,
-        metadata: r.metadata,
-        cold: r.cold,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      } as typeof schema.memoryEntries.$inferSelect;
-    });
+    return ids.map((id) => byId.get(id));
   }
 
   async listColdCandidates(_effectiveDays: number, limit = 1000) {
     // Decay is a global, cross-user operation: idle entries from any
     // user are demoted by the same maths. The per-row user_id stays put
     // — engine queries use it on read-side, but decay doesn't need to scope.
-    return this.pool.query<{ id: string; user_id: string; namespace: string; hits: number; idle_days: number }>(
-      `SELECT e.id,
-              e.user_id,
-              e.namespace,
-              COALESCE(a.hits, 0) AS hits,
-              EXTRACT(EPOCH FROM (now() - COALESCE(a.last_accessed, e.created_at))) / 86400.0 AS idle_days
-         FROM memory_entries e
-         LEFT JOIN memory_access a ON a.entry_id = e.id
-        WHERE e.cold = false
-        ORDER BY COALESCE(a.last_accessed, e.created_at) ASC
-        LIMIT $1`,
-      [limit],
-    );
+    const idleDays = sql<number>`EXTRACT(EPOCH FROM (now() - COALESCE(${schema.memoryAccess.lastAccessed}, ${schema.memoryEntries.createdAt}))) / 86400.0`;
+    const lastAccessedOrCreated = sql`COALESCE(${schema.memoryAccess.lastAccessed}, ${schema.memoryEntries.createdAt})`;
+    const rows = await this.db
+      .select({
+        id: schema.memoryEntries.id,
+        user_id: schema.memoryEntries.userId,
+        namespace: schema.memoryEntries.namespace,
+        hits: sql<number>`COALESCE(${schema.memoryAccess.hits}, 0)`,
+        idle_days: idleDays,
+      })
+      .from(schema.memoryEntries)
+      .leftJoin(schema.memoryAccess, eq(schema.memoryAccess.entryId, schema.memoryEntries.id))
+      .where(eq(schema.memoryEntries.cold, false))
+      .orderBy(asc(lastAccessedOrCreated))
+      .limit(limit);
+    // Engine consumes `{ rows: [...] }` shape (legacy pg.QueryResult).
+    return { rows };
   }
 
   /** Read the access-count + idle-days for a single entry — used by the
    *  cold→warm promotion path. Returns null when the entry has no access
    *  row at all (shouldn't happen for promotion candidates). */
   async getColdEntryStats(id: string): Promise<{ hits: number; idleDays: number } | null> {
-    const r = await this.pool.query<{ hits: number; idle_days: string }>(
-      `SELECT a.hits,
-              EXTRACT(EPOCH FROM (now() - a.last_accessed)) / 86400.0 AS idle_days
-         FROM memory_access a
-        WHERE a.entry_id = $1
-        LIMIT 1`,
-      [id],
-    );
-    const row = r.rows[0];
+    const idleDays = sql<number>`EXTRACT(EPOCH FROM (now() - ${schema.memoryAccess.lastAccessed})) / 86400.0`;
+    const [row] = await this.db
+      .select({ hits: schema.memoryAccess.hits, idleDays })
+      .from(schema.memoryAccess)
+      .where(eq(schema.memoryAccess.entryId, id))
+      .limit(1);
     if (!row) return null;
-    return { hits: Number(row.hits), idleDays: Number(row.idle_days) };
+    return { hits: Number(row.hits), idleDays: Number(row.idleDays) };
   }
 
   /** Persist a relation row alongside the graph edge. The graph store is
@@ -1537,7 +1341,7 @@ export class WarmStore {
 
   async ping(): Promise<boolean> {
     try {
-      await this.pool.query("SELECT 1");
+      await this.db.execute(sql`SELECT 1`);
       return true;
     } catch {
       return false;

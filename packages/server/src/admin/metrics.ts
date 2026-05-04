@@ -317,16 +317,6 @@ export class MetricsCollector {
     this.lastDecayAt = at;
   }
 
-  /** Free a user's in-memory slot. Called from `engine.deleteUser`
-   *  so the perUser Map doesn't accumulate dead entries forever
-   *  (review finding P2-5). Also clears any per-token slots scoped to
-   *  the user. */
-  forgetUser(userId: string): void {
-    this.perUser.delete(userId);
-    for (const [hash, slot] of this.perToken) {
-      if (slot.userId === userId) this.perToken.delete(hash);
-    }
-  }
 
   /** Drop a token's slot — called when the token is revoked so the
    *  /v1/me/metrics view stops including it. */
