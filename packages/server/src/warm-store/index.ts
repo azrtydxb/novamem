@@ -24,7 +24,7 @@ import { ulid } from "ulid";
 
 import * as schema from "./schema.js";
 
-/** Plaintext bearer token format. 32 random bytes → ~43 base64url chars,
+/** Plaintext bearer token format. 32 random bytes → 43 base64url chars,
  *  prefixed `nm_` so leaks are recognizable in logs / git history. */
 function generateBearerToken(): string {
   return "nm_" + randomBytes(32).toString("base64url");
@@ -50,8 +50,12 @@ export class WarmStore {
   readonly db: WarmDB;
   /** Direct Postgres pool. Public so the engine can run ad-hoc SQL (e.g.
    *  `recent()` time-window queries) without parking another driver in
-   *  this layer. */
-  readonly pool: Pool;
+   *  this layer.
+   *
+   *  @internal Intended for use only within `engine/` and `warm-store/`.
+   *    External callers must go through the typed methods on this class.
+   */
+  public readonly pool: Pool;
 
   constructor(cfg: WarmStoreConfig) {
     // P1-P4: bound the pg connection pool so a load spike can't exhaust
