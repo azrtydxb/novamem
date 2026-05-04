@@ -6,10 +6,31 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs on the same ref so PR pushes don't queue stale work.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
+  # ── Native test matrix ────────────────────────────────────────────────
+  # One job per architecture, each on a native GitHub-hosted runner — no
+  # QEMU, no cross-compile. fail-fast:false so an arm64 failure doesn't
+  # cancel amd64 (and vice versa); each shows as its own status check.
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.arch }})
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -24,8 +45,10 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
-    runs-on: ubuntu-latest
+    name: audit
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -36,29 +59,77 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      # P1-O3: catch known CVEs in dependencies. Fails on high+ severity.
       # `--prod` so dev-only CVEs (e.g. in build tooling) don't block PRs.
-      - name: pnpm audit (production deps)
-        run: pnpm audit --prod --audit-level=high
+      - run: pnpm audit --prod --audit-level=high
 
-  docker-build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # ── Package build (arch-agnostic JS — npm publish artefacts) ──────────
+  # @azrty/novamem and @azrty/novamem-mcp are pure JS; one build covers
+  # every consumer arch. Verifies `pnpm pack` produces installable tarballs
+  # and uploads them as artefacts so a release workflow can pull them.
+  package:
+    name: package (npm)
+    needs: [test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - name: pnpm pack (client + mcp)
+        run: |
+          mkdir -p dist-tarballs
+          pnpm --filter @azrty/novamem pack --pack-destination ../../dist-tarballs
+          pnpm --filter @azrty/novamem-mcp pack --pack-destination ../../dist-tarballs
+          ls -la dist-tarballs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs
+          path: dist-tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+  # ── Docker image (native per arch) ────────────────────────────────────
+  # Each arch builds on its own native runner — no buildx --platform with
+  # QEMU. Trivy scans the resulting image. fail-fast:false so the two
+  # arches fail independently. needs:[test] gates on a green test run.
+  docker:
+    name: docker (${{ matrix.arch }})
+    needs: [test]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build runtime image
+      # Per-arch cache scope so the two arches don't fight for the same
+      # gha cache slot — each gets its own slice keyed by `${arch}`.
+      - name: Build runtime image (native ${{ matrix.arch }})
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
-          tags: novamem:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Trivy scan (high+critical, fail on findings)
+          load: true
+          tags: novamem:ci-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Trivy scan (HIGH+CRITICAL, fail on findings)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: novamem:ci
+          image-ref: novamem:ci-${{ matrix.arch }}
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
