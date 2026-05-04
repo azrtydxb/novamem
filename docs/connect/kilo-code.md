@@ -25,7 +25,7 @@ For Kilo builds without remote-MCP support, fall back to the stdio shim:
   "mcpServers": {
     "novamem": {
       "command": "npx",
-      "args": ["@azertydxb/novamem-mcp"],
+      "args": ["@azrtydxb/novamem-mcp"],
       "env": {
         "NOVAMEM_BASE_URL": "http://localhost:7778",
         "NOVAMEM_TOKEN": "nm_..."

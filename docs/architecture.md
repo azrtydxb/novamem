@@ -12,7 +12,7 @@ flowchart TB
         CLI["HTTP CLI / SDK"]
     end
 
-    subgraph server["@azertydxb/novamem-server (Fastify · :7778 · HTTP + SSE)"]
+    subgraph server["@azrtydxb/novamem-server (Fastify · :7778 · HTTP + SSE)"]
         ROUTES["/admin · /api-docs · /api/auth/* · /v1/* · /mcp/sse"]
         ENGINE["MemoryEngine"]
         BA["Better Auth<br/>sessions · admin RBAC · JWT"]

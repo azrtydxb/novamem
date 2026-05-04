@@ -27,14 +27,14 @@ Confirmed working with: Claude Code, Claude Desktop, Cursor, Kilo Code, Goose, O
 
 ### Stdio shim (legacy)
 
-For hosts that only speak stdio MCP, the [@azertydxb/novamem-mcp](https://www.npmjs.com/package/@azertydxb/novamem-mcp) shim bridges stdio↔HTTP:
+For hosts that only speak stdio MCP, the [@azrtydxb/novamem-mcp](https://www.npmjs.com/package/@azrtydxb/novamem-mcp) shim bridges stdio↔HTTP:
 
 ```json
 {
   "mcpServers": {
     "novamem": {
       "command": "npx",
-      "args": ["@azertydxb/novamem-mcp"],
+      "args": ["@azrtydxb/novamem-mcp"],
       "env": {
         "NOVAMEM_BASE_URL": "http://localhost:7778",
         "NOVAMEM_TOKEN": "nm_..."

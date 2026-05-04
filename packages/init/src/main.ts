@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @azertydxb/novamem-init — interactive installer.
+ * @azrtydxb/novamem-init — interactive installer.
  *
  * Flow:
  *   1. Prompt base URL (or accept --base-url). Probe /health.

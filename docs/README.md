@@ -16,7 +16,7 @@ Tiered long-term memory for AI agents — keyword + vector + graph hybrid search
 
 ## Connect an AI tool
 
-**One-shot installer**: `npx @azertydxb/novamem-init` signs you in, mints a bearer, and wires every supported host on your machine. See [`@azertydxb/novamem-init`](../packages/init/README.md).
+**One-shot installer**: `npx @azrtydxb/novamem-init` signs you in, mints a bearer, and wires every supported host on your machine. See [`@azrtydxb/novamem-init`](../packages/init/README.md).
 
 Or pick your host manually — each guide has the exact MCP config block to paste:
 
@@ -38,8 +38,8 @@ Or pick your host manually — each guide has the exact MCP config block to past
 .
 ├── packages/
 │   ├── server/        # Fastify HTTP + MCP transports, MemoryEngine, Better Auth
-│   ├── client/        # @azertydxb/novamem — TypeScript client + public types
-│   ├── mcp/           # @azertydxb/novamem-mcp — stdio shim for legacy clients
+│   ├── client/        # @azrtydxb/novamem — TypeScript client + public types
+│   ├── mcp/           # @azrtydxb/novamem-mcp — stdio shim for legacy clients
 │   └── admin-ui/      # React 19 + Vite dashboard (built into the server image)
 ├── skills/novamem/    # Agent Skills bundle (agentskills.io spec)
 ├── integrations/      # Drop-in CLAUDE.md + MCP config per agent host

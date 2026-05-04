@@ -1,15 +1,15 @@
-# @azertydxb/novamem
+# @azrtydxb/novamem
 
 TypeScript client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service with hybrid search, per-user isolation, and project (sub-brain) scoping.
 
 ```bash
-npm install @azertydxb/novamem
+npm install @azrtydxb/novamem
 ```
 
 ## Quickstart
 
 ```ts
-import { NovamemClient } from "@azertydxb/novamem";
+import { NovamemClient } from "@azrtydxb/novamem";
 
 const memory = new NovamemClient({
   baseUrl: "http://localhost:7778",

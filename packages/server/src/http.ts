@@ -375,7 +375,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // at login. When the dashboard is disabled, we register no routes —
   // the server will 404 /admin and /admin/* automatically.
   if (opts.adminDashboard !== false) {
-    // The admin SPA is built by the @azertydxb/novamem-admin-ui package and copied
+    // The admin SPA is built by the @azrtydxb/novamem-admin-ui package and copied
     // into this server's dist/admin/ui by the build:assets step. In dev (tsx
     // watch) we read the admin-ui's dist directly. Probe both layouts; if
     // neither exists, skip the mount so unit tests and dev runs without the

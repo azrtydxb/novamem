@@ -1,9 +1,9 @@
 name: Release
 
 # Tag-driven npm publish for the three public packages:
-#   @azertydxb/novamem        (TypeScript client)
-#   @azertydxb/novamem-mcp    (stdio shim)
-#   @azertydxb/novamem-init   (auto-installer)
+#   @azrtydxb/novamem        (TypeScript client)
+#   @azrtydxb/novamem-mcp    (stdio shim)
+#   @azrtydxb/novamem-init   (auto-installer)
 #
 # Trigger: push a tag matching v* (e.g. `git tag v0.2.0 && git push --tags`).
 # Each publishable package's package.json `version` field must already be set
@@ -52,7 +52,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
       - run: pnpm test
-      - name: Publish @azertydxb/novamem
+      - name: Publish @azrtydxb/novamem
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -62,7 +62,7 @@ jobs:
           else
             npm publish --access public --provenance
           fi
-      - name: Publish @azertydxb/novamem-mcp
+      - name: Publish @azrtydxb/novamem-mcp
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -72,7 +72,7 @@ jobs:
           else
             npm publish --access public --provenance
           fi
-      - name: Publish @azertydxb/novamem-init
+      - name: Publish @azrtydxb/novamem-init
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
