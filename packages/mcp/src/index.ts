@@ -190,23 +190,19 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
       {
         name: "project.list",
         description:
-          "List projects (sub-brains) the current caller is a member of. Requires a dashboard session bearer (NOVAMEM_TOKEN starting with `ns_`); user-bearer (`nm_`) callers will get an error.",
+          "List projects (sub-brains) the caller is a member of. Returns id + name + role — pass the `id` (a ULID) to `project` on memory.* calls to scope them.",
         inputSchema: { type: "object", properties: {} },
       },
       {
         name: "project.create",
         description:
-          "Create a new project (sub-brain) and become its owner. Memory operations using this project as `project` are scoped to it. Requires a dashboard session bearer (NOVAMEM_TOKEN starting with `ns_`).",
+          "Create a new project (sub-brain) and become its owner. The project's id is returned; pass that id to `project` on subsequent memory.* calls to scope them. Don't use the human name as `project` — it won't resolve.",
         inputSchema: {
           type: "object",
           properties: {
-            id: {
-              type: "string",
-              description: "Slug (2–64 chars; alphanumeric / dot / underscore / dash).",
-            },
-            name: { type: "string", description: "Display name" },
+            name: { type: "string", description: "Project name (1-128 chars). The id is server-assigned." },
           },
-          required: ["id", "name"],
+          required: ["name"],
         },
       },
     ],
@@ -286,10 +282,7 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "project.create": {
-          const r = await client.createProject({
-            id: String(args.id),
-            name: String(args.name),
-          });
+          const r = await client.createProject({ name: String(args.name) });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         default:
