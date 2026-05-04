@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+      # `pnpm audit` reads pnpm-lock.yaml directly — no install needed.
       # `--prod` so dev-only CVEs (e.g. in build tooling) don't block PRs.
       - run: pnpm audit --prod --audit-level=high
 
@@ -82,8 +82,10 @@ jobs:
       - name: pnpm pack (client + mcp)
         run: |
           mkdir -p dist-tarballs
-          pnpm --filter @azrty/novamem pack --pack-destination ../../dist-tarballs
-          pnpm --filter @azrty/novamem-mcp pack --pack-destination ../../dist-tarballs
+          # `pnpm --filter X pack` injects --recursive which pack rejects;
+          # cd into each package and pack directly instead.
+          ( cd packages/client && pnpm pack --pack-destination ../../dist-tarballs )
+          ( cd packages/mcp    && pnpm pack --pack-destination ../../dist-tarballs )
           ls -la dist-tarballs
       - uses: actions/upload-artifact@v4
         with:
@@ -124,7 +126,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
       - name: Trivy scan (HIGH+CRITICAL, fail on findings)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           image-ref: novamem:ci-${{ matrix.arch }}
           severity: HIGH,CRITICAL
