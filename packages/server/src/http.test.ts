@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { buildHttpServer } from "./http.js";
-import { MemoryEngine } from "./engine/index.js";
-import { MetricsCollector } from "./admin/metrics.js";
 import {
-  asCold,
-  asGraph,
   asWarm,
-  FakeColdStore,
-  FakeEmbedder,
-  FakeGraphStore,
   FakeWarmStore,
+  makeEngine,
 } from "./test-fakes.js";
 
 function makeApp(
@@ -21,25 +15,9 @@ function makeApp(
     withMetrics?: boolean;
   } = {},
 ) {
-  const warm = new FakeWarmStore();
-  const cold = new FakeColdStore();
-  const graph = new FakeGraphStore();
-  const metrics = opts.withMetrics === false ? undefined : new MetricsCollector();
-  if (metrics) {
-    metrics.bindGaugeSources({
-      warmEntries: async () => [...warm.rows.values()].filter((r) => !r.cold).length,
-      coldEntries: async () => [...warm.rows.values()].filter((r) => r.cold).length,
-      graphEdges: async () => graph.edgeCount(),
-      orphansPending: async () => warm.coldOrphans.size,
-    });
-  }
-  const engine = new MemoryEngine({
-    warm: asWarm(warm),
-    cold: asCold(cold),
-    graph: asGraph(graph),
-    embedder: new FakeEmbedder(),
+  const { engine, warm, cold, graph, metrics } = makeEngine({
     defaultEffectiveDays: 7,
-    metrics,
+    withMetrics: opts.withMetrics !== false,
   });
   // Test-mode Better Auth shim. Production wires the real Better Auth
   // instance; tests synthesize a session by minting a row in the fake
