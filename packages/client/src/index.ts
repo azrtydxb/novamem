@@ -2,17 +2,15 @@
  * NovamemClient — typed HTTP client for the novamem service. Works in
  * Node.js ≥ 20 and any modern browser (uses global fetch).
  *
- * Auth: the `token` option accepts either a user bearer (`nm_…`) for
- * data-plane calls or a dashboard session bearer (`ns_…`) for control-plane
- * calls (project CRUD, token mint, user-scoped operations). The wire format
- * is identical — `Authorization: Bearer <token>` — so the same client works
- * for both as long as the supplied token has the right scope.
+ * Auth: the `token` option carries the caller's bearer (`nm_…`). Tokens
+ * are user-owned and grant every right the owning user has — data plane,
+ * project CRUD, membership, metrics, audit log. Wire format:
+ * `Authorization: Bearer <token>`.
  */
 
 export interface NovamemClientOptions {
   baseUrl: string;
-  /** Bearer token: user bearer (`nm_…`) for data-plane calls, or session
-   *  (`ns_…`) for dashboard control-plane calls. */
+  /** User-owned bearer (`nm_…`). Carries every right the owning user has. */
   token?: string;
   /** Optional fetch implementation override (useful for tests). */
   fetch?: typeof fetch;
@@ -119,7 +117,7 @@ export class NovamemClient {
   }
 
   /** Replace the bearer in-place. Used after login() to upgrade a clientless
-   *  instance to a session-authed one without throwing it away. */
+   *  instance to an authed one without throwing it away. */
   setToken(token: string | undefined): void {
     this.token = token;
   }
@@ -205,11 +203,14 @@ export class NovamemClient {
     });
   }
 
-  // ─── Auth (session control plane) ──────────────────────────────────────
+  // ─── Auth (dashboard browser flow only) ────────────────────────────────
+  // The methods below speak to /v1/auth/*. The dashboard SPA uses them
+  // (cookie-based session). Non-browser callers shouldn't need any of
+  // them — mint a bearer once via `/v1/me/tokens` (or the dashboard) and
+  // pass it to the constructor's `token` option.
 
-  /** Sign in with username + password. Stores the returned session token on
-   *  this client instance and returns the full response so callers can keep
-   *  the token / user info. */
+  /** Sign in with username + password. Stores the returned bearer on this
+   *  client instance and returns the full response. */
   async login(args: { username: string; password: string }): Promise<LoginResponse> {
     const res = await this.request<LoginResponse>("/v1/auth/login", {
       method: "POST",
@@ -219,7 +220,7 @@ export class NovamemClient {
     return res;
   }
 
-  /** Revoke the current session token server-side and clear it locally. */
+  /** Revoke the current bearer server-side and clear it locally. */
   async logout(): Promise<void> {
     await this.request("/v1/auth/logout", { method: "POST" });
     this.token = undefined;
@@ -229,13 +230,14 @@ export class NovamemClient {
     return this.request<{ user: LoginResponse["user"] }>("/v1/auth/me");
   }
 
-  // ─── Projects (sub-brains) — requires session bearer ───────────────────
+  // ─── Projects (sub-brains) ─────────────────────────────────────────────
 
   async listProjects(): Promise<{ projects: Project[] }> {
     return this.request<{ projects: Project[] }>("/v1/me/projects");
   }
 
-  async createProject(args: { id: string; name: string }): Promise<Project> {
+  /** Create a new project. The id is server-assigned (ULID). */
+  async createProject(args: { name: string }): Promise<Project> {
     return this.request<Project>("/v1/me/projects", { method: "POST", body: args });
   }
 
@@ -271,9 +273,9 @@ export class NovamemClient {
     );
   }
 
-  // ─── Tokens (per-device API keys) — requires session bearer ────────────
+  // ─── Tokens (per-device API keys) ──────────────────────────────────────
 
-  async mintToken(opts: { label?: string; projectId?: string | null } = {}): Promise<MintTokenResponse> {
+  async mintToken(opts: { label?: string } = {}): Promise<MintTokenResponse> {
     return this.request<MintTokenResponse>("/v1/me/tokens", { method: "POST", body: opts });
   }
 
@@ -281,7 +283,6 @@ export class NovamemClient {
     tokens: Array<{
       tokenHash: string;
       label: string | null;
-      projectId: string | null;
       createdAt: string;
       lastUsedAt: string | null;
       revoked: boolean;

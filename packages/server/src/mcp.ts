@@ -12,19 +12,18 @@ import {
 
 import type { MemoryEngine } from "./engine/index.js";
 import type { WarmStore } from "./warm-store/index.js";
+import { NOVAMEM_INSTRUCTIONS } from "./mcp-instructions.js";
 
 export interface McpContext {
-  /** Memory-owner id. For session callers this equals the dashboard
-   *  user's id; for user-bearer callers it's the user the bearer is
-   *  scoped to. */
+  /** Memory-owner id — the user the caller's bearer maps to. */
   userId: string;
   /** Project the bearer/session is bound to (or null for whole-user). */
   projectId?: string | null;
 }
 
 /** Build the MCP server. `ctxOrUserId` accepts either a context object
- *  (new shape with user + project + dashboard-user) or a bare userId
- *  string for back-compat with existing callers. */
+ *  (new shape with user + optional project) or a bare userId string for
+ *  back-compat with existing callers. */
 export function buildMcpServer(
   engine: MemoryEngine,
   ctxOrUserId: McpContext | string,
@@ -36,7 +35,7 @@ export function buildMcpServer(
   const bearerProject = ctx.projectId ?? null;
   const server = new Server(
     { name: "novamem", version: "0.1.0" },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: NOVAMEM_INSTRUCTIONS },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -135,27 +134,22 @@ export function buildMcpServer(
       {
         name: "project.list",
         description:
-          "List projects (sub-brains) the current caller is a member of. " +
-          "Available only when authenticated as a dashboard user.",
+          "List projects (sub-brains) the caller is a member of. Returns id + name + role — pass the `id` (a ULID) to `project` on memory.* calls to scope them.",
         inputSchema: { type: "object", properties: {} },
       },
       {
         name: "project.create",
         description:
-          "Create a new project (sub-brain) and add the caller as the owner. " +
-          "Memory operations using this project as the `project` argument will " +
-          "be scoped to it. Available only when authenticated as a dashboard user.",
+          "Create a new project (sub-brain) and become its owner. The project's id is returned; pass that id to `project` on subsequent memory.* calls to scope them. Don't use the human name as `project` — it won't resolve.",
         inputSchema: {
           type: "object",
           properties: {
-            id: {
+            name: {
               type: "string",
-              description:
-                "URL-safe slug, 2–64 chars, alphanumeric / dot / underscore / dash.",
+              description: "Project name (1-128 chars). The id is server-assigned (ULID).",
             },
-            name: { type: "string", description: "Display name" },
           },
-          required: ["id", "name"],
+          required: ["name"],
         },
       },
     ],
