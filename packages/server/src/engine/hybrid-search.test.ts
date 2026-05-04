@@ -29,6 +29,52 @@ describe("hybrid-search.fuse", () => {
     expect(out.map((r) => r.id)).toEqual(["b", "c", "a"]);
   });
 
+  it("drops vector signal when only hits have negative cosine scores (issue #26)", () => {
+    // Regression for the cosine-clamp in cold-store.ts: negative cosine
+    // scores are clamped to 0 there, NOT divided into the fused score —
+    // see the 6-line comment justifying `raw > 0 ? raw : 0`. Construct
+    // a result set whose only vector hits have already been clamped
+    // (score 0 is what cold-store hands fuse for raw values of -0.1 /
+    // -0.2). Vector max stays at 0, so the per-signal norm returns 0
+    // for every entry instead of dividing to NaN/Inf and poisoning the
+    // entire fused list.
+    const out = fuse(
+      [
+        { id: "a", signals: { vector: 0 } }, // raw -0.1 → clamped to 0
+        { id: "b", signals: { vector: 0 } }, // raw -0.2 → clamped to 0
+        { id: "c", signals: { keyword: 1.0 } },
+      ],
+      { keyword: 0.3, vector: 0.6, graph: 0.1 },
+    );
+    const a = out.find((r) => r.id === "a")!;
+    const b = out.find((r) => r.id === "b")!;
+    const c = out.find((r) => r.id === "c")!;
+    // No NaN / Inf — the bug being prevented is `0 / 0 = NaN` propagating
+    // through every entry's score.
+    expect(Number.isFinite(a.score)).toBe(true);
+    expect(Number.isFinite(b.score)).toBe(true);
+    expect(a.signals.vector).toBe(0);
+    expect(b.signals.vector).toBe(0);
+    // Vector contribution is exactly zero — keyword winner ranks first.
+    expect(a.score).toBe(0);
+    expect(b.score).toBe(0);
+    expect(c.score).toBeGreaterThan(0);
+    // Also exercise the not-yet-clamped form (defence-in-depth: fuse
+    // itself must not divide-by-zero or NaN-poison if a future caller
+    // forgets to clamp).
+    const rawNeg = fuse(
+      [
+        { id: "x", signals: { vector: -0.1 } },
+        { id: "y", signals: { vector: -0.2 } },
+      ],
+      { keyword: 0, vector: 1, graph: 0 },
+    );
+    for (const r of rawNeg) {
+      expect(Number.isFinite(r.score)).toBe(true);
+      expect(r.signals.vector).toBe(0);
+    }
+  });
+
   it("respects custom weights", () => {
     const keywordHeavy = fuse(
       [
