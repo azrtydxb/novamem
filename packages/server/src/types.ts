@@ -57,6 +57,20 @@ export interface RememberRequest {
   /** Project (sub-brain) id. Null/omitted = user-wide entry. */
   project?: string | null;
   metadata?: Record<string, unknown>;
+  /** Provenance: structured kind for "show me everything from email" -
+   *  style filters. Recommended values: chat, email, code-review, doc,
+   *  inference, observation, system, manual. Open string — operators may
+   *  add their own. */
+  sourceType?: string;
+  /** Provenance: free-text identifier of the channel (agent name,
+   *  conversation id, IP, etc.). */
+  capturedFrom?: string;
+  /** Caller-provided confidence 0..1; defaults to 1.0. Search filters
+   *  can use it to drop low-confidence inferences. */
+  confidence?: number;
+  /** Bypass the worthiness filter. Use sparingly — when the agent or
+   *  user explicitly asserted the entry should be saved. */
+  force?: boolean;
 }
 
 export interface DecayRequest {

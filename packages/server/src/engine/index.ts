@@ -3,6 +3,8 @@
  * adapters compose this same object.
  */
 
+import { createHash } from "node:crypto";
+
 import { ColdStore } from "../cold-store.js";
 import { GraphStore } from "../graph-store.js";
 import { WarmStore } from "../warm-store/index.js";
@@ -16,6 +18,28 @@ import type {
   SearchResult,
 } from "../types.js";
 import { DEFAULT_WEIGHTS, effectiveDays, fuse } from "./hybrid-search.js";
+
+/** Stable hash of normalized content. Used by the worthiness gate to
+ *  detect exact duplicates within a (user, project) scope. */
+function sha256Hex(s: string): string {
+  return createHash("sha256").update(s).digest("hex");
+}
+
+/** Token-set Jaccard similarity, lowercased and stop-word-naive. Used by
+ *  the dream cycle to gate vector-similarity merges — a high cosine
+ *  alone isn't enough; the texts also have to share lexical surface
+ *  area or we'd merge contradictions like "Pascal lives in Dubai" with
+ *  "Pascal lives in Belgium". */
+function tokenJaccard(a: string, b: string): number {
+  const tokenize = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+  const ta = tokenize(a);
+  const tb = tokenize(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let intersect = 0;
+  for (const t of ta) if (tb.has(t)) intersect++;
+  const union = ta.size + tb.size - intersect;
+  return intersect / union;
+}
 
 /** Minimal logger surface — structurally compatible with Pino / Fastify's
  *  logger so callers can plug in either. Defaults to console. */
@@ -94,13 +118,51 @@ export class MemoryEngine {
     this.logger.warn("[engine] graph store unreachable — search degraded to keyword + vector only");
   }
 
+  /** Hard-rule worthiness gate. Returns null when the content is fit to
+   *  store, or a short reason string when it should be rejected. The
+   *  caller is responsible for honouring `force: true` to bypass.
+   *
+   *  No LLM judging here — that lives behind a future `NOVAMEM_JUDGE_URL`
+   *  config option. Hard rules only:
+   *    - too short to be durable knowledge (< 12 chars after trim)
+   *    - obvious conversational filler (single-word / canned reply)
+   *
+   *  Exact-duplicate detection happens separately via content_hash so we
+   *  can return the existing id instead of rejecting outright. */
+  shouldReject(content: string): string | null {
+    const trimmed = content.trim();
+    if (trimmed.length < 12) return "too short — not durable knowledge";
+    if (
+      /^(thanks?|ok(ay)?|sure|got it|great|cool|yes|no|nope|yep|alright|noted|done)\.?$/i.test(
+        trimmed,
+      )
+    ) {
+      return "conversational filler — not durable knowledge";
+    }
+    return null;
+  }
+
   async remember(
     userId: string,
     req: RememberRequest,
     token?: TokenIdentity,
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string | null; rejected?: string; deduplicated?: boolean }> {
+    // ── Worthiness gate (hard rules + dedup) ────────────────────────
+    if (!req.force) {
+      const reason = this.shouldReject(req.content);
+      if (reason) return { id: null, rejected: reason };
+    }
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
+    const contentHash = sha256Hex(req.content.trim());
+    // Exact-duplicate fast-path: same user, same project, same hash → return
+    // the existing id and bump hits instead of inserting a second row.
+    const existing = await this.warm.findByContentHash(userId, projectId, contentHash);
+    if (existing) {
+      await this.warm.bumpHits(existing);
+      this.metrics?.recordRemember(userId, token);
+      return { id: existing, deduplicated: true };
+    }
     const id = await this.warm.insertEntry({
       userId,
       projectId,
@@ -109,6 +171,10 @@ export class MemoryEngine {
       source: req.source ?? "manual",
       agentName: req.agentName ?? null,
       metadata: req.metadata,
+      sourceType: req.sourceType ?? null,
+      capturedFrom: req.capturedFrom ?? null,
+      confidence: req.confidence,
+      contentHash,
     });
     const [embedding] = await this.embedder.embed(req.content);
     if (embedding) {
@@ -126,6 +192,63 @@ export class MemoryEngine {
     }
     this.metrics?.recordRemember(userId, token);
     return { id };
+  }
+
+  /** Update an existing entry in place. Preserves `created_at`,
+   *  `memory_access.hits`, and graph edges; rewrites content / FTS / cold
+   *  vector / metadata / provenance. Returns `{ updated: false }` when
+   *  the id doesn't exist or is out of the caller's scope.
+   *
+   *  When `content` is omitted, the embedder isn't called — only the
+   *  metadata-side fields move. */
+  async update(
+    userId: string,
+    id: string,
+    req: {
+      content?: string;
+      namespace?: string;
+      metadata?: Record<string, unknown>;
+      sourceType?: string;
+      capturedFrom?: string;
+      confidence?: number;
+      project?: string | null;
+    },
+  ): Promise<{ updated: boolean; embeddingChanged: boolean }> {
+    const projectId = req.project ?? null;
+    const newHash = req.content ? sha256Hex(req.content.trim()) : undefined;
+    const ok = await this.warm.updateEntry({
+      userId,
+      id,
+      projectId,
+      content: req.content,
+      namespace: req.namespace,
+      metadata: req.metadata,
+      sourceType: req.sourceType,
+      capturedFrom: req.capturedFrom,
+      confidence: req.confidence,
+      contentHash: newHash,
+    });
+    if (!ok) return { updated: false, embeddingChanged: false };
+    let embeddingChanged = false;
+    if (req.content) {
+      // Re-resolve the entry to learn its actual namespace (the caller
+      // may have omitted it from the update body).
+      const entry = await this.warm.getEntry(userId, id, { projectId });
+      if (!entry) return { updated: true, embeddingChanged: false };
+      const [embedding] = await this.embedder.embed(req.content);
+      if (embedding) {
+        await this.cold.upsert({
+          userId,
+          projectId: entry.projectId ?? null,
+          id,
+          namespace: entry.namespace,
+          embedding,
+          payload: { source: entry.source, agentName: entry.agentName ?? null },
+        });
+        embeddingChanged = true;
+      }
+    }
+    return { updated: true, embeddingChanged };
   }
 
   /** Find the new entry's top semantic neighbours and persist edges in both
@@ -615,6 +738,209 @@ export class MemoryEngine {
       pending: Number(row?.pending ?? 0),
       total: Number(row?.total ?? 0),
     };
+  }
+
+  /** Dream cycle — periodic compaction. Runs in two phases:
+   *
+   *    1. Dedup-merge: for each entry, find vector-near neighbours via
+   *       cold.search, accept a pair as duplicate when cosine ≥ 0.97
+   *       AND token-set Jaccard ≥ 0.5 (both required so contradictions
+   *       like "lives in X" / "lives in Y" don't merge). Pick the
+   *       canonical (most hits, oldest tiebreak), redirect graph edges
+   *       to the canonical id, sum hit counts, delete the duplicate.
+   *
+   *    2. Edge promotion: when two memories share ≥3 graph neighbours
+   *       in common, add a direct A→B edge with relation = co_inferred
+   *       so search picks up transitive connections. Tagged distinctly
+   *       from the original co_occurs so search ranking can dial it
+   *       back if the inferred edges turn out to be noisy.
+   *
+   *  Runs cross-user — operates on whatever rows exist. The audit log
+   *  records each merge so operators can spot-check.
+   *
+   *  No LLM-based summarization in scope yet — that lives behind a
+   *  future `NOVAMEM_JUDGE_URL` config. */
+  async dreamCycle(opts: {
+    cosineThreshold?: number;
+    jaccardThreshold?: number;
+    edgePromotionMinCommon?: number;
+    /** Cap rows-walked-per-run so a huge store doesn't pin a worker
+     *  for an hour. Default 5000. */
+    maxEntries?: number;
+  } = {}): Promise<{
+    walked: number;
+    merged: number;
+    edgesPromoted: number;
+    durationMs: number;
+  }> {
+    const cosineMin = opts.cosineThreshold ?? 0.97;
+    const jaccardMin = opts.jaccardThreshold ?? 0.5;
+    const minCommon = opts.edgePromotionMinCommon ?? 3;
+    const limit = opts.maxEntries ?? 5000;
+    const startedAt = Date.now();
+    let walked = 0;
+    let merged = 0;
+    const mergedSet = new Set<string>();
+
+    // ── Phase 1: dedup-merge ────────────────────────────────────────
+    const rows = await this.warm.pool.query<{
+      id: string;
+      user_id: string;
+      project_id: string | null;
+      namespace: string;
+      content: string;
+    }>(
+      `SELECT id, user_id, project_id, namespace, content
+         FROM memory_entries
+        ORDER BY created_at ASC
+        LIMIT $1`,
+      [limit],
+    );
+    for (const row of rows.rows) {
+      walked++;
+      // Skip ones we've already merged this run.
+      if (mergedSet.has(row.id)) continue;
+      const [embedding] = await this.embedder.embed(row.content);
+      if (!embedding) continue;
+      let neighbours: Array<{ id: string; score: number }> = [];
+      try {
+        neighbours = await this.cold.search({
+          userId: row.user_id,
+          projectId: row.project_id,
+          namespace: row.namespace,
+          embedding,
+          k: 4,
+        });
+      } catch (err) {
+        this.logger.warn(`[dream] cold.search failed: ${(err as Error).message}`);
+        continue;
+      }
+      for (const n of neighbours) {
+        if (n.id === row.id) continue;
+        if (mergedSet.has(n.id)) continue;
+        if (n.score < cosineMin) continue;
+        const other = await this.warm.getEntry(row.user_id, n.id, {
+          projectId: row.project_id,
+        });
+        if (!other) continue;
+        if (tokenJaccard(row.content, other.content) < jaccardMin) continue;
+        // Pick canonical: prefer the one with more hits, oldest as
+        // tiebreak. Sum hits onto the canonical, redirect edges,
+        // delete the loser.
+        const rowStats = await this.warm.getColdEntryStats(row.id);
+        const otherStats = await this.warm.getColdEntryStats(n.id);
+        const rowHits = rowStats?.hits ?? 0;
+        const otherHits = otherStats?.hits ?? 0;
+        const rowOlder = (await this.warm.getEntry(row.user_id, row.id, {
+          projectId: row.project_id,
+        }))!.createdAt < other.createdAt;
+        const keepRow =
+          rowHits > otherHits || (rowHits === otherHits && rowOlder);
+        const keepId = keepRow ? row.id : n.id;
+        const dropId = keepRow ? n.id : row.id;
+        try {
+          await this.mergeEntries(row.user_id, row.project_id, keepId, dropId);
+          merged++;
+          mergedSet.add(dropId);
+          if (dropId === row.id) break; // current row was the loser
+        } catch (err) {
+          this.logger.warn(`[dream] merge ${dropId}→${keepId} failed: ${(err as Error).message}`);
+        }
+      }
+    }
+
+    // ── Phase 2: edge promotion ─────────────────────────────────────
+    const promoted = await this.promoteCommonNeighborEdges(minCommon);
+
+    return {
+      walked,
+      merged,
+      edgesPromoted: promoted,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  /** Helper for dreamCycle: merge `dropId` into `keepId`. Sums hits,
+   *  redirects graph edges, deletes the warm row + cold vector + memory_fts
+   *  shadow + memory_access counter for `dropId`. */
+  private async mergeEntries(
+    userId: string,
+    projectId: string | null,
+    keepId: string,
+    dropId: string,
+  ): Promise<void> {
+    const pool = this.warm.pool;
+    // Sum hit counts onto the canonical.
+    await pool.query(
+      `UPDATE memory_access SET hits = hits + COALESCE(
+         (SELECT hits FROM memory_access WHERE entry_id = $2), 0
+       ),
+       last_accessed = greatest(last_accessed,
+         COALESCE((SELECT last_accessed FROM memory_access WHERE entry_id = $2), last_accessed))
+       WHERE entry_id = $1`,
+      [keepId, dropId],
+    );
+    // Redirect inbound + outbound graph edges to the canonical.
+    await pool.query(
+      `UPDATE memory_relations SET to_id = $1 WHERE to_id = $2 AND from_id <> $1`,
+      [keepId, dropId],
+    );
+    await pool.query(
+      `UPDATE memory_relations SET from_id = $1 WHERE from_id = $2 AND to_id <> $1`,
+      [keepId, dropId],
+    );
+    await pool.query(
+      `DELETE FROM memory_relations WHERE from_id = $1 OR to_id = $1`,
+      [dropId],
+    );
+    // Drop the FTS shadow + access counter + warm row + cold vector.
+    await pool.query(`DELETE FROM memory_fts WHERE entry_id = $1`, [dropId]);
+    await pool.query(`DELETE FROM memory_access WHERE entry_id = $1`, [dropId]);
+    const namespaceRow = await pool.query<{ namespace: string }>(
+      `SELECT namespace FROM memory_entries WHERE id = $1`,
+      [dropId],
+    );
+    const namespace = namespaceRow.rows[0]?.namespace ?? "default";
+    await pool.query(`DELETE FROM memory_entries WHERE id = $1`, [dropId]);
+    if (this.graph?.isConnected()) {
+      try {
+        await this.graph.removeNode(userId, dropId);
+      } catch (err) {
+        this.logger.warn(`[dream] graph removeNode(${dropId}) failed: ${(err as Error).message}`);
+      }
+    }
+    try {
+      await this.cold.delete(userId, namespace, dropId, projectId);
+    } catch (err) {
+      this.logger.warn(`[dream] cold.delete(${dropId}) failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** Edge promotion: for any pair (A, B) of memories that share at
+   *  least `minCommon` graph neighbours, add a direct A→B edge with
+   *  relation=co_inferred. Uses a single SQL pass that picks the top
+   *  candidates by common-neighbour count; cheap on most stores. */
+  private async promoteCommonNeighborEdges(minCommon: number): Promise<number> {
+    const r = await this.warm.pool.query(
+      `WITH co AS (
+         SELECT r1.from_id AS a, r2.from_id AS b, COUNT(*) AS c
+           FROM memory_relations r1
+           JOIN memory_relations r2
+             ON r1.to_id = r2.to_id
+            AND r1.from_id <> r2.from_id
+          WHERE r1.relation = 'co_occurs'
+            AND r2.relation = 'co_occurs'
+          GROUP BY r1.from_id, r2.from_id
+         HAVING COUNT(*) >= $1
+       )
+       INSERT INTO memory_relations (user_id, from_id, to_id, relation, strength)
+       SELECT (SELECT user_id FROM memory_entries e WHERE e.id = co.a), co.a, co.b,
+              'co_inferred', LEAST(0.5 + (co.c::real / 20.0), 0.9)
+         FROM co
+       ON CONFLICT (from_id, to_id, relation) DO NOTHING`,
+      [minCommon],
+    );
+    return r.rowCount ?? 0;
   }
 
   /** Delete a user and every artefact it owns across warm, cold, and
