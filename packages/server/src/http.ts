@@ -1,10 +1,18 @@
 /**
- * Fastify HTTP transport. Mirrors the engine API one-to-one with light
- * validation via Zod on the request bodies, plus an MCP/SSE bridge for
- * remote MCP-aware hosts.
+ * Fastify HTTP transport. App setup + plugins + auth hook + error handler;
+ * routes are registered via the per-group modules under `routes/`.
+ *
+ * Module map:
+ *   routes/data-plane.ts  — /v1/{search,remember,recent,neighbors,forget,
+ *                              memories/:id,decay,dream-cycle,reap-orphans,stats}
+ *   routes/me.ts          — /v1/me/* (genuinely user-scoped reads:
+ *                              today, onboarding, metrics, projects,
+ *                              tokens, active-project)
+ *   routes/admin.ts       — /v1/admin/{tokens/revoke,audit-log,metrics,metrics/prom}
+ *   routes/auth.ts        — /v1/auth/rotate-token + /api/auth/* passthrough
+ *   routes/mcp-sse.ts     — /mcp/sse + /mcp/messages
  */
 
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -16,38 +24,26 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 
 import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
-import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
-import {
-  AddMemberBody,
-  AdminRevokeBody,
-  ChangePasswordBody,
-  ActiveProjectBody,
-  CreateProjectBody,
-  UpdateMemoryBody,
-  CreateUserBody,
-  DecayBody,
-  ForgetBody,
-  LoginBody,
-  MintMyTokenBody,
-  NeighborsBody,
-  RecentBody,
-  RememberBody,
-  SearchBody,
-  SetRoleBody,
-} from "./routes/schemas.js";
 import { SYSTEM_USER, type WarmStore } from "./warm-store/index.js";
 
-export interface DashboardUser {
-  id: string;
-  username: string;
-  role: string;
-}
+import {
+  type AuthFailLimiter,
+  type DashboardUser,
+  type RouteContext,
+  safeEqual,
+} from "./routes/context.js";
+import { register as registerDataPlane } from "./routes/data-plane.js";
+import { register as registerMe } from "./routes/me.js";
+import { register as registerAdmin } from "./routes/admin.js";
+import { register as registerAuth } from "./routes/auth.js";
+import { register as registerMcpSse } from "./routes/mcp-sse.js";
+
+export type { DashboardUser } from "./routes/context.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -65,10 +61,6 @@ declare module "fastify" {
     dashUser?: DashboardUser;
   }
 }
-
-// Zod request-body schemas live in `routes/schemas.ts` so they can be
-// imported by tests, the OpenAPI generator, and the MCP shim. See that
-// file for the per-schema docstrings.
 
 export interface HttpOptions {
   engine: MemoryEngine;
@@ -158,16 +150,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   // P1-S3: cookie support for HttpOnly session storage. Cookies are
   // signed with a server-side secret so any bit-flip / tamper invalidates
-  // the value before it reaches our auth hook. The secret is owned by
-  // `loadConfig()` — we never read process.env here so there's no second
-  // fallback to forget about. Tests that don't pass one get a fixed
-  // dev-only value (matches the loadConfig dev fallback).
+  // the value before it reaches our auth hook.
   const cookieSecret = opts.cookieSecret ?? "novamem-dev-cookie-secret-change-me";
   app.register(fastifyCookie, { secret: cookieSecret });
 
-  // P2-1: turn ZodError into a 400 with a helpful body, instead of the
-  // default Fastify 500 with the raw error text. Other errors fall through
-  // to Fastify's default handler.
+  // Standardised error body shape: {error, code?, issues?}. ZodError →
+  // 400 with the issue list; everything else falls through to Fastify's
+  // default handler.
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof z.ZodError) {
       reply.code(400).send({
@@ -185,9 +174,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // ─── OpenAPI + Swagger UI ──────────────────────────────────────────────
-  // Hand-written OpenAPI 3.0 doc (we don't auto-derive from Zod); served at
-  // /openapi.json, with Swagger UI rendered at /api-docs. Both are public —
-  // they're docs, not data — so they're added to the auth-hook skip list too.
   app.register(fastifySwagger, {
     mode: "static",
     specification: { document: openapiSpec() as never },
@@ -200,8 +186,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       tryItOutEnabled: true,
       persistAuthorization: true,
     },
-    // Swagger UI bundles inline styles; relax style-src for this surface
-    // (the dashboard's stricter CSP is unaffected). Scripts stay 'self'.
+    // Swagger UI bundles inline styles; relax style-src for this surface.
     staticCSP: {
       "default-src": ["'self'"],
       "img-src": ["'self'", "data:", "https:"],
@@ -211,16 +196,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       "font-src": ["'self'", "data:"],
     },
   });
-  // The plugin pair exposes the spec at /api-docs/json; we keep the
-  // legacy /openapi.json path live for callers (and it's what the
-  // dashboard's "API docs" link points at).
   app.get("/openapi.json", async (_req, reply) => {
     reply.send(app.swagger());
   });
   app.register(rateLimit, {
     max: opts.rateLimitPerMinute ?? 600,
     timeWindow: "1 minute",
-    // Skip /health so liveness probes don't burn the budget.
     skipOnError: true,
     allowList: (req) => req.url === "/health",
   });
@@ -230,16 +211,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // per lower-cased account key (email for sign-in / change-password,
   // bearer-token prefix for rotate-token). 5 strikes inside a 15-minute
   // window → 429 with a Retry-After header until the window expires.
-  // Successful operations clear the counter for that key. In-memory is
-  // fine for v1: a node restart costs at most one re-login, and the
-  // server is single-process today.
   const AUTH_FAIL_MAX = 5;
   const AUTH_FAIL_WINDOW_MS = 15 * 60 * 1000;
   type AuthFailEntry = { count: number; resetAt: number };
   const authFailures = new Map<string, AuthFailEntry>();
-  /** Sweep expired entries opportunistically so the map can't grow
-   *  unbounded under pathological probing. Cheap O(n) walk; n is bounded
-   *  by the number of distinct attacker emails inside the window. */
   function pruneAuthFailures(now: number): void {
     if (authFailures.size < 1024) return;
     for (const [k, v] of authFailures) if (v.resetAt <= now) authFailures.delete(k);
@@ -253,53 +228,44 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
     return e;
   }
-  function recordAuthFailure(key: string): void {
-    const now = Date.now();
-    pruneAuthFailures(now);
-    const existing = getAuthFail(key, now);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      authFailures.set(key, { count: 1, resetAt: now + AUTH_FAIL_WINDOW_MS });
-    }
-  }
-  function clearAuthFailure(key: string): void {
-    authFailures.delete(key);
-  }
-  /** Returns the locked entry when over the threshold, or undefined to
-   *  proceed. Caller is responsible for sending the 429. */
-  function checkAuthLocked(key: string): AuthFailEntry | undefined {
-    const now = Date.now();
-    const e = getAuthFail(key, now);
-    if (e && e.count >= AUTH_FAIL_MAX) return e;
-    return undefined;
-  }
-  function send429(reply: FastifyReply, e: AuthFailEntry): void {
-    const retryAfter = Math.max(1, Math.ceil((e.resetAt - Date.now()) / 1000));
-    reply
-      .code(429)
-      .header("Retry-After", String(retryAfter))
-      .send({ error: "too many failed attempts — try again later", retryAfter });
-  }
+  const authLimiter: AuthFailLimiter = {
+    checkLocked(key) {
+      const now = Date.now();
+      const e = getAuthFail(key, now);
+      if (e && e.count >= AUTH_FAIL_MAX) return e;
+      return undefined;
+    },
+    recordFailure(key) {
+      const now = Date.now();
+      pruneAuthFailures(now);
+      const existing = getAuthFail(key, now);
+      if (existing) existing.count += 1;
+      else authFailures.set(key, { count: 1, resetAt: now + AUTH_FAIL_WINDOW_MS });
+    },
+    clearFailure(key) {
+      authFailures.delete(key);
+    },
+    send429(reply: FastifyReply, e) {
+      const retryAfter = Math.max(1, Math.ceil((e.resetAt - Date.now()) / 1000));
+      reply
+        .code(429)
+        .header("Retry-After", String(retryAfter))
+        .send({ error: "too many failed attempts — try again later", retryAfter });
+    },
+  };
 
-  /** Constant-time string compare — protects the admin token against
-   *  timing oracles. Token-shaped material only; not for passwords. */
-  function safeEqual(a: string, b: string): boolean {
-    if (a.length !== b.length) return false;
-    let mismatch = 0;
-    for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-    return mismatch === 0;
-  }
-
-  // Auth hook — resolves either a user bearer (data plane) or a session
-  // bearer (control plane). Public routes skip. Dashboard control-plane
-  // routes (/v1/auth, /v1/me, /v1/admin) do their own RBAC checks inside
-  // their handlers using `req.dashUser`.
-  //
-  // Bearer prefixes:
+  // ─── Auth hook ─────────────────────────────────────────────────────
+  // Resolves either a user bearer (data plane) or a session bearer
+  // (control plane). Public routes skip. Bearer prefixes:
   //   nm_<...>   user bearer (data plane)
-  //   ns_<...>   dashboard session token (control plane)
+  //   ns_<...>   dashboard session token (control plane; via Better Auth)
   //   anything else → `bearer`-mode shared token (only when auth.mode = 'bearer').
+  //
+  // Tightened admin-skip: only the SPA HTML entry points and the assets
+  // prefix bypass the auth hook. Arbitrary /admin/<anything> would let an
+  // unauthenticated caller probe non-existent paths without going through
+  // the standard auth path.
+  const ADMIN_PUBLIC_URLS = new Set(["/admin", "/admin/", "/admin/index.html"]);
   app.addHook("onRequest", async (req, reply) => {
     if (
       req.url === "/health" ||
@@ -312,44 +278,36 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       req.userId = SYSTEM_USER;
       return;
     }
-    // Dashboard static assets are public — HTML shell must load before login.
-    if (req.url === "/admin" || req.url.startsWith("/admin/")) {
+    // Dashboard SPA — the HTML shell + hashed assets must load before login.
+    // Tightened: only the explicit entry points + the assets directory.
+    if (ADMIN_PUBLIC_URLS.has(req.url) || req.url.startsWith("/admin/assets/")) {
       req.userId = SYSTEM_USER;
       return;
     }
-    // Better Auth handler — owns its own auth. The passthrough route
-    // (registered below) calls into Better Auth's handler() directly.
-    // We must skip our auth hook so Better Auth gets the raw request.
+    // Better Auth handler — owns its own auth. Skip our hook so it gets
+    // the raw request.
     if (req.url.startsWith("/api/auth/")) {
       req.userId = SYSTEM_USER;
       return;
     }
     // The CLI rotate-token path is reached without prior auth — the
     // route handler itself authenticates by trying to rotate the
-    // supplied bearer. (Better Auth owns /api/auth/* including sign-in
-    // and is gated separately above.)
+    // supplied bearer.
     if (req.url === "/v1/auth/rotate-token") {
       req.userId = SYSTEM_USER;
       return;
     }
 
-    // Resolve the caller's identity. Two routes produce a `dashUser`:
-    //   1. Better Auth session — set by the SPA login flow; resolved by
-    //      asking Better Auth's API for the session attached to the
-    //      incoming request's headers (cookie OR Authorization Bearer
-    //      with a Better Auth session token).
+    // Resolve a Better Auth session if one is attached to this request.
+    // Two routes produce a `dashUser`:
+    //   1. Better Auth session — set by the SPA login flow.
     //   2. Our own user-bearer (`nm_…`) — non-browser callers (MCP, CLI)
-    //      send these. Resolved against `user_tokens`; the bearer's
-    //      owning user becomes the dashUser so /v1/me/* works uniformly.
+    //      send these. Resolved against `user_tokens` below.
     const header = req.headers.authorization;
     const headerToken =
       header && header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
 
     if (opts.betterAuth?.getSession) {
-      // Pass the raw incoming headers to Better Auth so it can read its
-      // own session cookie + Authorization header. Better Auth returns
-      // `{ user, session }` on hit, or null/undefined when no session is
-      // resolvable from the request.
       const baHeaders = new Headers();
       for (const [k, v] of Object.entries(req.headers)) {
         if (typeof v === "string") baHeaders.set(k, v);
@@ -379,7 +337,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         if (resolved) {
           const u = await opts.warm.findUserById(resolved.userId);
           if (u) {
-            req.dashUser = u;
+            req.dashUser = u as DashboardUser;
             req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
           }
         }
@@ -399,8 +357,17 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return;
     }
 
-    // Data-plane (search/remember/forget/etc.) — user bearer required
-    // unless mode = none/bearer.
+    // Data-plane (search/remember/forget/etc.). Three resolution paths:
+    //   1. mode=none → SYSTEM_USER (open server).
+    //   2. Session bearer attached (dashUser populated above) → that user.
+    //      Lets the cookie-authed dashboard SPA hit /v1/* directly without
+    //      a separate /v1/me/* mirror surface.
+    //   3. mode=bearer → match the static shared token.
+    //   4. mode=user → resolve the nm_… user bearer.
+    if (req.dashUser) {
+      req.userId = req.dashUser.id;
+      return;
+    }
     if (opts.auth.mode === "none") {
       req.userId = SYSTEM_USER;
       return;
@@ -434,11 +401,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // at login. When the dashboard is disabled, we register no routes —
   // the server will 404 /admin and /admin/* automatically.
   if (opts.adminDashboard !== false) {
-    // The admin SPA is built by the @azrtydxb/novamem-admin-ui package and copied
-    // into this server's dist/admin/ui by the build:assets step. In dev (tsx
-    // watch) we read the admin-ui's dist directly. Probe both layouts; if
-    // neither exists, skip the mount so unit tests and dev runs without the
-    // UI built still start cleanly.
     const here = dirname(fileURLToPath(import.meta.url));
     const candidates = [
       resolve(here, "admin/ui"), // compiled: dist/http.js → dist/admin/ui
@@ -451,36 +413,27 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       );
     }
     if (uiRoot) {
-    app.register(fastifyStatic, {
-      root: uiRoot,
-      prefix: "/admin/",
-      // Strict CSP: only same-origin scripts/styles/fetches. The SPA pulls
-      // its vendored Preact + htm from the same origin, so this works.
-      setHeaders: (res) => {
-        // Self-only policy. `style-src 'unsafe-inline'` is required for
-        // styled-components / Vite-generated runtime style nodes (and is
-        // also acceptable for an admin-only surface). Fonts are bundled
-        // (woff2 served from /admin/assets/) so no external font hosts.
-        res.setHeader(
-          "Content-Security-Policy",
-          [
-            "default-src 'self'",
-            "img-src 'self' data:",
-            "style-src 'self' 'unsafe-inline'",
-            "font-src 'self' data:",
-            "script-src 'self'",
-            "connect-src 'self'",
-          ].join("; "),
-        );
-        res.setHeader("X-Content-Type-Options", "nosniff");
-        res.setHeader("Referrer-Policy", "no-referrer");
-      },
-    });
-    // SPA fallback: GET /admin and GET /admin/ both serve index.html. The
-    // wildcard would be nicer but the SPA only has one entry point so the
-    // explicit pair is enough and avoids clobbering /admin/assets/*.
-    app.get("/admin", async (_req, reply) => reply.sendFile("index.html"));
-    app.get("/admin/", async (_req, reply) => reply.sendFile("index.html"));
+      app.register(fastifyStatic, {
+        root: uiRoot,
+        prefix: "/admin/",
+        setHeaders: (res) => {
+          res.setHeader(
+            "Content-Security-Policy",
+            [
+              "default-src 'self'",
+              "img-src 'self' data:",
+              "style-src 'self' 'unsafe-inline'",
+              "font-src 'self' data:",
+              "script-src 'self'",
+              "connect-src 'self'",
+            ].join("; "),
+          );
+          res.setHeader("X-Content-Type-Options", "nosniff");
+          res.setHeader("Referrer-Policy", "no-referrer");
+        },
+      });
+      app.get("/admin", async (_req, reply) => reply.sendFile("index.html"));
+      app.get("/admin/", async (_req, reply) => reply.sendFile("index.html"));
     }
   }
 
@@ -489,314 +442,19 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.code(h.ok ? 200 : 503).send(h);
   });
 
-  // ─── Better Auth passthrough ────────────────────────────────────────
-  // Better Auth speaks the WHATWG Request/Response interface; Fastify
-  // gives us node req/res. We bridge by reconstructing a Request from
-  // the incoming Fastify request, calling Better Auth's handler, and
-  // copying the Response back. All HTTP methods on /api/auth/* go here.
-  if (opts.betterAuth) {
-    const ba = opts.betterAuth;
-    /** Refuse operations that would leave the system with zero admins.
-     *  Better Auth's admin plugin doesn't enforce this on its own —
-     *  remove-user / set-role accept any target. We intercept the two
-     *  paths that can drop the admin count and 400 when the target is
-     *  the last surviving admin. */
-    const guardLastAdmin = async (
-      req: FastifyRequest,
-      reply: FastifyReply,
-    ): Promise<boolean> => {
-      if (!opts.warm || req.method !== "POST") return true;
-      const path = req.url.split("?")[0] ?? "";
-      const isRemove = path === "/api/auth/admin/remove-user";
-      const isSetRole = path === "/api/auth/admin/set-role";
-      if (!isRemove && !isSetRole) return true;
-      const body = (req.body ?? {}) as { userId?: string; role?: string };
-      const targetId = body.userId;
-      if (!targetId) return true;
-      // Demotion: only block when the new role is non-admin.
-      if (isSetRole && body.role === "admin") return true;
-      const r = await opts.warm.pool.query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM "user"
-          WHERE role = 'admin' AND id <> $1`,
-        [targetId],
-      );
-      const remainingAdmins = Number(r.rows[0]?.count ?? "0");
-      if (remainingAdmins > 0) return true;
-      const action = isRemove ? "delete" : "demote";
-      reply.code(400).send({
-        message: `cannot ${action} the last admin — promote another user first`,
-        code: "LAST_ADMIN_PROTECTED",
-      });
-      return false;
-    };
-
-    /** Extract the account key for the per-account rate limiter on
-     *  the two Better Auth endpoints we throttle. Returns null when the
-     *  endpoint isn't rate-limited or no key is derivable from the
-     *  request. */
-    const authLimiterKey = (req: FastifyRequest): string | null => {
-      if (req.method !== "POST") return null;
-      const path = req.url.split("?")[0] ?? "";
-      const body = (req.body ?? {}) as { email?: unknown; newPassword?: unknown };
-      if (path === "/api/auth/sign-in/email") {
-        return typeof body.email === "string" && body.email.length > 0
-          ? `signin:${body.email.toLowerCase()}`
-          : null;
-      }
-      if (path === "/api/auth/change-password") {
-        // Change-password is session-authed; key on the dashUser id when
-        // present (so an attacker can't grief by sending unauth'd requests
-        // with arbitrary emails). Fall back to ip+path so anonymous spam
-        // still gets capped via the same window.
-        if (req.dashUser?.id) return `chgpw:${req.dashUser.id}`;
-        return `chgpw-anon:${req.ip ?? "unknown"}`;
-      }
-      return null;
-    };
-
-    const passthrough = async (req: FastifyRequest, reply: FastifyReply) => {
-      if (!(await guardLastAdmin(req, reply))) return;
-      const limKey = authLimiterKey(req);
-      if (limKey) {
-        const locked = checkAuthLocked(limKey);
-        if (locked) return send429(reply, locked);
-      }
-      // Build a WHATWG Request. We need the absolute URL, not just the
-      // pathname; Better Auth uses it to validate redirects against
-      // trustedOrigins. The host header is sufficient since the SPA and
-      // backend share an origin.
-      const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? "http";
-      const host = req.headers.host ?? "localhost";
-      const url = `${proto}://${host}${req.url}`;
-      const headers = new Headers();
-      for (const [k, v] of Object.entries(req.headers)) {
-        if (typeof v === "string") headers.set(k, v);
-        else if (Array.isArray(v)) headers.set(k, v.join(", "));
-      }
-      const body =
-        req.method === "GET" || req.method === "HEAD"
-          ? undefined
-          : req.body
-            ? JSON.stringify(req.body)
-            : undefined;
-      const wReq = new Request(url, { method: req.method, headers, body });
-      const wRes = await ba.handler(wReq);
-      // Update the per-account limiter based on Better Auth's outcome.
-      // 2xx = success → reset the counter; 4xx (esp. 401) = failed
-      // attempt → bump it. 5xx is treated as transient (no bump) so a
-      // service blip doesn't lock users out.
-      if (limKey) {
-        if (wRes.status >= 200 && wRes.status < 300) {
-          clearAuthFailure(limKey);
-        } else if (wRes.status >= 400 && wRes.status < 500) {
-          recordAuthFailure(limKey);
-        }
-      }
-      // Copy status + headers + body back into the Fastify reply.
-      // Set-Cookie is special: a Response can carry multiple values and
-      // they MUST stay separate. `headers.forEach` collapses them with
-      // commas, which browsers silently drop. `headers.getSetCookie()`
-      // (Node 20+) returns each cookie as its own array entry, and
-      // Fastify's `reply.header('set-cookie', [...])` preserves them.
-      reply.code(wRes.status);
-      const setCookies = wRes.headers.getSetCookie();
-      wRes.headers.forEach((value, key) => {
-        if (key.toLowerCase() === "set-cookie") return;
-        reply.header(key, value);
-      });
-      if (setCookies.length > 0) reply.header("set-cookie", setCookies);
-      const text = await wRes.text();
-      reply.send(text);
-    };
-    // Register all common HTTP methods so the SPA's POSTs and the
-    // browser's GETs both flow through.
-    for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"] as const) {
-      app.route({ method, url: "/api/auth/*", handler: passthrough });
-    }
-  }
-
-  // Browsers automatically request /favicon.ico from the page origin. Without
-  // a handler it 404s after going through the auth hook (which we already
-  // skip for this URL); explicit empty-204 keeps console clean.
+  // Browsers automatically request /favicon.ico from the page origin.
   app.get("/favicon.ico", async (_req, reply) => reply.code(204).send());
 
-  /** Project access guard for the data plane. A bearer's owning user
-   *  has access to every project they're a member of. When `body.project`
-   *  is set, we look up `project_members` once and 403 if the bearer's
-   *  user isn't on the list. `null` = global namespace, always allowed.
-   *
-   *  `body.includeProjects` (the active-project mode) is also membership-
-   *  checked — search returns global ∪ those projects, and we refuse any
-   *  ids the user can't see. */
-  /** Resolve a single project reference (id or human name) to its real
-   *  ULID, or null when nothing matches. The caller supplies a value
-   *  from the request body; we first try treating it as an id, then fall
-   *  back to a name lookup scoped to the caller's visibility. */
-  async function resolveProjectRef(
-    userId: string,
-    value: string,
-  ): Promise<{ id: string; ownerUserId: string } | null> {
-    if (!opts.warm) return null;
-    const byId = await opts.warm.getProject(value);
-    if (byId) return { id: byId.id, ownerUserId: byId.ownerUserId };
-    const byName = await opts.warm.findProjectByName(userId, value);
-    if (byName) return { id: byName.id, ownerUserId: byName.ownerUserId };
-    return null;
-  }
-
-  /** Resolve every project reference in the body (project + includeProjects)
-   *  to a ULID, verify the caller is a member of each, and rewrite the body
-   *  so downstream engine code sees only ULIDs. Distinguishes:
-   *    - 404 "no such project" when the value matches neither id nor name
-   *    - 403 "not a member" when the project exists but the caller isn't
-   *      in its membership table
-   *  Returns false when the request was rejected — handler should bail. */
-  async function checkProjectAccess(
-    userId: string,
-    body: { project?: string | null; includeProjects?: string[] },
-    reply: FastifyReply,
-    /** When true (search/recent/neighbors), an unset scope defaults to
-     *  `includeProjects: [activeProjectId]` so reads union user-global
-     *  with the active project. When false (remember/forget), an unset
-     *  scope defaults to `project: activeProjectId` so writes land in
-     *  the active project. No-op if the user has no active project. */
-    unionWithActive: boolean = true,
-  ): Promise<boolean> {
-    if (!opts.warm) return true;
-    // Default-from-active-project: only when caller didn't pass an
-    // explicit scope. Explicit project=null / project: <id> wins.
-    const noScope =
-      !body.project && (!body.includeProjects || body.includeProjects.length === 0);
-    if (noScope) {
-      const active = await opts.warm.getActiveProject(userId);
-      if (active) {
-        if (unionWithActive) body.includeProjects = [active];
-        else body.project = active;
-      }
-    }
-    const refs: Array<{ field: "project" | "includeProjects"; index?: number; value: string }> = [];
-    if (body.project) refs.push({ field: "project", value: body.project });
-    body.includeProjects?.forEach((value, index) => {
-      refs.push({ field: "includeProjects", index, value });
-    });
-    if (refs.length === 0) return true;
-    for (const ref of refs) {
-      const resolved = await resolveProjectRef(userId, ref.value);
-      if (!resolved) {
-        reply.code(404).send({
-          error: `no such project '${ref.value}' — call project_list to see ids`,
-        });
-        return false;
-      }
-      const m = await opts.warm.getProjectMembership(resolved.id, userId);
-      if (!m) {
-        reply.code(403).send({
-          error: `not a member of project '${ref.value}' (id ${resolved.id})`,
-        });
-        return false;
-      }
-      // Rewrite the request body in place with the resolved ULID so the
-      // engine sees only canonical ids and never has to redo this.
-      if (ref.field === "project") body.project = resolved.id;
-      else body.includeProjects![ref.index!] = resolved.id;
-    }
-    return true;
-  }
-
-  app.post("/v1/search", async (req, reply) => {
-    const body = SearchBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body, reply))) return;
-    const r = await opts.engine.search(req.userId, body, req.bearerToken);
-    reply.send(r);
-  });
-
-  app.post("/v1/remember", async (req, reply) => {
-    const body = RememberBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body, reply, false))) return;
-    const r = await opts.engine.remember(req.userId, body, req.bearerToken);
-    reply.code(201).send(r);
-  });
-
-  app.post("/v1/decay", async (req, reply) => {
-    const body = DecayBody.parse(req.body ?? {});
-    const r = await opts.engine.decay({ effectiveDaysOverride: body.effectiveDays });
-    reply.send(r);
-  });
-
-  app.post("/v1/dream-cycle", async (_req, reply) => {
-    // Manual trigger for the dedup-merge + edge-promotion pass. The same
-    // logic runs daily via the timer in main.ts; this endpoint exists
-    // for ad-hoc compaction (after a bulk import) and tests.
-    const r = await opts.engine.dreamCycle();
-    reply.send(r);
-  });
-
-  app.put("/v1/memories/:id", async (req, reply) => {
-    const id = (req.params as { id: string }).id;
-    const body = UpdateMemoryBody.parse(req.body ?? {});
-    if (!(await checkProjectAccess(req.userId, body, reply, false))) return;
-    const r = await opts.engine.update(req.userId, id, body);
-    if (!r.updated) return reply.code(404).send({ error: "no such memory in your scope" });
-    reply.send({ id, ...r });
-  });
-
-  app.post("/v1/reap-orphans", async (_req, reply) => {
-    // Manual trigger for the cold-orphan reaper. The same pass also runs
-    // automatically inside the decay loop (main.ts). Cross-user by design —
-    // each orphan row carries its own user_id.
-    reply.send(await opts.engine.reapOrphans());
-  });
-
-  app.post("/v1/recent", async (req, reply) => {
-    const body = RecentBody.parse(req.body ?? {});
-    if (!(await checkProjectAccess(req.userId, body, reply))) return;
-    reply.send(await opts.engine.recent(req.userId, body));
-  });
-
-  app.post("/v1/neighbors", async (req, reply) => {
-    const body = NeighborsBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body, reply))) return;
-    reply.send(await opts.engine.neighbors(req.userId, body));
-  });
-
-  app.post("/v1/forget", async (req, reply) => {
-    const body = ForgetBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body, reply, false))) return;
-    reply.send(
-      await opts.engine.forget(req.userId, body.id, { project: body.project ?? null, token: req.bearerToken }),
-    );
-  });
-
-  app.get("/v1/stats", async (req, reply) => {
-    reply.send(await opts.engine.stats(req.userId));
-  });
-
-  // ─── Admin: user + token bootstrap ──────────────────────────────────
-  // Available in any auth mode (so you can seed users before flipping
-  // the service into 'user' mode), but if mode != 'user' the warm
-  // store may not be configured — handlers hard-require it.
-
-  /** Admin gate for /v1/admin/*. Requires a logged-in admin dashboard
-   *  user — sign in via Better Auth at /api/auth/sign-in/email; the
-   *  cookie or session bearer carries the role through. There is no
-   *  operator-managed shared admin token; admin auth is always per-user. */
-  const adminAuth = (req: { dashUser?: DashboardUser }): boolean => {
-    return req.dashUser?.role === "admin";
-  };
-
-  /** Write an audit entry attributed to the current request's actor.
-   *  Failures don't block the request — audit gaps are preferable to
-   *  request 500s — but they get logged so operators notice. */
+  // ─── Audit-log writer ──────────────────────────────────────────────
+  // Failures don't block the request — audit gaps are preferable to
+  // request 500s — but they get logged so operators notice.
   async function audit(
-    req: { dashUser?: DashboardUser; ip?: string; headers: { authorization?: string } },
+    req: FastifyRequest,
     action: string,
     target?: string | null,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
     if (!opts.warm) return;
-    // Every audit-emitting route gates on `req.dashUser` before reaching
-    // here, so the absent branch is unreachable in practice; "unknown" is
-    // the safe label if the invariant ever breaks.
     const actorLabel = req.dashUser ? `user:${req.dashUser.username}` : "unknown";
     try {
       await opts.warm.writeAudit({
@@ -812,522 +470,24 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
   }
 
-  // ─── Dashboard auth ───────────────────────────────────────────────────
-  // Login / logout / get-session / change-password are owned by Better
-  // Auth, mounted at /api/auth/* via the passthrough route above. The
-  // legacy /v1/auth/* endpoints are gone — clients call /api/auth/*.
+  const ctx: RouteContext = {
+    engine: opts.engine,
+    warm: opts.warm,
+    metrics: opts.metrics,
+    auth: opts.auth,
+    adminDashboard: opts.adminDashboard !== false,
+    betterAuth: opts.betterAuth,
+    authLimiter,
+    audit,
+  };
 
-  // ─── Admin: user management ────────────────────────────────────────────
-  // Better Auth owns user CRUD. The dashboard SPA calls
-  // /api/auth/admin/{create-user,list-users,set-role,remove-user}
-  // directly through the Better Auth passthrough route. Those endpoints
-  // are gated by Better Auth's admin plugin (caller must have role=admin).
-  // Audit-log entries for user.* events are emitted by Better Auth's
-  // own hooks; we no longer wrap them.
-
-  // ─── User self-service: scoped metrics + own-user bearers ─────────────
-
-  app.get("/v1/me/metrics", async (req, reply) => {
-    const u = req.dashUser!;
-    if (!opts.metrics) return reply.code(404).send({ error: "metrics disabled" });
-    if (u.role === "admin") {
-      // Admins use /v1/admin/metrics; this endpoint exists for the user
-      // dashboard. Redirect-by-content: return the global snapshot. Also
-      // attach per-token series for the admin's own tokens so the
-      // throughput chart on the admin Metrics page can break out
-      // individual tokens too.
-      const myTokens = opts.warm
-        ? (await opts.warm.listTokensCreatedByUser(u.id)).map((t) => ({
-            hash: t.tokenHash,
-            label: t.label,
-          }))
-        : [];
-      const global = await opts.metrics.snapshot();
-      // Hand-attach token series — `snapshot()` is the global view and
-      // doesn't take a token filter, so compute it via snapshotForUser
-      // on each user the admin's tokens belong to. In practice an admin
-      // creates tokens against SYSTEM_USER only, so this is one call.
-      const tokensByUser = new Map<string, Array<{ hash: string; label: string | null }>>();
-      if (opts.warm) {
-        for (const row of await opts.warm.listTokensCreatedByUser(u.id)) {
-          const arr = tokensByUser.get(row.userId) ?? [];
-          arr.push({ hash: row.tokenHash, label: row.label });
-          tokensByUser.set(row.userId, arr);
-        }
-      }
-      const tokenRows = [];
-      for (const [userId, list] of tokensByUser) {
-        const t = await opts.metrics.snapshotForUser(userId, { tokens: list });
-        if (t.tokens) tokenRows.push(...t.tokens);
-      }
-      return reply.send({ ...global, tokens: tokenRows, _hasMyTokens: myTokens.length > 0 });
-    }
-    if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
-    const myTokens = opts.warm
-      ? (await opts.warm.listTokensCreatedByUser(u.id))
-          .filter((t) => t.userId === u.id)
-          .map((t) => ({ hash: t.tokenHash, label: t.label }))
-      : [];
-    reply.send(await opts.metrics.snapshotForUser(u.id, { tokens: myTokens }));
-  });
-
-  app.get("/v1/me/metrics/history", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
-    const u = req.dashUser!;
-    // Default window is 24h. Cap at 48h to bound the response size.
-    const q = (req.query as { hours?: string } | undefined)?.hours;
-    const hours = Math.min(48, Math.max(1, q ? Number(q) : 24));
-    const since = Date.now() - hours * 60 * 60 * 1000;
-    const samples = await opts.warm.getMetricsHistory(u.id, since);
-    reply.send({
-      hours,
-      samples: samples.map((s) => ({
-        sampledAt: s.sampledAt.toISOString(),
-        queries: s.queries,
-        remembers: s.remembers,
-      })),
-    });
-  });
-
-  app.get("/v1/me/tokens", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
-    const u = req.dashUser!;
-    if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
-    reply.send({ tokens: await opts.warm.listUserTokens(u.id) });
-  });
-
-  app.post("/v1/me/tokens", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
-    const u = req.dashUser!;
-    if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
-    const body = MintMyTokenBody.parse(req.body ?? {});
-    // Tokens have no per-project scope — access flows from the owning
-    // user's memberships at request time.
-    const result = await opts.warm.createUserToken(u.id, body.label);
-    if (!result) return reply.code(404).send({ error: "user missing" });
-    reply.code(201).send({
-      ...result,
-      warning: "Store this token now — it will not be shown again. Server retains only a sha256 hash.",
-    });
-  });
-
-  /** Hard-delete a token by its sha256 hash. Removes the row outright
-   *  (no soft "revoked" tombstone) so the list view doesn't accumulate
-   *  dead entries. The device using it gets 401 on its next call. */
-  app.delete("/v1/me/tokens/:hash", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "tokens disabled" });
-    const u = req.dashUser!;
-    const hash = (req.params as { hash: string }).hash;
-    if (!/^[a-f0-9]{64}$/i.test(hash)) return reply.code(400).send({ error: "invalid hash" });
-    const ok = await opts.warm.deleteUserTokenByHash(u.id, hash);
-    if (!ok) return reply.code(404).send({ error: "token not found" });
-    opts.metrics?.forgetToken(hash);
-    reply.send({ deleted: true });
-  });
-
-  // ─── User self-service: projects (sub-brains) ──────────────────────────
-
-  app.get("/v1/me/projects", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    reply.send({ projects: await opts.warm.listProjectsForUser(u.id) });
-  });
-
-  app.post("/v1/me/projects", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    const body = CreateProjectBody.parse(req.body);
-    const project = await opts.warm.createProject({
-      name: body.name,
-      ownerUserId: u.id,
-    });
-    await audit(req, "project.create", project.id, { name: body.name });
-    reply.code(201).send(project);
-  });
-
-  app.delete("/v1/me/projects/:id", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    const id = (req.params as { id: string }).id;
-    const project = await opts.warm.getProject(id);
-    if (!project) return reply.code(404).send({ error: "unknown project" });
-    if (project.ownerUserId !== u.id) {
-      return reply.code(403).send({ error: "only the owner can delete a project" });
-    }
-    const r = await opts.engine.deleteProject(id);
-    await audit(req, "project.delete", id, { entriesRemoved: r.entriesRemoved });
-    reply.send(r);
-  });
-
-  app.get("/v1/me/projects/:id/members", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    const id = (req.params as { id: string }).id;
-    const m = await opts.warm.getProjectMembership(id, u.id);
-    if (!m) return reply.code(403).send({ error: "not a member of this project" });
-    reply.send({ members: await opts.warm.listProjectMembers(id) });
-  });
-
-  app.post("/v1/me/projects/:id/members", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    const id = (req.params as { id: string }).id;
-    const project = await opts.warm.getProject(id);
-    if (!project) return reply.code(404).send({ error: "unknown project" });
-    if (project.ownerUserId !== u.id) {
-      return reply.code(403).send({ error: "only the owner can add members" });
-    }
-    const body = AddMemberBody.parse(req.body);
-    // Exact email only — `name`-based fuzzy matching here would let a
-    // newly-registered attacker collide with a target's display name
-    // and be invited in their place. The dashboard collects the
-    // invitee's email, so this is the right level of strictness.
-    const target = await opts.warm.findUserByExactEmail(body.username);
-    if (!target) return reply.code(404).send({ error: "unknown user" });
-    const ok = await opts.warm.addProjectMember(id, target.id, body.role ?? "member");
-    if (!ok) return reply.code(409).send({ error: "user is already a member" });
-    await audit(req, "project.member.add", id, {
-      memberUserId: target.id,
-      memberUsername: target.username,
-      role: body.role ?? "member",
-    });
-    reply.code(201).send({ added: true, userId: target.id, username: target.username });
-  });
-
-  app.delete("/v1/me/projects/:id/members/:userId", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    const { id, userId } = req.params as { id: string; userId: string };
-    const project = await opts.warm.getProject(id);
-    if (!project) return reply.code(404).send({ error: "unknown project" });
-    // Owner can remove anyone (except themselves — they should delete the
-    // project instead). Members can only remove themselves (leave).
-    const isOwner = project.ownerUserId === u.id;
-    if (!isOwner && userId !== u.id) {
-      return reply.code(403).send({ error: "only the owner can remove other members" });
-    }
-    if (userId === project.ownerUserId) {
-      return reply.code(400).send({ error: "owner cannot leave; delete the project instead" });
-    }
-    const r = await opts.warm.removeProjectMember(id, userId);
-    if (!r.removed) return reply.code(404).send({ error: "user is not a member" });
-    await audit(req, "project.member.remove", id, { memberUserId: userId });
-    reply.send({ removed: true });
-  });
-
-  // ─── Active project pointer ────────────────────────────────────────
-  // Per-user "current sub-brain". When set, memory.* calls without an
-  // explicit project arg default to the active project (read-side: union
-  // with user-global; write-side: target the active project directly).
-  // The dashboard sidebar reads/writes this; MCP tools project.activate
-  // / project.deactivate are thin wrappers around the same flow.
-
-  app.get("/v1/me/active-project", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    const projectId = await opts.warm.getActiveProject(u.id);
-    if (!projectId) return reply.send({ active: null });
-    const p = await opts.warm.getProject(projectId);
-    if (!p) {
-      // Stale pointer (project was deleted) — clean up + return null.
-      await opts.warm.setActiveProject(u.id, null);
-      return reply.send({ active: null });
-    }
-    reply.send({ active: { id: p.id, name: p.name } });
-  });
-
-  app.put("/v1/me/active-project", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    const body = ActiveProjectBody.parse(req.body);
-    const resolved = await resolveProjectRef(u.id, body.project);
-    if (!resolved) {
-      return reply.code(404).send({ error: `no such project '${body.project}'` });
-    }
-    const m = await opts.warm.getProjectMembership(resolved.id, u.id);
-    if (!m) return reply.code(403).send({ error: "not a member of this project" });
-    await opts.warm.setActiveProject(u.id, resolved.id);
-    reply.send({ active: { id: resolved.id } });
-  });
-
-  app.delete("/v1/me/active-project", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
-    const u = req.dashUser!;
-    await opts.warm.setActiveProject(u.id, null);
-    reply.code(204).send();
-  });
-
-  // ─── User self-service: data-plane proxies ──────────────────────────
-  // The dashboard SPA is authenticated by cookie session, not a user-bearer
-  // bearer, so it can't hit /v1/search etc. directly. These /v1/me/*
-  // mirrors invoke the engine on behalf of the calling user, scoping
-  // automatically to their user namespace. Admin variants get
-  // SYSTEM_USER, mirroring the bearer-mode behaviour.
-  //
-  // ── Project access guard ─────────────────────────────────────────────
-  // Bearer-token routes enforce project scope by minting tokens only for
-  // members. Cookie-authed mirrors don't go through token mint, so they
-  // must check membership themselves — otherwise any user in
-  // `acme` could read/modify another user's project entries by passing
-  // the project id in the body. Returns true if access ok; sends a 403
-  app.post("/v1/me/search", async (req, reply) => {
-    const u = req.dashUser!;
-    const body = SearchBody.parse(req.body);
-    if (!(await checkProjectAccess(u.id, body, reply))) return;
-    const r = await opts.engine.search(u.id, body);
-    reply.send(r);
-  });
-
-  app.post("/v1/me/recent", async (req, reply) => {
-    const u = req.dashUser!;
-    const body = RecentBody.parse(req.body ?? {});
-    if (!(await checkProjectAccess(u.id, body, reply))) return;
-    reply.send(await opts.engine.recent(u.id, body));
-  });
-
-  app.post("/v1/me/neighbors", async (req, reply) => {
-    const u = req.dashUser!;
-    const body = NeighborsBody.parse(req.body);
-    if (!(await checkProjectAccess(u.id, body, reply))) return;
-    try {
-      reply.send(await opts.engine.neighbors(u.id, body));
-    } catch (err) {
-      // Graph store occasionally returns Edge values the redis-client
-      // decoder rejects ("Type mismatch: expected List or Null but was
-      // Edge") — degrade to "no neighbours, graph degraded" so the SPA
-      // still renders the seed inspector instead of a 500 modal.
-      app.log?.warn?.({ err: (err as Error).message }, "[/v1/me/neighbors] degraded");
-      reply.send({ seed: body.id, results: [], degraded: true });
-    }
-  });
-
-  app.post("/v1/me/remember", async (req, reply) => {
-    const u = req.dashUser!;
-    const body = RememberBody.parse(req.body);
-    if (!(await checkProjectAccess(u.id, body, reply, false))) return;
-    const r = await opts.engine.remember(u.id, body);
-    reply.code(201).send(r);
-  });
-
-  app.put("/v1/me/memories/:id", async (req, reply) => {
-    const u = req.dashUser!;
-    const id = (req.params as { id: string }).id;
-    const body = UpdateMemoryBody.parse(req.body ?? {});
-    if (!(await checkProjectAccess(u.id, body, reply, false))) return;
-    const r = await opts.engine.update(u.id, id, body);
-    if (!r.updated) return reply.code(404).send({ error: "no such memory in your scope" });
-    reply.send({ id, ...r });
-  });
-
-  app.post("/v1/me/forget", async (req, reply) => {
-    const u = req.dashUser!;
-    const body = ForgetBody.parse(req.body);
-    if (!(await checkProjectAccess(u.id, body, reply, false))) return;
-    const userId = u.id;
-    // Defence in depth: even after the requested-project check, resolve
-    // the entry's actual scope by id alone and re-verify membership.
-    // This stops an attacker who knows an entry id from deleting it by
-    // passing `project: null` when the entry is actually project-scoped,
-    // or by passing a project they're a member of when the entry belongs
-    // to a different (non-member) project. User-wide entries
-    // (project_id null) need only the user boundary, which the engine
-    // enforces. We use `getEntryScope` (no scope filter) instead of
-    // `getEntry` because the latter filters by the caller-supplied
-    // project, which is exactly the value we don't trust.
-    if (opts.warm) {
-      const scope = await opts.warm.getEntryScope(body.id);
-      if (scope) {
-        if (scope.projectId) {
-          const m = await opts.warm.getProjectMembership(scope.projectId, u.id);
-          if (!m) return reply.code(403).send({ error: "not a member of this project" });
-        } else if (scope.userId !== userId) {
-          // User-wide entry owned by a different user — refuse.
-          return reply.code(403).send({ error: "entry not in your user namespace" });
-        }
-      }
-    }
-    reply.send(await opts.engine.forget(userId, body.id, { project: body.project ?? null }));
-  });
-
-  /** "Today" — lightweight activity feed for the user dashboard. We
-   *  derive it from the recent memory_entries (kind = "remember") and
-   *  recent user_tokens (kind = "token"). Cheap query, ranks by
-   *  timestamp, capped at 50 events. */
-  app.get("/v1/me/today", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
-    const u = req.dashUser!;
-    const events = await opts.warm.listRecentActivity(u.id, 50);
-    reply.send({ events });
-  });
-
-  /** Onboarding state — derived, not stored. Tells the SPA which steps
-   *  in the welcome wizard are done so it can highlight the next one. */
-  app.get("/v1/me/onboarding", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
-    const u = req.dashUser!;
-    const userId = u.id;
-    const tokens = await opts.warm.listTokensCreatedByUser(u.id);
-    const recent = u.id
-      ? await opts.engine.recent(u.id, { k: 1 })
-      : { results: [] as unknown[] };
-    reply.send({
-      bootstrapDone: true,
-      userExists: u.role === "admin" || !!u.id,
-      mintedToken: tokens.length > 0,
-      remembered: recent.results.length > 0,
-      userId,
-    });
-  });
-
-  app.post("/v1/admin/tokens/revoke", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const body = AdminRevokeBody.parse(req.body);
-    const ok = await opts.warm.revokeUserToken(body.token);
-    reply.send({ revoked: ok });
-  });
-
-  // Audit log read (admin only).
-  app.get("/v1/admin/audit-log", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    // Validate `?limit=` so non-numeric / negative / huge values reject
-    // with a 400 instead of producing `LIMIT NaN` (500) or letting a
-    // caller pull the entire table.
-    const AuditLogQuery = z.object({
-      limit: z.coerce.number().int().positive().max(500).default(200),
-    });
-    const { limit } = AuditLogQuery.parse(req.query ?? {});
-    reply.send({ entries: await opts.warm.listAuditLog({ limit }) });
-  });
-
-  // ─── User bearer self-rotation (CLI / device path) ────────────────────
-  // Holders of a user bearer (devices, CLIs) can rotate their own token
-  // without needing admin access: present the current bearer, get a new
-  // plaintext back (shown once), old one revoked atomically. Only meaningful
-  // in user mode. Note: distinct from the dashboard's /v1/me/tokens —
-  // this endpoint is for the *bearer* itself to roll over, the dashboard
-  // is for user-facing CRUD.
-  app.post("/v1/auth/rotate-token", async (req, reply) => {
-    if (opts.auth.mode !== "user" || !opts.warm) {
-      return reply.code(400).send({ error: "rotate-token is only available in user mode" });
-    }
-    const header = req.headers.authorization;
-    if (!header || !header.startsWith("Bearer ")) {
-      return reply.code(401).send({ error: "unauthorized" });
-    }
-    const current = header.slice("Bearer ".length);
-    // Per-account rate limiter: key on the presented bearer so a brute
-    // force against one token doesn't burn the budget for unrelated
-    // accounts. SHA-prefix the value so we never store the plaintext
-    // bearer in the in-memory map.
-    const { createHash } = await import("node:crypto");
-    const limKey = `rotate:${createHash("sha256").update(current).digest("hex").slice(0, 32)}`;
-    {
-      const locked = checkAuthLocked(limKey);
-      if (locked) return send429(reply, locked);
-    }
-    const result = await opts.warm.rotateUserToken(current);
-    if (!result) {
-      recordAuthFailure(limKey);
-      return reply.code(401).send({ error: "unauthorized" });
-    }
-    clearAuthFailure(limKey);
-    reply.code(201).send({
-      ...result,
-      warning: "Store this token now — it will not be shown again. The previous token is revoked.",
-    });
-  });
-
-  // ─── Admin: operational metrics ───────────────────────────────────────
-  // Read-through snapshot of in-process counters/gauges/rates. Gated by
-  // session-admin auth AND the dashboard flag — operators who don't want
-  // the surface set NOVAMEM_ADMIN_DASHBOARD=0 and the route disappears.
-  const dashboardEnabled = opts.adminDashboard !== false;
-  app.get("/v1/admin/metrics", async (req, reply) => {
-    if (!dashboardEnabled || !opts.metrics) {
-      return reply.code(404).send({ error: "admin disabled" });
-    }
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    reply.send(await opts.metrics.snapshot());
-  });
-
-  // P2-18: Prometheus exposition format for scraping. Uses the same
-  // gauges + counters as the JSON endpoint; admin-token gated so a
-  // public scraper can't enumerate users/projects via the dashboard.
-  app.get("/v1/admin/metrics/prom", async (req, reply) => {
-    if (!dashboardEnabled || !opts.metrics) {
-      return reply.code(404).send({ error: "admin disabled" });
-    }
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    reply
-      .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
-      .send(await opts.metrics.renderProm());
-  });
-
-  // /openapi.json is now served by @fastify/swagger.
-
-  // ─── MCP via SSE ──────────────────────────────────────────────────
-  // The same engine is exposed through buildMcpServer() — over stdio for
-  // local hosts (packages/server/src/main.ts can launch that), and over
-  // HTTP+SSE here for remote hosts.
-  //
-  // GET  /mcp/sse                    — opens the event stream, returns sessionId
-  // POST /mcp/messages?sessionId=…   — sends JSON-RPC requests on that session
-  //
-  // Per-session transports live in this map for the lifetime of the
-  // SSE connection. They're disposed when the client disconnects.
-
-  // SSE-MCP: user is captured at the GET /mcp/sse handshake (when the
-  // bearer auth hook ran and populated req.userId) and persisted with
-  // the transport for the session's lifetime. Subsequent POST /mcp/messages
-  // calls inherit that user id — they're authenticated by sessionId, not
-  // by a new bearer header on every JSON-RPC call.
-  const sseTransports = new Map<string, {
-    transport: SSEServerTransport;
-    userId: string;
-    mcpServer: ReturnType<typeof buildMcpServer>;
-  }>();
-
-  // P2-17: drain in-flight SSE connections on shutdown so Fastify's `close()`
-  // doesn't hang waiting for keep-alive responses to complete.
-  app.addHook("onClose", async () => {
-    for (const [sessionId, s] of [...sseTransports.entries()]) {
-      try {
-        await s.mcpServer.close();
-      } catch {
-        // ignore — best-effort drain
-      }
-      sseTransports.delete(sessionId);
-    }
-  });
-
-  app.get("/mcp/sse", async (req, reply) => {
-    const transport = new SSEServerTransport("/mcp/messages", reply.raw);
-    const sessionId = transport.sessionId;
-    const userId = req.userId;
-    const mcpServer = buildMcpServer(opts.engine, { userId }, opts.warm);
-    sseTransports.set(sessionId, { transport, userId, mcpServer });
-    await mcpServer.connect(transport);
-    req.log.info({ sessionId, userId }, "mcp-sse: session opened");
-    const cleanup = () => {
-      sseTransports.delete(sessionId);
-      mcpServer.close().catch(() => undefined);
-      req.log.info({ sessionId }, "mcp-sse: session closed");
-    };
-    // Listen on both `close` and `error` — the previous version only
-    // cleaned up on `close`, so an `error` event leaked the entry.
-    reply.raw.on("close", cleanup);
-    reply.raw.on("error", cleanup);
-  });
-
-  app.post("/mcp/messages", async (req, reply) => {
-    const sessionId = (req.query as { sessionId?: string }).sessionId;
-    if (!sessionId) return reply.code(400).send({ error: "missing sessionId" });
-    const session = sseTransports.get(sessionId);
-    if (!session) return reply.code(404).send({ error: "unknown sessionId" });
-    await session.transport.handlePostMessage(req.raw, reply.raw, req.body);
-  });
+  // Order matters only for prefix overlaps; Fastify's router resolves
+  // each path uniquely so it's mostly a readability concern.
+  registerAuth(app, ctx);
+  registerDataPlane(app, ctx);
+  registerMe(app, ctx);
+  registerAdmin(app, ctx);
+  registerMcpSse(app, ctx);
 
   return app;
 }

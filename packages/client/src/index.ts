@@ -137,8 +137,21 @@ export class NovamemClient {
       body: hasBody ? JSON.stringify(init.body) : undefined,
     });
     if (!r.ok) {
+      // The server uses a uniform error shape: {error, code?, issues?}.
+      // Try JSON first so callers see the structured `code` (e.g.
+      // LAST_ADMIN_PROTECTED) when present; fall back to raw text.
       const text = await r.text();
-      throw new Error(`novamem ${r.status}: ${text}`);
+      let suffix = text;
+      try {
+        const parsed = JSON.parse(text) as { error?: string; code?: string };
+        if (parsed && typeof parsed === "object") {
+          const msg = parsed.error ?? text;
+          suffix = parsed.code ? `${msg} [${parsed.code}]` : msg;
+        }
+      } catch {
+        // not JSON — keep raw text
+      }
+      throw new Error(`novamem ${r.status}: ${suffix}`);
     }
     if (r.status === 204) return undefined as unknown as T;
     return (await r.json()) as T;
