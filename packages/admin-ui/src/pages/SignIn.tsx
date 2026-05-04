@@ -125,9 +125,6 @@ export function SignIn() {
           </Button>
         </form>
 
-        <div className="mt-5 font-mono text-[10px] text-faint text-center leading-relaxed">
-          Session expires in 24h · stored in HttpOnly cookie
-        </div>
       </div>
     </div>
   );

@@ -21,7 +21,6 @@ import { z } from "zod";
 
 import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
-import { hashPassword } from "./auth.js";
 import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
 import {
@@ -644,88 +643,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // legacy /v1/auth/* endpoints are gone — clients call /api/auth/*.
 
   // ─── Admin: user management ────────────────────────────────────────────
-  // Distinct from /v1/admin/users/* — these are dashboard logins.
-  // Only a logged-in admin can manage them.
-
-  app.get("/v1/admin/users", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    reply.send({ users: await opts.warm.listUsers() });
-  });
-
-  app.post("/v1/admin/users", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const body = CreateUserBody.parse(req.body);
-    const existing = await opts.warm.findUserByUsername(body.username);
-    if (existing) return reply.code(409).send({ error: "username already exists" });
-    const hash = await hashPassword(body.password);
-    const user = await opts.warm.createUser({
-      username: body.username,
-      passwordHash: hash,
-      role: body.role,
-    });
-    await audit(req, "user.create", user.id, {
-      username: body.username,
-      role: body.role,
-    });
-    reply.code(201).send(user);
-  });
-
-  app.delete("/v1/admin/users/:id", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const id = (req.params as { id: string }).id;
-    // Refuse self-deletion: prevents an admin from accidentally locking
-    // themselves out (and would also mid-request invalidate their session).
-    if (req.dashUser?.id === id) {
-      return reply.code(400).send({ error: "cannot delete yourself" });
-    }
-    // Refuse to delete the last admin so the dashboard never becomes
-    // unmanageable.
-    const target = await opts.warm.findUserById(id);
-    if (!target) return reply.code(404).send({ error: "unknown user" });
-    if (target.role === "admin") {
-      const adminCount = await opts.warm.countAdmins();
-      if (adminCount <= 1) {
-        return reply.code(400).send({ error: "cannot delete the last admin" });
-      }
-    }
-    // Engine-level delete: warm rows + cold collections + graph nodes
-    // + tokens + sessions + projects (FK cascades). Memory belongs to
-    // the user being deleted, so it goes with them.
-    const r = await opts.engine.deleteUser(id);
-    if (r.deleted) {
-      await audit(req, "user.delete", id, {
-        username: target.username,
-        entriesRemoved: r.entriesRemoved,
-      });
-    }
-    reply.send({ deleted: r.deleted, entriesRemoved: r.entriesRemoved });
-  });
-
-  app.post("/v1/admin/users/:id/role", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
-    if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const id = (req.params as { id: string }).id;
-    const body = SetRoleBody.parse(req.body);
-    const target = await opts.warm.findUserById(id);
-    if (!target) return reply.code(404).send({ error: "unknown user" });
-    // Don't strip the last admin role.
-    if (target.role === "admin" && body.role !== "admin") {
-      const adminCount = await opts.warm.countAdmins();
-      if (adminCount <= 1) {
-        return reply.code(400).send({ error: "cannot demote the last admin" });
-      }
-    }
-    const ok = await opts.warm.setUserRole(id, body.role);
-    if (ok)
-      await audit(req, "user.role.change", id, {
-        previousRole: target.role,
-        newRole: body.role,
-      });
-    reply.send({ updated: ok });
-  });
+  // Better Auth owns user CRUD. The dashboard SPA calls
+  // /api/auth/admin/{create-user,list-users,set-role,remove-user}
+  // directly through the Better Auth passthrough route. Those endpoints
+  // are gated by Better Auth's admin plugin (caller must have role=admin).
+  // Audit-log entries for user.* events are emitted by Better Auth's
+  // own hooks; we no longer wrap them.
 
   // ─── User self-service: scoped metrics + own-user bearers ─────────────
 

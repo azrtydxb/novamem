@@ -60,50 +60,32 @@ export class WarmStore {
     // single-user installs upgrade in place — pre-user rows backfill to
     // `public` via the column DEFAULT.
     const ddl = [
-      // Users are the only first-class memory owner — no separate
-      // owner table. The synthetic id "public" is the implicit owner
-      // for `auth.mode = none|bearer` deployments.
-      `CREATE TABLE IF NOT EXISTS users (
-        id text PRIMARY KEY,
-        username text NOT NULL,
-        password_hash text NOT NULL,
-        role text NOT NULL DEFAULT 'user',
-        created_at timestamptz NOT NULL DEFAULT now(),
-        last_login_at timestamptz,
-        password_changed_at timestamptz
-      )`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users(username)`,
-      `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz`,
-      `INSERT INTO users (id, username, password_hash, role)
-         VALUES ('public', 'public', 'unused', 'user')
-         ON CONFLICT (id) DO NOTHING`,
+      // user_tokens — `nm_…` API keys for non-browser callers (MCP, CLI,
+      // scripts). user_id is a free-text reference to whoever Better
+      // Auth's "user" table calls the owner; we do not enforce an FK
+      // because Better Auth's table is on a different naming convention
+      // and the dashboard's "delete user" flow uses Better Auth's own
+      // cascades. Stale tokens whose owner is gone get rejected at
+      // resolveUserToken time anyway.
       `CREATE TABLE IF NOT EXISTS user_tokens (
         token_hash text PRIMARY KEY,
-        user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id text NOT NULL,
         label text,
         created_at timestamptz NOT NULL DEFAULT now(),
         last_used_at timestamptz,
         revoked_at timestamptz
       )`,
       `CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id)`,
-      `CREATE TABLE IF NOT EXISTS sessions (
-        token_hash text PRIMARY KEY,
-        user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        last_seen_at timestamptz NOT NULL DEFAULT now(),
-        expires_at timestamptz NOT NULL
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
       `CREATE TABLE IF NOT EXISTS projects (
         id text PRIMARY KEY,
         name text NOT NULL,
-        owner_user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        owner_user_id text NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE INDEX IF NOT EXISTS idx_projects_owner_user ON projects(owner_user_id)`,
       `CREATE TABLE IF NOT EXISTS project_members (
         project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id text NOT NULL,
         role text NOT NULL DEFAULT 'member',
         joined_at timestamptz NOT NULL DEFAULT now(),
         UNIQUE (project_id, user_id)
@@ -301,7 +283,8 @@ export class WarmStore {
     userId: string,
     label?: string,
   ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
-    const exists = await this.pool.query(`SELECT 1 FROM users WHERE id = $1`, [userId]);
+    // Better Auth owns the user model; check against its `"user"` table.
+    const exists = await this.pool.query(`SELECT 1 FROM "user" WHERE id = $1`, [userId]);
     if (exists.rowCount === 0) return null;
     const token = generateBearerToken();
     const tokenHash = hashToken(token);
@@ -608,14 +591,23 @@ export class WarmStore {
     username: string;
     role: string;
   } | null> {
+    // Better Auth's `"user"` table has email + name (no username); we
+    // synthesise a username from the email's local-part so callers that
+    // expect that shape (auth hook fallback for nm_ tokens) continue to
+    // work without rewiring.
     const r = await this.pool.query<{
       id: string;
-      username: string;
-      role: string;
-    }>(`SELECT id, username, role FROM users WHERE id = $1`, [id]);
+      email: string;
+      name: string;
+      role: string | null;
+    }>(`SELECT id, email, name, role FROM "user" WHERE id = $1`, [id]);
     const row = r.rows[0];
     if (!row) return null;
-    return { id: row.id, username: row.username, role: row.role };
+    return {
+      id: row.id,
+      username: row.email.split("@")[0] ?? row.email,
+      role: row.role ?? "user",
+    };
   }
 
   async listUsers(): Promise<
