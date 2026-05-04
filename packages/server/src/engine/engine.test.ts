@@ -3,36 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryEngine, tokenJaccard } from "./index.js";
 import {
   asCold,
-  asGraph,
   asWarm,
   FakeColdStore,
   FakeEmbedder,
-  FakeGraphStore,
   FakeWarmStore,
+  makeEngine,
 } from "../test-fakes.js";
 
-interface Bench {
-  warm: FakeWarmStore;
-  cold: FakeColdStore;
-  graph: FakeGraphStore;
-  embedder: FakeEmbedder;
-  engine: MemoryEngine;
-}
-
-function bench(opts: { graphConnected?: boolean } = {}): Bench {
-  const warm = new FakeWarmStore();
-  const cold = new FakeColdStore();
-  const graph = new FakeGraphStore();
-  graph.connected = opts.graphConnected ?? true;
-  const embedder = new FakeEmbedder();
-  const engine = new MemoryEngine({
-    warm: asWarm(warm),
-    cold: asCold(cold),
-    graph: asGraph(graph),
-    embedder,
+function bench(opts: { graphConnected?: boolean } = {}) {
+  return makeEngine({
+    graphConnected: opts.graphConnected ?? true,
     defaultEffectiveDays: 7,
   });
-  return { warm, cold, graph, embedder, engine };
 }
 
 describe("tokenJaccard (dream-cycle merge gate)", () => {

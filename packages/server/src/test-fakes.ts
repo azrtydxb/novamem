@@ -9,6 +9,8 @@ import type { ColdStore } from "./cold-store.js";
 import type { GraphStore } from "./graph-store.js";
 import type { Embedder } from "./embeddings.js";
 import type { WarmStore } from "./warm-store/index.js";
+import { MemoryEngine } from "./engine/index.js";
+import { MetricsCollector } from "./admin/metrics.js";
 import { ulid } from "ulid";
 
 export interface FakeWarmRow {
@@ -1014,3 +1016,50 @@ export class FakeEmbedder implements Embedder {
 export const asWarm = (f: FakeWarmStore): WarmStore => f as unknown as WarmStore;
 export const asCold = (f: FakeColdStore): ColdStore => f as unknown as ColdStore;
 export const asGraph = (f: FakeGraphStore): GraphStore => f as unknown as GraphStore;
+
+export interface MakeEngineOpts {
+  /** Set false to simulate a disconnected graph store. Default true. */
+  graphConnected?: boolean;
+  /** Forwarded to `MemoryEngine`. */
+  defaultEffectiveDays?: number;
+  /** When true, builds a `MetricsCollector`, binds gauge sources to the
+   *  fake stores and wires it into the engine. Default false. */
+  withMetrics?: boolean;
+}
+
+export interface MakeEngineResult {
+  engine: MemoryEngine;
+  warm: FakeWarmStore;
+  cold: FakeColdStore;
+  graph: FakeGraphStore;
+  embedder: FakeEmbedder;
+  metrics: MetricsCollector | undefined;
+}
+
+/** Shared engine wiring for tests. Mirrors what `http.test.ts:makeApp`,
+ *  `mcp.test.ts` and `engine.test.ts:bench` were doing inline. */
+export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
+  const warm = new FakeWarmStore();
+  const cold = new FakeColdStore();
+  const graph = new FakeGraphStore();
+  graph.connected = opts.graphConnected ?? true;
+  const embedder = new FakeEmbedder();
+  const metrics = opts.withMetrics ? new MetricsCollector() : undefined;
+  if (metrics) {
+    metrics.bindGaugeSources({
+      warmEntries: async () => [...warm.rows.values()].filter((r) => !r.cold).length,
+      coldEntries: async () => [...warm.rows.values()].filter((r) => r.cold).length,
+      graphEdges: async () => graph.edgeCount(),
+      orphansPending: async () => warm.coldOrphans.size,
+    });
+  }
+  const engine = new MemoryEngine({
+    warm: asWarm(warm),
+    cold: asCold(cold),
+    graph: asGraph(graph),
+    embedder,
+    defaultEffectiveDays: opts.defaultEffectiveDays,
+    metrics,
+  });
+  return { engine, warm, cold, graph, embedder, metrics };
+}

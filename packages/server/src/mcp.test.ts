@@ -2,29 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import { buildMcpServer } from "./mcp.js";
-import { MemoryEngine } from "./engine/index.js";
-import {
-  asCold,
-  asGraph,
-  asWarm,
-  FakeColdStore,
-  FakeEmbedder,
-  FakeGraphStore,
-  FakeWarmStore,
-} from "./test-fakes.js";
-
-function makeEngine() {
-  const warm = new FakeWarmStore();
-  const cold = new FakeColdStore();
-  const graph = new FakeGraphStore();
-  const engine = new MemoryEngine({
-    warm: asWarm(warm),
-    cold: asCold(cold),
-    graph: asGraph(graph),
-    embedder: new FakeEmbedder(),
-  });
-  return { engine, warm, cold, graph };
-}
+import { asWarm, makeEngine } from "./test-fakes.js";
 
 /** Reach into the MCP Server's private handler map by re-using the SDK's
  *  request-schema dispatch. We exercise the registered handlers directly
