@@ -171,11 +171,10 @@ async function main() {
   // sessions, JWT issuance). Phase 1: scaffolded alongside the existing
   // /v1/auth/* routes; both flows live until the SPA cuts over.
   const baseUrl = process.env.NOVAMEM_BASE_URL ?? `http://${cfg.service.host}:${cfg.service.port}`;
-  const baSecret = process.env.NOVAMEM_COOKIE_SECRET ?? "novamem-dev-cookie-secret-change-me";
   const ba = buildAuth({
     pool: warm.pool,
     baseUrl,
-    secret: baSecret,
+    secret: cfg.cookieSecret,
     secureCookies: process.env.NOVAMEM_INSECURE_COOKIES !== "1",
     trustedOrigins: [baseUrl, "http://localhost:5173"],
   });
@@ -198,11 +197,16 @@ async function main() {
       );
       const adminCount = Number(probe.rows[0]?.count ?? "0");
       if (adminCount === 0) {
+        // `name` is intentionally distinct from `email` — Better Auth's
+        // `name` column has no uniqueness constraint, so reusing the email
+        // there lets a later attacker register an account whose `name`
+        // collides with the admin's email and leak through any
+        // name-based lookup. Use a fixed sentinel instead.
         const r = await ba.api.signUpEmail({
           body: {
             email: adminEmail,
             password: adminPassword,
-            name: adminEmail,
+            name: "bootstrap-admin",
           },
         });
         const newUserId = (r as { user?: { id?: string } } | undefined)?.user?.id;
@@ -233,6 +237,7 @@ async function main() {
     engine,
     warm,
     auth: cfg.auth,
+    cookieSecret: cfg.cookieSecret,
     rateLimitPerMinute: cfg.service.rateLimitPerMinute,
     metrics,
     adminDashboard: cfg.admin.dashboard,

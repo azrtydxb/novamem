@@ -426,10 +426,36 @@ export class WarmStore {
   // with the bcrypt path; tests run against FakeWarmStore which still
   // implements them in-memory.
 
+  /** Strict, case-insensitive email-only lookup. Used by the
+   *  project-share / add-member flow where a fuzzy match could let an
+   *  attacker register a benign email with `name = "alice"` and be
+   *  invited in alice's place. Display-name disambiguation belongs in
+   *  the dashboard UI, not here. */
+  async findUserByExactEmail(email: string): Promise<{
+    id: string;
+    username: string;
+    role: string;
+  } | null> {
+    const r = await this.db.execute<{
+      id: string;
+      email: string;
+      role: string | null;
+    }>(sql`
+      SELECT id, email, role FROM "user"
+       WHERE lower(email) = lower(${email})
+       LIMIT 1
+    `);
+    const row = r.rows[0];
+    if (!row) return null;
+    return { id: row.id, username: row.email, role: row.role ?? "user" };
+  }
+
   /** Resolve a user by their human handle: tries email exact-match first
    *  (Better Auth's canonical identifier), then falls back to `name` and
-   *  the email's local-part. Used by the project-membership flow so an
-   *  admin can invite "alice" instead of typing "alice@example.com". */
+   *  the email's local-part. SECURITY: do NOT use this for project shares
+   *  or any authorisation decision — `name` is not unique. Use
+   *  `findUserByExactEmail` there. Kept for non-security UI flows that
+   *  want a best-effort handle lookup. */
   async findUserByUsername(username: string): Promise<{
     id: string;
     username: string;
