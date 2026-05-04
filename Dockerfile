@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS base
+FROM node:25-bookworm-slim AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
@@ -24,7 +24,7 @@ RUN pnpm -r build
 # in the runtime stage). Versions chosen from Trivy's fixed-version field.
 RUN node -e "const p=require('./packages/server/package.json');delete p.devDependencies;delete p.scripts;p.overrides={protobufjs:'>=7.5.5',picomatch:'>=4.0.4',underscore:'>=1.13.8'};require('fs').writeFileSync('/tmp/runtime-package.json',JSON.stringify(p,null,2));"
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:25-bookworm-slim AS runtime
 WORKDIR /app
 
 # Ship only the server's compiled JS + a *fresh* prod-only node_modules
