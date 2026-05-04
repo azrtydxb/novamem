@@ -58,7 +58,7 @@ export class WarmStore {
   public readonly pool: Pool;
 
   constructor(cfg: WarmStoreConfig) {
-    // P1-P4: bound the pg connection pool so a load spike can't exhaust
+    // Bound the pg connection pool so a load spike can't exhaust
     // Postgres connections silently. Default max=20 is well below typical
     // Postgres `max_connections` of 100 even when several server replicas
     // share a database. Validation + env parsing happens in
@@ -1057,7 +1057,7 @@ export class WarmStore {
    *  - `opts.projectId` is null/undefined → user-wide entries only, scoped
    *    to `userId`.
    *
-   *  P0-4: the previous magic-string `"*"` bypass was removed; there is no
+   *  The previous magic-string `"*"` bypass was removed; there is no
    *  way for an external caller to disable both checks. */
   /** Return the entry's `user_id` and `project_id` by id alone — no
    *  scope filter. Used by /v1/me/forget to recheck the actual project
@@ -1102,7 +1102,7 @@ export class WarmStore {
   }
 
   /** Batch variant of `bumpHits` — one round-trip for the whole top-k.
-   *  Used by `engine.search` to collapse the N+1 (P1-P1).
+   *  Used by `engine.search` to collapse the N+1.
    *
    *  Dedupes the input internally: Postgres rejects `ON CONFLICT DO UPDATE`
    *  when the same target row appears twice in a single statement
