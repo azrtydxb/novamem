@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { ulid } from "ulid";
@@ -1144,6 +1144,80 @@ export class WarmStore {
       byId.set(r.id, r);
     }
     return ids.map((id) => byId.get(id));
+  }
+
+  /** Recent entries within an isolation scope, newest first. Replaces a
+   *  hand-built parameter-counted SQL string in the engine — using drizzle
+   *  here keeps namespace / project / user / since predicates composable
+   *  without off-by-one risk. Mirrors `getEntries`' isolation rules:
+   *
+   *    - active-project mode (`includeProjects` set): rows visible if
+   *      they're user-global for this caller OR live in one of the
+   *      listed (membership-checked) projects.
+   *    - project-scoped (`projectId` is a string): scope by project_id.
+   *      Cross-user members are allowed because project IS the boundary.
+   *    - user-wide (`projectId` null/undefined): user_id matches AND
+   *      project_id IS NULL.
+   */
+  async listRecent(
+    userId: string,
+    args: {
+      namespaces: string[];
+      k: number;
+      projectId?: string | null;
+      includeProjects?: string[] | null;
+      since?: Date | null;
+    },
+  ): Promise<Array<typeof schema.memoryEntries.$inferSelect>> {
+    const { namespaces, k, projectId = null, includeProjects = null, since = null } = args;
+    if (namespaces.length === 0) return [];
+    const isActive = !!includeProjects && includeProjects.length > 0;
+    const isProject = !isActive && typeof projectId === "string";
+    const scopeClause = isActive
+      ? or(
+          and(eq(schema.memoryEntries.userId, userId), isNull(schema.memoryEntries.projectId)),
+          inArray(schema.memoryEntries.projectId, includeProjects),
+        )
+      : isProject
+        ? eq(schema.memoryEntries.projectId, projectId as string)
+        : and(eq(schema.memoryEntries.userId, userId), isNull(schema.memoryEntries.projectId));
+    const sinceClause = since ? gte(schema.memoryEntries.createdAt, since) : undefined;
+    const where = and(
+      inArray(schema.memoryEntries.namespace, namespaces),
+      scopeClause,
+      sinceClause,
+    );
+    return await this.db
+      .select()
+      .from(schema.memoryEntries)
+      .where(where)
+      .orderBy(desc(schema.memoryEntries.createdAt))
+      .limit(k);
+  }
+
+  /** Batch variant of `getColdEntryStats` — one round-trip for the whole
+   *  cold-tier slice of a search top-k. Returns a Map keyed by entry id;
+   *  ids without an access row are absent from the map. Used by the
+   *  cold→warm promotion path to collapse the engine.search N+1 (one
+   *  stats query per cold hit) into a single query. */
+  async getColdEntryStatsMany(
+    ids: string[],
+  ): Promise<Map<string, { hits: number; idleDays: number }>> {
+    const out = new Map<string, { hits: number; idleDays: number }>();
+    if (ids.length === 0) return out;
+    const idleDays = sql<number>`EXTRACT(EPOCH FROM (now() - ${schema.memoryAccess.lastAccessed})) / 86400.0`;
+    const rows = await this.db
+      .select({
+        entryId: schema.memoryAccess.entryId,
+        hits: schema.memoryAccess.hits,
+        idleDays,
+      })
+      .from(schema.memoryAccess)
+      .where(inArray(schema.memoryAccess.entryId, ids));
+    for (const r of rows) {
+      out.set(r.entryId, { hits: Number(r.hits), idleDays: Number(r.idleDays) });
+    }
+    return out;
   }
 
   /** Read the access-count + idle-days for a single entry — used by the

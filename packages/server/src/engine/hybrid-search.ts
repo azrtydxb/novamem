@@ -66,7 +66,20 @@ export function fuse(
   return out;
 }
 
-/** Synaptic-decay formula. Frequently accessed memories resist demotion. */
+/** Synaptic-decay formula. Frequently accessed memories resist demotion.
+ *
+ *  This JS form must stay in lockstep with the SQL form below — they're
+ *  evaluated against the same `hits` column on opposite sides of the
+ *  decay loop (engine vs. warm-store) and must agree to the bit, or
+ *  promotion and demotion will fight each other. */
 export function effectiveDays(hits: number): number {
   return 7 * Math.log2(hits + 1);
 }
+
+/** SQL counterpart of `effectiveDays(hits) = 7 * log2(hits + 1)` — kept
+ *  next to the JS formula so any future tweak lands on both sides at
+ *  once. The decay query parameterises the `7` (base days) so a one-shot
+ *  pass can override the schedule; substitute `$n::double precision` for
+ *  `$BASE`. The inner expression evaluates to the lifespan in days. */
+export const EFFECTIVE_LIFESPAN_SQL =
+  "($BASE) * log(2.0, GREATEST(hits, 0) + 1)";
