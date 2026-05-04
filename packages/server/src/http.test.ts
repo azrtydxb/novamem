@@ -139,7 +139,7 @@ describe("http: /v1/remember", () => {
     const r = await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "hello world", namespace: "ns" },
+      payload: { content: "hello world", namespace: "ns", force: true },
     });
     expect(r.statusCode).toBe(201);
     expect(r.json().id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
@@ -150,7 +150,7 @@ describe("http: /v1/remember", () => {
     const r = await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "" },
+      payload: { content: "", force: true },
     });
     expect(r.statusCode).toBe(400); // Zod errors mapped to 400 by setErrorHandler
     expect(r.json().error).toMatch(/invalid request/i);
@@ -161,7 +161,7 @@ describe("http: /v1/remember", () => {
     const r = await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "x".repeat(300_000) },
+      payload: { content: "x".repeat(300_000), force: true },
     });
     expect([400, 413]).toContain(r.statusCode);
   });
@@ -170,7 +170,7 @@ describe("http: /v1/remember", () => {
 describe("http: /v1/search", () => {
   it("returns ranked results", async () => {
     const { app } = makeApp();
-    await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "Pascal likes coffee" } });
+    await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "Pascal likes coffee", force: true } });
     const r = await app.inject({
       method: "POST",
       url: "/v1/search",
@@ -184,7 +184,7 @@ describe("http: /v1/search", () => {
 
   it("forwards weights override", async () => {
     const { app } = makeApp();
-    await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "marker token" } });
+    await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "marker token", force: true } });
     const r = await app.inject({
       method: "POST",
       url: "/v1/search",
@@ -197,8 +197,8 @@ describe("http: /v1/search", () => {
 describe("http: /v1/recent + /v1/forget", () => {
   it("recent returns newest first", async () => {
     const { app, warm } = makeApp();
-    const a = await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "first" } });
-    const b = await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "second" } });
+    const a = await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "first", force: true } });
+    const b = await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "second", force: true } });
     // Two POSTs in the same millisecond would tie on createdAt — force a 1s
     // gap so ordering is deterministic.
     warm.rows.get(a.json().id)!.createdAt = new Date(Date.now() - 1000);
@@ -211,7 +211,7 @@ describe("http: /v1/recent + /v1/forget", () => {
 
   it("forget removes the entry", async () => {
     const { app } = makeApp();
-    const created = await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "to forget" } });
+    const created = await app.inject({ method: "POST", url: "/v1/remember", payload: { content: "to forget", force: true } });
     const id = created.json().id;
     const r = await app.inject({ method: "POST", url: "/v1/forget", payload: { id } });
     expect(r.statusCode).toBe(200);
@@ -325,7 +325,7 @@ describe("http: user mode + admin routes", () => {
     const created = await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "Pascal likes dark roast coffee" },
+      payload: { content: "Pascal likes dark roast coffee", force: true },
       headers: { authorization: `Bearer ${tokenA}` },
     });
     const aId = created.json().id;
@@ -344,7 +344,7 @@ describe("http: user mode + admin routes", () => {
     const created = await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "user a fact" },
+      payload: { content: "user a fact", force: true },
       headers: { authorization: `Bearer ${tokenA}` },
     });
     const aId = created.json().id;
@@ -443,7 +443,7 @@ describe("http: /v1/admin/metrics", () => {
     const created = await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "Pascal likes dark roast coffee" },
+      payload: { content: "Pascal likes dark roast coffee", force: true },
     });
     const id = created.json().id;
     await app.inject({
@@ -583,7 +583,7 @@ describe.skip("http: user delete (admin) — moved to Better Auth", () => {
     await app.inject({
       method: "POST",
       url: "/v1/remember",
-      payload: { content: "to be deleted", namespace: "default" },
+      payload: { content: "to be deleted", namespace: "default", force: true },
       headers: { authorization: `Bearer ${token}` },
     });
 
@@ -843,7 +843,7 @@ describe("http: P0 regression tests", () => {
     // Bob remembers something in the shared project
     const created = await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "bob's note", project: sharedId },
+      payload: { content: "bob's note", project: sharedId, force: true },
       headers: { authorization: `Bearer ${bobTok}` },
     });
     const id = created.json().id;
@@ -903,7 +903,7 @@ describe("http: P0 regression tests", () => {
 
     const remember = await app.inject({
       method: "POST", url: "/v1/me/remember",
-      payload: { content: "bob's intrusion", project: aliceProjId },
+      payload: { content: "bob's intrusion", project: aliceProjId, force: true },
       headers: bobAuth,
     });
     expect(remember.statusCode).toBe(403);
@@ -955,7 +955,7 @@ describe("http: P0 regression tests", () => {
     })).json().token;
     const created = await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "alice's secret", project: aliceProjId },
+      payload: { content: "alice's secret", project: aliceProjId, force: true },
       headers: { authorization: `Bearer ${aliceTok}` },
     });
     const id = created.json().id;
@@ -1030,13 +1030,13 @@ describe("http: projects (sub-brains)", () => {
     // User-global remember
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "user-wide alpha" },
+      payload: { content: "user-wide alpha", force: true },
       headers: tokAuth,
     });
     // Project remember
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "phoenix beta gamma", project: phoenixId },
+      payload: { content: "phoenix beta gamma", project: phoenixId, force: true },
       headers: tokAuth,
     });
 
@@ -1115,7 +1115,7 @@ describe("http: projects (sub-brains)", () => {
     })).json().token;
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "bob's note in shared", project: sharedId },
+      payload: { content: "bob's note in shared", project: sharedId, force: true },
       headers: { authorization: `Bearer ${bobTok}` },
     });
 
@@ -1179,7 +1179,7 @@ describe("http: projects (sub-brains)", () => {
     })).json().token;
     await app.inject({
       method: "POST", url: "/v1/remember",
-      payload: { content: "to be purged", project: phoenixId },
+      payload: { content: "to be purged", project: phoenixId, force: true },
       headers: { authorization: `Bearer ${tok}` },
     });
 

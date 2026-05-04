@@ -27,7 +27,9 @@ import {
   AddMemberBody,
   AdminRevokeBody,
   ChangePasswordBody,
+  ActiveProjectBody,
   CreateProjectBody,
+  UpdateMemoryBody,
   CreateUserBody,
   DecayBody,
   ForgetBody,
@@ -550,8 +552,25 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     userId: string,
     body: { project?: string | null; includeProjects?: string[] },
     reply: FastifyReply,
+    /** When true (search/recent/neighbors), an unset scope defaults to
+     *  `includeProjects: [activeProjectId]` so reads union user-global
+     *  with the active project. When false (remember/forget), an unset
+     *  scope defaults to `project: activeProjectId` so writes land in
+     *  the active project. No-op if the user has no active project. */
+    unionWithActive: boolean = true,
   ): Promise<boolean> {
     if (!opts.warm) return true;
+    // Default-from-active-project: only when caller didn't pass an
+    // explicit scope. Explicit project=null / project: <id> wins.
+    const noScope =
+      !body.project && (!body.includeProjects || body.includeProjects.length === 0);
+    if (noScope) {
+      const active = await opts.warm.getActiveProject(userId);
+      if (active) {
+        if (unionWithActive) body.includeProjects = [active];
+        else body.project = active;
+      }
+    }
     const refs: Array<{ field: "project" | "includeProjects"; index?: number; value: string }> = [];
     if (body.project) refs.push({ field: "project", value: body.project });
     body.includeProjects?.forEach((value, index) => {
@@ -590,7 +609,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   app.post("/v1/remember", async (req, reply) => {
     const body = RememberBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body, reply))) return;
+    if (!(await checkProjectAccess(req.userId, body, reply, false))) return;
     const r = await opts.engine.remember(req.userId, body, req.bearerToken);
     reply.code(201).send(r);
   });
@@ -599,6 +618,23 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const body = DecayBody.parse(req.body ?? {});
     const r = await opts.engine.decay({ effectiveDaysOverride: body.effectiveDays });
     reply.send(r);
+  });
+
+  app.post("/v1/dream-cycle", async (_req, reply) => {
+    // Manual trigger for the dedup-merge + edge-promotion pass. The same
+    // logic runs daily via the timer in main.ts; this endpoint exists
+    // for ad-hoc compaction (after a bulk import) and tests.
+    const r = await opts.engine.dreamCycle();
+    reply.send(r);
+  });
+
+  app.put("/v1/memories/:id", async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = UpdateMemoryBody.parse(req.body ?? {});
+    if (!(await checkProjectAccess(req.userId, body, reply, false))) return;
+    const r = await opts.engine.update(req.userId, id, body);
+    if (!r.updated) return reply.code(404).send({ error: "no such memory in your scope" });
+    reply.send({ id, ...r });
   });
 
   app.post("/v1/reap-orphans", async (_req, reply) => {
@@ -622,7 +658,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   app.post("/v1/forget", async (req, reply) => {
     const body = ForgetBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body, reply))) return;
+    if (!(await checkProjectAccess(req.userId, body, reply, false))) return;
     reply.send(
       await opts.engine.forget(req.userId, body.id, { project: body.project ?? null, token: req.bearerToken }),
     );
@@ -871,6 +907,48 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.send({ removed: true });
   });
 
+  // ─── Active project pointer ────────────────────────────────────────
+  // Per-user "current sub-brain". When set, memory.* calls without an
+  // explicit project arg default to the active project (read-side: union
+  // with user-global; write-side: target the active project directly).
+  // The dashboard sidebar reads/writes this; MCP tools project.activate
+  // / project.deactivate are thin wrappers around the same flow.
+
+  app.get("/v1/me/active-project", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
+    const u = req.dashUser!;
+    const projectId = await opts.warm.getActiveProject(u.id);
+    if (!projectId) return reply.send({ active: null });
+    const p = await opts.warm.getProject(projectId);
+    if (!p) {
+      // Stale pointer (project was deleted) — clean up + return null.
+      await opts.warm.setActiveProject(u.id, null);
+      return reply.send({ active: null });
+    }
+    reply.send({ active: { id: p.id, name: p.name } });
+  });
+
+  app.put("/v1/me/active-project", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
+    const u = req.dashUser!;
+    const body = ActiveProjectBody.parse(req.body);
+    const resolved = await resolveProjectRef(u.id, body.project);
+    if (!resolved) {
+      return reply.code(404).send({ error: `no such project '${body.project}'` });
+    }
+    const m = await opts.warm.getProjectMembership(resolved.id, u.id);
+    if (!m) return reply.code(403).send({ error: "not a member of this project" });
+    await opts.warm.setActiveProject(u.id, resolved.id);
+    reply.send({ active: { id: resolved.id } });
+  });
+
+  app.delete("/v1/me/active-project", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "projects disabled" });
+    const u = req.dashUser!;
+    await opts.warm.setActiveProject(u.id, null);
+    reply.code(204).send();
+  });
+
   // ─── User self-service: data-plane proxies ──────────────────────────
   // The dashboard SPA is authenticated by cookie session, not a user-bearer
   // bearer, so it can't hit /v1/search etc. directly. These /v1/me/*
@@ -918,15 +996,25 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/me/remember", async (req, reply) => {
     const u = req.dashUser!;
     const body = RememberBody.parse(req.body);
-    if (!(await checkProjectAccess(u.id, body, reply))) return;
+    if (!(await checkProjectAccess(u.id, body, reply, false))) return;
     const r = await opts.engine.remember(u.id, body);
     reply.code(201).send(r);
+  });
+
+  app.put("/v1/me/memories/:id", async (req, reply) => {
+    const u = req.dashUser!;
+    const id = (req.params as { id: string }).id;
+    const body = UpdateMemoryBody.parse(req.body ?? {});
+    if (!(await checkProjectAccess(u.id, body, reply, false))) return;
+    const r = await opts.engine.update(u.id, id, body);
+    if (!r.updated) return reply.code(404).send({ error: "no such memory in your scope" });
+    reply.send({ id, ...r });
   });
 
   app.post("/v1/me/forget", async (req, reply) => {
     const u = req.dashUser!;
     const body = ForgetBody.parse(req.body);
-    if (!(await checkProjectAccess(u.id, body, reply))) return;
+    if (!(await checkProjectAccess(u.id, body, reply, false))) return;
     const userId = u.id;
     // Defence in depth: even after the requested-project check, resolve
     // the entry's actual scope by id alone and re-verify membership.

@@ -38,7 +38,7 @@ function bench(opts: { graphConnected?: boolean } = {}): Bench {
 describe("engine.remember", () => {
   it("stores warm row and a cold vector", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "hello world" });
+    const { id } = await b.engine.remember("public", { content: "hello world", force: true });
     expect(b.warm.rows.has(id)).toBe(true);
     expect(b.cold.vectors.has(id)).toBe(true);
     expect(b.cold.vectors.get(id)!.namespace).toBe("default");
@@ -50,8 +50,7 @@ describe("engine.remember", () => {
       content: "agent-scoped fact",
       namespace: "alice",
       source: "tool.note",
-      agentName: "alice",
-    });
+      agentName: "alice", force: true });
     expect(b.warm.rows.get(id)!.namespace).toBe("alice");
     expect(b.warm.rows.get(id)!.agentName).toBe("alice");
     expect(b.warm.rows.get(id)!.source).toBe("tool.note");
@@ -61,8 +60,8 @@ describe("engine.remember", () => {
 describe("engine.search", () => {
   it("fuses keyword + vector signals; bumps hits on returned ids", async () => {
     const b = bench();
-    const a = await b.engine.remember("public", { content: "Pascal likes dark roast coffee" });
-    const c = await b.engine.remember("public", { content: "ZWO ASI camera for astrophotography" });
+    const a = await b.engine.remember("public", { content: "Pascal likes dark roast coffee", force: true });
+    const c = await b.engine.remember("public", { content: "ZWO ASI camera for astrophotography", force: true });
     const r = await b.engine.search("public", { query: "coffee preference", k: 5 });
     expect(r.results.length).toBeGreaterThan(0);
     expect(r.results[0]!.id).toBe(a.id);
@@ -73,15 +72,15 @@ describe("engine.search", () => {
 
   it("returns degraded:true when graph is disconnected", async () => {
     const b = bench({ graphConnected: false });
-    await b.engine.remember("public", { content: "hello" });
+    await b.engine.remember("public", { content: "hello", force: true });
     const r = await b.engine.search("public", { query: "hello" });
     expect(r.degraded).toBe(true);
   });
 
   it("filters keyword search by agentName when provided", async () => {
     const b = bench();
-    await b.engine.remember("public", { content: "shared knowledge", agentName: null });
-    const aliceEntry = await b.engine.remember("public", { content: "shared knowledge", agentName: "alice" });
+    await b.engine.remember("public", { content: "shared knowledge", agentName: null, force: true });
+    const aliceEntry = await b.engine.remember("public", { content: "shared knowledge", agentName: "alice", force: true });
     const r = await b.engine.search("public", { query: "shared", agentName: "alice" });
     const ids = r.results.map((x) => x.id);
     expect(ids).toContain(aliceEntry.id);
@@ -94,8 +93,8 @@ describe("engine.search", () => {
 
   it("respects per-call weight overrides", async () => {
     const b = bench();
-    await b.engine.remember("public", { content: "exact id ABC123 marker" });
-    await b.engine.remember("public", { content: "totally unrelated text" });
+    await b.engine.remember("public", { content: "exact id ABC123 marker", force: true });
+    await b.engine.remember("public", { content: "totally unrelated text", force: true });
     const keywordOnly = await b.engine.search("public", {
       query: "ABC123",
       weights: { keyword: 1, vector: 0, graph: 0 },
@@ -110,7 +109,7 @@ describe("engine.recent", () => {
     const b = bench();
     const ids: string[] = [];
     for (let i = 0; i < 5; i++) {
-      const r = await b.engine.remember("public", { content: `entry ${i}` });
+      const r = await b.engine.remember("public", { content: `entry ${i}`, force: true });
       ids.push(r.id);
       // Force monotonic createdAt ordering
       const row = b.warm.rows.get(r.id)!;
@@ -122,9 +121,9 @@ describe("engine.recent", () => {
 
   it("respects since cutoff", async () => {
     const b = bench();
-    const old = await b.engine.remember("public", { content: "old" });
+    const old = await b.engine.remember("public", { content: "old", force: true });
     b.warm.rows.get(old.id)!.createdAt = new Date(Date.now() - 48 * 60 * 60 * 1000);
-    const fresh = await b.engine.remember("public", { content: "fresh" });
+    const fresh = await b.engine.remember("public", { content: "fresh", force: true });
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const r = await b.engine.recent("public", { since });
     const ids = r.results.map((x) => x.id);
@@ -136,8 +135,8 @@ describe("engine.recent", () => {
 describe("engine.neighbors", () => {
   it("returns graph-neighbour entries with graph signal", async () => {
     const b = bench();
-    const a = await b.engine.remember("public", { content: "alpha" });
-    const c = await b.engine.remember("public", { content: "beta" });
+    const a = await b.engine.remember("public", { content: "alpha", force: true });
+    const c = await b.engine.remember("public", { content: "beta", force: true });
     await b.graph.addEdge("public", a.id, c.id, "co_occurs", 0.8);
     const r = await b.engine.neighbors("public", { id: a.id });
     expect(r.results.map((x) => x.id)).toEqual([c.id]);
@@ -156,7 +155,7 @@ describe("engine.neighbors", () => {
 describe("engine.forget", () => {
   it("removes warm row + cold vector; reports coldDeleteOk:true", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "to remove" });
+    const { id } = await b.engine.remember("public", { content: "to remove", force: true });
     const r = await b.engine.forget("public", id);
     expect(r).toEqual({ deleted: true, coldDeleteOk: true });
     expect(b.warm.rows.has(id)).toBe(false);
@@ -165,7 +164,7 @@ describe("engine.forget", () => {
 
   it("warns + reports coldDeleteOk:false when cold delete fails", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "orphan candidate" });
+    const { id } = await b.engine.remember("public", { content: "orphan candidate", force: true });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     b.cold.fail = true;
     const r = await b.engine.forget("public", id);
@@ -192,8 +191,8 @@ describe("engine.decay", () => {
 
   it("demotes idle entries past their lifespan; logs the run", async () => {
     const b = bench();
-    const fresh = await b.engine.remember("public", { content: "fresh entry" });
-    const stale = await b.engine.remember("public", { content: "stale entry" });
+    const fresh = await b.engine.remember("public", { content: "fresh entry", force: true });
+    const stale = await b.engine.remember("public", { content: "stale entry", force: true });
     // Make 'stale' look 30 days idle. Fresh is 0 days idle.
     b.warm.rows.get(stale.id)!.lastAccessed = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const r = await b.engine.decay();
@@ -207,7 +206,7 @@ describe("engine.decay", () => {
 
   it("frequently-accessed entries resist decay (lifespan grows with hits)", async () => {
     const b = bench();
-    const popular = await b.engine.remember("public", { content: "popular" });
+    const popular = await b.engine.remember("public", { content: "popular", force: true });
     const row = b.warm.rows.get(popular.id)!;
     row.hits = 15; // lifespan = 7 * log2(16) = 28 days
     row.lastAccessed = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000); // 14d idle < 28d lifespan
@@ -220,7 +219,7 @@ describe("engine.decay", () => {
 describe("engine.search: cold→warm promotion", () => {
   it("a cold entry with lifespan > idle age is promoted on hit", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "previously cold fact" });
+    const { id } = await b.engine.remember("public", { content: "previously cold fact", force: true });
     const row = b.warm.rows.get(id)!;
     row.cold = true;
     // hits=20 → lifespan = 7*log2(22) ≈ 31d; idle = 14d → promote.
@@ -234,7 +233,7 @@ describe("engine.search: cold→warm promotion", () => {
 
   it("a cold entry with lifespan ≤ idle age stays cold despite the hit", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "deeply cold fact" });
+    const { id } = await b.engine.remember("public", { content: "deeply cold fact", force: true });
     const row = b.warm.rows.get(id)!;
     row.cold = true;
     // hits=0 → lifespan(1)=7d; idle=30d → stays cold.
@@ -248,7 +247,7 @@ describe("engine.search: cold→warm promotion", () => {
 
   it("warm entries are unaffected by the promotion path", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "always warm" });
+    const { id } = await b.engine.remember("public", { content: "always warm", force: true });
     const r = await b.engine.search("public", { query: "always warm" });
     expect(r.results[0]!.tier).toBe("warm");
     expect(b.warm.rows.get(id)!.cold).toBe(false);
@@ -258,8 +257,8 @@ describe("engine.search: cold→warm promotion", () => {
 describe("engine.remember: graph auto-linking", () => {
   it("links a new entry to its top vector neighbours", async () => {
     const b = bench();
-    const a = await b.engine.remember("public", { content: "alpha alpha alpha" });
-    const c = await b.engine.remember("public", { content: "alpha alpha beta" });
+    const a = await b.engine.remember("public", { content: "alpha alpha alpha", force: true });
+    const c = await b.engine.remember("public", { content: "alpha alpha beta", force: true });
     // c was just inserted with the most-similar prior entry being a;
     // expect an outgoing edge c → a in both graph and warm relations.
     const cEdges = b.graph.edges.get(`public:_:${c.id}`) ?? [];
@@ -271,7 +270,7 @@ describe("engine.remember: graph auto-linking", () => {
 
   it("does not link to self", async () => {
     const b = bench();
-    const a = await b.engine.remember("public", { content: "solitary" });
+    const a = await b.engine.remember("public", { content: "solitary", force: true });
     expect(b.graph.edges.get(`public:_:${a.id}`) ?? []).toEqual([]);
     expect(b.warm.relations.find((r) => r.fromId === a.id && r.toId === a.id)).toBeUndefined();
   });
@@ -280,7 +279,7 @@ describe("engine.remember: graph auto-linking", () => {
 describe("engine.reapOrphans", () => {
   it("retries failed cold deletes and clears them on success", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "soon orphan" });
+    const { id } = await b.engine.remember("public", { content: "soon orphan", force: true });
     // Fail the cold delete during forget — should park the orphan.
     b.cold.fail = true;
     const f = await b.engine.forget("public", id);
@@ -295,7 +294,7 @@ describe("engine.reapOrphans", () => {
 
   it("abandons after maxAttempts and reports the count", async () => {
     const b = bench();
-    const { id } = await b.engine.remember("public", { content: "stuck orphan" });
+    const { id } = await b.engine.remember("public", { content: "stuck orphan", force: true });
     b.cold.fail = true;
     await b.engine.forget("public", id); // attempts: 1
     // Drive attempts up to threshold via repeated reaper passes.
@@ -344,10 +343,10 @@ describe("engine.health", () => {
 describe("engine.stats", () => {
   it("aggregates counts per namespace × tier", async () => {
     const b = bench();
-    await b.engine.remember("public", { content: "a", namespace: "ns1" });
-    const cold = await b.engine.remember("public", { content: "b", namespace: "ns1" });
+    await b.engine.remember("public", { content: "a", namespace: "ns1", force: true });
+    const cold = await b.engine.remember("public", { content: "b", namespace: "ns1", force: true });
     b.warm.rows.get(cold.id)!.cold = true;
-    await b.engine.remember("public", { content: "c", namespace: "ns2" });
+    await b.engine.remember("public", { content: "c", namespace: "ns2", force: true });
     const s = await b.engine.stats("public");
     expect(s.totalWarm).toBe(2);
     expect(s.totalCold).toBe(1);
@@ -359,21 +358,21 @@ describe("engine.stats", () => {
 describe("engine: user isolation", () => {
   it("user B cannot see user A's entries via search", async () => {
     const b = bench();
-    const a = await b.engine.remember("user_a", { content: "Pascal likes dark roast coffee" });
+    const a = await b.engine.remember("user_a", { content: "Pascal likes dark roast coffee", force: true });
     const r = await b.engine.search("user_b", { query: "coffee preference", k: 5 });
     expect(r.results.find((x) => x.id === a.id)).toBeUndefined();
   });
 
   it("user B cannot see user A's entries via recent", async () => {
     const b = bench();
-    const a = await b.engine.remember("user_a", { content: "user a memory" });
+    const a = await b.engine.remember("user_a", { content: "user a memory", force: true });
     const r = await b.engine.recent("user_b", { k: 50 });
     expect(r.results.find((x) => x.id === a.id)).toBeUndefined();
   });
 
   it("user B cannot forget user A's entries (returns deleted:false; entry survives)", async () => {
     const b = bench();
-    const a = await b.engine.remember("user_a", { content: "user a memory" });
+    const a = await b.engine.remember("user_a", { content: "user a memory", force: true });
     const r = await b.engine.forget("user_b", a.id);
     expect(r.deleted).toBe(false);
     // Original user can still read it.
@@ -383,16 +382,16 @@ describe("engine: user isolation", () => {
 
   it("user B cannot traverse from user A's seed via neighbors", async () => {
     const b = bench();
-    const a = await b.engine.remember("user_a", { content: "user a seed" });
-    await b.engine.remember("user_a", { content: "user a neighbour" });
+    const a = await b.engine.remember("user_a", { content: "user a seed", force: true });
+    await b.engine.remember("user_a", { content: "user a neighbour", force: true });
     const r = await b.engine.neighbors("user_b", { id: a.id });
     expect(r.results).toEqual([]);
   });
 
   it("graph auto-links don't cross users even with similar content", async () => {
     const b = bench();
-    const a = await b.engine.remember("user_a", { content: "alpha alpha alpha" });
-    const c = await b.engine.remember("user_b", { content: "alpha alpha alpha" });
+    const a = await b.engine.remember("user_a", { content: "alpha alpha alpha", force: true });
+    const c = await b.engine.remember("user_b", { content: "alpha alpha alpha", force: true });
     // c should not be linked to a even though their vectors are identical —
     // cold.search is user-scoped, so c sees no neighbours.
     const aEdges = b.graph.edges.get(`user_a:${a.id}`) ?? [];
@@ -403,9 +402,9 @@ describe("engine: user isolation", () => {
 
   it("user-scoped stats only count one user's entries", async () => {
     const b = bench();
-    await b.engine.remember("user_a", { content: "a1" });
-    await b.engine.remember("user_a", { content: "a2" });
-    await b.engine.remember("user_b", { content: "b1" });
+    await b.engine.remember("user_a", { content: "a1", force: true });
+    await b.engine.remember("user_a", { content: "a2", force: true });
+    await b.engine.remember("user_b", { content: "b1", force: true });
     const sA = await b.engine.stats("user_a");
     const sB = await b.engine.stats("user_b");
     expect(sA.totalWarm).toBe(2);

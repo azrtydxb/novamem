@@ -189,20 +189,67 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
       },
       {
         name: "project.list",
-        description:
-          "List projects (sub-brains) the caller is a member of. Returns id + name + role — pass the `id` (a ULID) to `project` on memory.* calls to scope them.",
+        description: "List projects the caller is a member of (id + name + role).",
         inputSchema: { type: "object", properties: {} },
       },
       {
         name: "project.create",
-        description:
-          "Create a new project (sub-brain) and become its owner. The project's id is returned; pass that id to `project` on subsequent memory.* calls to scope them. Don't use the human name as `project` — it won't resolve.",
+        description: "Create a new project and become its owner. Returns the project's id.",
         inputSchema: {
           type: "object",
           properties: {
-            name: { type: "string", description: "Project name (1-128 chars). The id is server-assigned." },
+            name: { type: "string", description: "Project name (1-128 chars)." },
           },
           required: ["name"],
+        },
+      },
+      {
+        name: "project.delete",
+        description: "Delete a project owned by the caller. Caller must be the owner.",
+        inputSchema: {
+          type: "object",
+          properties: { project: { type: "string", description: "Project id or name." } },
+          required: ["project"],
+        },
+      },
+      {
+        name: "project.activate",
+        description:
+          "Set the caller's active project. Subsequent memory.* calls without an explicit `project` arg default to this scope.",
+        inputSchema: {
+          type: "object",
+          properties: { project: { type: "string", description: "Project id or name." } },
+          required: ["project"],
+        },
+      },
+      {
+        name: "project.deactivate",
+        description: "Clear the caller's active project. Reads/writes default to user-global again.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "project.share",
+        description:
+          "Add another user as a member of a project the caller owns. Username may be email or display name.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project id or name." },
+            username: { type: "string", description: "Email or display name." },
+          },
+          required: ["project", "username"],
+        },
+      },
+      {
+        name: "project.unshare",
+        description: "Remove a member from a project. Caller must be the owner.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project id or name." },
+            username: { type: "string", description: "Email or display name." },
+          },
+          required: ["project", "username"],
         },
       },
     ],
@@ -283,6 +330,31 @@ export function buildRemoteMcpServer(client: NovamemClient): Server {
         }
         case "project.create": {
           const r = await client.createProject({ name: String(args.name) });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "project.delete": {
+          const r = await client.deleteProject(String(args.project));
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "project.activate": {
+          const r = await client.setActiveProject(String(args.project));
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "project.deactivate": {
+          await client.clearActiveProject();
+          return { content: [{ type: "text", text: JSON.stringify({ active: null }) }] };
+        }
+        case "project.share": {
+          const r = await client.addProjectMember(String(args.project), {
+            username: String(args.username),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "project.unshare": {
+          const r = await client.removeProjectMemberByUsername(
+            String(args.project),
+            String(args.username),
+          );
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         default:

@@ -51,16 +51,52 @@ Don't save:
 - Anything the user said is private/secret.
 - Verbatim error stack traces — extract the diagnosis instead.
 
-When you remember something proactively, mention it in one short sentence
-("Saved that as a memory.") so the user can correct or veto.
+The server applies a worthiness gate. Inputs that are too short
+(<12 chars) or obvious filler ("ok", "thanks", "noted") get rejected
+with \`{rejected: <reason>, id: null}\`. Pass \`force: true\` to
+bypass when the user explicitly asked for it. Exact duplicates within
+the same scope are deduplicated automatically — the response is
+\`{id: <existingId>, deduplicated: true}\`; treat that as success.
 
-## Project scope
+Provenance — when known, set:
+- \`sourceType\`: chat | email | code-review | doc | inference |
+  observation | system | manual (open vocab; pick what fits)
+- \`capturedFrom\`: agent name, conversation id, or other channel ref
+- \`confidence\`: 0..1, default 1.0. Lower for inferred facts.
 
-A project is a *sub-brain*. \`project.list\` returns each project's id (a
-ULID) and name. **Pass the id (not the name) as \`project\` on memory.*
-calls** — passing the human name will 404. Omit \`project\` for user-wide
-entries. If a memory clearly belongs to a project the user is working on,
-scope it there.
+When you remember something proactively, mention it in one short
+sentence ("Saved that as a memory.") so the user can correct or veto.
+
+## When to call \`memory.update\`
+
+Facts evolve. When the user says "I now live in Singapore", search for
+the existing "lives in" memory and \`memory.update\` it instead of
+calling remember (which would leave the old fact alongside the new
+one). Update preserves the entry's id, hit count, and graph edges; it
+re-embeds when content changes. Skip the embedder by omitting
+\`content\` if you only need to bump metadata or confidence.
+
+## Project scope (sub-brains)
+
+A project is a *sub-brain* — its memories are a separate shelf from your
+user-global memory. Lifecycle:
+
+- \`project.list\` — what you have access to (id + name + role).
+- \`project.create({name})\` — own a new project.
+- \`project.delete({project})\` — purge it (owner only).
+- \`project.activate({project})\` — set the active project. Subsequent
+  memory.* calls without an explicit \`project\` arg default to it:
+  search/recent/neighbors union user-global with the active project,
+  remember/forget target it directly. Use this when the user signals
+  they're working on a specific project ("I'm working on Apollo
+  today" / "context: Phoenix migration").
+- \`project.deactivate\` — clear the active project.
+- \`project.share({project, username})\` — invite another user (email
+  or display name). Owner only.
+- \`project.unshare({project, username})\` — remove a member. Owner only.
+
+When passing \`project\` explicitly to a memory.* call, an id (ULID)
+or human name both work. Omit \`project\` to use whatever's active.
 
 ## Decay & reinforcement
 

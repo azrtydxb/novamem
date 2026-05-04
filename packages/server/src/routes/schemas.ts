@@ -81,8 +81,24 @@ export const RememberBody = z.object({
   source: z.string().max(128).optional(),
   agentName: z.string().max(128).optional().nullable(),
   project: ProjectRefRule.optional().nullable(),
-  // Zod 4: `z.record(...)` now requires both key + value schemas.
   metadata: z.record(z.string(), z.unknown()).optional(),
+  // Provenance fields. Open-string vocab; recommended values documented
+  // in the MCP instructions block.
+  sourceType: z.string().max(64).optional(),
+  capturedFrom: z.string().max(256).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  // Bypass for the worthiness gate. Default false.
+  force: z.boolean().optional(),
+});
+
+export const UpdateMemoryBody = z.object({
+  content: z.string().min(1).max(MAX_CONTENT_BYTES).optional(),
+  namespace: z.string().max(128).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  sourceType: z.string().max(64).optional(),
+  capturedFrom: z.string().max(256).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  project: ProjectRefRule.optional().nullable(),
 });
 
 export const DecayBody = z.object({
@@ -151,6 +167,10 @@ export const MintMyTokenBody = z.object({
 export const CreateProjectBody = z.object({
   // Project ids are server-assigned ULIDs — clients send only the name.
   name: z.string().min(1).max(128),
+});
+
+export const ActiveProjectBody = z.object({
+  project: ProjectRefRule,
 });
 
 export const AddMemberBody = z.object({

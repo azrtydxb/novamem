@@ -141,6 +141,25 @@ export function buildMcpServer(
         },
       },
       {
+        name: "memory.update",
+        description:
+          "Rewrite an existing memory in place. Preserves id, hit count, edges, and creation date; rewrites content (re-embedded), namespace, metadata, and provenance fields. Use this when a fact changes (e.g. user moved cities) instead of forget+remember, which would lose hit count and graph connections. Omit `content` to update only metadata-side fields without re-embedding.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Memory id (ULID)." },
+            content: { type: "string" },
+            namespace: { type: "string" },
+            metadata: { type: "object" },
+            sourceType: { type: "string" },
+            capturedFrom: { type: "string" },
+            confidence: { type: "number", description: "0..1" },
+            project: { type: "string", description: "Project id or name (scope check)." },
+          },
+          required: ["id"],
+        },
+      },
+      {
         name: "memory.stats",
         description: "Service-wide stats snapshot",
         inputSchema: { type: "object", properties: {} },
@@ -148,22 +167,75 @@ export function buildMcpServer(
       {
         name: "project.list",
         description:
-          "List projects (sub-brains) the caller is a member of. Returns id + name + role — pass the `id` (a ULID) to `project` on memory.* calls to scope them.",
+          "List projects (sub-brains) the caller is a member of. Returns id + name + role for each.",
         inputSchema: { type: "object", properties: {} },
       },
       {
         name: "project.create",
         description:
-          "Create a new project (sub-brain) and become its owner. The project's id is returned; pass that id to `project` on subsequent memory.* calls to scope them. Don't use the human name as `project` — it won't resolve.",
+          "Create a new project (sub-brain) and become its owner. Returns the new project's id (server-assigned ULID).",
         inputSchema: {
           type: "object",
           properties: {
-            name: {
-              type: "string",
-              description: "Project name (1-128 chars). The id is server-assigned (ULID).",
-            },
+            name: { type: "string", description: "Project name (1-128 chars)." },
           },
           required: ["name"],
+        },
+      },
+      {
+        name: "project.delete",
+        description:
+          "Delete a project owned by the caller. Removes every memory entry, vector, and graph node in the project. The caller must be the owner.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project id or human name." },
+          },
+          required: ["project"],
+        },
+      },
+      {
+        name: "project.activate",
+        description:
+          "Set the caller's active project. Subsequent memory.* calls without an explicit `project` arg default to this scope: search/recent/neighbors union it with user-global, remember/forget target it directly. Idempotent.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project id or human name." },
+          },
+          required: ["project"],
+        },
+      },
+      {
+        name: "project.deactivate",
+        description:
+          "Clear the caller's active project. Subsequent memory.* calls without an explicit `project` arg fall back to user-global only.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "project.share",
+        description:
+          "Add another user as a member of a project the caller owns. The invitee can read and write the project's memories. Username may be the user's email or display name.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project id or human name." },
+            username: { type: "string", description: "Email or display name of the user to add." },
+          },
+          required: ["project", "username"],
+        },
+      },
+      {
+        name: "project.unshare",
+        description:
+          "Remove a member from a project. The caller must be the owner. The owner cannot unshare themselves — delete the project instead.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project id or human name." },
+            username: { type: "string", description: "Email or display name of the user to remove." },
+          },
+          required: ["project", "username"],
         },
       },
     ],
@@ -210,6 +282,17 @@ export function buildMcpServer(
     return out.length > 0 ? out : undefined;
   }
 
+  /** Returns the caller's active-project id, or null when not set. The
+   *  active project is a per-user pointer set by `project.activate`;
+   *  memory.* tools fall back to it when the caller didn't pass an
+   *  explicit `project` / `includeProjects` arg. Read fresh on every
+   *  call so activate/deactivate take effect immediately within the
+   *  same MCP session. */
+  async function getActiveProject(): Promise<string | null> {
+    if (!warm) return null;
+    return warm.getActiveProject(userId);
+  }
+
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
     switch (req.params.name) {
@@ -223,8 +306,15 @@ export function buildMcpServer(
                 ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
               }
             : undefined;
-        const project = await resolveProject(args.project);
-        const includeProjects = await resolveProjects(args.includeProjects);
+        let project = await resolveProject(args.project);
+        let includeProjects = await resolveProjects(args.includeProjects);
+        // Active-project fallback: when the caller didn't pass a scope,
+        // union user-global with the active project (matches dashboard
+        // sidebar semantics).
+        if (!project && (!includeProjects || includeProjects.length === 0)) {
+          const active = await getActiveProject();
+          if (active) includeProjects = [active];
+        }
         const r = await engine.search(userId, {
           query: String(args.query),
           k: typeof args.k === "number" ? args.k : undefined,
@@ -237,19 +327,28 @@ export function buildMcpServer(
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.remember": {
-        const project = await resolveProject(args.project);
+        let project = await resolveProject(args.project);
+        if (!project) project = await getActiveProject();
         const r = await engine.remember(userId, {
           content: String(args.content),
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           source: typeof args.source === "string" ? args.source : undefined,
+          sourceType: typeof args.sourceType === "string" ? args.sourceType : undefined,
+          capturedFrom: typeof args.capturedFrom === "string" ? args.capturedFrom : undefined,
+          confidence: typeof args.confidence === "number" ? args.confidence : undefined,
+          force: args.force === true,
           project,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.today": {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const project = await resolveProject(args.project);
-        const includeProjects = await resolveProjects(args.includeProjects);
+        let project = await resolveProject(args.project);
+        let includeProjects = await resolveProjects(args.includeProjects);
+        if (!project && (!includeProjects || includeProjects.length === 0)) {
+          const active = await getActiveProject();
+          if (active) includeProjects = [active];
+        }
         const r = await engine.recent(userId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           includeNamespaces: asStringArray(args.includeNamespaces),
@@ -261,8 +360,12 @@ export function buildMcpServer(
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.recent": {
-        const project = await resolveProject(args.project);
-        const includeProjects = await resolveProjects(args.includeProjects);
+        let project = await resolveProject(args.project);
+        let includeProjects = await resolveProjects(args.includeProjects);
+        if (!project && (!includeProjects || includeProjects.length === 0)) {
+          const active = await getActiveProject();
+          if (active) includeProjects = [active];
+        }
         const r = await engine.recent(userId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
           includeNamespaces: asStringArray(args.includeNamespaces),
@@ -274,8 +377,12 @@ export function buildMcpServer(
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.neighbors": {
-        const project = await resolveProject(args.project);
-        const includeProjects = await resolveProjects(args.includeProjects);
+        let project = await resolveProject(args.project);
+        let includeProjects = await resolveProjects(args.includeProjects);
+        if (!project && (!includeProjects || includeProjects.length === 0)) {
+          const active = await getActiveProject();
+          if (active) includeProjects = [active];
+        }
         const r = await engine.neighbors(userId, {
           id: String(args.id),
           depth: typeof args.depth === "number" ? args.depth : undefined,
@@ -286,8 +393,24 @@ export function buildMcpServer(
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.forget": {
-        const project = await resolveProject(args.project);
+        let project = await resolveProject(args.project);
+        if (!project) project = await getActiveProject();
         const r = await engine.forget(userId, String(args.id), { project });
+        return { content: [{ type: "text", text: JSON.stringify(r) }] };
+      }
+      case "memory.update": {
+        let project = await resolveProject(args.project);
+        if (!project) project = await getActiveProject();
+        const md = (args.metadata ?? undefined) as Record<string, unknown> | undefined;
+        const r = await engine.update(userId, String(args.id), {
+          content: typeof args.content === "string" ? args.content : undefined,
+          namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          metadata: md,
+          sourceType: typeof args.sourceType === "string" ? args.sourceType : undefined,
+          capturedFrom: typeof args.capturedFrom === "string" ? args.capturedFrom : undefined,
+          confidence: typeof args.confidence === "number" ? args.confidence : undefined,
+          project,
+        });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.stats": {
@@ -317,13 +440,72 @@ export function buildMcpServer(
         if (!name || name.length > 128) {
           return { content: [{ type: "text", text: "invalid project name (1–128 chars)" }], isError: true };
         }
-        // The bearer's owning user becomes the project owner — same flow
-        // as POST /v1/me/projects in the cookie-auth dashboard.
-        const project = await warm.createProject({
-          name,
-          ownerUserId: userId,
-        });
+        const project = await warm.createProject({ name, ownerUserId: userId });
         return { content: [{ type: "text", text: JSON.stringify(project) }] };
+      }
+      case "project.delete": {
+        if (!warm) throw new Error("project.delete requires the warm store");
+        const projectId = await resolveProject(args.project);
+        if (!projectId) throw new Error("project required");
+        const project = await warm.getProject(projectId);
+        if (!project) throw new Error("unknown project");
+        if (project.ownerUserId !== userId) {
+          throw new Error("only the owner can delete a project");
+        }
+        const r = await engine.deleteProject(projectId);
+        return { content: [{ type: "text", text: JSON.stringify(r) }] };
+      }
+      case "project.activate": {
+        if (!warm) throw new Error("project.activate requires the warm store");
+        const projectId = await resolveProject(args.project);
+        if (!projectId) throw new Error("project required");
+        await warm.setActiveProject(userId, projectId);
+        return { content: [{ type: "text", text: JSON.stringify({ active: projectId }) }] };
+      }
+      case "project.deactivate": {
+        if (!warm) throw new Error("project.deactivate requires the warm store");
+        await warm.setActiveProject(userId, null);
+        return { content: [{ type: "text", text: JSON.stringify({ active: null }) }] };
+      }
+      case "project.share": {
+        if (!warm) throw new Error("project.share requires the warm store");
+        const projectId = await resolveProject(args.project);
+        if (!projectId) throw new Error("project required");
+        const project = await warm.getProject(projectId);
+        if (!project) throw new Error("unknown project");
+        if (project.ownerUserId !== userId) {
+          throw new Error("only the owner can share a project");
+        }
+        const username = String(args.username);
+        const target = await warm.findUserByUsername(username);
+        if (!target) throw new Error(`unknown user '${username}'`);
+        const ok = await warm.addProjectMember(projectId, target.id, "member");
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ added: ok, userId: target.id, username: target.username }),
+            },
+          ],
+        };
+      }
+      case "project.unshare": {
+        if (!warm) throw new Error("project.unshare requires the warm store");
+        const projectId = await resolveProject(args.project);
+        if (!projectId) throw new Error("project required");
+        const project = await warm.getProject(projectId);
+        if (!project) throw new Error("unknown project");
+        if (project.ownerUserId !== userId) {
+          throw new Error("only the owner can unshare a project");
+        }
+        const username = String(args.username);
+        const target = await warm.findUserByUsername(username);
+        if (!target) throw new Error(`unknown user '${username}'`);
+        if (target.id === project.ownerUserId) {
+          throw new Error("the owner cannot unshare themselves — delete the project instead");
+        }
+        const r = await warm.removeProjectMember(projectId, target.id);
+        return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       default:
         return {
