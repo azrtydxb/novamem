@@ -1,6 +1,6 @@
 /**
  * Public types for the novamem memory engine. These shapes are stable across
- * the HTTP API, MCP tools, and the @azrty/novamem TypeScript client.
+ * the HTTP API, MCP tools, and the @azertydxb/novamem TypeScript client.
  */
 
 export interface MemoryEntry {

@@ -21,7 +21,7 @@ The committed `openapi.json` is generated, not handwritten. To refresh it after 
 pnpm docs:api
 ```
 
-Behind the scenes that builds `@azrty/novamem-server` and runs `packages/server/scripts/gen-openapi.mjs`, which imports `openapiSpec()` from `packages/server/src/openapi.ts` and writes JSON to `docs/api/openapi.json`.
+Behind the scenes that builds `@azertydxb/novamem-server` and runs `packages/server/scripts/gen-openapi.mjs`, which imports `openapiSpec()` from `packages/server/src/openapi.ts` and writes JSON to `docs/api/openapi.json`.
 
 ## Surface at a glance
 
@@ -59,7 +59,7 @@ npx @openapitools/openapi-generator-cli generate \
 npx orval --input docs/api/openapi.json --output ./client/api.ts
 ```
 
-For TypeScript, the [`@azrty/novamem`](../../packages/client) package is already a hand-written client with public types — usually preferable to a generated one.
+For TypeScript, the [`@azertydxb/novamem`](../../packages/client) package is already a hand-written client with public types — usually preferable to a generated one.
 
 ## MCP vs HTTP
 

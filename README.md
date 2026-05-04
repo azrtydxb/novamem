@@ -39,11 +39,11 @@ Full docs live in [`docs/`](docs/):
 
 ## Packages
 
-- [`@azrty/novamem-server`](packages/server) — the standalone service (HTTP + MCP transports, Better Auth)
-- [`@azrty/novamem`](packages/client) — TypeScript client + public types
-- [`@azrty/novamem-mcp`](packages/mcp) — MCP-stdio shim binary for legacy clients that don't speak remote MCP yet
-- [`@azrty/novamem-init`](packages/init) — one-shot `npx` installer that signs in, mints a bearer, and wires every supported AI host on your machine
-- [`@azrty/novamem-admin-ui`](packages/admin-ui) — React 19 dashboard (built into the server image)
+- [`@azertydxb/novamem-server`](packages/server) — the standalone service (HTTP + MCP transports, Better Auth)
+- [`@azertydxb/novamem`](packages/client) — TypeScript client + public types
+- [`@azertydxb/novamem-mcp`](packages/mcp) — MCP-stdio shim binary for legacy clients that don't speak remote MCP yet
+- [`@azertydxb/novamem-init`](packages/init) — one-shot `npx` installer that signs in, mints a bearer, and wires every supported AI host on your machine
+- [`@azertydxb/novamem-admin-ui`](packages/admin-ui) — React 19 dashboard (built into the server image)
 
 ## Add-ons
 
