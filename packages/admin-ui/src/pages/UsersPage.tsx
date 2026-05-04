@@ -1,7 +1,17 @@
 import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, ShieldCheck, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
-import { api, DashUser } from "../lib/api";
+import { api } from "../lib/api";
+
+/** Better Auth's "user" row shape (admin/list-users response). */
+interface BAUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string | null;
+  createdAt: string;
+  banned?: boolean | null;
+}
 import { useAuth } from "../lib/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
 import { Button } from "../components/Button";
@@ -17,12 +27,17 @@ export function UsersPage() {
   const usersQ = useQuery({
     queryKey: ["admin", "users"],
     queryFn: async () => {
-      const r = await api<{ users: DashUser[] }>("GET", "/v1/admin/users");
+      // Better Auth's admin/list-users — paginated; default page size is
+      // plenty for a small operator install.
+      const r = await api<{ users: BAUser[]; total: number }>(
+        "GET",
+        "/api/auth/admin/list-users?limit=100",
+      );
       if (!r.ok || !r.body) throw new Error(r.error ?? `users ${r.status}`);
       return r.body.users;
     },
   });
-  const users: DashUser[] | null = usersQ.data ?? null;
+  const users: BAUser[] | null = usersQ.data ?? null;
   const busy = usersQ.isFetching;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
@@ -60,7 +75,7 @@ export function UsersPage() {
                   <tr className="text-dim text-[11px] uppercase tracking-wider">
                     <th className="text-left font-medium px-4 py-2.5">User</th>
                     <th className="text-left font-medium px-4 py-2.5">Role</th>
-                    <th className="text-left font-medium px-4 py-2.5">Last login</th>
+                    <th className="text-left font-medium px-4 py-2.5">Status</th>
                     <th className="text-right font-medium px-4 py-2.5"></th>
                   </tr>
                 </thead>
@@ -82,7 +97,8 @@ export function UsersPage() {
 // ─── Create ────────────────────────────────────────────────────────────
 
 function CreateUserCard({ onCreated }: { onCreated: () => void }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
   const [busy, setBusy] = useState(false);
@@ -93,15 +109,20 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await api("POST", "/v1/admin/users", {
-      username: username.trim(),
+    // Better Auth's admin/create-user. The request is gated by the
+    // current admin session cookie (we're already signed in as admin
+    // to even reach this page).
+    const r = await api("POST", "/api/auth/admin/create-user", {
+      email: email.trim(),
+      name: name.trim() || email.split("@")[0] || "user",
       password,
       role,
     });
     setBusy(false);
     if (r.ok) {
-      toast.success(`User "${username}" created`);
-      setUsername("");
+      toast.success(`User "${email}" created`);
+      setEmail("");
+      setName("");
       setPassword("");
       setRole("user");
       onCreated();
@@ -112,38 +133,46 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
     }
   };
 
-  const canSubmit = username.trim().length >= 2 && password.length >= 8;
+  const canSubmit = email.trim().includes("@") && password.length >= 8;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Create user</CardTitle>
         <CardDescription>
-          Passwords must be at least 8 characters. Each user signs in with their username and
-          owns their own memory namespace.
+          Each user signs in with email + password and owns their own memory namespace.
+          Admins manage users only — they don't store memories or use the MCP.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Input
-              name="username"
-              label="Username"
-              placeholder="bob"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              name="email"
+              label="Email"
+              placeholder="alice@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               error={error ?? undefined}
             />
             <Input
-              type="password"
-              name="password"
-              label="Password"
-              placeholder="min 8 chars"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              name="name"
+              label="Display name (optional)"
+              placeholder="Alice"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
             />
           </div>
+          <Input
+            type="password"
+            name="password"
+            label="Password"
+            placeholder="min 8 chars"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
           <div className="flex items-end justify-between gap-3">
             <RoleSelector role={role} onChange={setRole} />
             <Button type="submit" variant="primary" loading={busy} disabled={!canSubmit}>
@@ -197,7 +226,7 @@ function UserRow({
   user,
   onChange,
 }: {
-  user: DashUser;
+  user: BAUser;
   onChange: () => void;
 }) {
   const { user: me } = useAuth();
@@ -206,10 +235,15 @@ function UserRow({
   const toast = useToast();
 
   const isMe = me?.id === user.id;
+  const displayName = user.name || user.email.split("@")[0] || user.email;
 
   const setRole = async (to: "admin" | "user") => {
     setConfirmRole(null);
-    const r = await api("POST", `/v1/admin/users/${user.id}/role`, { role: to });
+    // Better Auth's admin/set-role.
+    const r = await api("POST", "/api/auth/admin/set-role", {
+      userId: user.id,
+      role: to,
+    });
     if (r.ok) {
       toast.success(to === "admin" ? "Promoted to admin" : "Demoted to user");
       onChange();
@@ -220,9 +254,11 @@ function UserRow({
 
   const deleteUser = async () => {
     setConfirmDelete(false);
-    const r = await api("DELETE", `/v1/admin/users/${user.id}`);
+    // Better Auth's admin/remove-user. Better Auth POSTs the userId in
+    // the body — there's no DELETE-by-id route.
+    const r = await api("POST", "/api/auth/admin/remove-user", { userId: user.id });
     if (r.ok) {
-      toast.success(`User "${user.username}" deleted`);
+      toast.success(`User "${user.email}" deleted`);
       onChange();
     } else {
       toast.error("Delete failed", r.error ?? `status ${r.status}`);
@@ -235,15 +271,15 @@ function UserRow({
         <div className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-full bg-accent/15 flex-none flex items-center justify-center">
             <span className="text-[11px] font-semibold text-accent uppercase">
-              {user.username.charAt(0)}
+              {displayName.charAt(0)}
             </span>
           </div>
           <div>
             <div className="font-medium text-ink">
-              {user.username}
+              {displayName}
               {isMe && <span className="ml-1.5 text-faint text-xs">(you)</span>}
             </div>
-            <div className="text-xs text-faint">created {fmtRelative(user.createdAt)}</div>
+            <div className="text-xs text-faint">{user.email} · created {fmtRelative(user.createdAt)}</div>
           </div>
         </div>
       </td>
@@ -257,7 +293,7 @@ function UserRow({
         )}
       </td>
       <td className="px-4 py-3 text-dim text-xs">
-        {user.lastLoginAt ? fmtRelative(user.lastLoginAt) : <span className="text-faint">never</span>}
+        {user.banned ? <Badge tone="danger">banned</Badge> : <span className="text-faint">active</span>}
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex gap-1">
@@ -293,7 +329,7 @@ function UserRow({
         <Modal
           open={confirmDelete}
           onClose={() => setConfirmDelete(false)}
-          title={`Delete user "${user.username}"?`}
+          title={`Delete user "${user.email}"?`}
           description="The user will be signed out everywhere. Their personal logins, memory entries, and minted tokens are all removed."
           size="md"
           footer={
@@ -313,8 +349,8 @@ function UserRow({
           onClose={() => setConfirmRole(null)}
           title={
             confirmRole?.to === "admin"
-              ? `Promote "${user.username}" to admin?`
-              : `Demote "${user.username}" to user?`
+              ? `Promote "${user.email}" to admin?`
+              : `Demote "${user.email}" to user?`
           }
           description={
             confirmRole?.to === "admin"

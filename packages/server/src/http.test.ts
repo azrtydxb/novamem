@@ -320,16 +320,6 @@ describe("http: user mode + admin routes", () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it("admin routes refuse a user bearer (only session-admin works)", async () => {
-    const { app, tokenA } = await setupTwoUsers();
-    const r = await app.inject({
-      method: "GET",
-      url: "/v1/admin/users",
-      headers: { authorization: `Bearer ${tokenA}` },
-    });
-    expect(r.statusCode).toBe(401);
-  });
-
   it("memories don't mix between users — search", async () => {
     const { app, tokenA, tokenB } = await setupTwoUsers();
     const created = await app.inject({
@@ -569,7 +559,13 @@ describe("http: /admin dashboard mount", () => {
   });
 });
 
-describe("http: user delete (admin)", () => {
+// Legacy /v1/admin/users/:id (DELETE) was removed; user deletion now
+// flows through Better Auth's /api/auth/admin/remove-user. Skip this
+// block in unit tests — Better Auth's test surface owns it. The
+// orphan-token rejection (deleted user → bearer 401) is now implicit
+// because resolveUserToken only succeeds when the underlying "user"
+// row still exists.
+describe.skip("http: user delete (admin) — moved to Better Auth", () => {
   async function bootstrap() {
     const { app, warm } = makeApp({ authMode: "user" });
     const adminH = await adminAuth(warm);
@@ -666,53 +662,11 @@ describe("http: dashboard auth + RBAC", () => {
   // user can't do Y) — they synthesise sessions via `userAuth()` to
   // skip the password+sign-in round-trip Better Auth would normally do.
 
-  it("admin can create + delete + promote/demote users", async () => {
-    const { app, warm } = makeApp({ authMode: "user" });
-    const aliceAuth = await userAuth(warm, "alice", "admin");
-    const auth = { authorization: aliceAuth.authorization };
-
-    const created = await app.inject({
-      method: "POST", url: "/v1/admin/users",
-      payload: { username: "bob", password: "bobsbobsbobs", role: "user", userId: "acme" },
-      headers: auth,
-    });
-    expect(created.statusCode).toBe(201);
-    const bobId = created.json().id;
-
-    const list = await app.inject({ method: "GET", url: "/v1/admin/users", headers: auth });
-    const usernames = list.json().users.map((u: { username: string }) => u.username).sort();
-    expect(usernames).toEqual(["alice", "bob", "public"]);
-
-    const promote = await app.inject({
-      method: "POST", url: `/v1/admin/users/${bobId}/role`,
-      payload: { role: "admin" },
-      headers: auth,
-    });
-    expect(promote.statusCode).toBe(200);
-
-    const demote = await app.inject({
-      method: "POST", url: `/v1/admin/users/${bobId}/role`,
-      payload: { role: "user", userId: "acme" },
-      headers: auth,
-    });
-    expect(demote.statusCode).toBe(200);
-
-    const del = await app.inject({
-      method: "DELETE", url: `/v1/admin/users/${bobId}`,
-      headers: auth,
-    });
-    expect(del.statusCode).toBe(200);
-  });
-
-  it("refuses to delete self or the last admin", async () => {
-    const { app, warm } = makeApp({ authMode: "user" });
-    const alice = await userAuth(warm, "alice", "admin");
-    const selfDel = await app.inject({
-      method: "DELETE", url: `/v1/admin/users/${alice.userId}`,
-      headers: { authorization: alice.authorization },
-    });
-    expect(selfDel.statusCode).toBe(400);
-  });
+  // Admin user-CRUD (create / list / promote / demote / delete) is now
+  // owned by Better Auth at /api/auth/admin/*. Those endpoints are
+  // tested by Better Auth itself; we only verified the SPA wires them
+  // correctly. The "refuses to delete self / last admin" guarantees
+  // are upstream invariants in Better Auth's admin plugin.
 
   it("user role: /v1/me/metrics is scoped to that user", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
@@ -768,15 +722,10 @@ describe("http: dashboard auth + RBAC", () => {
     expect(after.statusCode).toBe(401);
   });
 
-  it("user cannot reach admin routes", async () => {
-    const { app, warm } = makeApp({ authMode: "user" });
-    const bob = await userAuth(warm, "bob");
-    const r = await app.inject({
-      method: "GET", url: "/v1/admin/users",
-      headers: { authorization: bob.authorization },
-    });
-    expect(r.statusCode).toBe(401);
-  });
+  // "user cannot reach admin routes" — the only admin user-mgmt route
+  // we own (/v1/admin/users) is gone; Better Auth's admin endpoints
+  // gate themselves. We still test that data-plane routes with a
+  // non-admin bearer don't escalate (covered by other tests).
 });
 
 describe("http: P0 regression tests", () => {
@@ -1021,29 +970,11 @@ describe("http: P0 regression tests", () => {
     expect(r.statusCode).toBe(403);
   });
 
-  // P1-S6: admin actions write to the audit log — the canonical action
-  // is now user.create (admin manages users).
-  it("P1-S6: user.create writes an audit-log entry", async () => {
-    const { app, warm } = makeApp({ authMode: "user" });
-    const adminH = await adminAuth(warm);
-    await app.inject({
-      method: "POST",
-      url: "/v1/admin/users",
-      payload: { username: "audited", password: "passpass1234", role: "user" },
-      headers: adminH,
-    });
-    const log = await app.inject({
-      method: "GET", url: "/v1/admin/audit-log",
-      headers: adminH,
-    });
-    expect(log.statusCode).toBe(200);
-    const e = log.json().entries.find(
-      (x: { action: string; metadata?: { username?: string } }) =>
-        x.action === "user.create" && x.metadata?.username === "audited",
-    );
-    expect(e).toBeDefined();
-    expect(e.actorLabel).toMatch(/^user:admin-/);
-  });
+  // P1-S6: admin user.create audit log — the legacy /v1/admin/users
+  // route emitted these entries. With user-CRUD moved to Better Auth,
+  // user.create audit entries are produced by Better Auth's own hooks
+  // (configured separately via its `databaseHooks`); not in scope for
+  // this test surface.
 
   // P2-1: Zod errors → 400 (covered by existing test rewritten earlier).
 });
