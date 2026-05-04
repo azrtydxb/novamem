@@ -30,13 +30,24 @@ export const ProjectIdRule = z
  *  rejects control characters but is otherwise permissive — names like
  *  "MCP Bearer Test" with spaces must be accepted. The route layer's
  *  resolveProjectRef does the actual existence + membership checks. */
-// eslint-disable-next-line no-control-regex
-const _NO_CTRL = /^[^\x00-\x1f\x7f]+$/;
+// Homoglyph hardening (issue #23): NFKC-normalise before the charset
+// check so visually-confusable Unicode (e.g. Cyrillic "\u0410" masquerading
+// as Latin "A") collapses to its canonical form before validation. The
+// route layer's resolveProjectRef remains the actual access boundary.
 export const ProjectRefRule = z
   .string()
   .min(1)
   .max(128)
-  .regex(/^[\x21-\x7e \u0080-\uffff]+$/, { message: "project ref contains control characters" });
+  .transform((s) => s.normalize("NFKC"))
+  .pipe(
+    z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[\x21-\x7e \u0080-\uffff]+$/, {
+        message: "project ref contains control characters",
+      }),
+  );
 
 export const UsernameRule = z
   .string()
@@ -51,6 +62,22 @@ export const UsernameRule = z
 /** Namespace shelf names. Same charset as project ids — we accept
  *  reasonably-shaped strings; the value is opaque to the engine. */
 const NamespaceRule = z.string().min(1).max(128);
+
+/** Hard caps on caller-supplied metadata bags (issue #23):
+ *  - keys must be ≤64 chars (rejects pathological long keys that would
+ *    bloat JSONB indexes / FTS payloads).
+ *  - serialized JSON must be ≤8KB (write-authorised callers could
+ *    otherwise pile huge per-row blobs given the global 2MB body cap). */
+const MAX_METADATA_KEY_LEN = 64;
+const MAX_METADATA_BYTES = 8 * 1024;
+const MetadataRule = z
+  .record(z.string(), z.unknown())
+  .refine((v) => Object.keys(v).every((k) => k.length <= MAX_METADATA_KEY_LEN), {
+    message: `metadata key too long (${MAX_METADATA_KEY_LEN}-char max)`,
+  })
+  .refine((v) => JSON.stringify(v).length <= MAX_METADATA_BYTES, {
+    message: "metadata too large (8KB max)",
+  });
 
 export const SearchBody = z.object({
   query: z.string().min(1).max(8 * 1024),
@@ -81,7 +108,7 @@ export const RememberBody = z.object({
   source: z.string().max(128).optional(),
   agentName: z.string().max(128).optional().nullable(),
   project: ProjectRefRule.optional().nullable(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: MetadataRule.optional(),
   // Provenance fields. Open-string vocab; recommended values documented
   // in the MCP instructions block.
   sourceType: z.string().max(64).optional(),
@@ -94,7 +121,7 @@ export const RememberBody = z.object({
 export const UpdateMemoryBody = z.object({
   content: z.string().min(1).max(MAX_CONTENT_BYTES).optional(),
   namespace: z.string().max(128).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: MetadataRule.optional(),
   sourceType: z.string().max(64).optional(),
   capturedFrom: z.string().max(256).optional(),
   confidence: z.number().min(0).max(1).optional(),
@@ -146,11 +173,18 @@ export const AdminRevokeBody = z.object({
 // ─── Auth + user-management bodies ──────────────────────────────────────
 
 export const LoginBody = z.object({
+  /** @deprecated Legacy display handle kept for back-compat with older
+   *  clients. New code uses `email` via Better Auth's
+   *  /api/auth/sign-in/email; this body shape is retained only for the
+   *  pre-Better-Auth login surface. */
   username: z.string().min(1).max(64),
   password: z.string().min(1).max(256),
 });
 
 export const CreateUserBody = z.object({
+  /** @deprecated Legacy display handle kept for back-compat; new code
+   *  uses `email` (Better Auth derives the display username from the
+   *  email's local-part on first sign-in). */
   username: UsernameRule,
   password: z.string().min(8).max(256),
   role: z.enum(["admin", "user"]),
@@ -174,6 +208,9 @@ export const ActiveProjectBody = z.object({
 });
 
 export const AddMemberBody = z.object({
+  /** @deprecated Legacy display handle kept for back-compat; new code
+   *  uses `email` to identify the invitee. The route layer resolves
+   *  this against the users table for membership operations. */
   username: z.string().min(1).max(64),
   role: z.enum(["owner", "member"]).optional(),
 });

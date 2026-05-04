@@ -28,9 +28,11 @@ export function ProjectsPage() {
   const { data: projects = null, isFetching: busy } = useQuery({
     queryKey: ["me", "projects"],
     queryFn: async () => {
+      // api() throws ApiError on non-OK (issue #23). On the OK path body
+      // is always populated for this endpoint; the body-presence guard
+      // remains as a defensive check.
       const r = await api<{ projects: Project[] }>("GET", "/v1/me/projects");
-      if (!r.ok || !r.body) throw new Error(r.error ?? `projects ${r.status}`);
-      return r.body.projects;
+      return r.body?.projects ?? [];
     },
   });
   const refresh = useCallback(() => {

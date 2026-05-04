@@ -64,8 +64,12 @@ export async function signIn(opts: SignInOptions): Promise<string> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    // Never echo the raw body — Better Auth sometimes echoes the request
+    // payload (incl. email) on failure paths, and these messages land in
+    // CI stderr (issue #23). Surface only the parsed `error` field, or
+    // a length-bounded fallback.
     throw new AuthError(
-      `sign-in failed: ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 200)}` : ""}`,
+      `sign-in failed: ${res.status} ${res.statusText}${formatBodyError(body)}`,
       res.status,
     );
   }
@@ -94,8 +98,9 @@ export async function mintToken(opts: MintTokenOptions): Promise<string> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    // Same redaction policy as signIn — never echo the raw body.
     throw new AuthError(
-      `token mint failed: ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 200)}` : ""}`,
+      `token mint failed: ${res.status} ${res.statusText}${formatBodyError(body)}`,
       res.status,
     );
   }
@@ -145,4 +150,28 @@ function splitSetCookie(raw: string | null): string[] {
 
 function trimTrailingSlash(s: string): string {
   return s.endsWith("/") ? s.slice(0, -1) : s;
+}
+
+/**
+ * Renders the safe error suffix for an HTTP failure body.
+ *
+ * Tries to parse JSON and pull the `error` field (Better Auth + our own
+ * envelope both use this shape); falls back to "" if the body isn't
+ * JSON or has no error string. Truncated to 80 chars so a verbose
+ * error message can't dominate CI logs (issue #23).
+ *
+ * Exported for testing.
+ */
+export function formatBodyError(body: string): string {
+  if (!body) return "";
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    const err = parsed?.error;
+    if (typeof err === "string" && err.length > 0) {
+      return ` — ${err.slice(0, 80)}`;
+    }
+  } catch {
+    // Not JSON — fall through to empty (we never echo raw bodies).
+  }
+  return "";
 }
