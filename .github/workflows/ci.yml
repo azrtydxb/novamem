@@ -150,13 +150,23 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Tag and push per-arch image
+      # Re-run build-push-action with push:true so buildx handles
+      # attestation manifests correctly. The gha cache from the previous
+      # step is fully populated; this call hits cache and just pushes.
+      # `docker tag` + `docker push` on the locally-loaded image trips
+      # an "unknown blob" error because the loaded variant strips the
+      # attestation manifests the registry expects.
+      - name: Push per-arch image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          docker tag novamem:ci-${{ matrix.arch }} ${{ env.REGISTRY_IMAGE }}:main-${{ matrix.arch }}
-          docker tag novamem:ci-${{ matrix.arch }} ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
-          docker push ${{ env.REGISTRY_IMAGE }}:main-${{ matrix.arch }}
-          docker push ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY_IMAGE }}:main-${{ matrix.arch }}
+            ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
   # ── Multi-arch manifest ───────────────────────────────────────────────
   # Stitches the two per-arch images into a single multi-arch index under
