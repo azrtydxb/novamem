@@ -40,8 +40,11 @@ spec:
     spec:
       containers:
         - name: novamem
-          image: novamem:0.1.0
-          imagePullPolicy: Never
+          # Multi-arch image published from CI on every main push. The
+          # `:main` tag is mutable — `kubectl rollout restart deploy/novamem`
+          # pulls the latest. Pin to `:sha-<short>` for a specific commit.
+          image: ghcr.io/azrtydxb/novamem:main
+          imagePullPolicy: Always
           envFrom:
             - configMapRef: { name: novamem-config }
             - secretRef: { name: novamem-secrets }

@@ -17,16 +17,29 @@ deploy/k8s/
 └── novamem.yaml         # ConfigMap · Deployment · LoadBalancer Service
 ```
 
-## Build the image
+## Image
 
-The manifest references `novamem:0.1.0` with `imagePullPolicy: Never`, so you build it where the cluster can see it. On k3s with containerd:
+The manifest pulls a public multi-arch image (`linux/amd64` + `linux/arm64`) from GitHub Container Registry:
 
-```bash
-docker build -t novamem:0.1.0 .
-docker save novamem:0.1.0 | sudo k3s ctr images import -
+```
+ghcr.io/azrtydxb/novamem:main         # mutable, rebuilt on every main push by CI
+ghcr.io/azrtydxb/novamem:sha-<short>  # immutable per commit, also multi-arch
 ```
 
-For a real registry, retag and push, then update `image:` in `novamem.yaml`.
+CI builds, scans (Trivy HIGH/CRITICAL with `--ignore-unfixed`), and pushes both tags from the [CI workflow](../../.github/workflows/ci.yml). The `:main` tag updates on every push to the `main` branch; pin `image:` to a `:sha-…` tag in `novamem.yaml` if you want immutability.
+
+To roll forward after a CI publish:
+
+```bash
+kubectl -n novamem rollout restart deploy/novamem
+```
+
+To build locally and bypass the registry (e.g. in an air-gapped lab) — set `image: novamem:dev` and `imagePullPolicy: Never` in `novamem.yaml`, then:
+
+```bash
+docker build -t novamem:dev .
+docker save novamem:dev | sudo k3s ctr images import -
+```
 
 ## Configure
 
@@ -92,10 +105,17 @@ kubectl -n novamem exec sts/falkordb -- redis-cli BGSAVE
 
 ## Updates
 
+`:main` is mutable, so CI publishing a new image + a rollout restart is enough:
+
 ```bash
-docker build -t novamem:<new> . && docker save … | k3s ctr images import -
-sed -i 's|novamem:0.1.0|novamem:<new>|' deploy/k8s/novamem.yaml
-kubectl apply -k deploy/k8s/
+kubectl -n novamem rollout restart deploy/novamem
+kubectl -n novamem rollout status  deploy/novamem
+```
+
+To pin to a specific commit instead of tracking `:main`:
+
+```bash
+kubectl -n novamem set image deploy/novamem novamem=ghcr.io/azrtydxb/novamem:sha-<short>
 ```
 
 Schema migrations are forward-only — back up Postgres before rolling.
