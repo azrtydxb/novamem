@@ -76,6 +76,11 @@ export interface HttpOptions {
    *  Required when auth.mode = 'user'; optional otherwise. */
   warm?: WarmStore;
   auth: { mode: "none" | "bearer" | "user"; token?: string };
+  /** Secret used to sign Fastify cookies. Sourced from `loadConfig()`
+   *  (`NOVAMEM_COOKIE_SECRET`) so the server has a single canonical
+   *  value. Optional in tests; required in production via the config
+   *  layer's start-up check. */
+  cookieSecret?: string;
   /** Per-IP requests-per-minute. Default 600 (10/sec sustained). */
   rateLimitPerMinute?: number;
   /** Metrics collector — when set, /v1/admin/metrics is available (subject
@@ -153,11 +158,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   // P1-S3: cookie support for HttpOnly session storage. Cookies are
   // signed with a server-side secret so any bit-flip / tamper invalidates
-  // the value before it reaches our auth hook. NOVAMEM_COOKIE_SECRET is
-  // operator-supplied in production; for dev we fall back to a fixed
-  // string so restarts keep existing sessions valid.
-  const cookieSecret =
-    process.env.NOVAMEM_COOKIE_SECRET ?? "novamem-dev-cookie-secret-change-me";
+  // the value before it reaches our auth hook. The secret is owned by
+  // `loadConfig()` — we never read process.env here so there's no second
+  // fallback to forget about. Tests that don't pass one get a fixed
+  // dev-only value (matches the loadConfig dev fallback).
+  const cookieSecret = opts.cookieSecret ?? "novamem-dev-cookie-secret-change-me";
   app.register(fastifyCookie, { secret: cookieSecret });
 
   // P2-1: turn ZodError into a 400 with a helpful body, instead of the
@@ -219,6 +224,63 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     skipOnError: true,
     allowList: (req) => req.url === "/health",
   });
+
+  // ─── Per-account auth-attempt limiter ───────────────────────────────
+  // Layered on top of the global per-IP limiter. Tracks failed attempts
+  // per lower-cased account key (email for sign-in / change-password,
+  // bearer-token prefix for rotate-token). 5 strikes inside a 15-minute
+  // window → 429 with a Retry-After header until the window expires.
+  // Successful operations clear the counter for that key. In-memory is
+  // fine for v1: a node restart costs at most one re-login, and the
+  // server is single-process today.
+  const AUTH_FAIL_MAX = 5;
+  const AUTH_FAIL_WINDOW_MS = 15 * 60 * 1000;
+  type AuthFailEntry = { count: number; resetAt: number };
+  const authFailures = new Map<string, AuthFailEntry>();
+  /** Sweep expired entries opportunistically so the map can't grow
+   *  unbounded under pathological probing. Cheap O(n) walk; n is bounded
+   *  by the number of distinct attacker emails inside the window. */
+  function pruneAuthFailures(now: number): void {
+    if (authFailures.size < 1024) return;
+    for (const [k, v] of authFailures) if (v.resetAt <= now) authFailures.delete(k);
+  }
+  function getAuthFail(key: string, now: number): AuthFailEntry | undefined {
+    const e = authFailures.get(key);
+    if (!e) return undefined;
+    if (e.resetAt <= now) {
+      authFailures.delete(key);
+      return undefined;
+    }
+    return e;
+  }
+  function recordAuthFailure(key: string): void {
+    const now = Date.now();
+    pruneAuthFailures(now);
+    const existing = getAuthFail(key, now);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      authFailures.set(key, { count: 1, resetAt: now + AUTH_FAIL_WINDOW_MS });
+    }
+  }
+  function clearAuthFailure(key: string): void {
+    authFailures.delete(key);
+  }
+  /** Returns the locked entry when over the threshold, or undefined to
+   *  proceed. Caller is responsible for sending the 429. */
+  function checkAuthLocked(key: string): AuthFailEntry | undefined {
+    const now = Date.now();
+    const e = getAuthFail(key, now);
+    if (e && e.count >= AUTH_FAIL_MAX) return e;
+    return undefined;
+  }
+  function send429(reply: FastifyReply, e: AuthFailEntry): void {
+    const retryAfter = Math.max(1, Math.ceil((e.resetAt - Date.now()) / 1000));
+    reply
+      .code(429)
+      .header("Retry-After", String(retryAfter))
+      .send({ error: "too many failed attempts — try again later", retryAfter });
+  }
 
   /** Constant-time string compare — protects the admin token against
    *  timing oracles. Token-shaped material only; not for passwords. */
@@ -468,8 +530,37 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return false;
     };
 
+    /** Extract the account key for the per-account rate limiter on
+     *  the two Better Auth endpoints we throttle. Returns null when the
+     *  endpoint isn't rate-limited or no key is derivable from the
+     *  request. */
+    const authLimiterKey = (req: FastifyRequest): string | null => {
+      if (req.method !== "POST") return null;
+      const path = req.url.split("?")[0] ?? "";
+      const body = (req.body ?? {}) as { email?: unknown; newPassword?: unknown };
+      if (path === "/api/auth/sign-in/email") {
+        return typeof body.email === "string" && body.email.length > 0
+          ? `signin:${body.email.toLowerCase()}`
+          : null;
+      }
+      if (path === "/api/auth/change-password") {
+        // Change-password is session-authed; key on the dashUser id when
+        // present (so an attacker can't grief by sending unauth'd requests
+        // with arbitrary emails). Fall back to ip+path so anonymous spam
+        // still gets capped via the same window.
+        if (req.dashUser?.id) return `chgpw:${req.dashUser.id}`;
+        return `chgpw-anon:${req.ip ?? "unknown"}`;
+      }
+      return null;
+    };
+
     const passthrough = async (req: FastifyRequest, reply: FastifyReply) => {
       if (!(await guardLastAdmin(req, reply))) return;
+      const limKey = authLimiterKey(req);
+      if (limKey) {
+        const locked = checkAuthLocked(limKey);
+        if (locked) return send429(reply, locked);
+      }
       // Build a WHATWG Request. We need the absolute URL, not just the
       // pathname; Better Auth uses it to validate redirects against
       // trustedOrigins. The host header is sufficient since the SPA and
@@ -490,15 +581,30 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
             : undefined;
       const wReq = new Request(url, { method: req.method, headers, body });
       const wRes = await ba.handler(wReq);
+      // Update the per-account limiter based on Better Auth's outcome.
+      // 2xx = success → reset the counter; 4xx (esp. 401) = failed
+      // attempt → bump it. 5xx is treated as transient (no bump) so a
+      // service blip doesn't lock users out.
+      if (limKey) {
+        if (wRes.status >= 200 && wRes.status < 300) {
+          clearAuthFailure(limKey);
+        } else if (wRes.status >= 400 && wRes.status < 500) {
+          recordAuthFailure(limKey);
+        }
+      }
       // Copy status + headers + body back into the Fastify reply.
+      // Set-Cookie is special: a Response can carry multiple values and
+      // they MUST stay separate. `headers.forEach` collapses them with
+      // commas, which browsers silently drop. `headers.getSetCookie()`
+      // (Node 20+) returns each cookie as its own array entry, and
+      // Fastify's `reply.header('set-cookie', [...])` preserves them.
       reply.code(wRes.status);
+      const setCookies = wRes.headers.getSetCookie();
       wRes.headers.forEach((value, key) => {
-        // Set-Cookie may appear multiple times; Headers.forEach merges,
-        // but Fastify's reply.header also handles multi-valued cookies
-        // when we pass an array. Better Auth typically emits a single
-        // Set-Cookie per response so the simple path works.
+        if (key.toLowerCase() === "set-cookie") return;
         reply.header(key, value);
       });
+      if (setCookies.length > 0) reply.header("set-cookie", setCookies);
       const text = await wRes.text();
       reply.send(text);
     };
@@ -688,9 +794,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     metadata?: Record<string, unknown>,
   ): Promise<void> {
     if (!opts.warm) return;
-    const actorLabel = req.dashUser
-      ? `user:${req.dashUser.username}`
-      : "legacy-admin-token";
+    // Every audit-emitting route gates on `req.dashUser` before reaching
+    // here, so the absent branch is unreachable in practice; "unknown" is
+    // the safe label if the invariant ever breaks.
+    const actorLabel = req.dashUser ? `user:${req.dashUser.username}` : "unknown";
     try {
       await opts.warm.writeAudit({
         actorUserId: req.dashUser?.id ?? null,
@@ -871,7 +978,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return reply.code(403).send({ error: "only the owner can add members" });
     }
     const body = AddMemberBody.parse(req.body);
-    const target = await opts.warm.findUserByUsername(body.username);
+    // Exact email only — `name`-based fuzzy matching here would let a
+    // newly-registered attacker collide with a target's display name
+    // and be invited in their place. The dashboard collects the
+    // invitee's email, so this is the right level of strictness.
+    const target = await opts.warm.findUserByExactEmail(body.username);
     if (!target) return reply.code(404).send({ error: "unknown user" });
     const ok = await opts.warm.addProjectMember(id, target.id, body.role ?? "member");
     if (!ok) return reply.code(409).send({ error: "user is already a member" });
@@ -1080,7 +1191,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.get("/v1/admin/audit-log", async (req, reply) => {
     if (!opts.warm) return reply.code(404).send({ error: "admin disabled" });
     if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
-    const limit = Math.min(Number((req.query as { limit?: string }).limit ?? 200), 500);
+    // Validate `?limit=` so non-numeric / negative / huge values reject
+    // with a 400 instead of producing `LIMIT NaN` (500) or letting a
+    // caller pull the entire table.
+    const AuditLogQuery = z.object({
+      limit: z.coerce.number().int().positive().max(500).default(200),
+    });
+    const { limit } = AuditLogQuery.parse(req.query ?? {});
     reply.send({ entries: await opts.warm.listAuditLog({ limit }) });
   });
 
@@ -1100,8 +1217,22 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return reply.code(401).send({ error: "unauthorized" });
     }
     const current = header.slice("Bearer ".length);
+    // Per-account rate limiter: key on the presented bearer so a brute
+    // force against one token doesn't burn the budget for unrelated
+    // accounts. SHA-prefix the value so we never store the plaintext
+    // bearer in the in-memory map.
+    const { createHash } = await import("node:crypto");
+    const limKey = `rotate:${createHash("sha256").update(current).digest("hex").slice(0, 32)}`;
+    {
+      const locked = checkAuthLocked(limKey);
+      if (locked) return send429(reply, locked);
+    }
     const result = await opts.warm.rotateUserToken(current);
-    if (!result) return reply.code(401).send({ error: "unauthorized" });
+    if (!result) {
+      recordAuthFailure(limKey);
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    clearAuthFailure(limKey);
     reply.code(201).send({
       ...result,
       warning: "Store this token now — it will not be shown again. The previous token is revoked.",

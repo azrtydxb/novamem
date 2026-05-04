@@ -591,6 +591,25 @@ export class FakeWarmStore {
     return null;
   }
 
+  /** Strict-email shim — the real warm store keys on Better Auth's
+   *  `"user"` table; the fake's `username` field doubles as both name and
+   *  email for tests, so we just lower-case compare it. */
+  async findUserByExactEmail(email: string) {
+    const target = email.toLowerCase();
+    for (const u of this.users.values()) {
+      if (u.username.toLowerCase() === target) {
+        return {
+          id: u.id,
+          username: u.username,
+          passwordHash: u.passwordHash,
+          role: u.role,
+          userId: u.userId,
+        };
+      }
+    }
+    return null;
+  }
+
   async findUserById(id: string) {
     const u = this.users.get(id);
     if (!u) return null;
