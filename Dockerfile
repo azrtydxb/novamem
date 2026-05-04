@@ -1,5 +1,11 @@
 FROM node:25-bookworm-slim AS base
-RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+# node:25-bookworm-slim no longer ships corepack (it was unbundled
+# starting with Node 25). Install it from npm before activating pnpm.
+# `--force` because the base image has yarn shims at /usr/local/bin/yarnpkg
+# that corepack also wants to write — without --force npm bails on EEXIST.
+RUN npm install -g --force corepack@latest \
+ && corepack enable \
+ && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
 FROM base AS deps
