@@ -13,6 +13,10 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write   # publish container images to ghcr.io (only on main pushes)
+
+env:
+  REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/novamem
 
 jobs:
   # ── Native test matrix ────────────────────────────────────────────────
@@ -96,8 +100,9 @@ jobs:
 
   # ── Docker image (native per arch) ────────────────────────────────────
   # Each arch builds on its own native runner — no buildx --platform with
-  # QEMU. Trivy scans the resulting image. fail-fast:false so the two
-  # arches fail independently. needs:[test] gates on a green test run.
+  # QEMU. Trivy gates the build before it gets pushed; only main-branch
+  # pushes (not PRs) end up in ghcr.io. fail-fast:false so the two arches
+  # fail independently. needs:[test] gates on a green test run.
   docker:
     name: docker (${{ matrix.arch }})
     needs: [test]
@@ -114,6 +119,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       # Per-arch cache scope so the two arches don't fight for the same
       # gha cache slot — each gets its own slice keyed by `${arch}`.
       - name: Build runtime image (native ${{ matrix.arch }})
@@ -132,3 +140,52 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
+      # Push only on main-branch pushes — PRs (incl. forks) build + scan
+      # but never publish. Arch-suffixed tags here; the `manifest` job
+      # below stitches them into a multi-arch index.
+      - name: Login to ghcr.io
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag and push per-arch image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker tag novamem:ci-${{ matrix.arch }} ${{ env.REGISTRY_IMAGE }}:main-${{ matrix.arch }}
+          docker tag novamem:ci-${{ matrix.arch }} ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
+          docker push ${{ env.REGISTRY_IMAGE }}:main-${{ matrix.arch }}
+          docker push ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
+
+  # ── Multi-arch manifest ───────────────────────────────────────────────
+  # Stitches the two per-arch images into a single multi-arch index under
+  # ghcr.io/.../novamem:main (and :sha-<short>). Runs once on amd64 after
+  # both per-arch docker jobs finish; only on main-branch pushes.
+  manifest:
+    name: manifest (multi-arch)
+    needs: [docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Create + push :main multi-arch manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:main \
+            ${{ env.REGISTRY_IMAGE }}:main-amd64 \
+            ${{ env.REGISTRY_IMAGE }}:main-arm64
+      - name: Create + push :sha-<short> multi-arch manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }} \
+            ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-amd64 \
+            ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-arm64
