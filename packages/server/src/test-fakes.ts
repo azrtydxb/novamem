@@ -49,13 +49,13 @@ export class FakeWarmStore {
      *  anything else throws so tests fail loudly on unexpected SQL. */
     query: async (sql: string, params: unknown[] = []): Promise<{ rows: any[] }> => {
       // recent()
-      if (sql.includes("FROM memory_entries") && sql.includes("namespace = $1")) {
-        // Engine SQL shapes:
-        //  - user-only:    namespace = $1 AND user_id = $X AND project_id IS NULL
-        //  - project-only: namespace = $1 AND project_id = $X
-        //  - active mode:  namespace = $1 AND ((user_id = $X AND project_id IS NULL)
-        //                                       OR project_id = ANY($Y::text[]))
-        const namespace = String(params[0]);
+      if (sql.includes("FROM memory_entries") && sql.includes("namespace = ANY($1::text[])")) {
+        // Engine SQL shapes (post-includeNamespaces refactor):
+        //  - user-only:    namespace = ANY($1::text[]) AND user_id = $X AND project_id IS NULL
+        //  - project-only: namespace = ANY($1::text[]) AND project_id = $X
+        //  - active mode:  namespace = ANY($1::text[]) AND ((user_id = $X AND project_id IS NULL)
+        //                                                    OR project_id = ANY($Y::text[]))
+        const namespaces = params[0] as string[];
         const k = Number(params[1]);
         const activeMode = sql.includes("project_id = ANY(");
         const projectOnly = !activeMode && sql.includes("project_id = $") && !sql.includes("project_id IS NULL");
@@ -76,7 +76,7 @@ export class FakeWarmStore {
         }
         const since = sql.includes("created_at >= $") ? new Date(String(params[sinceParamIdx])) : null;
         const filtered = [...this.rows.values()]
-          .filter((r) => r.namespace === namespace)
+          .filter((r) => namespaces.includes(r.namespace))
           .filter((r) => {
             if (activeMode) {
               if (r.projectId === null) return r.userId === userId;
@@ -287,13 +287,15 @@ export class FakeWarmStore {
     projectId?: string | null;
     query: string;
     namespace: string;
+    namespaces?: string[];
     k: number;
     agentName?: string | null;
   }): Promise<Array<{ id: string; score: number }>> {
     const q = args.query.toLowerCase();
     const projectId = args.projectId ?? null;
+    const nsSet = new Set(args.namespaces?.length ? args.namespaces : [args.namespace]);
     const matches = [...this.rows.values()]
-      .filter((r) => r.userId === args.userId && r.namespace === args.namespace)
+      .filter((r) => r.userId === args.userId && nsSet.has(r.namespace))
       .filter((r) => r.projectId === projectId)
       .filter((r) => {
         if (args.agentName === undefined) return true;
@@ -687,6 +689,21 @@ export class FakeWarmStore {
 
   async getProject(id: string) {
     return this.projects.get(id) ?? null;
+  }
+
+  async findProjectByName(userId: string, name: string) {
+    for (const p of this.projects.values()) {
+      if (p.name !== name) continue;
+      const m = this.projectMembers.get(p.id)?.get(userId);
+      if (m) return p;
+    }
+    return null;
+  }
+
+  async recordMetricsSamples(): Promise<void> { /* no-op in fake */ }
+  async pruneMetricsSamples(): Promise<number> { return 0; }
+  async getMetricsHistory(): Promise<Array<{ sampledAt: Date; queries: number; remembers: number }>> {
+    return [];
   }
 
   async listProjectsForUser(userId: string) {

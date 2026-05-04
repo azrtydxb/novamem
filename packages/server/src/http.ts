@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import fastifyCookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
@@ -21,19 +21,7 @@ import { z } from "zod";
 
 import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
-import {
-  hashPassword,
-  verifyPassword,
-  SESSION_TTL_MS,
-  SESSION_COOKIE,
-  CSRF_COOKIE,
-  CSRF_HEADER,
-  LoginThrottle,
-  csrfCookieOptions,
-  csrfRequired,
-  generateCsrfToken,
-  sessionCookieOptions,
-} from "./auth.js";
+import { hashPassword } from "./auth.js";
 import { buildMcpServer } from "./mcp.js";
 import { openapiSpec } from "./openapi.js";
 import {
@@ -95,6 +83,18 @@ export interface HttpOptions {
   /** Master switch for the admin dashboard surface (UI + metrics endpoint).
    *  When false, /admin/* and /v1/admin/metrics return 404. Default true. */
   adminDashboard?: boolean;
+  /** Better Auth handler — when set, /api/auth/* is mounted as a
+   *  passthrough into Better Auth (sign-in, sign-up, session, JWT, etc.).
+   *  Optional during the migration so unit tests that don't touch
+   *  dashboard auth can omit it. The auth hook also calls `getSession`
+   *  on every request to populate `req.dashUser` from the Better Auth
+   *  cookie/bearer. */
+  betterAuth?: {
+    handler: (req: Request) => Promise<Response>;
+    getSession: (
+      headers: Headers,
+    ) => Promise<{ user?: { id: string }; session?: { id: string } } | null | undefined>;
+  };
 }
 
 export function buildHttpServer(opts: HttpOptions): FastifyInstance {
@@ -158,9 +158,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   const cookieSecret =
     process.env.NOVAMEM_COOKIE_SECRET ?? "novamem-dev-cookie-secret-change-me";
   app.register(fastifyCookie, { secret: cookieSecret });
-
-  // Per-username login throttle (P0-3). In-memory; resets on restart.
-  const loginThrottle = new LoginThrottle();
 
   // P2-1: turn ZodError into a 400 with a helpful body, instead of the
   // default Fastify 500 with the raw error text. Other errors fall through
@@ -257,6 +254,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       req.userId = SYSTEM_USER;
       return;
     }
+    // Better Auth handler — owns its own auth. The passthrough route
+    // (registered below) calls into Better Auth's handler() directly.
+    // We must skip our auth hook so Better Auth gets the raw request.
+    if (req.url.startsWith("/api/auth/")) {
+      req.userId = SYSTEM_USER;
+      return;
+    }
     // Login + bootstrap-status are reached without any auth. The CLI
     // rotate-token path is also public — it does its own auth by trying
     // to rotate the supplied bearer.
@@ -269,67 +273,46 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return;
     }
 
-    // Try to resolve a session bearer regardless of route — the control
-    // plane handlers consult `req.dashUser` and admin endpoints require
-    // a session-admin.
-    //
-    // Two ways to present a session: an HttpOnly cookie (the dashboard
-    // SPA) or `Authorization: Bearer ns_…` (CLI / MCP / scripts). Cookie
-    // takes precedence so a stale Authorization header doesn't override
-    // a fresh cookie.
+    // Resolve the caller's identity. Two routes produce a `dashUser`:
+    //   1. Better Auth session — set by the SPA login flow; resolved by
+    //      asking Better Auth's API for the session attached to the
+    //      incoming request's headers (cookie OR Authorization Bearer
+    //      with a Better Auth session token).
+    //   2. Our own user-bearer (`nm_…`) — non-browser callers (MCP, CLI)
+    //      send these. Resolved against `user_tokens`; the bearer's
+    //      owning user becomes the dashUser so /v1/me/* works uniformly.
     const header = req.headers.authorization;
     const headerToken =
       header && header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-    let token = headerToken;
-    let authedByCookie = false;
 
-    // Signed-cookie unsigning. `req.cookies[name]` is the raw signed
-    // value; `req.unsignCookie` checks the signature. We use this to
-    // detect tampering before resolving the bearer.
-    const sessionCookieRaw = req.cookies?.[SESSION_COOKIE];
-    if (sessionCookieRaw && opts.warm) {
-      const unsigned = req.unsignCookie(sessionCookieRaw);
-      if (unsigned.valid && unsigned.value && unsigned.value.startsWith("ns_")) {
-        token = unsigned.value;
-        authedByCookie = true;
+    if (opts.betterAuth?.getSession) {
+      // Pass the raw incoming headers to Better Auth so it can read its
+      // own session cookie + Authorization header. Better Auth returns
+      // `{ user, session }` on hit, or null/undefined when no session is
+      // resolvable from the request.
+      const baHeaders = new Headers();
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (typeof v === "string") baHeaders.set(k, v);
+        else if (Array.isArray(v)) baHeaders.set(k, v.join(", "));
+      }
+      try {
+        const r = await opts.betterAuth.getSession(baHeaders);
+        if (r?.user?.id) {
+          req.dashUser = {
+            id: r.user.id,
+            // Better Auth has no `username` field — derive a displayable
+            // one from the email's local-part. The dashboard already
+            // treats "username" as cosmetic.
+            username: (r.user as { email?: string }).email?.split("@")[0] ?? r.user.id,
+            role: ((r.user as { role?: string }).role ?? "user") as "admin" | "user",
+          };
+        }
+      } catch {
+        // Better Auth throws on internal errors; treat as "no session"
+        // and continue — the route guard below will 401 when needed.
       }
     }
 
-    if (token.startsWith("ns_") && opts.warm) {
-      const session = await opts.warm.resolveSession(token);
-      if (session) req.dashUser = session.user;
-    }
-
-    // CSRF double-submit: when the request is authed by cookie AND the
-    // method is state-changing, the X-CSRF-Token header must equal the
-    // CSRF cookie. Bearer-authenticated requests skip this check (they
-    // aren't browser-vector). The CSRF cookie is signed too, so a
-    // tampered value gets ignored before we compare.
-    if (req.dashUser && authedByCookie && csrfRequired(req.method)) {
-      // Plain double-submit: header must equal cookie. The cookie is
-      // SameSite=Strict so cross-site requests can't carry it; that
-      // already blocks classic CSRF. The header check makes XSS-via-
-      // arbitrary-form-post (which can attach cookies but not headers)
-      // impractical. We don't sign this cookie because the SPA needs to
-      // echo the raw value back, and there's no benefit to signing a
-      // value that's already in the same channel both ways.
-      const csrfHeader = (req.headers[CSRF_HEADER] as string | undefined) ?? "";
-      const csrfCookieValue = req.cookies?.[CSRF_COOKIE] ?? "";
-      if (!csrfHeader || !csrfCookieValue || !safeEqual(csrfHeader, csrfCookieValue)) {
-        reply.code(403).send({ error: "CSRF token missing or invalid" });
-        return reply;
-      }
-    }
-
-    // /v1/auth/* (other than login/status) and /v1/me/* require a user
-    // identity. Two ways to present one:
-    //   1. session bearer (`ns_…` cookie or header) — sets req.dashUser
-    //      via the resolveSession path above.
-    //   2. user bearer (`nm_…`) — owns the same scope; we resolve it
-    //      to its underlying user and synthesize a DashboardUser so the
-    //      /v1/me/* handlers (project CRUD, data-plane mirrors) work
-    //      uniformly. This is what makes "the bearer has full user
-    //      access" hold across the dashboard surface and MCP.
     if (req.url.startsWith("/v1/auth/") || req.url.startsWith("/v1/me/")) {
       if (!req.dashUser && headerToken.startsWith("nm_") && opts.warm) {
         const resolved = await opts.warm.resolveUserToken(headerToken);
@@ -362,20 +345,20 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       req.userId = SYSTEM_USER;
       return;
     }
-    if (!token) {
+    if (!headerToken) {
       reply.code(401).send({ error: "unauthorized" });
       return reply;
     }
     if (opts.auth.mode === "bearer") {
-      if (!safeEqual(token, opts.auth.token!)) {
+      if (!safeEqual(headerToken, opts.auth.token!)) {
         reply.code(401).send({ error: "unauthorized" });
         return reply;
       }
       req.userId = SYSTEM_USER;
       return;
     }
-    // user mode
-    const resolved = await opts.warm!.resolveUserToken(token);
+    // user mode — resolve our nm_… user-bearer
+    const resolved = await opts.warm!.resolveUserToken(headerToken);
     if (!resolved) {
       reply.code(401).send({ error: "unauthorized" });
       return reply;
@@ -446,6 +429,53 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     reply.code(h.ok ? 200 : 503).send(h);
   });
 
+  // ─── Better Auth passthrough ────────────────────────────────────────
+  // Better Auth speaks the WHATWG Request/Response interface; Fastify
+  // gives us node req/res. We bridge by reconstructing a Request from
+  // the incoming Fastify request, calling Better Auth's handler, and
+  // copying the Response back. All HTTP methods on /api/auth/* go here.
+  if (opts.betterAuth) {
+    const ba = opts.betterAuth;
+    const passthrough = async (req: FastifyRequest, reply: FastifyReply) => {
+      // Build a WHATWG Request. We need the absolute URL, not just the
+      // pathname; Better Auth uses it to validate redirects against
+      // trustedOrigins. The host header is sufficient since the SPA and
+      // backend share an origin.
+      const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? "http";
+      const host = req.headers.host ?? "localhost";
+      const url = `${proto}://${host}${req.url}`;
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (typeof v === "string") headers.set(k, v);
+        else if (Array.isArray(v)) headers.set(k, v.join(", "));
+      }
+      const body =
+        req.method === "GET" || req.method === "HEAD"
+          ? undefined
+          : req.body
+            ? JSON.stringify(req.body)
+            : undefined;
+      const wReq = new Request(url, { method: req.method, headers, body });
+      const wRes = await ba.handler(wReq);
+      // Copy status + headers + body back into the Fastify reply.
+      reply.code(wRes.status);
+      wRes.headers.forEach((value, key) => {
+        // Set-Cookie may appear multiple times; Headers.forEach merges,
+        // but Fastify's reply.header also handles multi-valued cookies
+        // when we pass an array. Better Auth typically emits a single
+        // Set-Cookie per response so the simple path works.
+        reply.header(key, value);
+      });
+      const text = await wRes.text();
+      reply.send(text);
+    };
+    // Register all common HTTP methods so the SPA's POSTs and the
+    // browser's GETs both flow through.
+    for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"] as const) {
+      app.route({ method, url: "/api/auth/*", handler: passthrough });
+    }
+  }
+
   // Browsers automatically request /favicon.ico from the page origin. Without
   // a handler it 404s after going through the auth hook (which we already
   // skip for this URL); explicit empty-204 keeps console clean.
@@ -459,37 +489,74 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
    *  `body.includeProjects` (the active-project mode) is also membership-
    *  checked — search returns global ∪ those projects, and we refuse any
    *  ids the user can't see. */
+  /** Resolve a single project reference (id or human name) to its real
+   *  ULID, or null when nothing matches. The caller supplies a value
+   *  from the request body; we first try treating it as an id, then fall
+   *  back to a name lookup scoped to the caller's visibility. */
+  async function resolveProjectRef(
+    userId: string,
+    value: string,
+  ): Promise<{ id: string; ownerUserId: string } | null> {
+    if (!opts.warm) return null;
+    const byId = await opts.warm.getProject(value);
+    if (byId) return { id: byId.id, ownerUserId: byId.ownerUserId };
+    const byName = await opts.warm.findProjectByName(userId, value);
+    if (byName) return { id: byName.id, ownerUserId: byName.ownerUserId };
+    return null;
+  }
+
+  /** Resolve every project reference in the body (project + includeProjects)
+   *  to a ULID, verify the caller is a member of each, and rewrite the body
+   *  so downstream engine code sees only ULIDs. Distinguishes:
+   *    - 404 "no such project" when the value matches neither id nor name
+   *    - 403 "not a member" when the project exists but the caller isn't
+   *      in its membership table
+   *  Returns false when the request was rejected — handler should bail. */
   async function checkProjectAccess(
     userId: string,
-    project: string | null | undefined,
-    includeProjects: string[] | undefined,
+    body: { project?: string | null; includeProjects?: string[] },
     reply: FastifyReply,
   ): Promise<boolean> {
     if (!opts.warm) return true;
-    const ids = new Set<string>();
-    if (project) ids.add(project);
-    for (const p of includeProjects ?? []) ids.add(p);
-    if (ids.size === 0) return true;
-    for (const id of ids) {
-      const m = await opts.warm.getProjectMembership(id, userId);
-      if (!m) {
-        reply.code(403).send({ error: `not a member of project '${id}'` });
+    const refs: Array<{ field: "project" | "includeProjects"; index?: number; value: string }> = [];
+    if (body.project) refs.push({ field: "project", value: body.project });
+    body.includeProjects?.forEach((value, index) => {
+      refs.push({ field: "includeProjects", index, value });
+    });
+    if (refs.length === 0) return true;
+    for (const ref of refs) {
+      const resolved = await resolveProjectRef(userId, ref.value);
+      if (!resolved) {
+        reply.code(404).send({
+          error: `no such project '${ref.value}' — call project.list to see ids`,
+        });
         return false;
       }
+      const m = await opts.warm.getProjectMembership(resolved.id, userId);
+      if (!m) {
+        reply.code(403).send({
+          error: `not a member of project '${ref.value}' (id ${resolved.id})`,
+        });
+        return false;
+      }
+      // Rewrite the request body in place with the resolved ULID so the
+      // engine sees only canonical ids and never has to redo this.
+      if (ref.field === "project") body.project = resolved.id;
+      else body.includeProjects![ref.index!] = resolved.id;
     }
     return true;
   }
 
   app.post("/v1/search", async (req, reply) => {
     const body = SearchBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body.project, body.includeProjects, reply))) return;
+    if (!(await checkProjectAccess(req.userId, body, reply))) return;
     const r = await opts.engine.search(req.userId, body, req.bearerToken);
     reply.send(r);
   });
 
   app.post("/v1/remember", async (req, reply) => {
     const body = RememberBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body.project, undefined, reply))) return;
+    if (!(await checkProjectAccess(req.userId, body, reply))) return;
     const r = await opts.engine.remember(req.userId, body, req.bearerToken);
     reply.code(201).send(r);
   });
@@ -509,19 +576,19 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   app.post("/v1/recent", async (req, reply) => {
     const body = RecentBody.parse(req.body ?? {});
-    if (!(await checkProjectAccess(req.userId, body.project, body.includeProjects, reply))) return;
+    if (!(await checkProjectAccess(req.userId, body, reply))) return;
     reply.send(await opts.engine.recent(req.userId, body));
   });
 
   app.post("/v1/neighbors", async (req, reply) => {
     const body = NeighborsBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body.project, body.includeProjects, reply))) return;
+    if (!(await checkProjectAccess(req.userId, body, reply))) return;
     reply.send(await opts.engine.neighbors(req.userId, body));
   });
 
   app.post("/v1/forget", async (req, reply) => {
     const body = ForgetBody.parse(req.body);
-    if (!(await checkProjectAccess(req.userId, body.project, undefined, reply))) return;
+    if (!(await checkProjectAccess(req.userId, body, reply))) return;
     reply.send(
       await opts.engine.forget(req.userId, body.id, { project: body.project ?? null, token: req.bearerToken }),
     );
@@ -571,135 +638,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
   }
 
-  // ─── Dashboard auth ────────────────────────────────────────────────────
-
-  app.get("/v1/auth/status", async (_req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "auth disabled" });
-    const adminCount = await opts.warm.countAdmins();
-    reply.send({
-      ready: adminCount > 0,
-      bootstrapNeeded: adminCount === 0,
-    });
-  });
-
-  app.post("/v1/auth/login", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "auth disabled" });
-    const body = LoginBody.parse(req.body);
-
-    // P0-3: per-username login throttle. Refuse without spending bcrypt
-    // CPU when the account is locked out.
-    const throttleState = loginThrottle.check(body.username);
-    if (!throttleState.ok) {
-      reply.header("Retry-After", String(Math.ceil(throttleState.retryAfterMs / 1000)));
-      return reply.code(429).send({
-        error: "too many failed login attempts; account temporarily locked",
-        retryAfterMs: throttleState.retryAfterMs,
-      });
-    }
-
-    const user = await opts.warm.findUserByUsername(body.username);
-    // Constant-ish-time: always run a verifyPassword against something to
-    // avoid leaking whether the username exists. We compare against a
-    // throwaway hash when the user is missing.
-    const ok = user
-      ? await verifyPassword(body.password, user.passwordHash)
-      : await verifyPassword(body.password, "$2a$10$invalidsaltinvalidsaltinvalidsaltinvalid");
-    if (!user || !ok) {
-      const fail = loginThrottle.recordFailure(body.username);
-      // Sleep for the back-off interval inside the handler so a fast
-      // attacker can't out-loop the throttle.
-      if (fail.retryAfterMs > 0) {
-        await new Promise((r) => setTimeout(r, Math.min(fail.retryAfterMs, 4000)));
-      }
-      return reply.code(401).send({ error: "invalid username or password" });
-    }
-    loginThrottle.recordSuccess(body.username);
-    const session = await opts.warm.createSession(user.id, SESSION_TTL_MS);
-    // If password_changed_at is NULL the admin hasn't set a custom password yet —
-    // require rotation before they can use the dashboard (P1-S1).
-    const needsPasswordChange = user.passwordChangedAt === undefined || user.passwordChangedAt === null;
-    // P1-S3: dashboard sessions live in HttpOnly + Secure + SameSite=Strict
-    // cookies. The CSRF token sits in a sibling JS-readable cookie; the
-    // SPA reads it and echoes back as X-CSRF-Token on writes.
-    const csrf = generateCsrfToken();
-    reply
-      .setCookie(SESSION_COOKIE, session.token, {
-        ...sessionCookieOptions(),
-        signed: true,
-      })
-      .setCookie(CSRF_COOKIE, csrf, csrfCookieOptions())
-      .code(201)
-      .send({
-        // We still return `token` in the body for back-compat with the
-        // CLI / MCP flow (novamem-login etc.); browsers don't need to read
-        // it because the cookie is set.
-        token: session.token,
-        expiresAt: session.expiresAt.toISOString(),
-        csrfToken: csrf,
-        needsPasswordChange,
-        user: {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-        },
-      });
-  });
-
-  app.post("/v1/auth/logout", async (req, reply) => {
-    // Revoke the session server-side regardless of how it was presented.
-    let token = "";
-    const cookieRaw = req.cookies?.[SESSION_COOKIE];
-    if (cookieRaw) {
-      const unsigned = req.unsignCookie(cookieRaw);
-      if (unsigned.valid && unsigned.value) token = unsigned.value;
-    }
-    if (!token) {
-      const h = req.headers.authorization;
-      if (h && h.startsWith("Bearer ")) token = h.slice("Bearer ".length);
-    }
-    if (opts.warm && token) await opts.warm.revokeSession(token);
-    // Clear both cookies so the browser stops sending them.
-    reply
-      .clearCookie(SESSION_COOKIE, { path: "/" })
-      .clearCookie(CSRF_COOKIE, { path: "/" })
-      .code(204)
-      .send();
-  });
-
-  app.post("/v1/auth/change-password", async (req, reply) => {
-    if (!opts.warm) return reply.code(404).send({ error: "auth disabled" });
-    const u = req.dashUser!;
-    const body = ChangePasswordBody.parse(req.body);
-    // Look up the user to verify the current password.
-    const existing = await opts.warm.findUserByUsername(u.username);
-    if (!existing) return reply.code(401).send({ error: "user not found" });
-    const ok = await verifyPassword(body.currentPassword, existing.passwordHash);
-    if (!ok) return reply.code(401).send({ error: "current password is incorrect" });
-    if (body.newPassword === body.currentPassword) {
-      return reply.code(400).send({ error: "new password must differ from current" });
-    }
-    const hash = await hashPassword(body.newPassword);
-    const patched = await opts.warm.patchUserPassword(u.id, hash, new Date());
-    if (!patched) return reply.code(500).send({ error: "failed to update password" });
-    await audit(req, "password.change", u.id, { username: u.username });
-    return reply.code(200).send({ ok: true });
-  });
-
-  app.get("/v1/auth/me", async (req, reply) => {
-    // Auth hook already resolved the session; if we got here it's valid.
-    // Re-issue the CSRF cookie on every me() so the SPA always has a fresh
-    // value after page reload (the JS-readable cookie persists across
-    // reloads but having `me()` re-issue it makes the flow more robust).
-    const existing = opts.warm
-      ? await opts.warm.findUserByUsername(req.dashUser!.username)
-      : null;
-    const needsPasswordChange =
-      !existing || existing.passwordChangedAt === undefined || existing.passwordChangedAt === null;
-    const csrf = generateCsrfToken();
-    reply
-      .setCookie(CSRF_COOKIE, csrf, csrfCookieOptions())
-      .send({ user: req.dashUser, needsPasswordChange, csrfToken: csrf });
-  });
+  // ─── Dashboard auth ───────────────────────────────────────────────────
+  // Login / logout / get-session / change-password are owned by Better
+  // Auth, mounted at /api/auth/* via the passthrough route above. The
+  // legacy /v1/auth/* endpoints are gone — clients call /api/auth/*.
 
   // ─── Admin: user management ────────────────────────────────────────────
   // Distinct from /v1/admin/users/* — these are dashboard logins.
@@ -829,6 +771,24 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
           .map((t) => ({ hash: t.tokenHash, label: t.label }))
       : [];
     reply.send(await opts.metrics.snapshotForUser(u.id, { tokens: myTokens }));
+  });
+
+  app.get("/v1/me/metrics/history", async (req, reply) => {
+    if (!opts.warm) return reply.code(404).send({ error: "warm store disabled" });
+    const u = req.dashUser!;
+    // Default window is 24h. Cap at 48h to bound the response size.
+    const q = (req.query as { hours?: string } | undefined)?.hours;
+    const hours = Math.min(48, Math.max(1, q ? Number(q) : 24));
+    const since = Date.now() - hours * 60 * 60 * 1000;
+    const samples = await opts.warm.getMetricsHistory(u.id, since);
+    reply.send({
+      hours,
+      samples: samples.map((s) => ({
+        sampledAt: s.sampledAt.toISOString(),
+        queries: s.queries,
+        remembers: s.remembers,
+      })),
+    });
   });
 
   app.get("/v1/me/tokens", async (req, reply) => {
@@ -966,59 +926,27 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // must check membership themselves — otherwise any user in
   // `acme` could read/modify another user's project entries by passing
   // the project id in the body. Returns true if access ok; sends a 403
-  // and returns false otherwise. `null` projectId means user-wide and
-  // is always allowed (the existing user boundary still applies).
-  async function requireProjectAccess(
-    user: DashboardUser,
-    projectId: string | null,
-    reply: FastifyReply,
-    includeProjects?: string[] | undefined,
-  ): Promise<boolean> {
-    const ids = new Set<string>();
-    if (projectId) ids.add(projectId);
-    for (const p of includeProjects ?? []) ids.add(p);
-    if (ids.size === 0) return true;
-    if (!opts.warm) {
-      reply.code(404).send({ error: "warm store disabled" });
-      return false;
-    }
-    for (const id of ids) {
-      const m = await opts.warm.getProjectMembership(id, user.id);
-      if (!m) {
-        reply.code(403).send({ error: `not a member of project '${id}'` });
-        return false;
-      }
-    }
-    return true;
-  }
-
   app.post("/v1/me/search", async (req, reply) => {
     const u = req.dashUser!;
     const body = SearchBody.parse(req.body);
-    const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply, body.includeProjects))) return;
-    const userId = u.id;
-    const r = await opts.engine.search(userId, { ...body, project });
+    if (!(await checkProjectAccess(u.id, body, reply))) return;
+    const r = await opts.engine.search(u.id, body);
     reply.send(r);
   });
 
   app.post("/v1/me/recent", async (req, reply) => {
     const u = req.dashUser!;
     const body = RecentBody.parse(req.body ?? {});
-    const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply, body.includeProjects))) return;
-    const userId = u.id;
-    reply.send(await opts.engine.recent(userId, { ...body, project }));
+    if (!(await checkProjectAccess(u.id, body, reply))) return;
+    reply.send(await opts.engine.recent(u.id, body));
   });
 
   app.post("/v1/me/neighbors", async (req, reply) => {
     const u = req.dashUser!;
     const body = NeighborsBody.parse(req.body);
-    const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply, body.includeProjects))) return;
-    const userId = u.id;
+    if (!(await checkProjectAccess(u.id, body, reply))) return;
     try {
-      reply.send(await opts.engine.neighbors(userId, { ...body, project }));
+      reply.send(await opts.engine.neighbors(u.id, body));
     } catch (err) {
       // Graph store occasionally returns Edge values the redis-client
       // decoder rejects ("Type mismatch: expected List or Null but was
@@ -1032,18 +960,15 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.post("/v1/me/remember", async (req, reply) => {
     const u = req.dashUser!;
     const body = RememberBody.parse(req.body);
-    const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply))) return;
-    const userId = u.id;
-    const r = await opts.engine.remember(userId, { ...body, project });
+    if (!(await checkProjectAccess(u.id, body, reply))) return;
+    const r = await opts.engine.remember(u.id, body);
     reply.code(201).send(r);
   });
 
   app.post("/v1/me/forget", async (req, reply) => {
     const u = req.dashUser!;
     const body = ForgetBody.parse(req.body);
-    const project = body.project ?? null;
-    if (!(await requireProjectAccess(u, project, reply))) return;
+    if (!(await checkProjectAccess(u.id, body, reply))) return;
     const userId = u.id;
     // Defence in depth: even after the requested-project check, resolve
     // the entry's actual scope by id alone and re-verify membership.
@@ -1067,7 +992,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         }
       }
     }
-    reply.send(await opts.engine.forget(userId, body.id, { project }));
+    reply.send(await opts.engine.forget(userId, body.id, { project: body.project ?? null }));
   });
 
   /** "Today" — lightweight activity feed for the user dashboard. We

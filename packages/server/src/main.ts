@@ -12,6 +12,7 @@ import { buildHttpServer } from "./http.js";
 import { loadConfig } from "./config.js";
 import { MetricsCollector } from "./admin/metrics.js";
 import { bootstrapAdmin, gcExpiredSessions } from "./auth.js";
+import { buildAuth } from "./auth-betterauth.js";
 
 async function main() {
   const cfg = loadConfig();
@@ -151,6 +152,95 @@ async function main() {
     }
   }, cfg.decay.intervalMs);
 
+  // 24h persistent throughput: every minute, flush pending per-user
+  // counters from the in-mem MetricsCollector to metrics_samples so the
+  // history chart survives reboots. Same loop also prunes >25h-old rows
+  // so the table can't grow without bound.
+  const metricsFlushTimer = setInterval(async () => {
+    try {
+      // Floor sampledAt to the minute so the bucket is stable across
+      // races between record() and drain().
+      const now = new Date();
+      now.setSeconds(0, 0);
+      const samples = metrics.drainPendingSamples(now);
+      if (samples.length > 0) await warm.recordMetricsSamples(samples);
+      // Keep ~25h of history (24h chart + a margin) so a chart query at
+      // sample-time-minus-24h always finds a left edge.
+      const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      await warm.pruneMetricsSamples(cutoff);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("metrics flush error", err);
+    }
+  }, 60 * 1000);
+  metricsFlushTimer.unref?.();
+
+  // Better Auth instance — owns the dashboard control plane (login,
+  // sessions, JWT issuance). Phase 1: scaffolded alongside the existing
+  // /v1/auth/* routes; both flows live until the SPA cuts over.
+  const baseUrl = process.env.NOVAMEM_BASE_URL ?? `http://${cfg.service.host}:${cfg.service.port}`;
+  const baSecret = process.env.NOVAMEM_COOKIE_SECRET ?? "novamem-dev-cookie-secret-change-me";
+  const ba = buildAuth({
+    pool: warm.pool,
+    baseUrl,
+    secret: baSecret,
+    secureCookies: process.env.NOVAMEM_INSECURE_COOKIES !== "1",
+    trustedOrigins: [baseUrl, "http://localhost:5173"],
+  });
+
+  // Bootstrap admin via Better Auth — sign up an account with the
+  // configured bootstrap email + password if no Better Auth users exist
+  // yet. Idempotent: re-runs on every start but no-ops once an account
+  // is present. Better Auth's admin plugin can promote a user via
+  // setRole; we do that immediately after sign-up so the dashboard's
+  // role-gated routes work on the first login.
+  try {
+    const adminEmail =
+      process.env.NOVAMEM_BOOTSTRAP_ADMIN_EMAIL ??
+      process.env.NOVAMEM_BOOTSTRAP_ADMIN_USERNAME ?? null;
+    const adminPassword = process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD ?? null;
+    if (adminEmail && adminPassword) {
+      const probe = await warm.pool.query<{ count: string }>(
+        `SELECT count(*)::text FROM "user"`,
+      );
+      const userCount = Number(probe.rows[0]?.count ?? "0");
+      if (userCount === 0) {
+        // Treat the env value as an email when it contains '@', else
+        // synthesise a placeholder domain so Better Auth's email-format
+        // validator accepts it. Operators get a sensible default for
+        // username-style identifiers (legacy "admin" → admin@local).
+        const email = adminEmail.includes("@") ? adminEmail : `${adminEmail}@local`;
+        const r = await ba.api.signUpEmail({
+          body: {
+            email,
+            password: adminPassword,
+            name: adminEmail,
+          },
+        });
+        const newUserId = (r as { user?: { id?: string } } | undefined)?.user?.id;
+        if (newUserId) {
+          // Promote the bootstrap user to admin. Better Auth's
+          // /admin/set-role endpoint requires admin auth — and we're
+          // the only user in the system right now, so there's no admin
+          // to make the call. Direct DB UPDATE is the documented escape
+          // hatch for the bootstrap case.
+          await warm.pool.query(
+            `UPDATE "user" SET role = 'admin', "updatedAt" = now() WHERE id = $1`,
+            [newUserId],
+          );
+          // eslint-disable-next-line no-console
+          console.log(`[novamem] seeded bootstrap admin "${email}" via Better Auth`);
+        }
+        // Scrub the bootstrap password from the env so docker inspect
+        // can't recover it for the lifetime of the process.
+        delete process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD;
+      }
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[novamem] bootstrap admin failed:", (err as Error).message);
+  }
+
   const app = buildHttpServer({
     engine,
     warm,
@@ -158,6 +248,10 @@ async function main() {
     rateLimitPerMinute: cfg.service.rateLimitPerMinute,
     metrics,
     adminDashboard: cfg.admin.dashboard,
+    betterAuth: {
+      handler: (req) => ba.handler(req),
+      getSession: (headers) => ba.api.getSession({ headers }) as Promise<{ user?: { id: string }; session?: { id: string } } | null>,
+    },
   });
   await app.listen({ host: cfg.service.host, port: cfg.service.port });
 

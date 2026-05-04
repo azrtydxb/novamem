@@ -28,6 +28,10 @@ export interface SearchRequest {
    *  (every listed project the caller is a member of). Membership is
    *  enforced upstream at the route layer. */
   includeProjects?: string[];
+  /** Cross-namespace mode: union the search across these namespace
+   *  shelves. When set, takes precedence over the singular `namespace`
+   *  field. */
+  includeNamespaces?: string[];
   /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour. */
   weights?: { keyword?: number; vector?: number; graph?: number };
 }
