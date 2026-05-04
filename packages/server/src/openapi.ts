@@ -590,10 +590,11 @@ export function openapiSpec() {
           responses: { "200": { description: "OK" } },
         },
       },
-      // /v1/me/{search,remember,recent,neighbors,forget,memories/:id}
-      // mirror the data-plane shapes exactly; documented under their /v1/*
-      // counterparts. They exist so cookie-authenticated dashboard SPAs
-      // can hit them without sending Authorization.
+      // The /v1/me/{search,remember,recent,neighbors,forget,memories/:id}
+      // mirrors used to live here for cookie-authenticated dashboard SPAs.
+      // They've been removed — the auth hook now resolves Better Auth
+      // session bearers on the data-plane too, so the SPA hits /v1/*
+      // directly. See packages/server/src/routes/data-plane.ts.
       // ─── Admin ────────────────────────────────────────────────────
       "/v1/admin/audit-log": {
         get: {
