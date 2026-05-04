@@ -4,8 +4,21 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-04
+
+First public npm release. Three packages on the `@azrtydxb` scope:
+
+- [`@azrtydxb/novamem`](https://npmjs.com/package/@azrtydxb/novamem) — TypeScript client
+- [`@azrtydxb/novamem-mcp`](https://npmjs.com/package/@azrtydxb/novamem-mcp) — MCP-stdio shim
+- [`@azrtydxb/novamem-init`](https://npmjs.com/package/@azrtydxb/novamem-init) — one-shot interactive installer
+
+Each ships with [Sigstore provenance](https://docs.npmjs.com/generating-provenance-statements) attestations, published via npm Trusted Publishers (OIDC) — no static tokens, no rotation.
+
 ### Added
 
+- **`@azrtydxb/novamem-init`** — `npx @azrtydxb/novamem-init` interactively signs you into a novamem server, mints a fresh `nm_…` bearer, detects every installed AI agent host (30 from the agentskills.io ecosystem — Claude Code, Claude Desktop, Cursor, Kilo Code, OpenCode, Codex CLI, Gemini CLI, GitHub Copilot, Cline, RooCode, Continue, Factory, Windsurf, Amazon Q, plus 16 skill-only hosts), and writes the right MCP server entry, skill bundle, and slash commands per host. JSON/TOML merging is idempotent — never clobbers existing config.
+- **Tag-driven release workflow** (`.github/workflows/release.yml`) — push a `v*` tag and CI builds, tests, and publishes the three public packages with provenance via OIDC Trusted Publishers.
+- **Multi-arch Docker images** at `ghcr.io/azrtydxb/novamem:main` and `:sha-<short>` — built natively on amd64 and arm64 GitHub-hosted runners (no QEMU), Trivy-scanned (HIGH/CRITICAL with `--ignore-unfixed`) before push.
 - **Better Auth for the dashboard.** Email + password sign-in via `POST /api/auth/sign-in/email`. Sessions stored in Better Auth's `"user"` / `"session"` / `"account"` / `"verification"` / `"jwks"` tables. JWT issuance on demand at `/api/auth/token` with JWKS at `/api/auth/jwks`. Admin user CRUD via Better Auth's `/api/auth/admin/*`.
 - **`memory_update`** — rewrite an existing entry in place. Preserves id, hit count, graph edges, creation timestamp; refreshes FTS + cold vector when content changes; skips embedder for metadata-only updates. HTTP `PUT /v1/memories/:id` + cookie-auth mirror at `PUT /v1/me/memories/:id` + MCP tool.
 - **Worthiness gate** at write time — `engine.shouldReject` rejects content < 12 chars or matching the conversational-filler regex; `force: true` bypasses. Returns `{id: null, rejected: <reason>}`.
