@@ -19,7 +19,7 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 - **24h persistent throughput chart** — `metrics_samples` table holds 1-minute buckets, written by a per-minute flush from the in-memory MetricsCollector. New `GET /v1/me/metrics/history?hours=24` powers a second chart on the user Metrics page.
 - **Last-admin guard** — Better Auth passthrough refuses `remove-user` and `set-role(role=user)` against the only remaining admin (returns `400 LAST_ADMIN_PROTECTED`).
 - **MCP `instructions` field** — server ships behaviour rules to compliant MCP clients on `initialize`. Single source of truth instead of per-agent `CLAUDE.md` fragments.
-- **Direct SSE MCP** — recent clients point at `http://<host>:7778/mcp/sse` with `Authorization: Bearer nm_…` and skip the stdio shim. The shim stays in `@azertydxb/novamem-mcp` for legacy clients.
+- **Direct SSE MCP** — recent clients point at `http://<host>:7778/mcp/sse` with `Authorization: Bearer nm_…` and skip the stdio shim. The shim stays in `@azrtydxb/novamem-mcp` for legacy clients.
 - **User-as-owner data model** — every memory entry belongs to one user. There is no separate "tenant" or "organization" concept. Admins manage users; users manage their own memory + projects + bearers.
 - **Projects (sub-brains)** — memory entries can additionally belong to a project; projects can be shared with other users by adding them as members. Schema additions: `projects`, `project_members`, `project_id` columns on `memory_entries` / `memory_fts` / `memory_relations` / `cold_orphans`.
 - **Embedded React dashboard** at `/admin` — admin (Users · Health · Metrics) and user (Browse · Graph · Today · Projects · API Tokens) surfaces.

@@ -1,5 +1,5 @@
 {
-  "name": "@azertydxb/novamem-mcp",
+  "name": "@azrtydxb/novamem-mcp",
   "version": "0.1.0",
   "description": "MCP-stdio shim for the novamem memory service",
   "license": "MIT",
@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@azertydxb/novamem": "workspace:*",
+    "@azrtydxb/novamem": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.4"
   },
   "engines": { "node": ">=20" }

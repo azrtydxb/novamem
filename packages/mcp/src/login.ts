@@ -5,8 +5,8 @@
  * tools can pipe the result into NOVAMEM_TOKEN.
  *
  * Usage:
- *   npx @azertydxb/novamem-mcp novamem-login                   # prompts for password (TTY)
- *   NOVAMEM_PASSWORD=… npx @azertydxb/novamem-mcp novamem-login   # non-interactive
+ *   npx @azrtydxb/novamem-mcp novamem-login                   # prompts for password (TTY)
+ *   NOVAMEM_PASSWORD=… npx @azrtydxb/novamem-mcp novamem-login   # non-interactive
  *
  * Env:
  *   NOVAMEM_BASE_URL  default http://localhost:7778
@@ -20,7 +20,7 @@
 import { createInterface } from "node:readline";
 import { stdin as input, stderr as errOut } from "node:process";
 
-import { NovamemClient } from "@azertydxb/novamem";
+import { NovamemClient } from "@azrtydxb/novamem";
 
 async function promptPassword(): Promise<string> {
   if (!input.isTTY) {

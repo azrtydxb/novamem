@@ -15,7 +15,7 @@ const dst = resolve(here, "../dist/admin/ui");
 
 if (!existsSync(src)) {
   console.error(`[build:assets] missing ${src}`);
-  console.error(`               run \`pnpm --filter @azertydxb/novamem-admin-ui build\` first,`);
+  console.error(`               run \`pnpm --filter @azrtydxb/novamem-admin-ui build\` first,`);
   console.error(`               or \`pnpm -r build\` from the repo root.`);
   process.exit(1);
 }
