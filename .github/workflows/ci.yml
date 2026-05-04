@@ -129,7 +129,7 @@ jobs:
       # Per-arch cache scope so the two arches don't fight for the same
       # gha cache slot — each gets its own slice keyed by `${arch}`.
       - name: Build runtime image (native ${{ matrix.arch }})
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -162,7 +162,7 @@ jobs:
       # attestation manifests the registry expects.
       - name: Push per-arch image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
