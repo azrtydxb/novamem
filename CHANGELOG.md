@@ -37,7 +37,7 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 - **`bcryptjs` dependency dropped** — Better Auth handles password hashing.
 - **`/v1/auth/{login,logout,me,change-password,status}` removed.** Better Auth replaces them under `/api/auth/*`. `POST /v1/auth/rotate-token` stays for the CLI / device path on `nm_…` bearers.
 - **`source_type` is an open string**, not an enum — recommended vocab (`chat / email / code-review / doc / inference / observation / system / manual`) is documented in the MCP `instructions` rather than enforced at the schema layer.
-- **Bootstrap env vars renamed.** `NOVAMEM_BOOTSTRAP_ADMIN_USERNAME` is still accepted as a fallback; `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` is the canonical name. New required env in production: `NOVAMEM_BASE_URL`, `NOVAMEM_COOKIE_SECRET`.
+- **Bootstrap env vars.** `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` + `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` seed the first admin when no admin user exists. New required env in production: `NOVAMEM_BASE_URL`, `NOVAMEM_COOKIE_SECRET`.
 - **Token semantics simplified.** A bearer no longer carries a project scope; it grants access to everything the owning user can reach. Token revoke is a hard `DELETE`.
 - Default port is **7778** (host + container).
 - `engine.decay()` rewritten as a single bulk `UPDATE` (was one round-trip per cold candidate; 500–1000× faster at scale).
