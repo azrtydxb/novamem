@@ -122,8 +122,7 @@ export class MemoryEngine {
    *  store, or a short reason string when it should be rejected. The
    *  caller is responsible for honouring `force: true` to bypass.
    *
-   *  No LLM judging here — that lives behind a future `NOVAMEM_JUDGE_URL`
-   *  config option. Hard rules only:
+   *  Two rules:
    *    - too short to be durable knowledge (< 12 chars after trim)
    *    - obvious conversational filler (single-word / canned reply)
    *
@@ -755,11 +754,7 @@ export class MemoryEngine {
    *       from the original co_occurs so search ranking can dial it
    *       back if the inferred edges turn out to be noisy.
    *
-   *  Runs cross-user — operates on whatever rows exist. The audit log
-   *  records each merge so operators can spot-check.
-   *
-   *  No LLM-based summarization in scope yet — that lives behind a
-   *  future `NOVAMEM_JUDGE_URL` config. */
+   *  Runs cross-user — operates on whatever rows exist. */
   async dreamCycle(opts: {
     cosineThreshold?: number;
     jaccardThreshold?: number;
