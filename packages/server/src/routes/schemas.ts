@@ -25,6 +25,19 @@ export const ProjectIdRule = z
   .max(64)
   .regex(/^[A-Za-z0-9._-]+$/, { message: "project id contains invalid characters" });
 
+/** Body-field validator for any place a caller may pass *either* a project
+ *  id (ULID) or a human name. Keeps a hard upper bound (128 chars) and
+ *  rejects control characters but is otherwise permissive — names like
+ *  "MCP Bearer Test" with spaces must be accepted. The route layer's
+ *  resolveProjectRef does the actual existence + membership checks. */
+// eslint-disable-next-line no-control-regex
+const _NO_CTRL = /^[^\x00-\x1f\x7f]+$/;
+export const ProjectRefRule = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[\x21-\x7e \u0080-\uffff]+$/, { message: "project ref contains control characters" });
+
 export const UsernameRule = z
   .string()
   .min(2)
@@ -35,16 +48,24 @@ export const UsernameRule = z
 
 // ─── Memory data-plane bodies ──────────────────────────────────────────
 
+/** Namespace shelf names. Same charset as project ids — we accept
+ *  reasonably-shaped strings; the value is opaque to the engine. */
+const NamespaceRule = z.string().min(1).max(128);
+
 export const SearchBody = z.object({
   query: z.string().min(1).max(8 * 1024),
   k: z.number().int().positive().max(100).optional(),
   namespace: z.string().max(128).optional(),
   agentName: z.string().max(128).optional().nullable(),
-  project: ProjectIdRule.optional().nullable(),
+  project: ProjectRefRule.optional().nullable(),
   /** Active-project mode: merge results from the caller's user-global
    *  store with the listed projects (membership enforced at the route
    *  layer). Capped at 16 to bound the per-request fan-out. */
-  includeProjects: z.array(ProjectIdRule).max(16).optional(),
+  includeProjects: z.array(ProjectRefRule).max(16).optional(),
+  /** Cross-namespace mode: union the search across these namespace
+   *  shelves instead of just `namespace` (or "default"). Capped at 16
+   *  for the same fanout-budget reason as includeProjects. */
+  includeNamespaces: z.array(NamespaceRule).max(16).optional(),
   weights: z
     .object({
       keyword: z.number().optional(),
@@ -59,7 +80,7 @@ export const RememberBody = z.object({
   namespace: z.string().max(128).optional(),
   source: z.string().max(128).optional(),
   agentName: z.string().max(128).optional().nullable(),
-  project: ProjectIdRule.optional().nullable(),
+  project: ProjectRefRule.optional().nullable(),
   // Zod 4: `z.record(...)` now requires both key + value schemas.
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -77,21 +98,23 @@ export const RecentBody = z.object({
     .string()
     .datetime({ offset: true, message: "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)" })
     .optional(),
-  project: ProjectIdRule.optional().nullable(),
-  includeProjects: z.array(ProjectIdRule).max(16).optional(),
+  project: ProjectRefRule.optional().nullable(),
+  includeProjects: z.array(ProjectRefRule).max(16).optional(),
+  includeNamespaces: z.array(NamespaceRule).max(16).optional(),
 });
 
 export const NeighborsBody = z.object({
   id: z.string().min(1).max(128),
   depth: z.number().int().positive().max(3).optional(),
   k: z.number().int().positive().max(50).optional(),
-  project: ProjectIdRule.optional().nullable(),
-  includeProjects: z.array(ProjectIdRule).max(16).optional(),
+  project: ProjectRefRule.optional().nullable(),
+  includeProjects: z.array(ProjectRefRule).max(16).optional(),
+  includeNamespaces: z.array(NamespaceRule).max(16).optional(),
 });
 
 export const ForgetBody = z.object({
   id: z.string().min(1).max(128),
-  project: ProjectIdRule.optional().nullable(),
+  project: ProjectRefRule.optional().nullable(),
 });
 
 // ─── Admin bodies ──────────────────────────────────────────────────────

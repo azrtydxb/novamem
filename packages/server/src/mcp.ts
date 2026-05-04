@@ -32,7 +32,6 @@ export function buildMcpServer(
   const ctx: McpContext =
     typeof ctxOrUserId === "string" ? { userId: ctxOrUserId } : ctxOrUserId;
   const userId = ctx.userId;
-  const bearerProject = ctx.projectId ?? null;
   const server = new Server(
     { name: "novamem", version: "0.1.0" },
     { capabilities: { tools: {} }, instructions: NOVAMEM_INSTRUCTIONS },
@@ -49,10 +48,20 @@ export function buildMcpServer(
           properties: {
             query: { type: "string" },
             k: { type: "number", description: "Top-K to return (default 10)" },
-            namespace: { type: "string" },
+            namespace: { type: "string", description: "Single namespace shelf (default 'default'). Ignored when includeNamespaces is set." },
+            includeNamespaces: {
+              type: "array",
+              items: { type: "string" },
+              description: "Cross-namespace search: union results across these shelves. Use when you don't know which namespace a memory was written to.",
+            },
             project: {
               type: "string",
-              description: "Optional project (sub-brain) to scope to. Omit for user-wide entries.",
+              description: "Project to scope to. Accepts id (ULID) or human name. Omit for user-wide entries.",
+            },
+            includeProjects: {
+              type: "array",
+              items: { type: "string" },
+              description: "Active-project mode: union user-global with each listed project (id or name).",
             },
             weights: {
               type: "object",
@@ -94,13 +103,16 @@ export function buildMcpServer(
       },
       {
         name: "memory.recent",
-        description: "Recent entries in a namespace, ordered newest first. Optional ISO-8601 `since` lower bound.",
+        description: "Recent entries, ordered newest first. Optional ISO-8601 `since` lower bound.",
         inputSchema: {
           type: "object",
           properties: {
             namespace: { type: "string" },
+            includeNamespaces: { type: "array", items: { type: "string" }, description: "Cross-namespace recent feed." },
             k: { type: "number" },
             since: { type: "string", description: "ISO-8601 timestamp" },
+            project: { type: "string", description: "Project id or name." },
+            includeProjects: { type: "array", items: { type: "string" } },
           },
         },
       },
@@ -113,6 +125,8 @@ export function buildMcpServer(
             id: { type: "string" },
             depth: { type: "number", description: "Traversal depth (default 1)" },
             k: { type: "number" },
+            project: { type: "string", description: "Project id or name (for entry resolution)." },
+            includeProjects: { type: "array", items: { type: "string" } },
           },
           required: ["id"],
         },
@@ -155,27 +169,45 @@ export function buildMcpServer(
     ],
   }));
 
-  /** Resolve the project to use for a memory call. Same rules as the HTTP
-   *  layer (centralised in routes/context.ts to prevent drift): bearer-
-   *  bound project wins; user-wide bearer can't pass a project. The
-   *  HTTP variant accepts a Fastify reply; the MCP variant throws (the
-   *  outer try/catch turns the throw into an MCP isError result). */
-  function resolveProject(arg: unknown): string | null {
+  /** Resolve a single project reference (id or human name) and verify the
+   *  caller is a member. Returns the canonical ULID, or null when the
+   *  caller didn't pass one. Throws on failure — the outer try/catch in
+   *  the CallTool dispatcher turns it into an MCP isError result with a
+   *  message the agent can read. */
+  async function resolveProject(arg: unknown): Promise<string | null> {
     const requested = typeof arg === "string" && arg.length > 0 ? arg : null;
-    if (bearerProject) {
-      if (requested && requested !== bearerProject) {
-        throw new Error(
-          `bearer is scoped to project '${bearerProject}'; cannot operate on '${requested}'`,
-        );
-      }
-      return bearerProject;
+    if (!requested) return null;
+    if (!warm) {
+      throw new Error("project lookup requires the warm store");
     }
-    if (requested) {
-      throw new Error(
-        "this bearer is user-wide; mint a project-scoped token to access a project",
-      );
+    const byId = await warm.getProject(requested);
+    const project = byId ?? (await warm.findProjectByName(userId, requested));
+    if (!project) {
+      throw new Error(`no such project '${requested}' — call project.list to see ids`);
     }
-    return null;
+    const m = await warm.getProjectMembership(project.id, userId);
+    if (!m) {
+      throw new Error(`not a member of project '${requested}' (id ${project.id})`);
+    }
+    return project.id;
+  }
+
+  /** Same as resolveProject but for the includeProjects array. Resolves
+   *  every entry and validates membership. */
+  async function resolveProjects(arg: unknown): Promise<string[] | undefined> {
+    if (!Array.isArray(arg) || arg.length === 0) return undefined;
+    const out: string[] = [];
+    for (const v of arg) {
+      const id = await resolveProject(v);
+      if (id) out.push(id);
+    }
+    return out.length > 0 ? out : undefined;
+  }
+
+  function asStringArray(arg: unknown): string[] | undefined {
+    if (!Array.isArray(arg) || arg.length === 0) return undefined;
+    const out = arg.filter((v): v is string => typeof v === "string" && v.length > 0);
+    return out.length > 0 ? out : undefined;
   }
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -191,18 +223,21 @@ export function buildMcpServer(
                 ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
               }
             : undefined;
-        const project = resolveProject(args.project);
+        const project = await resolveProject(args.project);
+        const includeProjects = await resolveProjects(args.includeProjects);
         const r = await engine.search(userId, {
           query: String(args.query),
           k: typeof args.k === "number" ? args.k : undefined,
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          includeNamespaces: asStringArray(args.includeNamespaces),
           project,
+          includeProjects,
           weights,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.remember": {
-        const project = resolveProject(args.project);
+        const project = await resolveProject(args.project);
         const r = await engine.remember(userId, {
           content: String(args.content),
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
@@ -213,37 +248,45 @@ export function buildMcpServer(
       }
       case "memory.today": {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const project = resolveProject(args.project);
+        const project = await resolveProject(args.project);
+        const includeProjects = await resolveProjects(args.includeProjects);
         const r = await engine.recent(userId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          includeNamespaces: asStringArray(args.includeNamespaces),
           k: typeof args.k === "number" ? args.k : 20,
           since,
           project,
+          includeProjects,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.recent": {
-        const project = resolveProject(args.project);
+        const project = await resolveProject(args.project);
+        const includeProjects = await resolveProjects(args.includeProjects);
         const r = await engine.recent(userId, {
           namespace: typeof args.namespace === "string" ? args.namespace : undefined,
+          includeNamespaces: asStringArray(args.includeNamespaces),
           k: typeof args.k === "number" ? args.k : undefined,
           since: typeof args.since === "string" ? args.since : undefined,
           project,
+          includeProjects,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.neighbors": {
-        const project = resolveProject(args.project);
+        const project = await resolveProject(args.project);
+        const includeProjects = await resolveProjects(args.includeProjects);
         const r = await engine.neighbors(userId, {
           id: String(args.id),
           depth: typeof args.depth === "number" ? args.depth : undefined,
           k: typeof args.k === "number" ? args.k : undefined,
           project,
+          includeProjects,
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "memory.forget": {
-        const project = resolveProject(args.project);
+        const project = await resolveProject(args.project);
         const r = await engine.forget(userId, String(args.id), { project });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }

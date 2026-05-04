@@ -29,13 +29,16 @@ export function ChangePasswordPage({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
 
-    const r = await api<{ ok: boolean }>("POST", "/v1/auth/change-password", {
+    // Better Auth's change-password endpoint. Returns 200 on success and
+    // 400 on a wrong current password.
+    const r = await api<{ user: unknown }>("POST", "/api/auth/change-password", {
       currentPassword,
       newPassword,
+      revokeOtherSessions: true,
     });
 
     setBusy(false);
-    if (r.ok && r.body?.ok) {
+    if (r.ok) {
       markPasswordChanged();
       success("Password changed");
       onDone();

@@ -134,6 +134,12 @@ interface UserSlot {
   counters: Record<UserCounterName, number>;
   queryRing: TimestampRing;
   rememberRing: TimestampRing;
+  /** Pending (queries, remembers) accumulated since the last flush to the
+   *  persistent metrics_samples table. Reset on each flush. The live
+   *  rings above are independent — they're used for the in-mem live
+   *  chart and survive the flush. */
+  pendingQueries: number;
+  pendingRemembers: number;
 }
 
 function newUserSlot(): UserSlot {
@@ -141,6 +147,8 @@ function newUserSlot(): UserSlot {
     counters: { ...ZERO_USER_COUNTERS },
     queryRing: new TimestampRing(),
     rememberRing: new TimestampRing(),
+    pendingQueries: 0,
+    pendingRemembers: 0,
   };
 }
 
@@ -242,6 +250,7 @@ export class MetricsCollector {
     s.counters.hits_graph_total += hits.graph;
     if (hits.warm + hits.cold + hits.graph === 0) s.counters.queries_zero_hit += 1;
     s.queryRing.record(now);
+    s.pendingQueries += 1;
     if (token) {
       const t = this.tokenSlot(userId, token);
       t.counters.queries_total += 1;
@@ -254,11 +263,36 @@ export class MetricsCollector {
     const s = this.slot(userId);
     s.counters.remembers_total += 1;
     s.rememberRing.record(now);
+    s.pendingRemembers += 1;
     if (token) {
       const t = this.tokenSlot(userId, token);
       t.counters.remembers_total += 1;
       t.rememberRing.record(now);
     }
+  }
+
+  /** Drain per-user pending counters into a flushable batch. Called by
+   *  the periodic loop in main.ts; counters reset to 0 atomically here.
+   *  Returns the rows the caller should INSERT into metrics_samples. */
+  drainPendingSamples(sampledAt: Date): Array<{
+    userId: string;
+    sampledAt: Date;
+    queries: number;
+    remembers: number;
+  }> {
+    const out: Array<{ userId: string; sampledAt: Date; queries: number; remembers: number }> = [];
+    for (const [userId, s] of this.perUser) {
+      if (s.pendingQueries === 0 && s.pendingRemembers === 0) continue;
+      out.push({
+        userId,
+        sampledAt,
+        queries: s.pendingQueries,
+        remembers: s.pendingRemembers,
+      });
+      s.pendingQueries = 0;
+      s.pendingRemembers = 0;
+    }
+    return out;
   }
 
   recordForget(userId: string, token?: TokenIdentity): void {

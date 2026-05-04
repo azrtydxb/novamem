@@ -1,25 +1,9 @@
 /** Thin wrapper around `fetch` for the dashboard SPA. Sessions live in
- *  an HttpOnly cookie set by `POST /v1/auth/login` so this module never
- *  touches the bearer; we just `credentials: "include"` and the browser
- *  attaches the cookie automatically. CSRF protection: server sets a
- *  JS-readable `novamem_csrf` cookie at login + on every /v1/auth/me;
- *  we read it and echo it back as X-CSRF-Token on state-changing
- *  requests. */
-
-const CSRF_COOKIE = "novamem_csrf";
-const CSRF_HEADER = "X-CSRF-Token";
-
-/** Read the (signed) CSRF cookie value. @fastify/cookie signs cookies
- *  in the form `<value>.<sig>`; the SPA only needs to echo the whole
- *  cookie value back unchanged — the server unsigns on receipt. */
-function readCsrfCookie(): string {
-  const raw = document.cookie
-    .split(";")
-    .map((s) => s.trim())
-    .find((s) => s.startsWith(`${CSRF_COOKIE}=`));
-  if (!raw) return "";
-  return decodeURIComponent(raw.slice(CSRF_COOKIE.length + 1));
-}
+ *  an HttpOnly cookie set by Better Auth (`/api/auth/sign-in/email`).
+ *  This module never reads the cookie directly — we `credentials:
+ *  "include"` and the browser attaches it automatically. CSRF: Better
+ *  Auth uses SameSite=Lax cookies + trusted-origin checks server-side,
+ *  so the SPA doesn't need to echo a token back. */
 
 export interface ApiResult<T> {
   status: number;
@@ -37,14 +21,6 @@ export async function api<T = unknown>(
   // Only declare content-type when there's a body — Fastify's JSON parser
   // 400s on `content-type: application/json` with empty payload.
   if (body !== undefined && body !== null) headers["content-type"] = "application/json";
-  // Echo back the CSRF cookie on state-changing requests. Bearer-auth
-  // callers (CLI / MCP) skip this entirely; for the SPA the cookie is
-  // present whenever there's an active session.
-  const isStateChanging = method === "POST" || method === "DELETE";
-  if (isStateChanging) {
-    const csrf = readCsrfCookie();
-    if (csrf) headers[CSRF_HEADER] = csrf;
-  }
   let res: Response;
   try {
     res = await fetch(path, {
