@@ -48,58 +48,8 @@ export class FakeWarmStore {
      *  engine.decay. Only the queries the engine actually issues are wired —
      *  anything else throws so tests fail loudly on unexpected SQL. */
     query: async (sql: string, params: unknown[] = []): Promise<{ rows: any[] }> => {
-      // recent()
-      if (sql.includes("FROM memory_entries") && sql.includes("namespace = ANY($1::text[])")) {
-        // Engine SQL shapes (post-includeNamespaces refactor):
-        //  - user-only:    namespace = ANY($1::text[]) AND user_id = $X AND project_id IS NULL
-        //  - project-only: namespace = ANY($1::text[]) AND project_id = $X
-        //  - active mode:  namespace = ANY($1::text[]) AND ((user_id = $X AND project_id IS NULL)
-        //                                                    OR project_id = ANY($Y::text[]))
-        const namespaces = params[0] as string[];
-        const k = Number(params[1]);
-        const activeMode = sql.includes("project_id = ANY(");
-        const projectOnly = !activeMode && sql.includes("project_id = $") && !sql.includes("project_id IS NULL");
-        let userId: string | null = null;
-        let projectId: string | null = null;
-        let includeProjects: string[] | null = null;
-        let sinceParamIdx = -1;
-        if (activeMode) {
-          userId = String(params[2]);
-          includeProjects = params[3] as string[];
-          sinceParamIdx = 4;
-        } else if (projectOnly) {
-          projectId = String(params[2]);
-          sinceParamIdx = 3;
-        } else {
-          userId = String(params[2]);
-          sinceParamIdx = 3;
-        }
-        const since = sql.includes("created_at >= $") ? new Date(String(params[sinceParamIdx])) : null;
-        const filtered = [...this.rows.values()]
-          .filter((r) => namespaces.includes(r.namespace))
-          .filter((r) => {
-            if (activeMode) {
-              if (r.projectId === null) return r.userId === userId;
-              return includeProjects!.includes(r.projectId);
-            }
-            if (projectOnly) return r.projectId === projectId;
-            return r.projectId === null && r.userId === userId;
-          })
-          .filter((r) => !since || r.createdAt >= since)
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-          .slice(0, k)
-          .map((r) => ({
-            id: r.id,
-            content: r.content,
-            namespace: r.namespace,
-            project_id: r.projectId,
-            source: r.source,
-            metadata: r.metadata,
-            cold: r.cold,
-            created_at: r.createdAt,
-          }));
-        return { rows: filtered };
-      }
+      // (engine.recent moved off pool.query → WarmStore.listRecent — see
+      // FakeWarmStore.listRecent below.)
       // decay run start
       if (sql.startsWith("INSERT INTO decay_runs")) {
         this.decayRunsInserted++;
@@ -418,6 +368,58 @@ export class FakeWarmStore {
       hits: r.hits,
       idleDays: (Date.now() - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24),
     };
+  }
+
+  async listRecent(
+    userId: string,
+    args: {
+      namespaces: string[];
+      k: number;
+      projectId?: string | null;
+      includeProjects?: string[] | null;
+      since?: Date | null;
+    },
+  ) {
+    const { namespaces, k, projectId = null, includeProjects = null, since = null } = args;
+    const isActive = !!includeProjects && includeProjects.length > 0;
+    const isProject = !isActive && typeof projectId === "string";
+    return [...this.rows.values()]
+      .filter((r) => namespaces.includes(r.namespace))
+      .filter((r) => {
+        if (isActive) {
+          if (r.projectId === null) return r.userId === userId;
+          return includeProjects!.includes(r.projectId);
+        }
+        if (isProject) return r.projectId === projectId;
+        return r.projectId === null && r.userId === userId;
+      })
+      .filter((r) => !since || r.createdAt >= since)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, k)
+      .map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        projectId: r.projectId,
+        content: r.content,
+        namespace: r.namespace,
+        source: r.source,
+        agentName: r.agentName,
+        metadata: r.metadata,
+        cold: r.cold,
+        createdAt: r.createdAt,
+        updatedAt: r.createdAt,
+      }));
+  }
+
+  async getColdEntryStatsMany(
+    ids: string[],
+  ): Promise<Map<string, { hits: number; idleDays: number }>> {
+    const out = new Map<string, { hits: number; idleDays: number }>();
+    for (const id of ids) {
+      const s = await this.getColdEntryStats(id);
+      if (s) out.set(id, s);
+    }
+    return out;
   }
 
   async stats(userId: string) {

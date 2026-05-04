@@ -36,7 +36,9 @@ export interface SearchResult {
   project: string | null;
   source: string;
   metadata: Record<string, unknown>;
-  signals: { keyword: number; vector: number; graph: number };
+  /** Per-signal contributions for ranked results (search/neighbors).
+   *  Omitted on ordered results (recent) where ranking isn't applicable. */
+  signals?: { keyword?: number; vector?: number; graph?: number };
 }
 
 export interface SearchResponse {
