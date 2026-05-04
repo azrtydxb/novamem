@@ -41,6 +41,22 @@ function makeApp(
     defaultEffectiveDays: 7,
     metrics,
   });
+  // Test-mode Better Auth shim. Production wires the real Better Auth
+  // instance; tests synthesize a session by minting a row in the fake
+  // warm store via `warm.createSession` and presenting the resulting
+  // `ns_…` token as Authorization: Bearer. The shim resolves it back
+  // to a dashUser the same way real Better Auth would.
+  const fakeBA = {
+    handler: async (_req: Request) => new Response("not-implemented", { status: 501 }),
+    getSession: async (headers: Headers) => {
+      const auth = headers.get("authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
+      if (!token.startsWith("ns_")) return null;
+      const r = await warm.resolveSession(token);
+      if (!r) return null;
+      return { user: { id: r.user.id, email: r.user.username, role: r.user.role } };
+    },
+  };
   const app = buildHttpServer({
     engine,
     warm: asWarm(warm),
@@ -48,6 +64,7 @@ function makeApp(
     rateLimitPerMinute: 100_000, // effectively off for tests
     metrics,
     adminDashboard: opts.adminDashboard,
+    betterAuth: fakeBA,
   });
   return { app, warm, cold, graph, metrics };
 }
@@ -75,6 +92,28 @@ async function adminAuth(
   }
   const sess = await warm.createSession(userId, 24 * 3600 * 1000);
   return { authorization: `Bearer ${sess.token}` };
+}
+
+/** Same as adminAuth but creates a non-admin user. Used by tests that
+ *  need a logged-in user without going through Better Auth (which would
+ *  require a real database). The returned headers can be used as a
+ *  drop-in replacement for what `/v1/auth/login` used to return. */
+async function userAuth(
+  warm: FakeWarmStore,
+  username: string,
+  role: "admin" | "user" = "user",
+): Promise<{ authorization: string; userId: string; sessionToken: string }> {
+  await warm.createUser({
+    username,
+    passwordHash: "test-bcrypt-not-checked-for-session-resolve",
+    role,
+  });
+  let userId = username;
+  for (const u of warm.users.values()) {
+    if (u.username === username) { userId = u.id; break; }
+  }
+  const sess = await warm.createSession(userId, 24 * 3600 * 1000);
+  return { authorization: `Bearer ${sess.token}`, userId, sessionToken: sess.token };
 }
 
 describe("http: /health", () => {
@@ -622,76 +661,15 @@ describe("http: OpenAPI + Swagger UI", () => {
 });
 
 describe("http: dashboard auth + RBAC", () => {
-  async function setupWithAdmin(adminPwd = "supersecret") {
-    const { app, warm } = makeApp({ authMode: "user" });
-    const { hashPassword } = await import("./auth.js");
-    const hash = await hashPassword(adminPwd);
-    await warm.createUser({ username: "alice", passwordHash: hash, role: "admin" });
-    return { app, warm, adminPwd };
-  }
-
-  it("/v1/auth/status reports bootstrap state", async () => {
-    const { app } = makeApp({ authMode: "user" });
-    const r1 = await app.inject({ method: "GET", url: "/v1/auth/status" });
-    expect(r1.statusCode).toBe(200);
-    expect(r1.json()).toEqual({ ready: false, bootstrapNeeded: true });
-  });
-
-  it("login rejects unknown user / wrong password", async () => {
-    const { app } = await setupWithAdmin();
-    const bad = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "alice", password: "wrong" },
-    });
-    expect(bad.statusCode).toBe(401);
-
-    const missing = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "nobody", password: "supersecret" },
-    });
-    expect(missing.statusCode).toBe(401);
-  });
-
-  it("login + me + logout round-trip", async () => {
-    const { app, adminPwd } = await setupWithAdmin();
-    const login = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "alice", password: adminPwd },
-    });
-    expect(login.statusCode).toBe(201);
-    const session = login.json().token as string;
-    expect(session).toMatch(/^ns_/);
-
-    const me = await app.inject({
-      method: "GET", url: "/v1/auth/me",
-      headers: { authorization: `Bearer ${session}` },
-    });
-    expect(me.statusCode).toBe(200);
-    expect(me.json().user.username).toBe("alice");
-    expect(me.json().user.role).toBe("admin");
-
-    const out = await app.inject({
-      method: "POST", url: "/v1/auth/logout",
-      headers: { authorization: `Bearer ${session}` },
-    });
-    expect(out.statusCode).toBe(204);
-
-    const dead = await app.inject({
-      method: "GET", url: "/v1/auth/me",
-      headers: { authorization: `Bearer ${session}` },
-    });
-    expect(dead.statusCode).toBe(401);
-  });
+  // Login/logout/me/change-password are owned by Better Auth at
+  // /api/auth/*. Tests here cover the RBAC consequences (admin can do X,
+  // user can't do Y) — they synthesise sessions via `userAuth()` to
+  // skip the password+sign-in round-trip Better Auth would normally do.
 
   it("admin can create + delete + promote/demote users", async () => {
-    const { app, warm, adminPwd } = await setupWithAdmin();
-
-    const login = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "alice", password: adminPwd },
-    });
-    const session = login.json().token as string;
-    const auth = { authorization: `Bearer ${session}` };
+    const { app, warm } = makeApp({ authMode: "user" });
+    const aliceAuth = await userAuth(warm, "alice", "admin");
+    const auth = { authorization: aliceAuth.authorization };
 
     const created = await app.inject({
       method: "POST", url: "/v1/admin/users",
@@ -702,8 +680,6 @@ describe("http: dashboard auth + RBAC", () => {
     const bobId = created.json().id;
 
     const list = await app.inject({ method: "GET", url: "/v1/admin/users", headers: auth });
-    // The synthetic `public` user is always seeded; alice + bob are
-    // the two test users we created. So 3 total.
     const usernames = list.json().users.map((u: { username: string }) => u.username).sort();
     expect(usernames).toEqual(["alice", "bob", "public"]);
 
@@ -729,55 +705,30 @@ describe("http: dashboard auth + RBAC", () => {
   });
 
   it("refuses to delete self or the last admin", async () => {
-    const { app, adminPwd } = await setupWithAdmin();
-    const login = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "alice", password: adminPwd },
-    });
-    const session = login.json().token as string;
-    const auth = { authorization: `Bearer ${session}` };
-    const me = await app.inject({ method: "GET", url: "/v1/auth/me", headers: auth });
-    const aliceId = me.json().user.id;
-
+    const { app, warm } = makeApp({ authMode: "user" });
+    const alice = await userAuth(warm, "alice", "admin");
     const selfDel = await app.inject({
-      method: "DELETE", url: `/v1/admin/users/${aliceId}`,
-      headers: auth,
+      method: "DELETE", url: `/v1/admin/users/${alice.userId}`,
+      headers: { authorization: alice.authorization },
     });
     expect(selfDel.statusCode).toBe(400);
   });
 
   it("user role: /v1/me/metrics is scoped to that user", async () => {
-    const { app, warm } = await setupWithAdmin();
-    const { hashPassword } = await import("./auth.js");
-    const hash = await hashPassword("bobpass1");
-    const bob = await warm.createUser({ username: "bob", passwordHash: hash, role: "user" });
-
-    const login = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "bob", password: "bobpass1" },
-    });
-    const session = login.json().token as string;
-
+    const { app, warm } = makeApp({ authMode: "user" });
+    const bob = await userAuth(warm, "bob");
     const m = await app.inject({
       method: "GET", url: "/v1/me/metrics",
-      headers: { authorization: `Bearer ${session}` },
+      headers: { authorization: bob.authorization },
     });
     expect(m.statusCode).toBe(200);
-    expect(m.json().userId).toBe(bob.id);
+    expect(m.json().userId).toBe(bob.userId);
   });
 
   it("user can create + delete their own tokens", async () => {
-    const { app, warm } = await setupWithAdmin();
-    const { hashPassword } = await import("./auth.js");
-    const hash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: hash, role: "user" });
-
-    const login = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "bob", password: "bobpass1" },
-    });
-    const session = login.json().token as string;
-    const auth = { authorization: `Bearer ${session}` };
+    const { app, warm } = makeApp({ authMode: "user" });
+    const bob = await userAuth(warm, "bob");
+    const auth = { authorization: bob.authorization };
 
     const mint = await app.inject({
       method: "POST", url: "/v1/me/tokens",
@@ -806,9 +757,8 @@ describe("http: dashboard auth + RBAC", () => {
     expect(del.statusCode).toBe(200);
     expect(del.json().deleted).toBe(true);
 
-    // Token row gone from listing — hard delete, no soft tombstone.
-    const after_list = await app.inject({ method: "GET", url: "/v1/me/tokens", headers: auth });
-    expect(after_list.json().tokens.length).toBe(0);
+    const afterList = await app.inject({ method: "GET", url: "/v1/me/tokens", headers: auth });
+    expect(afterList.json().tokens.length).toBe(0);
 
     const after = await app.inject({
       method: "POST", url: "/v1/recent",
@@ -819,20 +769,11 @@ describe("http: dashboard auth + RBAC", () => {
   });
 
   it("user cannot reach admin routes", async () => {
-    const { app, warm } = await setupWithAdmin();
-    const { hashPassword } = await import("./auth.js");
-    const hash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: hash, role: "user", userId: "acme" });
-
-    const login = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "bob", password: "bobpass1" },
-    });
-    const session = login.json().token as string;
-
+    const { app, warm } = makeApp({ authMode: "user" });
+    const bob = await userAuth(warm, "bob");
     const r = await app.inject({
       method: "GET", url: "/v1/admin/users",
-      headers: { authorization: `Bearer ${session}` },
+      headers: { authorization: bob.authorization },
     });
     expect(r.statusCode).toBe(401);
   });
@@ -841,17 +782,13 @@ describe("http: dashboard auth + RBAC", () => {
 describe("http: P0 regression tests", () => {
   async function setupBobInAcme() {
     const { app, warm } = makeApp({ authMode: "user" });
-    const { hashPassword } = await import("./auth.js");
-    const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
-    const carolHash = await hashPassword("carolpass1");
-    await warm.createUser({ username: "carol", passwordHash: carolHash, role: "user", userId: "contoso" });
-    const login = (u: string, p: string) => app.inject({
-      method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
-    });
-    const bobSession = (await login("bob", "bobpass1")).json().token as string;
-    const carolSession = (await login("carol", "carolpass1")).json().token as string;
-    return { app, warm, bobSession, carolSession };
+    // Bypass /v1/auth/login (gone) and mint sessions directly via the
+    // fake warm store. The fake Better Auth shim resolves the resulting
+    // ns_… token back to the same dashUser, so handler behaviour is
+    // identical to the real flow.
+    const bob = await userAuth(warm, "bob");
+    const carol = await userAuth(warm, "carol");
+    return { app, warm, bobSession: bob.sessionToken, carolSession: carol.sessionToken };
   }
 
   // P0-1 (user id `p_*` collision with project collection prefix) is
@@ -865,7 +802,7 @@ describe("http: P0 regression tests", () => {
   // bearer continues to work for their own user-global memory but is
   // refused when it asks for the project they used to be in.
   it("P0-2: removeProjectMember terminates the kicked user's project access", async () => {
-    const { app, bobSession, carolSession } = await setupBobInAcme();
+    const { app, warm, bobSession, carolSession } = await setupBobInAcme();
     const bobAuth = { authorization: `Bearer ${bobSession}` };
     const carolAuth = { authorization: `Bearer ${carolSession}` };
     // Bob owns 'shared'; Carol joins.
@@ -891,9 +828,10 @@ describe("http: P0 regression tests", () => {
       headers: { authorization: `Bearer ${carolTok}` },
     });
     expect(okSearch.statusCode).toBe(200);
-    // Bob removes Carol.
-    const carolMe = await app.inject({ method: "GET", url: "/v1/auth/me", headers: carolAuth });
-    const carolUserId = carolMe.json().user.id;
+    // Bob removes Carol — the carolMe call used /v1/auth/me but that's
+    // gone now; look up carol's id directly via the fake warm store.
+    let carolUserId = "";
+    for (const u of warm.users.values()) if (u.username === "carol") carolUserId = u.id;
     const remove = await app.inject({
       method: "DELETE", url: `/v1/me/projects/${sharedId}/members/${carolUserId}`,
       headers: bobAuth,
@@ -908,35 +846,9 @@ describe("http: P0 regression tests", () => {
     expect(denied.statusCode).toBe(403);
   });
 
-  // P0-3: per-username login throttle locks an account out after 5 failures
-  // Backoff sleeps add up; allow extra time.
-  it("P0-3: 5 wrong passwords lock the account out (429)", { timeout: 15_000 }, async () => {
-    const { app } = makeApp({ authMode: "user" });
-    const { hashPassword } = await import("./auth.js");
-    const w = (app as unknown as { warmFake?: unknown }) as never;
-    void w;
-    // Register bob
-    const { warm } = makeApp({ authMode: "user" });
-    void warm; // throwaway — main test uses the throttle on the original app
-    // Fresh app for an isolated throttle.
-    const { app: app2, warm: warm2 } = makeApp({ authMode: "user" });
-    const hash = await hashPassword("right-password");
-    await warm2.createUser({ username: "bob", passwordHash: hash, role: "user" });
-    for (let i = 0; i < 5; i++) {
-      const bad = await app2.inject({
-        method: "POST", url: "/v1/auth/login",
-        payload: { username: "bob", password: "wrong" + i },
-      });
-      expect(bad.statusCode).toBe(401);
-    }
-    // 6th attempt — even with the right password — is throttled.
-    const sixth = await app2.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "bob", password: "right-password" },
-    });
-    expect(sixth.statusCode).toBe(429);
-    expect(sixth.headers["retry-after"]).toBeDefined();
-  });
+  // P0-3 (login throttle) was about /v1/auth/login. Better Auth owns
+  // throttling now via its own rate-limit + secondaryStorage hooks;
+  // we no longer ship a hand-rolled per-username throttle.
 
   // P0-4: getEntry's `"*"` magic-string bypass is gone
   it("P0-4: getEntry with projectId='*' is treated as a literal id, not a bypass", async () => {
@@ -1009,16 +921,10 @@ describe("http: P0 regression tests", () => {
   // projects they're not a member of.
   it("P0-6: /v1/me/search refuses non-members of the requested project", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
-    const { hashPassword } = await import("./auth.js");
-    const aliceHash = await hashPassword("alicepass1");
-    const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", userId: "acme" });
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
-    const login = (u: string, p: string) => app.inject({
-      method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
-    });
-    const aliceSession = (await login("alice", "alicepass1")).json().token as string;
-    const bobSession = (await login("bob", "bobpass1")).json().token as string;
+    const aliceHelper = await userAuth(warm, "alice");
+    const bobHelper = await userAuth(warm, "bob");
+    const aliceSession = aliceHelper.sessionToken;
+    const bobSession = bobHelper.sessionToken;
     const aliceAuth = { authorization: `Bearer ${aliceSession}` };
     const bobAuth = { authorization: `Bearer ${bobSession}` };
 
@@ -1081,16 +987,10 @@ describe("http: P0 regression tests", () => {
   // the actual entry's project_id and re-checks membership.
   it("P0-6: /v1/me/forget rechecks the entry's real project", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
-    const { hashPassword } = await import("./auth.js");
-    const aliceHash = await hashPassword("alicepass1");
-    const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "alice", passwordHash: aliceHash, role: "user", userId: "acme" });
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
-    const login = (u: string, p: string) => app.inject({
-      method: "POST", url: "/v1/auth/login", payload: { username: u, password: p },
-    });
-    const aliceSession = (await login("alice", "alicepass1")).json().token as string;
-    const bobSession = (await login("bob", "bobpass1")).json().token as string;
+    const aliceHelper = await userAuth(warm, "alice");
+    const bobHelper = await userAuth(warm, "bob");
+    const aliceSession = aliceHelper.sessionToken;
+    const bobSession = bobHelper.sessionToken;
     const aliceAuth = { authorization: `Bearer ${aliceSession}` };
     const bobAuth = { authorization: `Bearer ${bobSession}` };
 
@@ -1151,17 +1051,9 @@ describe("http: P0 regression tests", () => {
 describe("http: projects (sub-brains)", () => {
   async function setupBobInAcme() {
     const { app, warm } = makeApp({ authMode: "user" });
-    const { hashPassword } = await import("./auth.js");
-    const bobHash = await hashPassword("bobpass1");
-    await warm.createUser({ username: "bob", passwordHash: bobHash, role: "user", userId: "acme" });
-    const carolHash = await hashPassword("carolpass1");
-    await warm.createUser({ username: "carol", passwordHash: carolHash, role: "user", userId: "contoso" });
-    const login = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "bob", password: "bobpass1" },
-    });
-    const session = login.json().token as string;
-    return { app, warm, session };
+    const bob = await userAuth(warm, "bob");
+    await userAuth(warm, "carol");
+    return { app, warm, session: bob.sessionToken };
   }
 
   it("user creates a project and lists it", async () => {
@@ -1264,12 +1156,11 @@ describe("http: projects (sub-brains)", () => {
     });
     expect(add.statusCode).toBe(201);
 
-    // Carol logs in
-    const carolLogin = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "carol", password: "carolpass1" },
-    });
-    const carolSession = carolLogin.json().token as string;
+    // Carol logs in (synthesise via the test helper)
+    let carolUserId = "";
+    for (const u of warm.users.values()) if (u.username === "carol") carolUserId = u.id;
+    const carolSess = await warm.createSession(carolUserId, 24 * 3600 * 1000);
+    const carolSession = carolSess.token;
     const authCarol = { authorization: `Bearer ${carolSession}` };
 
     // Carol sees the shared project in her list
@@ -1309,7 +1200,7 @@ describe("http: projects (sub-brains)", () => {
   });
 
   it("non-owner cannot add members or delete the project", async () => {
-    const { app, session } = await setupBobInAcme();
+    const { app, warm, session } = await setupBobInAcme();
     const authBob = { authorization: `Bearer ${session}` };
     const proj = await app.inject({
       method: "POST", url: "/v1/me/projects",
@@ -1323,11 +1214,10 @@ describe("http: projects (sub-brains)", () => {
       headers: authBob,
     });
 
-    const carolLogin = await app.inject({
-      method: "POST", url: "/v1/auth/login",
-      payload: { username: "carol", password: "carolpass1" },
-    });
-    const carolAuth = { authorization: `Bearer ${carolLogin.json().token}` };
+    let carolId = "";
+    for (const u of warm.users.values()) if (u.username === "carol") carolId = u.id;
+    const carolSess = await warm.createSession(carolId, 24 * 3600 * 1000);
+    const carolAuth = { authorization: `Bearer ${carolSess.token}` };
 
     const add = await app.inject({
       method: "POST", url: `/v1/me/projects/${sharedId}/members`,
@@ -1370,14 +1260,16 @@ describe("http: projects (sub-brains)", () => {
     expect(del.json().deleted).toBe(true);
     expect(del.json().entriesRemoved).toBeGreaterThanOrEqual(1);
 
-    // Token still authenticates (no project scope on tokens), but project
-    // access is gone — membership lookup misses since the project is dead.
+    // Token still authenticates (no project scope on tokens), but the
+    // project resolves to nothing — distinguishing "doesn't exist" (404)
+    // from "exists but you aren't a member" (403). The deleted project
+    // is the former.
     const denied = await app.inject({
       method: "POST", url: "/v1/recent",
       payload: { project: phoenixId },
       headers: { authorization: `Bearer ${tok}` },
     });
-    expect(denied.statusCode).toBe(403);
+    expect(denied.statusCode).toBe(404);
   });
 });
 

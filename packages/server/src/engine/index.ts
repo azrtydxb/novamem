@@ -175,7 +175,6 @@ export class MemoryEngine {
     req: SearchRequest,
     token?: TokenIdentity,
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
-    const namespace = req.namespace ?? "default";
     const k = req.k ?? 10;
     const weights = { ...DEFAULT_WEIGHTS, ...(req.weights ?? {}) };
 
@@ -186,7 +185,18 @@ export class MemoryEngine {
       ? [null, ...req.includeProjects]
       : [req.project ?? null];
 
+    // Cross-namespace mode: when `includeNamespaces` is set, fan out across
+    // each namespace within each scope. Cold-store collections are keyed
+    // per (scope × namespace) so this fans out as a 2D matrix. The single
+    // singular `namespace` field is ignored in this mode.
+    const namespaces: string[] = req.includeNamespaces?.length
+      ? req.includeNamespaces
+      : [req.namespace ?? "default"];
+
     const [embedding] = await this.embedder.embed(req.query);
+    // FTS supports multi-namespace via `namespace = ANY(...)` in one query
+    // per scope, so we fan out only across scopes (not namespaces).
+    // Cold-store needs one search per (scope × namespace) collection.
     const [keywordHitsAll, vectorHitsAll] = await Promise.all([
       Promise.all(
         scopes.map((projectId) =>
@@ -194,7 +204,8 @@ export class MemoryEngine {
             userId,
             projectId,
             query: req.query,
-            namespace,
+            namespace: namespaces[0]!, // ignored when namespaces array is set
+            namespaces: namespaces.length > 1 ? namespaces : undefined,
             k: k * 3,
             agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
           }),
@@ -202,8 +213,10 @@ export class MemoryEngine {
       ),
       embedding
         ? Promise.all(
-            scopes.map((projectId) =>
-              this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 }),
+            scopes.flatMap((projectId) =>
+              namespaces.map((namespace) =>
+                this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 }),
+              ),
             ),
           )
         : Promise.resolve([] as Array<Array<{ id: string; score: number }>>),
@@ -361,9 +374,12 @@ export class MemoryEngine {
       since?: string;
       project?: string | null;
       includeProjects?: string[];
+      includeNamespaces?: string[];
     },
   ): Promise<{ results: SearchResult[] }> {
-    const namespace = args.namespace ?? "default";
+    const namespaces = args.includeNamespaces?.length
+      ? args.includeNamespaces
+      : [args.namespace ?? "default"];
     const k = args.k ?? 20;
     const projectId = args.project ?? null;
     const includeProjects = args.includeProjects ?? null;
@@ -371,11 +387,11 @@ export class MemoryEngine {
     // by project_id only (members may be cross-user). User-wide queries
     // scope by user_id with project_id IS NULL. Active-project mode unions
     // the user-global view with the listed (membership-checked) projects.
-    const params: Array<string | number | string[]> = [namespace, k];
+    const params: Array<string | number | string[]> = [namespaces, k];
     let sql =
       `SELECT id, content, namespace, project_id, source, metadata, cold, created_at
          FROM memory_entries
-        WHERE namespace = $1`;
+        WHERE namespace = ANY($1::text[])`;
     if (includeProjects && includeProjects.length > 0) {
       params.push(userId);
       const userParam = `$${params.length}`;
@@ -424,6 +440,10 @@ export class MemoryEngine {
       k?: number;
       project?: string | null;
       includeProjects?: string[];
+      /** Accepted for API symmetry with search/recent but not used by the
+       *  graph store — Memory nodes aren't namespaced; entry resolution
+       *  picks up the entry's actual namespace from Postgres. */
+      includeNamespaces?: string[];
     },
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
     const depth = args.depth ?? 1;

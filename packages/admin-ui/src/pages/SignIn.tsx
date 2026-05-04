@@ -1,44 +1,51 @@
 import { FormEvent, useEffect, useState } from "react";
 import { LogIn, AlertTriangle } from "lucide-react";
-import { api, type LoginResponse } from "../lib/api";
+import { api, type SessionUser } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 
+interface BetterAuthSignInResp {
+  user?: { id: string; email: string; name: string; role?: string };
+  session?: { id: string; expiresAt: string };
+}
+
 export function SignIn() {
   const { login } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bootstrapNeeded, setBootstrapNeeded] = useState(false);
 
-  // Surface a hint when there are no admins yet — first-deploy operators
-  // need the bootstrap-env nudge instead of a useless "invalid credentials".
-  useEffect(() => {
-    void api<{ ready: boolean; bootstrapNeeded: boolean }>("GET", "/v1/auth/status").then((r) => {
-      if (r.body?.bootstrapNeeded) setBootstrapNeeded(true);
-    });
-  }, []);
+  // Bootstrap nudge — when no users exist yet, /api/auth/get-session
+  // returns null, but we can't distinguish "no users" from "not signed
+  // in" without a probe. Skip the hint for now; a fresh deploy that
+  // hits "Sign in" without creds gets the generic invalid-credentials
+  // message. Operators with the bootstrap env set will succeed on the
+  // first sign-in attempt against that account.
+  useEffect(() => { setBootstrapNeeded(false); }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password) return;
+    if (!email.trim() || !password) return;
     setBusy(true);
     setError(null);
-    const r = await api<LoginResponse>("POST", "/v1/auth/login", {
-      username: username.trim(),
+    const r = await api<BetterAuthSignInResp>("POST", "/api/auth/sign-in/email", {
+      email: email.trim(),
       password,
     });
     setBusy(false);
-    if (r.ok && r.body) {
-      // Cookie has been set by the server; record the user and whether a
-      // password change is required on first login.
-      login(r.body.user, r.body.needsPasswordChange);
-    } else if (r.status === 401) {
-      setError("Invalid username or password.");
-    } else if (r.status === 404) {
-      setError("Auth disabled on this server.");
+    if (r.ok && r.body?.user) {
+      const u = r.body.user;
+      const sessionUser: SessionUser = {
+        id: u.id,
+        username: u.email.split("@")[0] ?? u.email,
+        role: (u.role ?? "user") as SessionUser["role"],
+      };
+      login(sessionUser, false);
+    } else if (r.status === 401 || r.status === 400) {
+      setError("Invalid email or password.");
     } else {
       setError(r.error ?? `Server returned ${r.status}.`);
     }
@@ -71,7 +78,7 @@ export function SignIn() {
           Sign in to your console
         </h2>
         <p className="text-[13px] text-dim mt-1.5">
-          Use your dashboard username — not a bearer token.
+          Use the email + password your admin set up for you.
         </p>
 
         {bootstrapNeeded ? (
@@ -88,14 +95,14 @@ export function SignIn() {
 
         <form onSubmit={submit} className="mt-5 space-y-3.5">
           <Input
-            type="text"
-            name="username"
-            label="Username"
-            placeholder="alice"
+            type="email"
+            name="email"
+            label="Email"
+            placeholder="alice@example.com"
             autoFocus
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
           <Input
             type="password"
@@ -111,7 +118,7 @@ export function SignIn() {
             type="submit"
             variant="primary"
             loading={busy}
-            disabled={!username.trim() || !password}
+            disabled={!email.trim() || !password}
             className="w-full !py-2.5 !text-[13px] !font-semibold"
           >
             <LogIn className="h-3.5 w-3.5" /> Continue

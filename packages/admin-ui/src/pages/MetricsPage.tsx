@@ -325,6 +325,8 @@ export function MetricsPage() {
         </CardContent>
       </Card>
 
+      <PersistentThroughputChart />
+
       {/* Per-token totals — a small table beneath the chart so it's clear
           which row maps to which line, and so the lifetime totals show
           even when current rolling rate is zero. */}
@@ -492,5 +494,107 @@ function SkeletonMetrics() {
         <Card className="h-64 animate-pulse" />
       </div>
     </>
+  );
+}
+
+interface HistorySample {
+  sampledAt: string;
+  queries: number;
+  remembers: number;
+}
+
+interface HistoryResp {
+  hours: number;
+  samples: HistorySample[];
+}
+
+/** 24h persistent throughput, sourced from the metrics_samples postgres
+ *  table. Survives reboots; complements the in-memory live chart above
+ *  which only shows the last few minutes. Refreshes every 60s. */
+function PersistentThroughputChart() {
+  const { data, isFetching } = useQuery<HistoryResp>({
+    queryKey: ["me", "metrics", "history"],
+    queryFn: async () => {
+      const r = await api<HistoryResp>("GET", "/v1/me/metrics/history?hours=24");
+      if (!r.ok || !r.body) throw new Error(r.error ?? `history ${r.status}`);
+      return r.body;
+    },
+    refetchInterval: 60_000,
+  });
+
+  const points = (data?.samples ?? []).map((s) => ({
+    t: new Date(s.sampledAt).getTime(),
+    queries: s.queries,
+    remembers: s.remembers,
+  }));
+
+  const totalQueries = points.reduce((a, p) => a + p.queries, 0);
+  const totalRemembers = points.reduce((a, p) => a + p.remembers, 0);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>24h history</CardTitle>
+        <CardDescription>
+          Queries and remembers per minute, last 24 hours. Persisted across reboots.
+          {isFetching ? " · refreshing…" : ""}{" "}
+          {points.length > 0
+            ? `Total: ${fmtNumber(totalQueries)} queries / ${fmtNumber(totalRemembers)} remembers.`
+            : "No activity recorded yet."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-2">
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={points} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+              <CartesianGrid stroke="#222836" strokeDasharray="2 4" />
+              <XAxis
+                dataKey="t"
+                type="number"
+                domain={["dataMin", "dataMax"]}
+                tickFormatter={(t) => {
+                  const d = new Date(t);
+                  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+                }}
+                stroke="#5b6373"
+                fontSize={11}
+                tickLine={false}
+                axisLine={false}
+                minTickGap={48}
+              />
+              <YAxis stroke="#5b6373" fontSize={11} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{
+                  background: "#11141b",
+                  border: "1px solid #2c3344",
+                  borderRadius: 6,
+                  fontSize: 12,
+                }}
+                labelFormatter={(t) => new Date(t as number).toLocaleString()}
+              />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
+              <Line
+                type="monotone"
+                dataKey="queries"
+                name="queries/min"
+                stroke="#7c9cff"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="remembers"
+                name="remembers/min"
+                stroke="#4ade80"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

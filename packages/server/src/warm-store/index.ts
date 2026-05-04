@@ -205,9 +205,84 @@ export class WarmStore {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor_user_id)`,
+      // ─── Better Auth tables (Phase 1: scaffolded alongside) ──────────
+      // The dashboard's control plane is migrating to Better Auth. These
+      // tables hold its users/sessions/accounts; the existing `users`/
+      // `sessions` tables stay live until the cutover. Identifiers are
+      // double-quoted because Better Auth uses camelCase column names
+      // and the singular `user` is a reserved word in some contexts.
+      `CREATE TABLE IF NOT EXISTS "user" (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        email text NOT NULL UNIQUE,
+        "emailVerified" boolean NOT NULL DEFAULT false,
+        image text,
+        "createdAt" timestamptz NOT NULL DEFAULT now(),
+        "updatedAt" timestamptz NOT NULL DEFAULT now(),
+        role text,
+        banned boolean,
+        "banReason" text,
+        "banExpires" timestamptz
+      )`,
+      `CREATE TABLE IF NOT EXISTS "session" (
+        id text PRIMARY KEY,
+        "expiresAt" timestamptz NOT NULL,
+        token text NOT NULL UNIQUE,
+        "createdAt" timestamptz NOT NULL DEFAULT now(),
+        "updatedAt" timestamptz NOT NULL DEFAULT now(),
+        "ipAddress" text,
+        "userAgent" text,
+        "userId" text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+        "impersonatedBy" text
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ba_session_user ON "session"("userId")`,
+      `CREATE TABLE IF NOT EXISTS "account" (
+        id text PRIMARY KEY,
+        "accountId" text NOT NULL,
+        "providerId" text NOT NULL,
+        "userId" text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+        "accessToken" text,
+        "refreshToken" text,
+        "idToken" text,
+        "accessTokenExpiresAt" timestamptz,
+        "refreshTokenExpiresAt" timestamptz,
+        scope text,
+        password text,
+        "createdAt" timestamptz NOT NULL DEFAULT now(),
+        "updatedAt" timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ba_account_user ON "account"("userId")`,
+      `CREATE TABLE IF NOT EXISTS "verification" (
+        id text PRIMARY KEY,
+        identifier text NOT NULL,
+        value text NOT NULL,
+        "expiresAt" timestamptz NOT NULL,
+        "createdAt" timestamptz NOT NULL DEFAULT now(),
+        "updatedAt" timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ba_verification_identifier ON "verification"(identifier)`,
+      `CREATE TABLE IF NOT EXISTS "jwks" (
+        id text PRIMARY KEY,
+        "publicKey" text NOT NULL,
+        "privateKey" text NOT NULL,
+        "createdAt" timestamptz NOT NULL DEFAULT now()
+      )`,
       // ─── Performance: composite indexes flagged in review (P1-P2) ───
       `CREATE INDEX IF NOT EXISTS idx_entries_user_cold ON memory_entries(user_id, cold)`,
       `CREATE INDEX IF NOT EXISTS idx_orphans_attempt_lastattempt ON cold_orphans(attempts, last_attempt_at)`,
+      // ─── 24h persistent throughput (1-min buckets) ────────────────────
+      // Each row: counts observed in the (sampled_at, sampled_at + 1min)
+      // window for the given user. Bucket boundary is sampled_at floored
+      // to the minute; the unique constraint stops a double-flush from
+      // producing two rows for the same minute.
+      `CREATE TABLE IF NOT EXISTS metrics_samples (
+        user_id text NOT NULL,
+        sampled_at timestamptz NOT NULL,
+        queries int NOT NULL DEFAULT 0,
+        remembers int NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, sampled_at)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_metrics_samples_at ON metrics_samples(sampled_at DESC)`,
     ];
     for (const stmt of ddl) {
       await this.pool.query(stmt);
@@ -763,6 +838,101 @@ export class WarmStore {
     };
   }
 
+  // ─── Persistent throughput samples ───────────────────────────────────
+
+  /** Append (or upsert) a per-user 1-minute throughput bucket. Counts are
+   *  totals observed in the window since the previous flush. */
+  async recordMetricsSamples(
+    samples: Array<{ userId: string; sampledAt: Date; queries: number; remembers: number }>,
+  ): Promise<void> {
+    if (samples.length === 0) return;
+    // Multi-row insert via UNNEST. Conflicts (rare double-flush in the
+    // same minute) accumulate counts so no observation is lost.
+    const userIds = samples.map((s) => s.userId);
+    const ats = samples.map((s) => s.sampledAt.toISOString());
+    const queries = samples.map((s) => s.queries);
+    const remembers = samples.map((s) => s.remembers);
+    await this.pool.query(
+      `INSERT INTO metrics_samples (user_id, sampled_at, queries, remembers)
+       SELECT * FROM unnest($1::text[], $2::timestamptz[], $3::int[], $4::int[])
+       ON CONFLICT (user_id, sampled_at) DO UPDATE SET
+         queries = metrics_samples.queries + EXCLUDED.queries,
+         remembers = metrics_samples.remembers + EXCLUDED.remembers`,
+      [userIds, ats, queries, remembers],
+    );
+  }
+
+  /** Drop samples older than the cutoff. Called from the flush loop so
+   *  the table doesn't grow unbounded. */
+  async pruneMetricsSamples(olderThan: Date): Promise<number> {
+    const r = await this.pool.query(
+      `DELETE FROM metrics_samples WHERE sampled_at < $1`,
+      [olderThan.toISOString()],
+    );
+    return r.rowCount ?? 0;
+  }
+
+  /** 24h history (or whatever window) for a user, oldest first.
+   *  Result is gap-free padded to 1-min buckets so the chart can render
+   *  zeros where there was no activity. */
+  async getMetricsHistory(
+    userId: string,
+    sinceMs: number,
+  ): Promise<Array<{ sampledAt: Date; queries: number; remembers: number }>> {
+    const since = new Date(sinceMs);
+    const r = await this.pool.query<{
+      sampled_at: Date;
+      queries: number;
+      remembers: number;
+    }>(
+      `SELECT sampled_at, queries, remembers
+         FROM metrics_samples
+        WHERE user_id = $1 AND sampled_at >= $2
+        ORDER BY sampled_at ASC`,
+      [userId, since.toISOString()],
+    );
+    return r.rows.map((row) => ({
+      sampledAt: row.sampled_at,
+      queries: Number(row.queries),
+      remembers: Number(row.remembers),
+    }));
+  }
+
+  /** Find a project the caller can access by its human name. Returns null
+   *  if no such project exists in the caller's visibility (own + member
+   *  of). Used by HTTP route helpers so callers can pass either a ULID
+   *  or a human name in `project:` fields without having to look up the
+   *  id first. Names aren't unique server-wide, but they ARE unique per
+   *  caller's view in practice — when collisions exist, prefer the
+   *  oldest match so behaviour is deterministic. */
+  async findProjectByName(
+    userId: string,
+    name: string,
+  ): Promise<{ id: string; name: string; ownerUserId: string; createdAt: Date } | null> {
+    const r = await this.pool.query<{
+      id: string;
+      name: string;
+      owner_user_id: string;
+      created_at: Date;
+    }>(
+      `SELECT p.id, p.name, p.owner_user_id, p.created_at
+         FROM projects p
+         JOIN project_members m ON m.project_id = p.id
+        WHERE p.name = $1 AND m.user_id = $2
+        ORDER BY p.created_at ASC
+        LIMIT 1`,
+      [name, userId],
+    );
+    const row = r.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      ownerUserId: row.owner_user_id,
+      createdAt: row.created_at,
+    };
+  }
+
   async listProjectsForUser(
     userId: string,
   ): Promise<
@@ -935,17 +1105,24 @@ export class WarmStore {
      *  the supplied user. */
     projectId?: string | null;
     query: string;
+    /** Single-namespace search. Ignored when `namespaces` is set. */
     namespace: string;
+    /** Cross-namespace search: when set, FTS unions across these shelves
+     *  via `namespace = ANY(...)` instead of equality on the singular
+     *  field. */
+    namespaces?: string[];
     k: number;
     agentName?: string | null;
   }): Promise<Array<{ id: string; score: number }>> {
     const useAgent = args.agentName !== undefined;
     const isProject = args.projectId != null;
-    const params: unknown[] = [args.query, args.namespace, args.k];
+    const useNsArray = !!args.namespaces?.length;
+    const params: unknown[] = [args.query, useNsArray ? args.namespaces! : args.namespace, args.k];
     const ph = (v: unknown): string => {
       params.push(v);
       return `$${params.length}`;
     };
+    const nsClause = useNsArray ? "namespace = ANY($2::text[])" : "namespace = $2";
     const scopeClause = isProject
       ? `project_id = ${ph(args.projectId)}`
       : `user_id = ${ph(args.userId)} AND project_id IS NULL`;
@@ -958,12 +1135,13 @@ export class WarmStore {
     // For the join variant we need to disambiguate column references with
     // the table alias `f.` since both sides have project_id / user_id.
     const fScopeClause = scopeClause.replace(/(project_id|user_id)/g, "f.$1");
+    const fNsClause = nsClause.replace(/^namespace/, "f.namespace");
     const sql = useAgent
       ? `SELECT f.entry_id,
                 ts_rank(f.tsv, plainto_tsquery('english', $1)) AS score
            FROM memory_fts f
            JOIN memory_entries e ON e.id = f.entry_id
-          WHERE f.namespace = $2
+          WHERE ${fNsClause}
             AND ${fScopeClause}
             ${agentClause}
             AND f.tsv @@ plainto_tsquery('english', $1)
@@ -972,7 +1150,7 @@ export class WarmStore {
       : `SELECT entry_id,
                 ts_rank(tsv, plainto_tsquery('english', $1)) AS score
            FROM memory_fts
-          WHERE namespace = $2
+          WHERE ${nsClause}
             AND ${scopeClause}
             AND tsv @@ plainto_tsquery('english', $1)
           ORDER BY score DESC
