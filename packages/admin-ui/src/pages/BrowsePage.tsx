@@ -218,7 +218,7 @@ function ResultRow({ r, last }: { r: SearchResult; last: boolean }) {
       </div>
       <div className="text-right">
         <div className="text-base font-semibold tabular-nums text-ink">
-          {(r.signals.keyword + r.signals.vector + r.signals.graph).toFixed(2)}
+          {((r.signals?.keyword ?? 0) + (r.signals?.vector ?? 0) + (r.signals?.graph ?? 0)).toFixed(2)}
         </div>
         <div className="font-mono text-[9px] text-faint">signals</div>
       </div>
