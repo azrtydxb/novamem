@@ -7,7 +7,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
-import { and, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { Pool } from "pg";
 import { ulid } from "ulid";
 
@@ -328,18 +328,20 @@ export class WarmStore {
     userId: string,
     label?: string,
   ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
-    // Better Auth owns the user model; check against its `"user"` table.
-    const exists = await this.pool.query(`SELECT 1 FROM "user" WHERE id = $1`, [userId]);
+    // Better Auth owns the user model; the singular `"user"` table isn't
+    // in our drizzle schema (Better Auth manages its own DDL), so this
+    // check stays on `sql` template — still type-safe for the parameter.
+    const exists = await this.db.execute<{ exists: number }>(
+      sql`SELECT 1 AS exists FROM "user" WHERE id = ${userId}`,
+    );
     if (exists.rowCount === 0) return null;
     const token = generateBearerToken();
     const tokenHash = hashToken(token);
-    const r = await this.pool.query<{ created_at: Date }>(
-      `INSERT INTO user_tokens (token_hash, user_id, label)
-       VALUES ($1, $2, $3)
-       RETURNING created_at`,
-      [tokenHash, userId, label ?? null],
-    );
-    return { token, userId, createdAt: r.rows[0]!.created_at };
+    const [row] = await this.db
+      .insert(schema.userTokens)
+      .values({ tokenHash, userId, label: label ?? null })
+      .returning({ createdAt: schema.userTokens.createdAt });
+    return { token, userId, createdAt: row!.createdAt };
   }
 
   /** Resolve a plaintext bearer token to its user id. Touches `last_used_at`
@@ -355,49 +357,52 @@ export class WarmStore {
   } | null> {
     if (!plaintext) return null;
     const tokenHash = hashToken(plaintext);
-    const r = await this.pool.query<{
-      user_id: string;
-      label: string | null;
-    }>(
-      `UPDATE user_tokens SET last_used_at = now()
-        WHERE token_hash = $1 AND revoked_at IS NULL
-        RETURNING user_id, label`,
-      [tokenHash],
-    );
-    const row = r.rows[0];
+    const rows = await this.db
+      .update(schema.userTokens)
+      .set({ lastUsedAt: sql`now()` })
+      .where(and(eq(schema.userTokens.tokenHash, tokenHash), isNull(schema.userTokens.revokedAt)))
+      .returning({ userId: schema.userTokens.userId, label: schema.userTokens.label });
+    const row = rows[0];
     if (!row) return null;
-    return { userId: row.user_id, tokenHash, label: row.label };
+    return { userId: row.userId, tokenHash, label: row.label };
   }
 
   async revokeUserToken(plaintext: string): Promise<boolean> {
     const tokenHash = hashToken(plaintext);
-    const r = await this.pool.query(
-      `UPDATE user_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
-      [tokenHash],
-    );
-    return (r.rowCount ?? 0) > 0;
+    const rows = await this.db
+      .update(schema.userTokens)
+      .set({ revokedAt: sql`now()` })
+      .where(and(eq(schema.userTokens.tokenHash, tokenHash), isNull(schema.userTokens.revokedAt)))
+      .returning({ tokenHash: schema.userTokens.tokenHash });
+    return rows.length > 0;
   }
 
   /** Revoke a token by sha256 hash (soft — keeps the row with revoked_at
    *  stamped). Used by admin tooling that wants a tombstone for audit. */
   async revokeUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
-    const r = await this.pool.query(
-      `UPDATE user_tokens SET revoked_at = now()
-        WHERE token_hash = $1 AND user_id = $2 AND revoked_at IS NULL`,
-      [tokenHash, userId],
-    );
-    return (r.rowCount ?? 0) > 0;
+    const rows = await this.db
+      .update(schema.userTokens)
+      .set({ revokedAt: sql`now()` })
+      .where(
+        and(
+          eq(schema.userTokens.tokenHash, tokenHash),
+          eq(schema.userTokens.userId, userId),
+          isNull(schema.userTokens.revokedAt),
+        ),
+      )
+      .returning({ tokenHash: schema.userTokens.tokenHash });
+    return rows.length > 0;
   }
 
   /** Hard-delete a token by sha256 hash. Used by the user dashboard's
    *  delete-token action so the row disappears from the list outright —
    *  the soft revoke would leave dead entries cluttering the table. */
   async deleteUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
-    const r = await this.pool.query(
-      `DELETE FROM user_tokens WHERE token_hash = $1 AND user_id = $2`,
-      [tokenHash, userId],
-    );
-    return (r.rowCount ?? 0) > 0;
+    const rows = await this.db
+      .delete(schema.userTokens)
+      .where(and(eq(schema.userTokens.tokenHash, tokenHash), eq(schema.userTokens.userId, userId)))
+      .returning({ tokenHash: schema.userTokens.tokenHash });
+    return rows.length > 0;
   }
 
   /** Activity feed for the user dashboard "Today" page. Returns the
@@ -461,21 +466,16 @@ export class WarmStore {
   async listTokensCreatedByUser(
     userId: string,
   ): Promise<Array<{ tokenHash: string; label: string | null; userId: string }>> {
-    const r = await this.pool.query<{
-      token_hash: string;
-      label: string | null;
-      user_id: string;
-    }>(
-      `SELECT token_hash, label, user_id FROM user_tokens
-        WHERE user_id = $1 AND revoked_at IS NULL
-        ORDER BY created_at ASC`,
-      [userId],
-    );
-    return r.rows.map((row) => ({
-      tokenHash: row.token_hash,
-      label: row.label,
-      userId: row.user_id,
-    }));
+    const rows = await this.db
+      .select({
+        tokenHash: schema.userTokens.tokenHash,
+        label: schema.userTokens.label,
+        userId: schema.userTokens.userId,
+      })
+      .from(schema.userTokens)
+      .where(and(eq(schema.userTokens.userId, userId), isNull(schema.userTokens.revokedAt)))
+      .orderBy(asc(schema.userTokens.createdAt));
+    return rows;
   }
 
   async listUserTokens(
@@ -489,23 +489,23 @@ export class WarmStore {
       revoked: boolean;
     }>
   > {
-    const r = await this.pool.query<{
-      token_hash: string;
-      label: string | null;
-      created_at: Date;
-      last_used_at: Date | null;
-      revoked_at: Date | null;
-    }>(
-      `SELECT token_hash, label, created_at, last_used_at, revoked_at FROM user_tokens
-        WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
-    );
-    return r.rows.map((row) => ({
-      tokenHash: row.token_hash,
-      label: row.label,
-      createdAt: row.created_at,
-      lastUsedAt: row.last_used_at,
-      revoked: row.revoked_at !== null,
+    const rows = await this.db
+      .select({
+        tokenHash: schema.userTokens.tokenHash,
+        label: schema.userTokens.label,
+        createdAt: schema.userTokens.createdAt,
+        lastUsedAt: schema.userTokens.lastUsedAt,
+        revokedAt: schema.userTokens.revokedAt,
+      })
+      .from(schema.userTokens)
+      .where(eq(schema.userTokens.userId, userId))
+      .orderBy(asc(schema.userTokens.createdAt));
+    return rows.map((r) => ({
+      tokenHash: r.tokenHash,
+      label: r.label,
+      createdAt: r.createdAt,
+      lastUsedAt: r.lastUsedAt,
+      revoked: r.revokedAt !== null,
     }));
   }
 
@@ -518,35 +518,22 @@ export class WarmStore {
     plaintext: string,
   ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
     const oldHash = hashToken(plaintext);
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const r = await client.query<{ user_id: string }>(
-        `UPDATE user_tokens SET revoked_at = now()
-          WHERE token_hash = $1 AND revoked_at IS NULL
-          RETURNING user_id`,
-        [oldHash],
-      );
-      const userId = r.rows[0]?.user_id;
-      if (!userId) {
-        await client.query("ROLLBACK");
-        return null;
-      }
+    return this.db.transaction(async (tx) => {
+      const revoked = await tx
+        .update(schema.userTokens)
+        .set({ revokedAt: sql`now()` })
+        .where(and(eq(schema.userTokens.tokenHash, oldHash), isNull(schema.userTokens.revokedAt)))
+        .returning({ userId: schema.userTokens.userId });
+      const userId = revoked[0]?.userId;
+      if (!userId) return null;
       const token = generateBearerToken();
-      const hash = hashToken(token);
-      const ins = await client.query<{ created_at: Date }>(
-        `INSERT INTO user_tokens (token_hash, user_id, label) VALUES ($1, $2, $3)
-         RETURNING created_at`,
-        [hash, userId, "rotated"],
-      );
-      await client.query("COMMIT");
-      return { token, userId, createdAt: ins.rows[0]!.created_at };
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
+      const tokenHash = hashToken(token);
+      const [inserted] = await tx
+        .insert(schema.userTokens)
+        .values({ tokenHash, userId, label: "rotated" })
+        .returning({ createdAt: schema.userTokens.createdAt });
+      return { token, userId, createdAt: inserted!.createdAt };
+    });
   }
 
   /** Delete a user and every memory row owned by them. Caller must purge
@@ -649,30 +636,29 @@ export class WarmStore {
   /** Active-project pointer for the agent's current "scope" — see the
    *  user_active_project table comment in the DDL block. */
   async getActiveProject(userId: string): Promise<string | null> {
-    const r = await this.pool.query<{ project_id: string }>(
-      `SELECT project_id FROM user_active_project WHERE user_id = $1`,
-      [userId],
-    );
-    return r.rows[0]?.project_id ?? null;
+    const [row] = await this.db
+      .select({ projectId: schema.userActiveProject.projectId })
+      .from(schema.userActiveProject)
+      .where(eq(schema.userActiveProject.userId, userId))
+      .limit(1);
+    return row?.projectId ?? null;
   }
 
   /** Set or clear the active-project pointer. Pass null to deactivate. */
   async setActiveProject(userId: string, projectId: string | null): Promise<void> {
     if (projectId === null) {
-      await this.pool.query(
-        `DELETE FROM user_active_project WHERE user_id = $1`,
-        [userId],
-      );
+      await this.db
+        .delete(schema.userActiveProject)
+        .where(eq(schema.userActiveProject.userId, userId));
       return;
     }
-    await this.pool.query(
-      `INSERT INTO user_active_project (user_id, project_id, updated_at)
-         VALUES ($1, $2, now())
-       ON CONFLICT (user_id) DO UPDATE
-         SET project_id = EXCLUDED.project_id,
-             updated_at = now()`,
-      [userId, projectId],
-    );
+    await this.db
+      .insert(schema.userActiveProject)
+      .values({ userId, projectId, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: schema.userActiveProject.userId,
+        set: { projectId, updatedAt: sql`now()` },
+      });
   }
 
   async findUserById(id: string): Promise<{
@@ -814,18 +800,14 @@ export class WarmStore {
     metadata?: Record<string, unknown>;
     requestIp?: string | null;
   }): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO admin_audit_log (actor_user_id, actor_label, action, target, metadata, request_ip)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        entry.actorUserId ?? null,
-        entry.actorLabel,
-        entry.action,
-        entry.target ?? null,
-        entry.metadata ? JSON.stringify(entry.metadata) : null,
-        entry.requestIp ?? null,
-      ],
-    );
+    await this.db.insert(schema.adminAuditLog).values({
+      actorUserId: entry.actorUserId ?? null,
+      actorLabel: entry.actorLabel,
+      action: entry.action,
+      target: entry.target ?? null,
+      metadata: entry.metadata ?? null,
+      requestIp: entry.requestIp ?? null,
+    });
   }
 
   async listAuditLog(opts: { limit?: number } = {}): Promise<
@@ -840,29 +822,20 @@ export class WarmStore {
       requestIp: string | null;
     }>
   > {
-    const r = await this.pool.query<{
-      id: number;
-      ts: Date;
-      actor_user_id: string | null;
-      actor_label: string;
-      action: string;
-      target: string | null;
-      metadata: Record<string, unknown> | null;
-      request_ip: string | null;
-    }>(
-      `SELECT id, ts, actor_user_id, actor_label, action, target, metadata, request_ip
-         FROM admin_audit_log ORDER BY id DESC LIMIT $1`,
-      [opts.limit ?? 200],
-    );
-    return r.rows.map((row) => ({
-      id: row.id,
-      ts: row.ts,
-      actorUserId: row.actor_user_id,
-      actorLabel: row.actor_label,
-      action: row.action,
-      target: row.target,
-      metadata: row.metadata,
-      requestIp: row.request_ip,
+    const rows = await this.db
+      .select()
+      .from(schema.adminAuditLog)
+      .orderBy(desc(schema.adminAuditLog.id))
+      .limit(opts.limit ?? 200);
+    return rows.map((r) => ({
+      id: r.id,
+      ts: r.ts,
+      actorUserId: r.actorUserId,
+      actorLabel: r.actorLabel,
+      action: r.action,
+      target: r.target,
+      metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+      requestIp: r.requestIp,
     }));
   }
 
@@ -878,45 +851,32 @@ export class WarmStore {
     // dashboard; the id is never user-visible (it surfaces only in
     // /v1/me/projects/:id URLs and cold-collection names).
     const id = ulid();
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const r = await client.query<{ created_at: Date }>(
-        `INSERT INTO projects (id, name, owner_user_id) VALUES ($1, $2, $3)
-         RETURNING created_at`,
-        [id, args.name, args.ownerUserId],
-      );
-      await client.query(
-        `INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'owner')`,
-        [id, args.ownerUserId],
-      );
-      await client.query("COMMIT");
-      return { id, name: args.name, ownerUserId: args.ownerUserId, createdAt: r.rows[0]!.created_at };
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(schema.projects)
+        .values({ id, name: args.name, ownerUserId: args.ownerUserId })
+        .returning({ createdAt: schema.projects.createdAt });
+      await tx
+        .insert(schema.projectMembers)
+        .values({ projectId: id, userId: args.ownerUserId, role: "owner" });
+      return {
+        id,
+        name: args.name,
+        ownerUserId: args.ownerUserId,
+        createdAt: row!.createdAt,
+      };
+    });
   }
 
   async getProject(
     id: string,
   ): Promise<{ id: string; name: string; ownerUserId: string; createdAt: Date } | null> {
-    const r = await this.pool.query<{
-      id: string;
-      name: string;
-      owner_user_id: string;
-      created_at: Date;
-    }>(`SELECT id, name, owner_user_id, created_at FROM projects WHERE id = $1`, [id]);
-    const row = r.rows[0];
-    if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      ownerUserId: row.owner_user_id,
-      createdAt: row.created_at,
-    };
+    const [row] = await this.db
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.id, id))
+      .limit(1);
+    return row ?? null;
   }
 
   // ─── Persistent throughput samples ───────────────────────────────────
@@ -927,30 +887,28 @@ export class WarmStore {
     samples: Array<{ userId: string; sampledAt: Date; queries: number; remembers: number }>,
   ): Promise<void> {
     if (samples.length === 0) return;
-    // Multi-row insert via UNNEST. Conflicts (rare double-flush in the
-    // same minute) accumulate counts so no observation is lost.
-    const userIds = samples.map((s) => s.userId);
-    const ats = samples.map((s) => s.sampledAt.toISOString());
-    const queries = samples.map((s) => s.queries);
-    const remembers = samples.map((s) => s.remembers);
-    await this.pool.query(
-      `INSERT INTO metrics_samples (user_id, sampled_at, queries, remembers)
-       SELECT * FROM unnest($1::text[], $2::timestamptz[], $3::int[], $4::int[])
-       ON CONFLICT (user_id, sampled_at) DO UPDATE SET
-         queries = metrics_samples.queries + EXCLUDED.queries,
-         remembers = metrics_samples.remembers + EXCLUDED.remembers`,
-      [userIds, ats, queries, remembers],
-    );
+    // Bulk insert with ON CONFLICT accumulating counts so no observation
+    // is lost when a double-flush hits the same minute bucket.
+    await this.db
+      .insert(schema.metricsSamples)
+      .values(samples)
+      .onConflictDoUpdate({
+        target: [schema.metricsSamples.userId, schema.metricsSamples.sampledAt],
+        set: {
+          queries: sql`${schema.metricsSamples.queries} + EXCLUDED.queries`,
+          remembers: sql`${schema.metricsSamples.remembers} + EXCLUDED.remembers`,
+        },
+      });
   }
 
   /** Drop samples older than the cutoff. Called from the flush loop so
    *  the table doesn't grow unbounded. */
   async pruneMetricsSamples(olderThan: Date): Promise<number> {
-    const r = await this.pool.query(
-      `DELETE FROM metrics_samples WHERE sampled_at < $1`,
-      [olderThan.toISOString()],
-    );
-    return r.rowCount ?? 0;
+    const rows = await this.db
+      .delete(schema.metricsSamples)
+      .where(lt(schema.metricsSamples.sampledAt, olderThan))
+      .returning({ userId: schema.metricsSamples.userId });
+    return rows.length;
   }
 
   /** 24h history (or whatever window) for a user, oldest first.
@@ -961,22 +919,21 @@ export class WarmStore {
     sinceMs: number,
   ): Promise<Array<{ sampledAt: Date; queries: number; remembers: number }>> {
     const since = new Date(sinceMs);
-    const r = await this.pool.query<{
-      sampled_at: Date;
-      queries: number;
-      remembers: number;
-    }>(
-      `SELECT sampled_at, queries, remembers
-         FROM metrics_samples
-        WHERE user_id = $1 AND sampled_at >= $2
-        ORDER BY sampled_at ASC`,
-      [userId, since.toISOString()],
-    );
-    return r.rows.map((row) => ({
-      sampledAt: row.sampled_at,
-      queries: Number(row.queries),
-      remembers: Number(row.remembers),
-    }));
+    const rows = await this.db
+      .select({
+        sampledAt: schema.metricsSamples.sampledAt,
+        queries: schema.metricsSamples.queries,
+        remembers: schema.metricsSamples.remembers,
+      })
+      .from(schema.metricsSamples)
+      .where(
+        and(
+          eq(schema.metricsSamples.userId, userId),
+          gte(schema.metricsSamples.sampledAt, since),
+        ),
+      )
+      .orderBy(asc(schema.metricsSamples.sampledAt));
+    return rows;
   }
 
   /** Find a project the caller can access by its human name. Returns null
@@ -990,28 +947,19 @@ export class WarmStore {
     userId: string,
     name: string,
   ): Promise<{ id: string; name: string; ownerUserId: string; createdAt: Date } | null> {
-    const r = await this.pool.query<{
-      id: string;
-      name: string;
-      owner_user_id: string;
-      created_at: Date;
-    }>(
-      `SELECT p.id, p.name, p.owner_user_id, p.created_at
-         FROM projects p
-         JOIN project_members m ON m.project_id = p.id
-        WHERE p.name = $1 AND m.user_id = $2
-        ORDER BY p.created_at ASC
-        LIMIT 1`,
-      [name, userId],
-    );
-    const row = r.rows[0];
-    if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      ownerUserId: row.owner_user_id,
-      createdAt: row.created_at,
-    };
+    const [row] = await this.db
+      .select({
+        id: schema.projects.id,
+        name: schema.projects.name,
+        ownerUserId: schema.projects.ownerUserId,
+        createdAt: schema.projects.createdAt,
+      })
+      .from(schema.projects)
+      .innerJoin(schema.projectMembers, eq(schema.projectMembers.projectId, schema.projects.id))
+      .where(and(eq(schema.projects.name, name), eq(schema.projectMembers.userId, userId)))
+      .orderBy(asc(schema.projects.createdAt))
+      .limit(1);
+    return row ?? null;
   }
 
   async listProjectsForUser(
@@ -1025,27 +973,19 @@ export class WarmStore {
       createdAt: Date;
     }>
   > {
-    const r = await this.pool.query<{
-      id: string;
-      name: string;
-      role: string;
-      owner_user_id: string;
-      created_at: Date;
-    }>(
-      `SELECT p.id, p.name, m.role, p.owner_user_id, p.created_at
-         FROM projects p
-         JOIN project_members m ON m.project_id = p.id
-        WHERE m.user_id = $1
-        ORDER BY p.created_at ASC`,
-      [userId],
-    );
-    return r.rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      role: row.role,
-      ownerUserId: row.owner_user_id,
-      createdAt: row.created_at,
-    }));
+    const rows = await this.db
+      .select({
+        id: schema.projects.id,
+        name: schema.projects.name,
+        role: schema.projectMembers.role,
+        ownerUserId: schema.projects.ownerUserId,
+        createdAt: schema.projects.createdAt,
+      })
+      .from(schema.projects)
+      .innerJoin(schema.projectMembers, eq(schema.projectMembers.projectId, schema.projects.id))
+      .where(eq(schema.projectMembers.userId, userId))
+      .orderBy(asc(schema.projects.createdAt));
+    return rows;
   }
 
   async listProjectMembers(
@@ -1075,23 +1015,30 @@ export class WarmStore {
   }
 
   async addProjectMember(projectId: string, userId: string, role: "owner" | "member"): Promise<boolean> {
-    const r = await this.pool.query(
-      `INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, $3)
-       ON CONFLICT (project_id, user_id) DO NOTHING`,
-      [projectId, userId, role],
-    );
-    return (r.rowCount ?? 0) > 0;
+    const inserted = await this.db
+      .insert(schema.projectMembers)
+      .values({ projectId, userId, role })
+      .onConflictDoNothing({
+        target: [schema.projectMembers.projectId, schema.projectMembers.userId],
+      })
+      .returning({ userId: schema.projectMembers.userId });
+    return inserted.length > 0;
   }
 
   async removeProjectMember(
     projectId: string,
     userId: string,
   ): Promise<{ removed: boolean }> {
-    const r = await this.pool.query(
-      `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
-      [projectId, userId],
-    );
-    return { removed: (r.rowCount ?? 0) > 0 };
+    const removed = await this.db
+      .delete(schema.projectMembers)
+      .where(
+        and(
+          eq(schema.projectMembers.projectId, projectId),
+          eq(schema.projectMembers.userId, userId),
+        ),
+      )
+      .returning({ userId: schema.projectMembers.userId });
+    return { removed: removed.length > 0 };
     /* (Tokens are user-scoped, not project-scoped. Removing a member
      *  drops their access to the project's memory but leaves their
      *  bearers alone — they still authenticate as that user.) */
@@ -1101,11 +1048,17 @@ export class WarmStore {
     projectId: string,
     userId: string,
   ): Promise<{ role: string } | null> {
-    const r = await this.pool.query<{ role: string }>(
-      `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
-      [projectId, userId],
-    );
-    return r.rows[0] ?? null;
+    const [row] = await this.db
+      .select({ role: schema.projectMembers.role })
+      .from(schema.projectMembers)
+      .where(
+        and(
+          eq(schema.projectMembers.projectId, projectId),
+          eq(schema.projectMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
   }
 
   /** Hard-delete a project: removes its memory entries (and FTS/access/
@@ -1113,34 +1066,36 @@ export class WarmStore {
    *  store / graph cleanup is the engine's responsibility (it has those
    *  store handles). */
   async deleteProject(id: string): Promise<{ deleted: boolean; entriesRemoved: number }> {
-    const exists = await this.pool.query("SELECT 1 FROM projects WHERE id = $1", [id]);
-    if (exists.rowCount === 0) return { deleted: false, entriesRemoved: 0 };
-    const client = await this.pool.connect();
-    let entriesRemoved = 0;
-    try {
-      await client.query("BEGIN");
-      await client.query(
-        `DELETE FROM memory_access WHERE entry_id IN (SELECT id FROM memory_entries WHERE project_id = $1)`,
-        [id],
-      );
-      await client.query("DELETE FROM memory_fts WHERE project_id = $1", [id]);
-      await client.query("DELETE FROM memory_relations WHERE project_id = $1", [id]);
-      const del = await client.query("DELETE FROM memory_entries WHERE project_id = $1", [id]);
-      entriesRemoved = del.rowCount ?? 0;
-      await client.query("DELETE FROM cold_orphans WHERE project_id = $1", [id]);
-      await client.query("DELETE FROM project_members WHERE project_id = $1", [id]);
+    const [exists] = await this.db
+      .select({ id: schema.projects.id })
+      .from(schema.projects)
+      .where(eq(schema.projects.id, id))
+      .limit(1);
+    if (!exists) return { deleted: false, entriesRemoved: 0 };
+    return this.db.transaction(async (tx) => {
+      // memory_access doesn't have a project_id column, so we delete by
+      // the entry-id subquery — drizzle's `inArray` over a subquery handles it.
+      await tx.execute(sql`
+        DELETE FROM memory_access WHERE entry_id IN (
+          SELECT id FROM memory_entries WHERE project_id = ${id}
+        )
+      `);
+      await tx.delete(schema.memoryFts).where(eq(schema.memoryFts.projectId, id));
+      await tx.delete(schema.memoryRelations).where(eq(schema.memoryRelations.projectId, id));
+      const removed = await tx
+        .delete(schema.memoryEntries)
+        .where(eq(schema.memoryEntries.projectId, id))
+        .returning({ id: schema.memoryEntries.id });
+      await tx.delete(schema.coldOrphans).where(eq(schema.coldOrphans.projectId, id));
+      await tx
+        .delete(schema.projectMembers)
+        .where(eq(schema.projectMembers.projectId, id));
       // (Tokens have no project scope — they belong to the user, not the
       // project. The kicked / removed members keep their bearers; they
       // just no longer reach this project's memory.)
-      await client.query("DELETE FROM projects WHERE id = $1", [id]);
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
-    return { deleted: true, entriesRemoved };
+      await tx.delete(schema.projects).where(eq(schema.projects.id, id));
+      return { deleted: true, entriesRemoved: removed.length };
+    });
   }
 
   async insertEntry(args: {
@@ -1371,13 +1326,12 @@ export class WarmStore {
    *  membership before deletion (the regular `getEntry` filters by the
    *  caller-supplied scope, which an attacker can game by passing null). */
   async getEntryScope(id: string): Promise<{ userId: string; projectId: string | null } | undefined> {
-    const r = await this.pool.query<{ user_id: string; project_id: string | null }>(
-      `SELECT user_id, project_id FROM memory_entries WHERE id = $1`,
-      [id],
-    );
-    const row = r.rows[0];
-    if (!row) return undefined;
-    return { userId: row.user_id, projectId: row.project_id };
+    const [row] = await this.db
+      .select({ userId: schema.memoryEntries.userId, projectId: schema.memoryEntries.projectId })
+      .from(schema.memoryEntries)
+      .where(eq(schema.memoryEntries.id, id))
+      .limit(1);
+    return row;
   }
 
   async getEntry(userId: string, id: string, opts: { projectId?: string | null } = {}) {
@@ -1397,26 +1351,32 @@ export class WarmStore {
   }
 
   async bumpHits(id: string): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO memory_access (entry_id, hits, last_accessed)
-       VALUES ($1, 1, now())
-       ON CONFLICT (entry_id) DO UPDATE
-         SET hits = memory_access.hits + 1, last_accessed = now()`,
-      [id],
-    );
+    await this.db
+      .insert(schema.memoryAccess)
+      .values({ entryId: id, hits: 1, lastAccessed: sql`now()` })
+      .onConflictDoUpdate({
+        target: schema.memoryAccess.entryId,
+        set: {
+          hits: sql`${schema.memoryAccess.hits} + 1`,
+          lastAccessed: sql`now()`,
+        },
+      });
   }
 
   /** Batch variant of `bumpHits` — one round-trip for the whole top-k.
    *  Used by `engine.search` to collapse the N+1 (P1-P1). */
   async bumpHitsMany(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
-    await this.pool.query(
-      `INSERT INTO memory_access (entry_id, hits, last_accessed)
-       SELECT id, 1, now() FROM unnest($1::text[]) AS u(id)
-       ON CONFLICT (entry_id) DO UPDATE
-         SET hits = memory_access.hits + 1, last_accessed = now()`,
-      [ids],
-    );
+    await this.db
+      .insert(schema.memoryAccess)
+      .values(ids.map((entryId) => ({ entryId, hits: 1, lastAccessed: sql`now()` as unknown as Date })))
+      .onConflictDoUpdate({
+        target: schema.memoryAccess.entryId,
+        set: {
+          hits: sql`${schema.memoryAccess.hits} + 1`,
+          lastAccessed: sql`now()`,
+        },
+      });
   }
 
   /** Batch entry lookup. Returns rows in the same order as the input ids
@@ -1532,13 +1492,17 @@ export class WarmStore {
     strength: number,
     projectId?: string | null,
   ): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO memory_relations (user_id, project_id, from_id, to_id, relation, strength)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (from_id, to_id, relation) DO UPDATE
-         SET strength = EXCLUDED.strength`,
-      [userId, projectId ?? null, fromId, toId, relation, strength],
-    );
+    await this.db
+      .insert(schema.memoryRelations)
+      .values({ userId, projectId: projectId ?? null, fromId, toId, relation, strength })
+      .onConflictDoUpdate({
+        target: [
+          schema.memoryRelations.fromId,
+          schema.memoryRelations.toId,
+          schema.memoryRelations.relation,
+        ],
+        set: { strength },
+      });
   }
 
   async markCold(id: string, cold: boolean): Promise<void> {
@@ -1549,17 +1513,26 @@ export class WarmStore {
   }
 
   async stats(userId: string) {
-    const r = await this.pool.query<{ namespace: string; cold: boolean; count: string }>(
-      `SELECT namespace, cold, COUNT(*)::text AS count
-         FROM memory_entries
-        WHERE user_id = $1
-        GROUP BY namespace, cold`,
-      [userId],
-    );
-    const last = await this.pool.query<{ finished_at: Date | null }>(
-      `SELECT finished_at FROM decay_runs ORDER BY id DESC LIMIT 1`,
-    );
-    return { rows: r.rows, lastDecayAt: last.rows[0]?.finished_at ?? null };
+    const rows = await this.db
+      .select({
+        namespace: schema.memoryEntries.namespace,
+        cold: schema.memoryEntries.cold,
+        count: count(),
+      })
+      .from(schema.memoryEntries)
+      .where(eq(schema.memoryEntries.userId, userId))
+      .groupBy(schema.memoryEntries.namespace, schema.memoryEntries.cold);
+    const [last] = await this.db
+      .select({ finishedAt: schema.decayRuns.finishedAt })
+      .from(schema.decayRuns)
+      .orderBy(desc(schema.decayRuns.id))
+      .limit(1);
+    // Caller compares against `count: string` shape; preserve to avoid
+    // a wider blast radius. count() returns number from drizzle.
+    return {
+      rows: rows.map((r) => ({ namespace: r.namespace, cold: r.cold, count: String(r.count) })),
+      lastDecayAt: last?.finishedAt ?? null,
+    };
   }
 
   async ping(): Promise<boolean> {

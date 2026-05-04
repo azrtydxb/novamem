@@ -21,6 +21,7 @@ import {
   index,
   unique,
   jsonb,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 /** Dashboard users. The `admin` role gates /v1/admin/* (manage other
@@ -190,3 +191,69 @@ export const decayRuns = pgTable("decay_runs", {
   promoted: integer("promoted").notNull().default(0),
   effectiveDays: real("effective_days"),
 });
+
+/** Cold-tier orphans — entries whose qdrant delete failed; reaper retries
+ *  with exponential backoff and gives up after a few attempts. */
+export const coldOrphans = pgTable(
+  "cold_orphans",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().default("public"),
+    projectId: text("project_id"),
+    namespace: text("namespace").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    firstSeen: timestamp("first_seen", { withTimezone: true }).notNull().defaultNow(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_orphans_attempts").on(table.attempts),
+    index("idx_orphans_attempt_lastattempt").on(table.attempts, table.lastAttemptAt),
+  ],
+);
+
+/** Per-user "current sub-brain" pointer. When set, memory.* calls without
+ *  an explicit project arg default to this project. One row per user;
+ *  deactivate = delete the row. */
+export const userActiveProject = pgTable("user_active_project", {
+  userId: text("user_id").primaryKey(),
+  projectId: text("project_id").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Audit trail of admin actions (user CRUD, role changes, project deletes,
+ *  …). Append-only — no UPDATE / DELETE paths. */
+export const adminAuditLog = pgTable(
+  "admin_audit_log",
+  {
+    id: serial("id").primaryKey(),
+    ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
+    actorUserId: text("actor_user_id"),
+    actorLabel: text("actor_label").notNull(),
+    action: text("action").notNull(),
+    target: text("target"),
+    metadata: jsonb("metadata"),
+    requestIp: text("request_ip"),
+  },
+  (table) => [
+    index("idx_audit_ts").on(table.ts),
+    index("idx_audit_actor").on(table.actorUserId),
+  ],
+);
+
+/** Persistent throughput history — one row per user per minute, written
+ *  by a per-minute flush from the in-memory MetricsCollector. Powers the
+ *  24h history chart on the user dashboard. */
+export const metricsSamples = pgTable(
+  "metrics_samples",
+  {
+    userId: text("user_id").notNull(),
+    sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
+    queries: integer("queries").notNull().default(0),
+    remembers: integer("remembers").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.sampledAt] }),
+    index("idx_metrics_samples_at").on(table.sampledAt),
+  ],
+);

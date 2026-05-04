@@ -25,7 +25,7 @@ export function openapiSpec() {
         "Both flow through the same auth hook and resolve to the same user. " +
         "Better Auth's own routes are mounted at `/api/auth/*` — see the " +
         "Better Auth documentation for their shapes.",
-      license: { name: "MIT" },
+      license: { name: "Apache-2.0", url: "https://www.apache.org/licenses/LICENSE-2.0" },
     },
     servers: [{ url: "/", description: "this server" }],
     components: {
