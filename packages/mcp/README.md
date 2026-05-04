@@ -1,14 +1,14 @@
 # @azrty/novamem-mcp
 
-MCP-stdio shim + login helper for [novamem](https://github.com/azrtydxb/novamem). Wraps a remote novamem server's tools so any MCP-aware host (Claude Desktop, Cursor, Cline, Claude Code) can use them.
+MCP-stdio shim for [novamem](https://github.com/azrtydxb/novamem). Bridges stdio↔HTTP for MCP hosts that haven't shipped remote-MCP support yet (older Claude Desktop, Cursor, …).
 
 ```bash
 npx @azrty/novamem-mcp
 ```
 
-## MCP shim
+> If your client supports remote MCP, point it directly at `http://<host>:7778/mcp/sse` instead — no shim needed. See the main repo's README for the SSE config shape.
 
-Configure your MCP host:
+## MCP shim
 
 ```json
 {
@@ -25,58 +25,23 @@ Configure your MCP host:
 }
 ```
 
-### Tools advertised
+`NOVAMEM_TOKEN` is a `nm_…` user bearer minted from the dashboard's API Tokens page. It carries every right the owning user has — the user's whole memory plus every project they're a member of.
 
-- `memory.search` / `memory.remember` / `memory.recent` / `memory.today` / `memory.neighbors` / `memory.forget` / `memory.stats` — every tool accepts an optional `project` argument.
-- `project.list` / `project.create` — **require a session bearer (`ns_…`)**, not a tenant token. Use `novamem-login` (below) to get one.
+## Tools advertised
 
-### Bearer flavors
+Memory operations (every tool accepts an optional `project` — id or human name):
 
-- **Tenant-wide token (`nm_…` minted without projectId)** — sees only tenant-wide entries.
-- **Project-scoped token (`nm_…` minted with projectId)** — sees only that project. Project is the default for `memory.*`; passing a different `project` argument returns 403.
-- **Session bearer (`ns_…`)** — full user-scoped surface; required for `project.create`/`project.list`.
+- `memory.search` / `memory.remember` / `memory.update` / `memory.recent` / `memory.today` / `memory.neighbors` / `memory.forget` / `memory.stats`
+- `memory.remember` accepts `sourceType`, `capturedFrom`, `confidence`, and `force` (bypass the worthiness gate)
+- `memory.update` rewrites an existing entry in place; preserves id + hits + edges; re-embeds when content changes
 
-## `novamem-login` helper
+Project lifecycle:
 
-Trades username + password for a session token suitable for `NOVAMEM_TOKEN`:
-
-```bash
-# Interactive (prompts for password on a TTY)
-NOVAMEM_USERNAME=bob npx -p @azrty/novamem-mcp novamem-login
-
-# Non-interactive (CI / scripts)
-SESSION=$(NOVAMEM_USERNAME=bob NOVAMEM_PASSWORD=… npx -p @azrty/novamem-mcp novamem-login)
-NOVAMEM_TOKEN=$SESSION npx @azrty/novamem-mcp
-```
-
-Output:
-- **stdout** — the bare session token (suitable for `$(...)`).
-- **stderr** — a one-line banner describing the user + expiry.
-
-Env vars:
-- `NOVAMEM_BASE_URL` (default `http://localhost:7778`)
-- `NOVAMEM_USERNAME` (or first positional arg)
-- `NOVAMEM_PASSWORD` (optional; falls back to TTY prompt with no-echo)
-
-## End-to-end skill flow
-
-```bash
-# 1. Log in (or load a saved session)
-SESSION=$(NOVAMEM_USERNAME=bob npx -p @azrty/novamem-mcp novamem-login)
-
-# 2. Boot the MCP shim with the session bearer; project.create/list are now available
-NOVAMEM_TOKEN=$SESSION npx @azrty/novamem-mcp
-# (your MCP host now sees the full novamem tool surface)
-
-# 3. Inside the session, mint a long-lived project token via the dashboard or:
-#    curl -X POST http://localhost:7778/v1/me/tokens \
-#      -H "authorization: Bearer $SESSION" \
-#      -H "content-type: application/json" \
-#      -d '{"projectId":"phoenix","label":"this-laptop"}'
-#    Then swap NOVAMEM_TOKEN to that nm_… and stop using the session.
-```
+- `project.list` / `project.create` / `project.delete`
+- `project.activate({ project })` / `project.deactivate` — set or clear the caller's active project. When set, memory.* calls without an explicit `project` arg default to it.
+- `project.share({ project, username })` / `project.unshare(...)` — owner adds/removes members by email or display name.
 
 ## See also
 
-- [SECURITY.md](https://github.com/azrtydxb/novamem/blob/main/SECURITY.md) — auth model and hardening checklist.
-- Main repo for the OpenAPI spec, dashboard, and HTTP API.
+- [SECURITY.md](https://github.com/azrtydxb/novamem/blob/main/SECURITY.md) — auth model and hardening checklist
+- Main repo for the OpenAPI spec, dashboard, and HTTP API
