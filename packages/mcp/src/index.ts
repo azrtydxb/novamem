@@ -3,10 +3,10 @@
  * The server's local MCP (in packages/server/src/mcp.ts) talks to an
  * in-process engine; this shim talks to a remote engine via HTTP.
  *
- * The shim authenticates with whatever bearer token the host sets via
- * NOVAMEM_TOKEN — either a user token (`nm_…`, data plane only) or a
- * dashboard session token (`ns_…`, which unlocks `project.create` and
- * other user-scoped operations as well).
+ * Authenticates with the bearer token the host sets via NOVAMEM_TOKEN.
+ * Tokens are user-scoped (`nm_…`) — they carry every right the owning
+ * user has, including project create / list / membership, because the
+ * server resolves the bearer to its underlying user before dispatch.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -17,10 +17,76 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { NovamemClient } from "@azrty/novamem";
 
+/** Behaviour rules surfaced to the host LLM via the MCP `instructions`
+ *  field on `initialize`. Compliant clients (Claude Code, Claude Desktop,
+ *  Cursor, etc.) thread this into the model's system context for every
+ *  conversation that has the connector enabled — so the operator doesn't
+ *  have to mirror these rules into a per-agent CLAUDE.md / .cursor/rules
+ *  / etc. The trade-off is that the token cost is paid every turn while
+ *  the connector is loaded; keep it tight. */
+const NOVAMEM_INSTRUCTIONS = `# NovaMem long-term memory
+
+You have a persistent memory system through the \`novamem\` MCP server. It
+exposes hybrid search (keyword + vector + graph) over durable entries the
+user has accumulated across sessions. **Use it.** Don't re-derive things the
+user already told you.
+
+## When to call \`memory.search\`
+
+Search before any of these:
+- The user references prior work or a past decision.
+- You're about to make a non-trivial design call — a similar one may exist.
+- The user asks about a preference, convention, or constraint they didn't
+  state this turn.
+- You're starting a task in an unfamiliar area — search before exploring blind.
+
+Default weights are tuned for prose. Useful overrides:
+- \`{ keyword: 1, vector: 0 }\` — exact id / symbol / file / hash lookup.
+- \`{ vector: 1, keyword: 0 }\` — semantic-only (concept over literal tokens).
+- \`{ graph: 1 }\` — neighbour-driven recall ("what's adjacent to X?").
+
+If every hit is below ~0.4, treat it as a miss.
+
+## When to call \`memory.remember\`
+
+Save things that will still matter next session:
+- Decisions with reasoning ("chose drizzle over knex because…").
+- User preferences that recur (tools, formatting, review style).
+- Hidden constraints (legal/compliance, deadlines, dep pins).
+- Bug post-mortems (root cause + fix), not just the fix itself.
+- Architecture invariants the codebase wouldn't reveal on its own.
+
+Don't save:
+- Conversational context that ends with the task.
+- Facts trivially derivable from the current code.
+- Anything the user said is private/secret.
+- Verbatim error stack traces — extract the diagnosis instead.
+
+When you remember something proactively, mention it in one short sentence
+("Saved that as a memory.") so the user can correct or veto.
+
+## Project scope
+
+A project is a *sub-brain*. Pass \`project: <id>\` to scope a call to that
+project; omit it for user-wide entries. \`project.list\` returns the
+projects the caller can access. If a memory clearly belongs to a project
+the user is working on, scope it there.
+
+## Decay & reinforcement
+
+Entries decay if not accessed: \`effectiveDays = 7 · log₂(hits + 1)\`.
+Searching counts as access — re-finding important memories keeps them warm.
+
+## Tools available
+\`memory.search\`, \`memory.remember\`, \`memory.recent\`, \`memory.today\`,
+\`memory.neighbors\`, \`memory.forget\`, \`memory.stats\`, \`project.list\`,
+\`project.create\`.
+`;
+
 export function buildRemoteMcpServer(client: NovamemClient): Server {
   const server = new Server(
     { name: "novamem-mcp", version: "0.1.0" },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: NOVAMEM_INSTRUCTIONS },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

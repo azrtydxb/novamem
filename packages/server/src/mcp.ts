@@ -20,12 +20,6 @@ export interface McpContext {
   userId: string;
   /** Project the bearer/session is bound to (or null for whole-user). */
   projectId?: string | null;
-  /** User id when authenticated as a dashboard user (used for
-   *  project.create ownership). Null/undefined for bearer-only callers —
-   *  those can't create projects via MCP. Usually equal to userId, but
-   *  kept distinct so a bearer's owning user is never confused with the
-   *  caller. */
-  dashUserId?: string | null;
 }
 
 /** Build the MCP server. `ctxOrUserId` accepts either a context object
@@ -264,19 +258,21 @@ export function buildMcpServer(
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
       case "project.list": {
-        if (!warm || !ctx.dashUserId) {
+        if (!warm) {
           return {
-            content: [{ type: "text", text: "project.list requires dashboard-user authentication" }],
+            content: [{ type: "text", text: "project.list requires the warm store" }],
             isError: true,
           };
         }
-        const projects = await warm.listProjectsForUser(ctx.dashUserId);
+        // Tokens have no project scope — any authenticated caller lists
+        // projects owned-or-joined by their underlying user.
+        const projects = await warm.listProjectsForUser(userId);
         return { content: [{ type: "text", text: JSON.stringify({ projects }) }] };
       }
       case "project.create": {
-        if (!warm || !ctx.dashUserId) {
+        if (!warm) {
           return {
-            content: [{ type: "text", text: "project.create requires dashboard-user authentication" }],
+            content: [{ type: "text", text: "project.create requires the warm store" }],
             isError: true,
           };
         }
@@ -284,10 +280,11 @@ export function buildMcpServer(
         if (!name || name.length > 128) {
           return { content: [{ type: "text", text: "invalid project name (1–128 chars)" }], isError: true };
         }
-        // Project ids are server-assigned ULIDs.
+        // The bearer's owning user becomes the project owner — same flow
+        // as POST /v1/me/projects in the cookie-auth dashboard.
         const project = await warm.createProject({
           name,
-          ownerUserId: ctx.dashUserId,
+          ownerUserId: userId,
         });
         return { content: [{ type: "text", text: JSON.stringify(project) }] };
       }

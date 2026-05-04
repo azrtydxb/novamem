@@ -107,7 +107,14 @@ export class ColdStore {
     return r.map((p) => {
       const payload = (p.payload ?? {}) as Record<string, unknown>;
       const id = typeof payload.entryId === "string" ? payload.entryId : String(p.id);
-      return { id, score: p.score ?? 0, payload };
+      // Cosine similarity ranges over [-1, 1] but a negative score means
+      // "vectors point apart" → semantically unrelated. Clip to 0 so the
+      // fuse step's max-normalisation doesn't collapse a near-orthogonal
+      // hit's signal contribution to zero across the whole result set
+      // (when the only vector hit had score < 0, max.vector was 0 and
+      // every entry's vector signal got divided to 0).
+      const raw = p.score ?? 0;
+      return { id, score: raw > 0 ? raw : 0, payload };
     });
   }
 
