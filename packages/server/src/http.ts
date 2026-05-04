@@ -321,8 +321,26 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       }
     }
 
-    // /v1/auth/* (other than login/status) and /v1/me/* require a session.
+    // /v1/auth/* (other than login/status) and /v1/me/* require a user
+    // identity. Two ways to present one:
+    //   1. session bearer (`ns_…` cookie or header) — sets req.dashUser
+    //      via the resolveSession path above.
+    //   2. user bearer (`nm_…`) — owns the same scope; we resolve it
+    //      to its underlying user and synthesize a DashboardUser so the
+    //      /v1/me/* handlers (project CRUD, data-plane mirrors) work
+    //      uniformly. This is what makes "the bearer has full user
+    //      access" hold across the dashboard surface and MCP.
     if (req.url.startsWith("/v1/auth/") || req.url.startsWith("/v1/me/")) {
+      if (!req.dashUser && headerToken.startsWith("nm_") && opts.warm) {
+        const resolved = await opts.warm.resolveUserToken(headerToken);
+        if (resolved) {
+          const u = await opts.warm.findUserById(resolved.userId);
+          if (u) {
+            req.dashUser = u;
+            req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
+          }
+        }
+      }
       if (!req.dashUser) {
         reply.code(401).send({ error: "unauthorized" });
         return reply;
@@ -1189,14 +1207,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     const transport = new SSEServerTransport("/mcp/messages", reply.raw);
     const sessionId = transport.sessionId;
     const userId = req.userId;
-    const mcpServer = buildMcpServer(
-      opts.engine,
-      {
-        userId,
-        dashUserId: req.dashUser?.id ?? null,
-      },
-      opts.warm,
-    );
+    const mcpServer = buildMcpServer(opts.engine, { userId }, opts.warm);
     sseTransports.set(sessionId, { transport, userId, mcpServer });
     await mcpServer.connect(transport);
     req.log.info({ sessionId, userId }, "mcp-sse: session opened");
