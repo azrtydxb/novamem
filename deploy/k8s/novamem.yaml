@@ -8,6 +8,11 @@ data:
   NOVAMEM_ADMIN_DASHBOARD: "1"
   NOVAMEM_HOST: "0.0.0.0"
   NOVAMEM_PORT: "7778"
+  # Public-facing URL the dashboard SPA reaches the API on. Better Auth
+  # uses this for trusted-origin / CSRF checks — it must match the
+  # browser's `Origin:` header exactly. Update when DNS or the LB IP
+  # changes.
+  NOVAMEM_BASE_URL: "http://192.168.10.248:7778"
   NOVAMEM_EMBEDDINGS_PROVIDER: "local-transformers"
   # In-cluster service DNS — k3s registers `<name>.<ns>.svc.cluster.local`.
   NOVAMEM_WARM_URL: "postgres://novamem:novamempg@postgres.novamem.svc.cluster.local:5432/novamem"
