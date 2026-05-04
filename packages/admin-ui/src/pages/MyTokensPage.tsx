@@ -254,6 +254,40 @@ function CreateCard({
   );
 }
 
+/** Copy `value` to the clipboard. The Clipboard API only works in a
+ *  secure context (HTTPS or localhost) — over plain HTTP (e.g. the
+ *  k3s LoadBalancer at http://<host>:7778) navigator.clipboard is
+ *  undefined, so we fall back to the legacy execCommand path which
+ *  works regardless of context. */
+async function copyToClipboard(value: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // fall through to legacy path
+    }
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, value.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const toast = useToast();
@@ -261,12 +295,12 @@ function CopyButton({ value }: { value: string }) {
     <Button
       variant="primary"
       onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
+        const ok = await copyToClipboard(value);
+        if (ok) {
           setCopied(true);
           toast.success("Copied to clipboard");
           setTimeout(() => setCopied(false), 1500);
-        } catch {
+        } else {
           toast.error("Could not access clipboard");
         }
       }}
