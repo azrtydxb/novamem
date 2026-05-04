@@ -121,10 +121,22 @@ export class GraphStore {
   ): Promise<Array<{ id: string; score: number }>> {
     if (!this.graph) return [];
     const project = projectId ?? "";
-    const cypher = `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES*1..${depth}]-(b:Memory)
-                    WHERE b.user = $user AND b.project = $project
-                    RETURN b.id AS id, MAX(reduce(s = 1.0, e IN r | s * e.strength)) AS score
-                    LIMIT ${limit}`;
+    // The depth-1 hot path uses a single relationship variable so the
+    // server returns a scalar Edge directly. This avoids a falkordb-driver
+    // bug where `RELATES*1..N` decodes as Edge for paths of length 1 and
+    // the client throws "Type mismatch: expected List or Null but was
+    // Edge" — the engine swallowed that and reported degraded:true on
+    // every search. Multi-hop traversal still uses the path form.
+    const cypher =
+      depth <= 1
+        ? `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES]-(b:Memory)
+             WHERE b.user = $user AND b.project = $project
+             RETURN b.id AS id, MAX(r.strength) AS score
+             LIMIT ${limit}`
+        : `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES*1..${depth}]-(b:Memory)
+             WHERE b.user = $user AND b.project = $project
+             RETURN b.id AS id, MAX(reduce(s = 1.0, e IN r | s * e.strength)) AS score
+             LIMIT ${limit}`;
     const r = await this.graph.query<{ id: string; score: number }>(cypher, {
       params: { id: seedId, user: userId, project },
     });
