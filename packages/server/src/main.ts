@@ -214,12 +214,9 @@ async function main() {
           // Promote the bootstrap user to admin. Better Auth's
           // /admin/set-role endpoint requires admin auth — and we're
           // the only user in the system right now, so there's no admin
-          // to make the call. Direct DB UPDATE is the documented escape
-          // hatch for the bootstrap case.
-          await warm.pool.query(
-            `UPDATE "user" SET role = 'admin', "updatedAt" = now() WHERE id = $1`,
-            [newUserId],
-          );
+          // to make the call. The warm store exposes `promoteToAdmin`
+          // as the documented escape hatch for the bootstrap case.
+          await warm.promoteToAdmin(newUserId);
           // eslint-disable-next-line no-console
           console.log(`[novamem] seeded bootstrap admin "${adminEmail}" via Better Auth`);
         }

@@ -518,9 +518,10 @@ export class WarmStore {
     role: string;
   } | null> {
     // Better Auth's `"user"` table has email + name (no username); we
-    // synthesise a username from the email's local-part so callers that
-    // expect that shape (auth hook fallback for nm_ tokens) continue to
-    // work without rewiring.
+    // surface the full email as `username` to match `findUserByUsername`
+    // / `findUserByExactEmail` — see issue #21. Callers (auth hook
+    // fallback for nm_ tokens, audit-log labels, dashboard /v1/me) all
+    // display it directly.
     const r = await this.db.execute<{
       id: string;
       email: string;
@@ -531,9 +532,20 @@ export class WarmStore {
     if (!row) return null;
     return {
       id: row.id,
-      username: row.email.split("@")[0] ?? row.email,
+      username: row.email,
       role: row.role ?? "user",
     };
+  }
+
+  /** Bootstrap-only admin promotion. Better Auth's /admin/set-role
+   *  endpoint requires admin auth, so the very first admin (seeded from
+   *  NOVAMEM_BOOTSTRAP_ADMIN_*) has nobody to make the call. Direct
+   *  UPDATE on the `"user"` table is the documented escape hatch — kept
+   *  here so all writes to BA tables go through the warm store. */
+  async promoteToAdmin(userId: string): Promise<void> {
+    await this.db.execute(
+      sql`UPDATE "user" SET role = 'admin', "updatedAt" = now() WHERE id = ${userId}`,
+    );
   }
 
   // ─── Audit log ────────────────────────────────────────────────────────
