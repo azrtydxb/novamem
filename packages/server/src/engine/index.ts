@@ -938,43 +938,6 @@ export class MemoryEngine {
     return r.rowCount ?? 0;
   }
 
-  /** Delete a user and every artefact it owns across warm, cold, and
-   *  graph. The warm purge is transactional; cold and graph are best-effort
-   *  but always attempted. Refuses to delete the synthetic `public` user
-   *  (would orphan legacy single-user rows). */
-  async deleteUser(userId: string): Promise<{
-    deleted: boolean;
-    entriesRemoved: number;
-    coldCollectionsDropped: string[];
-    graphCleared: boolean;
-  }> {
-    const warm = await this.warm.deleteUserAndMemory(userId);
-    if (!warm.deleted) {
-      return { deleted: false, entriesRemoved: 0, coldCollectionsDropped: [], graphCleared: false };
-    }
-    let coldCollectionsDropped: string[] = [];
-    try {
-      coldCollectionsDropped = await this.cold.deleteAllForUser(userId);
-    } catch (err) {
-      this.logger.warn(`[engine] deleteUser(${userId}): cold cleanup failed: ${(err as Error).message}`);
-    }
-    let graphCleared = false;
-    if (this.graph?.isConnected()) {
-      // graph-store now returns whether the DELETE actually ran (it logs
-      // its own error on failure). Don't claim graphCleared falsely.
-      graphCleared = await this.graph.removeAllForUser(userId);
-    }
-    // P2-5: drop the user's MetricsCollector slot so the in-memory Map
-    // doesn't accumulate dead entries.
-    this.metrics?.forgetUser(userId);
-    return {
-      deleted: true,
-      entriesRemoved: warm.entriesRemoved,
-      coldCollectionsDropped,
-      graphCleared,
-    };
-  }
-
   /** Delete a project + every memory artefact owned by it (warm rows,
    *  cold collections, graph nodes, project-scoped tokens, members).
    *  Does NOT enforce permissions — the HTTP layer must verify the
