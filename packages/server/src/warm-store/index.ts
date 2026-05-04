@@ -60,6 +60,22 @@ export class WarmStore {
     // single-user installs upgrade in place — pre-user rows backfill to
     // `public` via the column DEFAULT.
     const ddl = [
+      // Legacy auth tables (`users`, `sessions`) are gone — Better Auth's
+      // `"user"` / `"session"` replaced them. Drop the FK constraints
+      // that referenced `users(id)` from existing data-plane tables, on
+      // pre-existing databases. CREATE TABLE IF NOT EXISTS doesn't touch
+      // an already-present schema, so without these ALTERs the FK
+      // survives and writes 500 with a 23503 violation when Better Auth
+      // ids don't exist in `users`.
+      `ALTER TABLE IF EXISTS user_tokens DROP CONSTRAINT IF EXISTS user_tokens_user_id_fkey`,
+      `ALTER TABLE IF EXISTS projects DROP CONSTRAINT IF EXISTS projects_owner_user_id_fkey`,
+      `ALTER TABLE IF EXISTS project_members DROP CONSTRAINT IF EXISTS project_members_user_id_fkey`,
+      // The legacy users + sessions tables aren't useful anymore. Drop
+      // them so they can't drift (e.g. a stale row tricking somebody
+      // into thinking we still have a user). DROP TABLE IF EXISTS is a
+      // no-op on already-cutover databases.
+      `DROP TABLE IF EXISTS sessions`,
+      `DROP TABLE IF EXISTS users`,
       // user_tokens — `nm_…` API keys for non-browser callers (MCP, CLI,
       // scripts). user_id is a free-text reference to whoever Better
       // Auth's "user" table calls the owner; we do not enforce an FK
