@@ -361,7 +361,11 @@ describe("http: user mode + admin routes", () => {
       payload: { id: aId },
       headers: { authorization: `Bearer ${tokenB}` },
     });
-    expect(bForget.json().deleted).toBe(false);
+    // Defence-in-depth getEntryScope recheck (promoted from /v1/me/forget
+    // so the protection is universal): bob's bearer + alice's user-global
+    // entry → 403 "not in your user namespace" instead of the engine's
+    // silent {deleted: false} miss.
+    expect(bForget.statusCode).toBe(403);
     const aRecent = await app.inject({
       method: "POST",
       url: "/v1/recent",
@@ -801,7 +805,7 @@ describe("http: P0 regression tests", () => {
   // Without this guard, any user in `acme` could read/write any
   // project under `acme` by passing the project id in the body — even
   // projects they're not a member of.
-  it("P0-6: /v1/me/search refuses non-members of the requested project", async () => {
+  it("P0-6: /v1/search refuses non-members of the requested project (cookie-authed)", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
     const aliceHelper = await userAuth(warm, "alice");
     const bobHelper = await userAuth(warm, "bob");
@@ -819,37 +823,39 @@ describe("http: P0 regression tests", () => {
     expect(created.statusCode).toBe(201);
     const aliceProjId = created.json().id as string;
 
-    // Each /v1/me/* mirror must 403 when Bob targets Alice's project.
+    // Each /v1/* data-plane route must 403 when Bob targets Alice's project,
+    // even when authed by a Better Auth session bearer (the cookie-authed
+    // dashboard path that used to go through the /v1/me/* mirrors).
     const search = await app.inject({
-      method: "POST", url: "/v1/me/search",
+      method: "POST", url: "/v1/search",
       payload: { query: "x", project: aliceProjId },
       headers: bobAuth,
     });
     expect(search.statusCode).toBe(403);
 
     const recent = await app.inject({
-      method: "POST", url: "/v1/me/recent",
+      method: "POST", url: "/v1/recent",
       payload: { project: aliceProjId },
       headers: bobAuth,
     });
     expect(recent.statusCode).toBe(403);
 
     const remember = await app.inject({
-      method: "POST", url: "/v1/me/remember",
+      method: "POST", url: "/v1/remember",
       payload: { content: "bob's intrusion", project: aliceProjId, force: true },
       headers: bobAuth,
     });
     expect(remember.statusCode).toBe(403);
 
     const forget = await app.inject({
-      method: "POST", url: "/v1/me/forget",
+      method: "POST", url: "/v1/forget",
       payload: { id: "01HXXX", project: aliceProjId },
       headers: bobAuth,
     });
     expect(forget.statusCode).toBe(403);
 
     const neighbors = await app.inject({
-      method: "POST", url: "/v1/me/neighbors",
+      method: "POST", url: "/v1/neighbors",
       payload: { id: "01HXXX", project: aliceProjId },
       headers: bobAuth,
     });
@@ -857,17 +863,19 @@ describe("http: P0 regression tests", () => {
 
     // Alice (the owner) can still use her own project.
     const okSearch = await app.inject({
-      method: "POST", url: "/v1/me/search",
+      method: "POST", url: "/v1/search",
       payload: { query: "x", project: aliceProjId },
       headers: aliceAuth,
     });
     expect(okSearch.statusCode).toBe(200);
   });
 
-  // P0-6 follow-up: /v1/me/forget can't be tricked into deleting a
+  // P0-6 follow-up: /v1/forget can't be tricked into deleting a
   // project-scoped entry by passing project: null. The handler looks up
-  // the actual entry's project_id and re-checks membership.
-  it("P0-6: /v1/me/forget rechecks the entry's real project", async () => {
+  // the actual entry's project_id and re-checks membership. (Was
+  // previously only enforced on /v1/me/forget; promoted to the unified
+  // /v1/forget so the protection is universal.)
+  it("P0-6: /v1/forget rechecks the entry's real project", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
     const aliceHelper = await userAuth(warm, "alice");
     const bobHelper = await userAuth(warm, "bob");
@@ -897,7 +905,7 @@ describe("http: P0 regression tests", () => {
     // membership check passes (null is allowed — user-wide is OK), but
     // the entry-resolution recheck must catch it.
     const r = await app.inject({
-      method: "POST", url: "/v1/me/forget",
+      method: "POST", url: "/v1/forget",
       payload: { id }, headers: bobAuth,
     });
     expect(r.statusCode).toBe(403);
