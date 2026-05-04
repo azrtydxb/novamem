@@ -1,0 +1,34 @@
+{
+  "name": "@azrty/novamem-init",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Interactive installer that signs in to a novamem server, mints a bearer, and wires every supported AI agent host (Claude Code, Cursor, Codex, OpenCode, Cline, Continue, Kilo Code, RooCode, Claude Desktop, …) to use it",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "bin": {
+    "novamem-init": "dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-assets.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.8.6",
+    "commander": "^14.0.0",
+    "smol-toml": "^1.4.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "@types/node": "^22.10.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

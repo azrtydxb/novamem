@@ -83,13 +83,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
-      - name: pnpm pack (client + mcp)
+      - name: pnpm pack (client + mcp + init)
         run: |
           mkdir -p dist-tarballs
           # `pnpm --filter X pack` injects --recursive which pack rejects;
           # cd into each package and pack directly instead.
           ( cd packages/client && pnpm pack --pack-destination ../../dist-tarballs )
           ( cd packages/mcp    && pnpm pack --pack-destination ../../dist-tarballs )
+          ( cd packages/init   && pnpm pack --pack-destination ../../dist-tarballs )
           ls -la dist-tarballs
       - uses: actions/upload-artifact@v4
         with:
