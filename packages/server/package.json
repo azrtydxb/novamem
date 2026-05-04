@@ -51,5 +51,14 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/azrtydxb/novamem.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/azrtydxb/novamem#readme",
+  "bugs": {
+    "url": "https://github.com/azrtydxb/novamem/issues"
   }
 }

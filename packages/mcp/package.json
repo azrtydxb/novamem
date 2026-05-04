@@ -10,8 +10,12 @@
     "novamem-mcp": "dist/bin.js",
     "novamem-login": "dist/login.js"
   },
-  "exports": { ".": "./dist/index.js" },
-  "files": ["dist"],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -25,5 +29,16 @@
     "@azrtydxb/novamem": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.4"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/azrtydxb/novamem.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/azrtydxb/novamem#readme",
+  "bugs": {
+    "url": "https://github.com/azrtydxb/novamem/issues"
+  }
 }
