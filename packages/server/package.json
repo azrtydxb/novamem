@@ -22,6 +22,7 @@
     "build:assets": "node ./scripts/copy-admin-ui.mjs",
     "test": "vitest run",
     "test:integration": "NOVAMEM_INTEGRATION=1 vitest run --dir tests",
+    "docs:api": "node ./scripts/gen-openapi.mjs",
     "typecheck": "tsc --noEmit",
     "dev": "tsx watch src/main.ts"
   },
