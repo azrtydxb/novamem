@@ -371,21 +371,6 @@ export class FakeWarmStore {
     return Promise.all(ids.map((id) => this.getEntry(userId, id, opts)));
   }
 
-  async listColdCandidates(_effectiveDays: number, _limit = 1000) {
-    const now = Date.now();
-    return {
-      rows: [...this.rows.values()]
-        .filter((r) => !r.cold)
-        .map((r) => ({
-          id: r.id,
-          user_id: r.userId,
-          namespace: r.namespace,
-          hits: r.hits,
-          idle_days: (now - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24),
-        })),
-    };
-  }
-
   async markCold(id: string, cold: boolean): Promise<void> {
     const r = this.rows.get(id);
     if (r) r.cold = cold;
@@ -497,16 +482,6 @@ export class FakeWarmStore {
    *  regex `^[a-f0-9]{64}$` then accepts our fake hashes too. */
   private fakeHash(plaintext: string): string {
     return createHash("sha256").update(plaintext).digest("hex");
-  }
-
-  async revokeUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
-    for (const [plain, v] of this.tokens.entries()) {
-      if (v.userId === userId && this.fakeHash(plain) === tokenHash && !v.revoked) {
-        v.revoked = true;
-        return true;
-      }
-    }
-    return false;
   }
 
   async deleteUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
@@ -899,18 +874,6 @@ export class FakeColdStore {
     }
   }
 
-  async deleteAllForUser(userId: string): Promise<string[]> {
-    if (this.fail) return [];
-    const dropped = new Set<string>();
-    for (const [id, v] of [...this.vectors.entries()]) {
-      if (v.userId === userId && v.projectId == null) {
-        this.vectors.delete(id);
-        dropped.add(`novamem_${userId}_${v.namespace}`);
-      }
-    }
-    return [...dropped];
-  }
-
   async deleteAllForProject(projectId: string): Promise<string[]> {
     if (this.fail) return [];
     const dropped = new Set<string>();
@@ -991,15 +954,6 @@ export class FakeGraphStore {
     let n = 0;
     for (const list of this.edges.values()) n += list.length;
     return n;
-  }
-
-  async removeAllForUser(userId: string): Promise<boolean> {
-    if (!this.connected) return false;
-    for (const [k, list] of [...this.edges.entries()]) {
-      if (k.startsWith(`${userId}:`)) this.edges.delete(k);
-      else this.edges.set(k, list.filter((e) => e.userId !== userId));
-    }
-    return true;
   }
 
   async removeAllForProject(projectId: string): Promise<boolean> {

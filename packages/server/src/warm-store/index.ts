@@ -2,6 +2,13 @@
  * Warm-store driver. Owns the Postgres pool and runs the SQL for the memory
  * primitives. The engine layer composes these calls into the public API
  * surface.
+ *
+ * Drizzle usage rule (issue #20): use the query-builder by default; drop
+ * to `db.execute(sql\`…\`)` only when (a) joining a Better-Auth-owned
+ * table (`"user"`, `"session"`, …) that isn't in our drizzle schema,
+ * (b) using window functions / lateral joins / SQL we don't model, or
+ * (c) bulk INSERT…SELECT. Each raw block must justify itself with a
+ * one-line comment naming which exception applies.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -47,10 +54,18 @@ export class WarmStore {
     // Postgres connections silently. Default max=20 is well below typical
     // Postgres `max_connections` of 100 even when several server replicas
     // share a database. Operators can override via NOVAMEM_PG_POOL_MAX.
-    const poolMax = Number(process.env.NOVAMEM_PG_POOL_MAX ?? "20");
+    const rawPoolMax = process.env.NOVAMEM_PG_POOL_MAX;
+    const poolMax = Number(rawPoolMax ?? "20");
+    const poolMaxValid = Number.isFinite(poolMax) && poolMax > 0;
+    if (rawPoolMax !== undefined && !poolMaxValid) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[warm-store] NOVAMEM_PG_POOL_MAX="${rawPoolMax}" is not a positive number; falling back to 20`,
+      );
+    }
     this.pool = new Pool({
       connectionString: cfg.url,
-      max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 20,
+      max: poolMaxValid ? poolMax : 20,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
     });
@@ -196,11 +211,9 @@ export class WarmStore {
     userId: string,
     label?: string,
   ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
-    // Better Auth owns the user model; the singular `"user"` table isn't
-    // in our drizzle schema (Better Auth manages its own DDL), so this
-    // check stays on `sql` template — still type-safe for the parameter.
+    // Raw: Better-Auth-owned `"user"` table not in our drizzle schema (rule a).
     const exists = await this.db.execute<{ exists: number }>(
-      sql`SELECT 1 AS exists FROM "user" WHERE id = ${userId}`,
+      sql`SELECT 1 AS exists FROM "user" WHERE id = ${userId} LIMIT 1`,
     );
     if (exists.rowCount === 0) return null;
     const token = generateBearerToken();
@@ -241,23 +254,6 @@ export class WarmStore {
       .update(schema.userTokens)
       .set({ revokedAt: sql`now()` })
       .where(and(eq(schema.userTokens.tokenHash, tokenHash), isNull(schema.userTokens.revokedAt)))
-      .returning({ tokenHash: schema.userTokens.tokenHash });
-    return rows.length > 0;
-  }
-
-  /** Revoke a token by sha256 hash (soft — keeps the row with revoked_at
-   *  stamped). Used by admin tooling that wants a tombstone for audit. */
-  async revokeUserTokenByHash(userId: string, tokenHash: string): Promise<boolean> {
-    const rows = await this.db
-      .update(schema.userTokens)
-      .set({ revokedAt: sql`now()` })
-      .where(
-        and(
-          eq(schema.userTokens.tokenHash, tokenHash),
-          eq(schema.userTokens.userId, userId),
-          isNull(schema.userTokens.revokedAt),
-        ),
-      )
       .returning({ tokenHash: schema.userTokens.tokenHash });
     return rows.length > 0;
   }
@@ -919,10 +915,14 @@ export class WarmStore {
       if (scope.projectId !== null) return false;
       if (scope.userId !== args.userId) return false;
     }
-    // Partial update — drizzle's `.set()` accepts undefined-aware
-    // partials, so we just spread the supplied fields.
+    // Partial update — drizzle's `.set()` accepts SQL-or-value per column
+    // (the `$inferInsert` projection types `updatedAt` as Date, but
+    // drizzle's set-source widens to `Date | SQL`). The narrow cast on
+    // `sql<Date>\`now()\`` keeps the SQL-fragment generic-typed so a
+    // future rename of `updatedAt` to a non-Date column would surface
+    // as a type error here, not as a silent write. */
     const patch: Partial<typeof schema.memoryEntries.$inferInsert> = {
-      updatedAt: sql`now()` as unknown as Date,
+      updatedAt: sql<Date>`now()` as unknown as Date,
     };
     if (args.content !== undefined) patch.content = args.content;
     if (args.namespace !== undefined) patch.namespace = args.namespace;
@@ -1064,12 +1064,18 @@ export class WarmStore {
   }
 
   /** Batch variant of `bumpHits` — one round-trip for the whole top-k.
-   *  Used by `engine.search` to collapse the N+1 (P1-P1). */
+   *  Used by `engine.search` to collapse the N+1 (P1-P1).
+   *
+   *  Dedupes the input internally: Postgres rejects `ON CONFLICT DO UPDATE`
+   *  when the same target row appears twice in a single statement
+   *  ("command cannot affect row a second time"). The engine doesn't
+   *  pass dupes today, but this is the defensive contract. */
   async bumpHitsMany(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
+    const unique = Array.from(new Set(ids));
     await this.db
       .insert(schema.memoryAccess)
-      .values(ids.map((entryId) => ({ entryId, hits: 1, lastAccessed: sql`now()` as unknown as Date })))
+      .values(unique.map((entryId) => ({ entryId, hits: 1, lastAccessed: sql<Date>`now()` })))
       .onConflictDoUpdate({
         target: schema.memoryAccess.entryId,
         set: {
@@ -1112,29 +1118,6 @@ export class WarmStore {
       byId.set(r.id, r);
     }
     return ids.map((id) => byId.get(id));
-  }
-
-  async listColdCandidates(_effectiveDays: number, limit = 1000) {
-    // Decay is a global, cross-user operation: idle entries from any
-    // user are demoted by the same maths. The per-row user_id stays put
-    // — engine queries use it on read-side, but decay doesn't need to scope.
-    const idleDays = sql<number>`EXTRACT(EPOCH FROM (now() - COALESCE(${schema.memoryAccess.lastAccessed}, ${schema.memoryEntries.createdAt}))) / 86400.0`;
-    const lastAccessedOrCreated = sql`COALESCE(${schema.memoryAccess.lastAccessed}, ${schema.memoryEntries.createdAt})`;
-    const rows = await this.db
-      .select({
-        id: schema.memoryEntries.id,
-        user_id: schema.memoryEntries.userId,
-        namespace: schema.memoryEntries.namespace,
-        hits: sql<number>`COALESCE(${schema.memoryAccess.hits}, 0)`,
-        idle_days: idleDays,
-      })
-      .from(schema.memoryEntries)
-      .leftJoin(schema.memoryAccess, eq(schema.memoryAccess.entryId, schema.memoryEntries.id))
-      .where(eq(schema.memoryEntries.cold, false))
-      .orderBy(asc(lastAccessedOrCreated))
-      .limit(limit);
-    // Engine consumes `{ rows: [...] }` shape (legacy pg.QueryResult).
-    return { rows };
   }
 
   /** Read the access-count + idle-days for a single entry — used by the
