@@ -8,6 +8,7 @@ COPY packages/server/package.json packages/server/
 COPY packages/client/package.json packages/client/
 COPY packages/mcp/package.json packages/mcp/
 COPY packages/admin-ui/package.json packages/admin-ui/
+COPY packages/init/package.json packages/init/
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
