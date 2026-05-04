@@ -7,8 +7,10 @@
  *
  * Used by both:
  *   - the in-process MCP server (`/mcp/sse` for direct-SSE clients)
- *   - the stdio shim in `@azrtydxb/novamem-mcp` for legacy clients (kept in
- *     sync via its own copy — manually re-paste on changes)
+ *   - the stdio shim in `@azrtydxb/novamem-mcp` for legacy clients
+ *
+ * Both transports import this constant from `mcp-tools.ts`, which
+ * re-exports it; there is no longer a manually-pasted copy.
  *
  * Trade-off: the token cost is paid every turn the connector is loaded.
  * Keep this tight.
@@ -104,7 +106,9 @@ Entries decay if not accessed: \`effectiveDays = 7 · log₂(hits + 1)\`.
 Searching counts as access — re-finding important memories keeps them warm.
 
 ## Tools available
-\`memory_search\`, \`memory_remember\`, \`memory_recent\`, \`memory_today\`,
-\`memory_neighbors\`, \`memory_forget\`, \`memory_stats\`, \`project_list\`,
-\`project_create\`.
+\`memory_search\`, \`memory_remember\`, \`memory_update\`,
+\`memory_recent\`, \`memory_today\`, \`memory_neighbors\`,
+\`memory_forget\`, \`memory_stats\`, \`project_list\`,
+\`project_create\`, \`project_delete\`, \`project_activate\`,
+\`project_deactivate\`, \`project_share\`, \`project_unshare\`.
 `;
