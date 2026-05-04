@@ -30,6 +30,13 @@ export class GraphStore {
       this.connected = true;
       return true;
     } catch (err) {
+      // Surface the cause so operators can distinguish wrong URL / auth /
+      // DNS without spelunking. Failure mode is degraded-mode search;
+      // we still return false rather than throw.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[graph-store] connect(${this.url}) failed: ${(err as Error).message}`,
+      );
       this.connected = false;
       return false;
     }
@@ -120,6 +127,10 @@ export class GraphStore {
     projectId: string | null = null,
   ): Promise<Array<{ id: string; score: number }>> {
     if (!this.graph) return [];
+    // Defensive clamp — `${limit}` is interpolated into Cypher (FalkorDB
+    // doesn't bind LIMIT). Upstream Zod gates already cap k, but pinning
+    // the bound here removes the implicit coupling.
+    limit = Math.max(1, Math.min(200, Math.trunc(limit)));
     const project = projectId ?? "";
     // The depth-1 hot path uses a single relationship variable so the
     // server returns a scalar Edge directly. This avoids a falkordb-driver
@@ -147,32 +158,9 @@ export class GraphStore {
     return this.connected;
   }
 
-  /** Drop every Memory node (and its edges) belonging to a given user.
-   *  Called when a user is deleted — keeps the graph aligned with the
-   *  warm + cold purges. No-op when the graph is unreachable: the warm-side
-   *  delete is the source of truth, and the next time the graph comes back
-   *  the orphaned nodes are harmless (they're filterable by user anyway,
-   *  but we still try to clean them now). */
-  /** Returns `true` only when the delete actually ran. The caller (engine)
-   *  uses this to decide whether to surface `graphCleared: true` to the
-   *  client — silently swallowing the error here used to make the engine
-   *  report `graphCleared: true` falsely (review finding P1-A6). */
-  async removeAllForUser(userId: string): Promise<boolean> {
-    if (!this.graph || !this.connected) return false;
-    try {
-      await this.graph.query("MATCH (n:Memory {user: $user}) DETACH DELETE n", {
-        params: { user: userId },
-      });
-      return true;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`[graph-store] removeAllForUser(${userId}) failed: ${(err as Error).message}`);
-      return false;
-    }
-  }
-
   /** Drop every Memory node belonging to a project. Returns `true` only
-   *  when the delete actually ran — see `removeAllForUser`. */
+   *  when the delete actually ran — silently swallowing errors used to
+   *  make the engine report `graphCleared: true` falsely (P1-A6). */
   async removeAllForProject(projectId: string): Promise<boolean> {
     if (!this.graph || !this.connected) return false;
     try {

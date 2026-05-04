@@ -53,6 +53,13 @@ export const ConfigSchema = z
       intervalMs: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
       defaultEffectiveDays: z.coerce.number().positive().default(7),
     }),
+    /** Secret used to sign Fastify cookies AND seed Better Auth's session
+     *  signer. Must be operator-supplied in any non-`auth.mode=none`
+     *  deployment — we refuse to start otherwise (see `loadConfig`). The
+     *  dev fallback only kicks in when `auth.mode=none`, so a forgotten
+     *  env var in production fails loud instead of silently accepting
+     *  attacker-minted sessions. */
+    cookieSecret: z.string().min(16),
     admin: z.object({
       // Master switch for the admin dashboard UI + /v1/admin/metrics route.
       // Set NOVAMEM_ADMIN_DASHBOARD=0 (or "false") to disable the surface
@@ -69,7 +76,32 @@ export const ConfigSchema = z
   });
 export type Config = z.infer<typeof ConfigSchema>;
 
+/** Dev-only fallback used when auth.mode = "none" and no
+ *  NOVAMEM_COOKIE_SECRET was supplied. Long enough to satisfy the schema's
+ *  min(16). Never used in production — `loadConfig` refuses to start in
+ *  any other auth mode without an explicit secret. */
+const DEV_COOKIE_SECRET_FALLBACK = "novamem-dev-cookie-secret-change-me";
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const authMode = env.NOVAMEM_AUTH_MODE ?? "none";
+  const explicitSecret = env.NOVAMEM_COOKIE_SECRET;
+  let cookieSecret = explicitSecret;
+  if (!cookieSecret) {
+    if (authMode === "none") {
+      // Dev fallback — emit a one-time warning so it's visible in logs.
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[novamem] WARNING: NOVAMEM_COOKIE_SECRET unset — using a public dev fallback. " +
+          "Set NOVAMEM_COOKIE_SECRET to a 32+ char random value before going to production.",
+      );
+      cookieSecret = DEV_COOKIE_SECRET_FALLBACK;
+    } else {
+      throw new Error(
+        "NOVAMEM_COOKIE_SECRET is required when auth.mode != 'none'. " +
+          "Generate one with `openssl rand -hex 32` and set it in your environment.",
+      );
+    }
+  }
   return ConfigSchema.parse({
     service: {
       host: env.NOVAMEM_HOST,
@@ -102,6 +134,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       intervalMs: env.NOVAMEM_DECAY_INTERVAL_MS,
       defaultEffectiveDays: env.NOVAMEM_DECAY_DAYS,
     },
+    cookieSecret,
     admin: {
       dashboard: env.NOVAMEM_ADMIN_DASHBOARD,
     },

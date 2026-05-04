@@ -35,16 +35,57 @@ export class ColdStore {
    *  structurally impossible — there's literally no shared collection to
    *  accidentally search across either boundary.
    *
-   *  - User-wide entries (no project): `novamem_<user>_<namespace>`
+   *  - User-wide entries (no project): `novamem_u_<user>_<namespace>`
    *  - Project-scoped entries: `novamem_p_<project>_<namespace>`
    *
-   *  Project names lead with `p_` so a user id could never collide with
-   *  a project id (user ids are slugs without that prefix by convention).
+   *  Both forms lead with a kind prefix (`u_` / `p_`) so a user id can
+   *  never collide with a project id, regardless of slug conventions.
    *  Project membership is cross-user by design, so the user id
-   *  intentionally does not appear in project-scoped collection names. */
+   *  intentionally does not appear in project-scoped collection names.
+   *
+   *  Migration note (issue #20): the legacy unprefixed form
+   *  `novamem_<user>_<namespace>` may still exist in deployed Qdrant
+   *  clusters. Reads check both names and adopt whichever exists; new
+   *  writes go to the `u_` form. Old collections stay in place — there
+   *  is no boot-time rename — so a downgrade stays compatible. */
   private collectionFor(userId: string, namespace: string, projectId: string | null = null): string {
     if (projectId) return `novamem_p_${projectId}_${namespace}`;
+    return `novamem_u_${userId}_${namespace}`;
+  }
+
+  /** Legacy (pre-issue-#20) user-collection name. Used only for read
+   *  fallback so already-deployed clusters keep working without a
+   *  migration step. Never returned for new writes. */
+  private legacyUserCollectionFor(userId: string, namespace: string): string {
     return `novamem_${userId}_${namespace}`;
+  }
+
+  /** Resolve the collection to read from. Prefers the new `u_` form;
+   *  falls back to the legacy form only when the new one doesn't exist
+   *  yet AND the legacy one does. Returns null when neither exists, so
+   *  callers can short-circuit empty searches without creating an empty
+   *  collection. */
+  private async resolveReadCollection(
+    userId: string,
+    namespace: string,
+    projectId: string | null,
+  ): Promise<string | null> {
+    const primary = this.collectionFor(userId, namespace, projectId);
+    if (this.seenCollections.has(primary)) return primary;
+    const existing = await this.client.getCollections();
+    const names = new Set(existing.collections.map((c) => c.name));
+    if (names.has(primary)) {
+      this.seenCollections.add(primary);
+      return primary;
+    }
+    if (!projectId) {
+      const legacy = this.legacyUserCollectionFor(userId, namespace);
+      if (names.has(legacy)) {
+        this.seenCollections.add(legacy);
+        return legacy;
+      }
+    }
+    return null;
   }
 
   private async ensureCollection(
@@ -98,8 +139,13 @@ export class ColdStore {
     k: number;
   }): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> {
     const projectId = args.projectId ?? null;
-    await this.ensureCollection(args.userId, args.namespace, projectId);
-    const r = await this.client.search(this.collectionFor(args.userId, args.namespace, projectId), {
+    // Read-side falls back to the legacy unprefixed user-collection name
+    // when the new `novamem_u_…` collection doesn't exist yet (migration
+    // for issue #20). When neither exists, return empty rather than
+    // creating an empty collection on a pure read path.
+    const collection = await this.resolveReadCollection(args.userId, args.namespace, projectId);
+    if (!collection) return [];
+    const r = await this.client.search(collection, {
       vector: args.embedding,
       limit: args.k,
       with_payload: true,
@@ -124,32 +170,15 @@ export class ColdStore {
     id: string,
     projectId: string | null = null,
   ): Promise<void> {
-    await this.ensureCollection(userId, namespace, projectId);
-    await this.client.delete(this.collectionFor(userId, namespace, projectId), {
+    // Resolve to whichever collection actually holds the entry — the new
+    // `u_`-prefixed form by default, the legacy form for entries written
+    // before the issue-#20 rename. Skip when neither exists (delete is a
+    // no-op for never-written entries).
+    const collection = await this.resolveReadCollection(userId, namespace, projectId);
+    if (!collection) return;
+    await this.client.delete(collection, {
       points: [ulidToUuid(id)],
     });
-  }
-
-  /** Drop every collection belonging to the given user. Used when a
-   *  user is deleted — leaves the qdrant cluster clean of orphaned
-   *  vector data. Returns the names of the dropped collections so callers
-   *  can log + audit. Best-effort: a delete failure for one collection
-   *  doesn't block the others. */
-  async deleteAllForUser(userId: string): Promise<string[]> {
-    const prefix = `novamem_${userId}_`;
-    const all = await this.client.getCollections();
-    const mine = all.collections.map((c) => c.name).filter((n) => n.startsWith(prefix));
-    const dropped: string[] = [];
-    for (const name of mine) {
-      try {
-        await this.client.deleteCollection(name);
-        this.seenCollections.delete(name);
-        dropped.push(name);
-      } catch {
-        // Swallow — caller will see the missing entries in the next listing.
-      }
-    }
-    return dropped;
   }
 
   /** Drop every project-scoped collection for the given project id. Used
@@ -165,8 +194,13 @@ export class ColdStore {
         await this.client.deleteCollection(name);
         this.seenCollections.delete(name);
         dropped.push(name);
-      } catch {
-        // ignore
+      } catch (err) {
+        // Best-effort: log and continue. Operators previously had no
+        // signal when a misconfigured Qdrant returned `dropped: []`.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[cold-store] deleteCollection(${name}) failed: ${(err as Error).message}`,
+        );
       }
     }
     return dropped;
@@ -176,7 +210,9 @@ export class ColdStore {
     try {
       await this.client.getCollections();
       return true;
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[cold-store] ping failed: ${(err as Error).message}`);
       return false;
     }
   }
