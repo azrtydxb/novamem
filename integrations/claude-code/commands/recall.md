@@ -4,7 +4,7 @@ argument-hint: <query>
 allowed-tools: mcp__novamem__memory_search
 ---
 
-Search NovaMem by calling `mcp__novamem__memory.search` with the query
+Search NovaMem by calling `mcp__novamem__memory_search` with the query
 below. Use defaults unless the query strongly hints otherwise:
 
 - If the query is a literal id, symbol, or hash, pass

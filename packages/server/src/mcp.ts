@@ -40,7 +40,7 @@ export function buildMcpServer(
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
-        name: "memory.search",
+        name: "memory_search",
         description:
           "Hybrid search across stored memories. Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` to force exact-string match for ids/symbols, or `{ vector: 1, keyword: 0 }` to ignore literal token overlap and lean entirely on semantic similarity.",
         inputSchema: {
@@ -77,7 +77,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "memory.remember",
+        name: "memory_remember",
         description: "Store a new memory entry",
         inputSchema: {
           type: "object",
@@ -94,7 +94,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "memory.today",
+        name: "memory_today",
         description: "Recent entries (last 24h) for an optional namespace",
         inputSchema: {
           type: "object",
@@ -102,7 +102,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "memory.recent",
+        name: "memory_recent",
         description: "Recent entries, ordered newest first. Optional ISO-8601 `since` lower bound.",
         inputSchema: {
           type: "object",
@@ -117,7 +117,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "memory.neighbors",
+        name: "memory_neighbors",
         description: "Graph-neighbour traversal from a seed memory id",
         inputSchema: {
           type: "object",
@@ -132,7 +132,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "memory.forget",
+        name: "memory_forget",
         description: "Explicit deletion. Removes warm row, FTS, cold vector, and graph edges.",
         inputSchema: {
           type: "object",
@@ -141,7 +141,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "memory.update",
+        name: "memory_update",
         description:
           "Rewrite an existing memory in place. Preserves id, hit count, edges, and creation date; rewrites content (re-embedded), namespace, metadata, and provenance fields. Use this when a fact changes (e.g. user moved cities) instead of forget+remember, which would lose hit count and graph connections. Omit `content` to update only metadata-side fields without re-embedding.",
         inputSchema: {
@@ -160,18 +160,18 @@ export function buildMcpServer(
         },
       },
       {
-        name: "memory.stats",
+        name: "memory_stats",
         description: "Service-wide stats snapshot",
         inputSchema: { type: "object", properties: {} },
       },
       {
-        name: "project.list",
+        name: "project_list",
         description:
           "List projects (sub-brains) the caller is a member of. Returns id + name + role for each.",
         inputSchema: { type: "object", properties: {} },
       },
       {
-        name: "project.create",
+        name: "project_create",
         description:
           "Create a new project (sub-brain) and become its owner. Returns the new project's id (server-assigned ULID).",
         inputSchema: {
@@ -183,7 +183,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "project.delete",
+        name: "project_delete",
         description:
           "Delete a project owned by the caller. Removes every memory entry, vector, and graph node in the project. The caller must be the owner.",
         inputSchema: {
@@ -195,9 +195,9 @@ export function buildMcpServer(
         },
       },
       {
-        name: "project.activate",
+        name: "project_activate",
         description:
-          "Set the caller's active project. Subsequent memory.* calls without an explicit `project` arg default to this scope: search/recent/neighbors union it with user-global, remember/forget target it directly. Idempotent.",
+          "Set the caller's active project. Subsequent memory_* calls without an explicit `project` arg default to this scope: search/recent/neighbors union it with user-global, remember/forget target it directly. Idempotent.",
         inputSchema: {
           type: "object",
           properties: {
@@ -207,13 +207,13 @@ export function buildMcpServer(
         },
       },
       {
-        name: "project.deactivate",
+        name: "project_deactivate",
         description:
-          "Clear the caller's active project. Subsequent memory.* calls without an explicit `project` arg fall back to user-global only.",
+          "Clear the caller's active project. Subsequent memory_* calls without an explicit `project` arg fall back to user-global only.",
         inputSchema: { type: "object", properties: {} },
       },
       {
-        name: "project.share",
+        name: "project_share",
         description:
           "Add another user as a member of a project the caller owns. The invitee can read and write the project's memories. Username may be the user's email or display name.",
         inputSchema: {
@@ -226,7 +226,7 @@ export function buildMcpServer(
         },
       },
       {
-        name: "project.unshare",
+        name: "project_unshare",
         description:
           "Remove a member from a project. The caller must be the owner. The owner cannot unshare themselves — delete the project instead.",
         inputSchema: {
@@ -255,7 +255,7 @@ export function buildMcpServer(
     const byId = await warm.getProject(requested);
     const project = byId ?? (await warm.findProjectByName(userId, requested));
     if (!project) {
-      throw new Error(`no such project '${requested}' — call project.list to see ids`);
+      throw new Error(`no such project '${requested}' — call project_list to see ids`);
     }
     const m = await warm.getProjectMembership(project.id, userId);
     if (!m) {
@@ -283,8 +283,8 @@ export function buildMcpServer(
   }
 
   /** Returns the caller's active-project id, or null when not set. The
-   *  active project is a per-user pointer set by `project.activate`;
-   *  memory.* tools fall back to it when the caller didn't pass an
+   *  active project is a per-user pointer set by `project_activate`;
+   *  memory_* tools fall back to it when the caller didn't pass an
    *  explicit `project` / `includeProjects` arg. Read fresh on every
    *  call so activate/deactivate take effect immediately within the
    *  same MCP session. */
@@ -296,7 +296,7 @@ export function buildMcpServer(
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
     switch (req.params.name) {
-      case "memory.search": {
+      case "memory_search": {
         const w = (args.weights ?? {}) as { keyword?: unknown; vector?: unknown; graph?: unknown };
         const weights =
           typeof w.keyword === "number" || typeof w.vector === "number" || typeof w.graph === "number"
@@ -326,7 +326,7 @@ export function buildMcpServer(
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "memory.remember": {
+      case "memory_remember": {
         let project = await resolveProject(args.project);
         if (!project) project = await getActiveProject();
         const r = await engine.remember(userId, {
@@ -341,7 +341,7 @@ export function buildMcpServer(
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "memory.today": {
+      case "memory_today": {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         let project = await resolveProject(args.project);
         let includeProjects = await resolveProjects(args.includeProjects);
@@ -359,7 +359,7 @@ export function buildMcpServer(
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "memory.recent": {
+      case "memory_recent": {
         let project = await resolveProject(args.project);
         let includeProjects = await resolveProjects(args.includeProjects);
         if (!project && (!includeProjects || includeProjects.length === 0)) {
@@ -376,7 +376,7 @@ export function buildMcpServer(
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "memory.neighbors": {
+      case "memory_neighbors": {
         let project = await resolveProject(args.project);
         let includeProjects = await resolveProjects(args.includeProjects);
         if (!project && (!includeProjects || includeProjects.length === 0)) {
@@ -392,13 +392,13 @@ export function buildMcpServer(
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "memory.forget": {
+      case "memory_forget": {
         let project = await resolveProject(args.project);
         if (!project) project = await getActiveProject();
         const r = await engine.forget(userId, String(args.id), { project });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "memory.update": {
+      case "memory_update": {
         let project = await resolveProject(args.project);
         if (!project) project = await getActiveProject();
         const md = (args.metadata ?? undefined) as Record<string, unknown> | undefined;
@@ -413,14 +413,14 @@ export function buildMcpServer(
         });
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "memory.stats": {
+      case "memory_stats": {
         const r = await engine.stats(userId);
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "project.list": {
+      case "project_list": {
         if (!warm) {
           return {
-            content: [{ type: "text", text: "project.list requires the warm store" }],
+            content: [{ type: "text", text: "project_list requires the warm store" }],
             isError: true,
           };
         }
@@ -429,10 +429,10 @@ export function buildMcpServer(
         const projects = await warm.listProjectsForUser(userId);
         return { content: [{ type: "text", text: JSON.stringify({ projects }) }] };
       }
-      case "project.create": {
+      case "project_create": {
         if (!warm) {
           return {
-            content: [{ type: "text", text: "project.create requires the warm store" }],
+            content: [{ type: "text", text: "project_create requires the warm store" }],
             isError: true,
           };
         }
@@ -443,8 +443,8 @@ export function buildMcpServer(
         const project = await warm.createProject({ name, ownerUserId: userId });
         return { content: [{ type: "text", text: JSON.stringify(project) }] };
       }
-      case "project.delete": {
-        if (!warm) throw new Error("project.delete requires the warm store");
+      case "project_delete": {
+        if (!warm) throw new Error("project_delete requires the warm store");
         const projectId = await resolveProject(args.project);
         if (!projectId) throw new Error("project required");
         const project = await warm.getProject(projectId);
@@ -455,20 +455,20 @@ export function buildMcpServer(
         const r = await engine.deleteProject(projectId);
         return { content: [{ type: "text", text: JSON.stringify(r) }] };
       }
-      case "project.activate": {
-        if (!warm) throw new Error("project.activate requires the warm store");
+      case "project_activate": {
+        if (!warm) throw new Error("project_activate requires the warm store");
         const projectId = await resolveProject(args.project);
         if (!projectId) throw new Error("project required");
         await warm.setActiveProject(userId, projectId);
         return { content: [{ type: "text", text: JSON.stringify({ active: projectId }) }] };
       }
-      case "project.deactivate": {
-        if (!warm) throw new Error("project.deactivate requires the warm store");
+      case "project_deactivate": {
+        if (!warm) throw new Error("project_deactivate requires the warm store");
         await warm.setActiveProject(userId, null);
         return { content: [{ type: "text", text: JSON.stringify({ active: null }) }] };
       }
-      case "project.share": {
-        if (!warm) throw new Error("project.share requires the warm store");
+      case "project_share": {
+        if (!warm) throw new Error("project_share requires the warm store");
         const projectId = await resolveProject(args.project);
         if (!projectId) throw new Error("project required");
         const project = await warm.getProject(projectId);
@@ -489,8 +489,8 @@ export function buildMcpServer(
           ],
         };
       }
-      case "project.unshare": {
-        if (!warm) throw new Error("project.unshare requires the warm store");
+      case "project_unshare": {
+        if (!warm) throw new Error("project_unshare requires the warm store");
         const projectId = await resolveProject(args.project);
         if (!projectId) throw new Error("project required");
         const project = await warm.getProject(projectId);

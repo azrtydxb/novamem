@@ -31,15 +31,15 @@ npx @azrty/novamem-mcp
 
 Memory operations (every tool accepts an optional `project` — id or human name):
 
-- `memory.search` / `memory.remember` / `memory.update` / `memory.recent` / `memory.today` / `memory.neighbors` / `memory.forget` / `memory.stats`
-- `memory.remember` accepts `sourceType`, `capturedFrom`, `confidence`, and `force` (bypass the worthiness gate)
-- `memory.update` rewrites an existing entry in place; preserves id + hits + edges; re-embeds when content changes
+- `memory_search` / `memory_remember` / `memory_update` / `memory_recent` / `memory_today` / `memory_neighbors` / `memory_forget` / `memory_stats`
+- `memory_remember` accepts `sourceType`, `capturedFrom`, `confidence`, and `force` (bypass the worthiness gate)
+- `memory_update` rewrites an existing entry in place; preserves id + hits + edges; re-embeds when content changes
 
 Project lifecycle:
 
-- `project.list` / `project.create` / `project.delete`
-- `project.activate({ project })` / `project.deactivate` — set or clear the caller's active project. When set, memory.* calls without an explicit `project` arg default to it.
-- `project.share({ project, username })` / `project.unshare(...)` — owner adds/removes members by email or display name.
+- `project_list` / `project_create` / `project_delete`
+- `project_activate({ project })` / `project_deactivate` — set or clear the caller's active project. When set, memory_* calls without an explicit `project` arg default to it.
+- `project_share({ project, username })` / `project_unshare(...)` — owner adds/removes members by email or display name.
 
 ## See also
 

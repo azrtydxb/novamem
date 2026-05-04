@@ -56,37 +56,37 @@ async function callTool(
 }
 
 describe("mcp: tools/list", () => {
-  it("advertises the full memory.* tool surface", async () => {
+  it("advertises the full memory_* tool surface", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");
     const r = (await callList(server)) as { tools: Array<{ name: string }> };
     const names = r.tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
-        "memory.search",
-        "memory.remember",
-        "memory.update",
-        "memory.today",
-        "memory.recent",
-        "memory.neighbors",
-        "memory.forget",
-        "memory.stats",
-        "project.list",
-        "project.create",
-        "project.delete",
-        "project.activate",
-        "project.deactivate",
-        "project.share",
-        "project.unshare",
+        "memory_search",
+        "memory_remember",
+        "memory_update",
+        "memory_today",
+        "memory_recent",
+        "memory_neighbors",
+        "memory_forget",
+        "memory_stats",
+        "project_list",
+        "project_create",
+        "project_delete",
+        "project_activate",
+        "project_deactivate",
+        "project_share",
+        "project_unshare",
       ].sort(),
     );
   });
 
-  it("memory.search exposes weights override in input schema", async () => {
+  it("memory_search exposes weights override in input schema", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");
     const r = (await callList(server)) as { tools: Array<{ name: string; inputSchema: any }> };
-    const search = r.tools.find((t) => t.name === "memory.search");
+    const search = r.tools.find((t) => t.name === "memory_search");
     expect(search?.inputSchema?.properties?.weights).toBeDefined();
     expect(search?.inputSchema?.properties?.weights?.properties).toMatchObject({
       keyword: expect.any(Object),
@@ -97,21 +97,21 @@ describe("mcp: tools/list", () => {
 });
 
 describe("mcp: tool dispatch", () => {
-  it("memory.remember stores via engine and returns id", async () => {
+  it("memory_remember stores via engine and returns id", async () => {
     const { engine, warm } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    const r = (await callTool(server, "memory.remember", { content: "via mcp", force: true })) as {
+    const r = (await callTool(server, "memory_remember", { content: "via mcp", force: true })) as {
       content: Array<{ text: string }>;
     };
     const payload = JSON.parse(r.content[0]!.text);
     expect(warm.rows.has(payload.id)).toBe(true);
   });
 
-  it("memory.search finds the just-stored entry", async () => {
+  it("memory_search finds the just-stored entry", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    await callTool(server, "memory.remember", { content: "Pascal likes coffee", force: true });
-    const r = (await callTool(server, "memory.search", { query: "coffee" })) as {
+    await callTool(server, "memory_remember", { content: "Pascal likes coffee", force: true });
+    const r = (await callTool(server, "memory_search", { query: "coffee" })) as {
       content: Array<{ text: string }>;
     };
     const payload = JSON.parse(r.content[0]!.text);
@@ -119,21 +119,21 @@ describe("mcp: tool dispatch", () => {
     expect(payload.results[0].content).toContain("coffee");
   });
 
-  it("memory.today uses a real 24h since cutoff (not search '*')", async () => {
+  it("memory_today uses a real 24h since cutoff (not search '*')", async () => {
     const { engine, warm } = makeEngine();
     const server = buildMcpServer(engine, "public");
     // Fresh entry
-    const fresh = (await callTool(server, "memory.remember", { content: "fresh", force: true })) as {
+    const fresh = (await callTool(server, "memory_remember", { content: "fresh", force: true })) as {
       content: Array<{ text: string }>;
     };
     const freshId = JSON.parse(fresh.content[0]!.text).id;
     // Inject an old entry, force createdAt 2 days ago
-    const old = (await callTool(server, "memory.remember", { content: "ancient", force: true })) as {
+    const old = (await callTool(server, "memory_remember", { content: "ancient", force: true })) as {
       content: Array<{ text: string }>;
     };
     const oldId = JSON.parse(old.content[0]!.text).id;
     warm.rows.get(oldId)!.createdAt = new Date(Date.now() - 48 * 60 * 60 * 1000);
-    const today = (await callTool(server, "memory.today", {})) as {
+    const today = (await callTool(server, "memory_today", {})) as {
       content: Array<{ text: string }>;
     };
     const payload = JSON.parse(today.content[0]!.text);
@@ -142,23 +142,23 @@ describe("mcp: tool dispatch", () => {
     expect(ids).not.toContain(oldId);
   });
 
-  it("memory.forget deletes the entry", async () => {
+  it("memory_forget deletes the entry", async () => {
     const { engine, warm } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    const created = (await callTool(server, "memory.remember", { content: "to delete", force: true })) as {
+    const created = (await callTool(server, "memory_remember", { content: "to delete", force: true })) as {
       content: Array<{ text: string }>;
     };
     const id = JSON.parse(created.content[0]!.text).id;
-    await callTool(server, "memory.forget", { id });
+    await callTool(server, "memory_forget", { id });
     expect(warm.rows.has(id)).toBe(false);
   });
 
-  it("memory.stats returns aggregate counts", async () => {
+  it("memory_stats returns aggregate counts", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    await callTool(server, "memory.remember", { content: "a", force: true });
-    await callTool(server, "memory.remember", { content: "b", force: true });
-    const r = (await callTool(server, "memory.stats", {})) as { content: Array<{ text: string }> };
+    await callTool(server, "memory_remember", { content: "a", force: true });
+    await callTool(server, "memory_remember", { content: "b", force: true });
+    const r = (await callTool(server, "memory_stats", {})) as { content: Array<{ text: string }> };
     const payload = JSON.parse(r.content[0]!.text);
     expect(payload.totalWarm).toBe(2);
     expect(payload.totalCold).toBe(0);

@@ -4,7 +4,7 @@ argument-hint: <seed-id> [depth=1] [k=10]
 allowed-tools: mcp__novamem__memory_neighbors
 ---
 
-Call `mcp__novamem__memory.neighbors` with `id: <first arg>`. If the
+Call `mcp__novamem__memory_neighbors` with `id: <first arg>`. If the
 user passed extra positional args, parse them as `depth` and `k` (both
 integers). Default `depth: 1, k: 10`.
 

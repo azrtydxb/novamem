@@ -16,8 +16,8 @@ const memory = new NovamemClient({
   token: process.env.NOVAMEM_TOKEN, // user bearer `nm_…`
 });
 
-await memory.remember({ content: "User prefers dark roast" });
-const hits = await memory.search({ query: "coffee preference", k: 5 });
+await memory_remember({ content: "User prefers dark roast" });
+const hits = await memory_search({ query: "coffee preference", k: 5 });
 ```
 
 A `nm_…` bearer carries every right the owning user has — the user's whole memory plus every project they're a member of. Mint one from the dashboard's API Tokens page.
@@ -27,11 +27,11 @@ A `nm_…` bearer carries every right the owning user has — the user's whole m
 Each entry can belong to a **project** (sub-brain). Pass `project` (id or human name) to scope:
 
 ```ts
-await memory.remember({ content: "phoenix sprint plan", project: "Phoenix" });
-await memory.search({ query: "sprint", project: "Phoenix" });
+await memory_remember({ content: "phoenix sprint plan", project: "Phoenix" });
+await memory_search({ query: "sprint", project: "Phoenix" });
 ```
 
-When the user has an active project set (`setActiveProject`), memory.* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly.
+When the user has an active project set (`setActiveProject`), memory_* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly.
 
 ## Memory.update — rewriting facts
 

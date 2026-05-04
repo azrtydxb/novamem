@@ -1,8 +1,8 @@
-# Write / mutate — memory.remember · memory.update · memory.forget
+# Write / mutate — memory_remember · memory_update · memory_forget
 
 Three MCP tools for writing. All are subject to user + project access checks; `remember` is also subject to the worthiness gate and exact-duplicate fast-path.
 
-## memory.remember — store a new entry
+## memory_remember — store a new entry
 
 Inputs:
 - `content` (required, string) — the memory text. Self-contained: assume the reader has no conversation context.
@@ -43,9 +43,9 @@ Entries are sha256-hashed by trimmed content. If you call `remember` with conten
 - One fact per entry — split lists into multiple `remember` calls
 - Mention the save in one short sentence ("Saved that as a memory.") so the user can correct or veto
 
-## memory.update — rewrite in place
+## memory_update — rewrite in place
 
-When a fact changes (user moved cities, decision reversed, library swapped), call `memory.update` instead of `forget` + `remember`. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes.
+When a fact changes (user moved cities, decision reversed, library swapped), call `memory_update` instead of `forget` + `remember`. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes.
 
 Inputs:
 - `id` (required, string) — entry ULID
@@ -58,11 +58,11 @@ Inputs:
 - `project` (string) — scope check; must match the entry's project (or absence)
 
 Workflow when overriding an old fact:
-1. `memory.search` for the old phrasing to find the entry id
-2. `memory.update({ id, content: <new phrasing>, confidence: 1.0 })`
+1. `memory_search` for the old phrasing to find the entry id
+2. `memory_update({ id, content: <new phrasing>, confidence: 1.0 })`
 3. Mention the change in one sentence
 
-## memory.forget — hard delete
+## memory_forget — hard delete
 
 Removes the warm row, FTS row, cold vector, and any graph edges. There is no undo.
 
