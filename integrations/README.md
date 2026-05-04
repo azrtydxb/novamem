@@ -20,8 +20,13 @@ NovaMem instance over HTTP, plus a set of slash commands (`/remember`,
 - A NovaMem service reachable from your machine (default
   `http://localhost:7778` from `docker compose up`).
 - A bearer token (`nm_…`). Mint via the dashboard at
-  `http://localhost:7778/admin` → API tokens, or the CLI helper
-  `pnpm dlx @azrty/novamem-mcp novamem-login`.
+  `http://localhost:7778/admin` → API Tokens.
+
+> The server also ships its rules to MCP-aware clients via the protocol's
+> `instructions` field on `initialize`. Compliant hosts (recent Claude
+> Desktop, Claude Code, …) thread it into the model's system context
+> automatically. The standalone CLAUDE.md fragment below is a fallback
+> for hosts that don't honour `instructions` yet.
 
 ## Install — Claude Code
 

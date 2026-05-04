@@ -15,12 +15,15 @@ A 10-minute tour for new contributors.
         │          @azrty/novamem-server          │
         │       (Fastify, port 7778, HTTP+SSE)    │
         │                                         │
-        │   /admin   /api-docs  /v1/auth/*        │
+        │   /admin   /api-docs   /api/auth/*      │
         │   /v1/me/* /v1/admin/* /v1/search etc.  │
+        │   /v1/dream-cycle  /v1/memories/:id     │
         │                                         │
         │   ┌──────────────┐  ┌────────────────┐  │
-        │   │ MemoryEngine │  │ AuthN (bcrypt) │  │
-        │   └──────┬───────┘  │ AuthZ (RBAC)   │  │
+        │   │ MemoryEngine │  │  Better Auth   │  │
+        │   └──────┬───────┘  │  (sessions,    │  │
+        │          │          │   admin RBAC,  │  │
+        │          │          │   JWT issuer)  │  │
         │          │          └────────────────┘  │
         │   ┌──────┴───────────────────────┐      │
         │   ▼          ▼            ▼     ▼      │
@@ -43,6 +46,8 @@ A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-ind
 - **Decay** — `effectiveDays(hits) = 7 × log₂(hits + 1)`. An entry idle for longer than its lifespan gets demoted. The decay loop runs every 6h by default; one bulk SQL UPDATE per loop tick.
 - **Promotion** — reactive: a search that hits a cold entry whose accumulated lifespan now exceeds the pre-hit idle gap re-promotes it to warm.
 - **Auto-linking** — every `remember()` finds the top-3 vector neighbours and writes `RELATES` edges to them in FalkorDB + a row in `memory_relations`. Populates the third search signal organically.
+- **Worthiness gate** — `engine.shouldReject` runs before every insert: rejects content < 12 chars or matching the conversational-filler regex; sha256-of-content fast-path returns the existing id when an exact duplicate already lives in the same `(user, project)`. Bypassed by `force: true`.
+- **Dream cycle** — daily compaction pass. Walks every entry, queries qdrant for top-3 neighbours, merges duplicates at cosine ≥ 0.97 + token Jaccard ≥ 0.5; promotes A→B edges when the pair shares ≥3 graph neighbours (`relation: co_inferred`). Manual trigger at `POST /v1/dream-cycle`.
 
 ## Ownership model
 
@@ -62,38 +67,58 @@ Enforced in three places:
   - The user-id regex forbids `p` and `p_*` so the prefixes can't collide.
 - **Graph store** — every `Memory` node carries `user` + `project` properties. `addEdge`/`neighbors`/`removeAllForUser` filter on the appropriate one.
 
+### Active project
+
+`user_active_project` (one row per user) holds an optional pointer at the user's current sub-brain. When set, memory.* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly. Cleared by deleting the row (`DELETE /v1/me/active-project`, `project.deactivate` over MCP).
+
 ## AuthN / AuthZ
 
-- **User bearers (`nm_…`)** — minted via the dashboard `/v1/me/tokens`. One bearer per device or agent. Stored as sha256 hashes only; the plaintext is shown once at create time and is unrecoverable. A bearer gives access to **all** the owning user's memory — global plus every project the user is a member of (no per-token scope).
-- **Session bearers (`ns_…`)** — minted by `POST /v1/auth/login` against username + bcrypt password. Stored as sha256 hashes in `sessions`. 24-hour TTL fixed at creation; daily GC sweep deletes expired rows. Used for the dashboard.
-- **Roles** — `admin` (full surface; can manage other users) or `user` (manages their own memory + projects + tokens).
-- **Login throttle** — per-username, in-memory: 5 failures → 15-minute lockout with progressive 250ms→4s backoff.
-- **CSRF** — the dashboard uses an HttpOnly session cookie with double-submit CSRF token; the SPA echoes the JS-readable `novamem_csrf` cookie back as `X-CSRF-Token` on POST/DELETE.
+Two coexisting credential types resolve to the same `req.dashUser` shape:
 
-The auth hook in `http.ts` resolves bearers in order: session prefix `ns_` → control plane (`/v1/auth/*`, `/v1/me/*`, `/v1/admin/*`); user-bearer prefix `nm_` → data plane (`/v1/search`, `/v1/remember`, etc.). Admin endpoints additionally require the resolved session to belong to a `role: admin` user.
+- **Better Auth sessions** — email + password sign-in flow. Session token stored server-side in `"session"`; HttpOnly + SameSite=Lax cookie on the browser; same token also accepted as `Authorization: Bearer <session>` for non-browser dashboard callers. JWTs are issued on demand via `/api/auth/token` (15-min TTL) with JWKS at `/api/auth/jwks`.
+- **`nm_…` user bearers** — minted via the dashboard `/v1/me/tokens` page. One bearer per device or agent. Stored as sha256 hashes in `user_tokens`; the plaintext is shown once at create time and is unrecoverable. A bearer carries every right the owning user has — global plus every project the user is a member of (no per-token scope).
+
+The auth hook in `http.ts` runs on every request: it asks Better Auth for a session via `auth.api.getSession({ headers })`. If that hits, `req.dashUser` is populated. If not, and the route is `/v1/auth/*` or `/v1/me/*` and an `nm_…` bearer is present, it resolves the bearer to its underlying user and synthesises a `dashUser` from Better Auth's `"user"` row. Data-plane routes (`/v1/search`, `/v1/remember`, …) accept either path; admin routes additionally require `role: admin`.
+
+A passthrough handler at `/api/auth/*` forwards every request to Better Auth's WHATWG-style handler. A pre-handler intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` to refuse operations that would leave zero admins.
+
+## Provenance
+
+Every memory entry carries:
+
+- `source` — free-text label for the call origin (`manual`, `agent`, …)
+- `source_type` — open-string vocabulary: `chat / email / code-review / doc / inference / observation / system / manual`
+- `captured_from` — operator-defined identifier (agent name, conversation id, IP, …)
+- `confidence` — 0..1, default 1.0; usable as a search filter
+- `content_hash` — sha256 of trimmed content; powers the dedup fast-path
 
 ## Storage layout
 
 ### Postgres (warm)
 
-| Table | Rows |
-|---|---|
-| `users` | dashboard logins (bcrypt) — also the memory-owner identity |
-| `user_tokens` | sha256 hashes of per-device bearers |
-| `sessions` | dashboard session bearers |
-| `projects` | sub-brain identity |
-| `project_members` | (project, user, role) |
-| `memory_entries` | content + user_id + optional project_id |
-| `memory_access` | hits + lastAccessed (per entry) |
-| `memory_fts` | tsvector shadow table |
-| `memory_relations` | edge audit log (graph store is authoritative) |
-| `cold_orphans` | failed cold-deletes; reaper retries |
-| `decay_runs` | per-loop summary |
-| `admin_audit_log` | every user/role/token change |
+| Table | Owner | Rows |
+|---|---|---|
+| `"user"` | Better Auth | dashboard users (email + password hash in `account`) |
+| `"session"` | Better Auth | active sessions (revocable; 7-day rolling TTL) |
+| `"account"` | Better Auth | per-provider credential rows (email/password by default) |
+| `"verification"` | Better Auth | email verification tokens, when enabled |
+| `"jwks"` | Better Auth | rotating JWT signing keys |
+| `user_tokens` | novamem | sha256 hashes of per-device `nm_…` bearers |
+| `user_active_project` | novamem | per-user "current sub-brain" pointer |
+| `projects` | novamem | sub-brain identity + owner_user_id |
+| `project_members` | novamem | (project, user, role) |
+| `memory_entries` | novamem | content + user_id + optional project_id + provenance |
+| `memory_access` | novamem | hits + lastAccessed (per entry) |
+| `memory_fts` | novamem | tsvector shadow table |
+| `memory_relations` | novamem | edge audit log (graph store is authoritative) |
+| `cold_orphans` | novamem | failed cold-deletes; reaper retries |
+| `decay_runs` | novamem | per-loop summary |
+| `admin_audit_log` | novamem | every admin action |
+| `metrics_samples` | novamem | 1-minute persistent throughput buckets (24h history) |
 
-The synthetic id `"public"` exists as the implicit owner for `auth.mode=none|bearer` deployments — a pre-seeded row in `users`, never deleted.
+The synthetic id `"public"` exists as the implicit owner for `auth.mode=none|bearer` deployments. Better Auth's tables coexist with novamem's; project / user_token tables don't FK to `"user"` directly because Better Auth manages user deletion on its own table — orphaned rows fail-safe at resolve time.
 
-DDL is **idempotent CREATE / ALTER IF NOT EXISTS**; runs on every server boot. Schema is forward-only — no migration tooling, no DROP COLUMN; back up before upgrading.
+DDL is **idempotent CREATE / ALTER IF NOT EXISTS** with explicit `DROP CONSTRAINT IF EXISTS` for retired FKs; runs on every server boot. Schema is forward-only — no migration tooling, no DROP COLUMN; back up before upgrading.
 
 ### Qdrant (cold)
 
@@ -101,19 +126,19 @@ One collection per (scope, namespace) pair. Collection names embed the scope id,
 
 ### FalkorDB (graph)
 
-Single graph (`novamem`) with `Memory` nodes + `RELATES` edges. Node properties: `id`, `user`, `project`. The graph store is optional — when unreachable, search degrades to keyword + vector and reports `degraded: true`.
+Single graph (`novamem`) with `Memory` nodes + `RELATES` edges. Node properties: `id`, `user`, `project`. Edge `relation` is `co_occurs` for vector-neighbour auto-links and `co_inferred` for dream-cycle edge promotion. The graph store is optional — when unreachable, search degrades to keyword + vector and reports `degraded: true`.
 
 ## Transports
 
-- **HTTP/JSON** — Fastify 5. Bodies validated with Zod. OpenAPI 3.0 doc hand-written + served via `@fastify/swagger-ui` at `/api-docs`.
-- **MCP stdio** — `packages/server/src/mcp.ts` (in-process) + `packages/mcp/src/index.ts` (remote shim that wraps the HTTP API).
-- **MCP SSE** — `GET /mcp/sse` opens an event stream; `POST /mcp/messages?sessionId=…` sends JSON-RPC. User + project + dashboard-user id are captured at handshake.
+- **HTTP/JSON** — Fastify 5. Bodies validated with Zod. OpenAPI 3.0 doc hand-rolled in `packages/server/src/openapi.ts` and served via `@fastify/swagger-ui` at `/api-docs`.
+- **MCP SSE (recommended)** — `GET /mcp/sse` opens an event stream; `POST /mcp/messages?sessionId=…` sends JSON-RPC. User identity is captured at handshake from the auth hook. Direct-SSE clients connect without a shim.
+- **MCP stdio (legacy shim)** — `packages/mcp/src/index.ts` is a thin stdio↔HTTP bridge for clients that don't speak remote MCP yet. The shim talks to the same `/v1/*` and `/api/auth/*` endpoints any other client uses.
 
 ## Dashboard
 
 `packages/admin-ui` — React 19 + Vite + Tailwind 4. Built and copied into `packages/server/dist/admin/ui/` by the server build; served by `@fastify/static` under `/admin/`. CSP is strict (`default-src 'self'`); Inter + JetBrains Mono are bundled (no CDN).
 
-Sign-in is username + password → HttpOnly session cookie + JS-readable CSRF cookie. `/v1/auth/logout` revokes server-side and clears both cookies.
+Sign-in calls `POST /api/auth/sign-in/email`. Better Auth sets the HttpOnly session cookie; the SPA reads the user via `GET /api/auth/get-session` on every page load. Admin user CRUD is wired directly to `/api/auth/admin/{create-user,list-users,set-role,remove-user}`.
 
 Admin sidebar: Metrics · Health · Users.
 User sidebar: Metrics · Browse · Graph · Today · Projects · API Tokens.
@@ -123,12 +148,13 @@ User sidebar: Metrics · Browse · Graph · Today · Projects · API Tokens.
 - pnpm workspaces. `pnpm -r build` builds in dependency order (client → mcp → admin-ui → server).
 - The runtime Dockerfile drops privileges, ships only `dist/` + production deps, and declares `HEALTHCHECK`.
 - Default port 7778 on both host + container.
-- k3s manifests live under `deploy/k8s/` — single-replica StatefulSets for Postgres / Qdrant / FalkorDB on local-path PVCs, plus a `LoadBalancer` Service that binds 7778 on the node's host network.
+- k3s manifests live under `deploy/k8s/` — single-replica StatefulSets for Postgres / Qdrant / FalkorDB on local-path PVCs, plus a `LoadBalancer` Service that binds 7778 on the node's host network. The ConfigMap pins `NOVAMEM_BASE_URL` to the public origin so Better Auth's trusted-origin check accepts the SPA.
 
 ## Things that aren't here yet
 
 - No drizzle-kit migrations folder; schema lives in idempotent DDL strings.
-- No Prometheus / OpenTelemetry exporter (`/v1/admin/metrics` is JSON, not exposition format).
+- No OpenTelemetry exporter (Prometheus exposition is at `/v1/admin/metrics/prom`).
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
+- No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
 
 See [CHANGELOG.md](CHANGELOG.md) for behaviour shifts and [SECURITY.md](SECURITY.md) for the production hardening checklist.
