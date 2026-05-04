@@ -24,22 +24,14 @@ import {
   primaryKey,
 } from "drizzle-orm/pg-core";
 
-/** Dashboard users. The `admin` role gates /v1/admin/* (manage other
- *  users, system metrics). Every user — admin or not — has their own
- *  memory namespace keyed by `users.id`. Passwords are bcrypt-hashed;
- *  never stored or transmitted in plaintext. */
-export const users = pgTable(
-  "users",
-  {
-    id: text("id").primaryKey(),
-    username: text("username").notNull(),
-    passwordHash: text("password_hash").notNull(),
-    role: text("role").notNull().default("user"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
-  },
-  (table) => [unique("uq_users_username").on(table.username)],
-);
+// Note: users + sessions tables — the legacy bcrypt + cookie path —
+// were dropped when Better Auth took over the dashboard's user model.
+// Better Auth manages its own DDL on the singular `"user"` / `"session"`
+// tables, which aren't in this schema (their table definitions live in
+// better-auth's package and are applied by Better Auth at boot).
+// Foreign keys from user_tokens / projects / project_members were
+// converted to free-text references; orphan rows fail-safe at
+// resolve time.
 
 /** A project is a sub-brain — memory entries scoped to a coherent body
  *  of work, optionally shared between users. Owned by one user (the
@@ -69,21 +61,6 @@ export const projectMembers = pgTable(
     unique("uq_project_members").on(table.projectId, table.userId),
     index("idx_project_members_user").on(table.userId),
   ],
-);
-
-/** Session bearer tokens for the dashboard. The plaintext session token
- *  is returned exactly once at login; only the sha256 hash is stored.
- *  Sessions expire after 24h of inactivity by default. */
-export const sessions = pgTable(
-  "sessions",
-  {
-    tokenHash: text("token_hash").primaryKey(),
-    userId: text("user_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  },
-  (table) => [index("idx_sessions_user").on(table.userId)],
 );
 
 /** One row per provisioned bearer token. A token belongs to exactly one

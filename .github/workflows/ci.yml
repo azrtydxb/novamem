@@ -49,6 +49,9 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      # Guard against schema.ts ↔ migrations/ drift. Fails if someone
+      # edited the schema without committing a paired migration.
+      - run: pnpm --filter @azrtydxb/novamem-server db:check
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
