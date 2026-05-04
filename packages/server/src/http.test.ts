@@ -1190,3 +1190,116 @@ describe("http: /v1/auth/rotate-token (user self-service)", () => {
     expect(r.statusCode).toBe(400);
   });
 });
+
+describe("http: per-account rate limiter on /v1/auth/rotate-token (#15)", () => {
+  it("returns 429 with Retry-After after 5 failed rotate attempts", async () => {
+    const { app } = makeApp({ authMode: "user" });
+    // Same bogus bearer six times — first five 401, sixth 429.
+    for (let i = 0; i < 5; i++) {
+      const r = await app.inject({
+        method: "POST", url: "/v1/auth/rotate-token",
+        headers: { authorization: "Bearer nm_brute-attempt-token" },
+      });
+      expect(r.statusCode).toBe(401);
+    }
+    const blocked = await app.inject({
+      method: "POST", url: "/v1/auth/rotate-token",
+      headers: { authorization: "Bearer nm_brute-attempt-token" },
+    });
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers["retry-after"]).toBeDefined();
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+});
+
+describe("http: audit-log limit validation (#16)", () => {
+  it("rejects ?limit=abc with 400", async () => {
+    const { app, warm } = makeApp({});
+    const adminH = await adminAuth(warm);
+    const r = await app.inject({
+      method: "GET", url: "/v1/admin/audit-log?limit=abc",
+      headers: adminH,
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it("rejects ?limit=0 / negative", async () => {
+    const { app, warm } = makeApp({});
+    const adminH = await adminAuth(warm);
+    const r1 = await app.inject({
+      method: "GET", url: "/v1/admin/audit-log?limit=0",
+      headers: adminH,
+    });
+    expect(r1.statusCode).toBe(400);
+    const r2 = await app.inject({
+      method: "GET", url: "/v1/admin/audit-log?limit=-5",
+      headers: adminH,
+    });
+    expect(r2.statusCode).toBe(400);
+  });
+
+  it("clamps via schema max=500 (anything above rejects)", async () => {
+    const { app, warm } = makeApp({});
+    const adminH = await adminAuth(warm);
+    const r = await app.inject({
+      method: "GET", url: "/v1/admin/audit-log?limit=1000",
+      headers: adminH,
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it("accepts a valid limit", async () => {
+    const { app, warm } = makeApp({});
+    const adminH = await adminAuth(warm);
+    const r = await app.inject({
+      method: "GET", url: "/v1/admin/audit-log?limit=50",
+      headers: adminH,
+    });
+    expect(r.statusCode).toBe(200);
+  });
+});
+
+describe("http: project-share uses exact-email lookup (#14)", () => {
+  it("does not match a user whose name collides with the requested handle", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    // Owner creates a project.
+    const owner = await userAuth(warm, "owner@example.com");
+    // "alice@example.com" — the actual target.
+    await warm.createUser({
+      username: "alice@example.com",
+      passwordHash: "x",
+      role: "user",
+    });
+    // Attacker registers with a benign email but display-name 'alice'.
+    // The fake's `username` doubles as both email and name; the only
+    // field exact-email looks at is the email, so the attacker is
+    // unreachable when the owner asks for "alice".
+    await warm.createUser({
+      username: "attacker@evil.test",
+      passwordHash: "x",
+      role: "user",
+    });
+    const proj = await app.inject({
+      method: "POST", url: "/v1/me/projects",
+      payload: { name: "p1" },
+      headers: { authorization: owner.authorization },
+    });
+    expect(proj.statusCode).toBe(201);
+    const projectId = proj.json().id;
+    // Owner asks for bare local-part "alice" — exact-email finds nothing.
+    const fuzzy = await app.inject({
+      method: "POST", url: `/v1/me/projects/${projectId}/members`,
+      payload: { username: "alice" },
+      headers: { authorization: owner.authorization },
+    });
+    expect(fuzzy.statusCode).toBe(404);
+    // Owner asks for the full email — exact-email finds alice.
+    const exact = await app.inject({
+      method: "POST", url: `/v1/me/projects/${projectId}/members`,
+      payload: { username: "alice@example.com" },
+      headers: { authorization: owner.authorization },
+    });
+    expect(exact.statusCode).toBe(201);
+    expect(exact.json().username).toBe("alice@example.com");
+  });
+});
