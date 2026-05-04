@@ -108,8 +108,9 @@ export function MetricsPage() {
   } = useQuery({
     queryKey: ["metrics", endpoint],
     queryFn: async () => {
+      // api() throws ApiError on non-OK (issue #23); we just unpack body.
       const r = await api<MetricsSnapshot | UserMetricsSnapshot>("GET", endpoint);
-      if (!r.ok || !r.body) throw new Error(r.error ?? `metrics ${r.status}`);
+      if (!r.body) throw new Error(`metrics: empty body`);
       return isAdmin
         ? ({ kind: "admin", data: r.body as MetricsSnapshot } as AnySnapshot)
         : ({ kind: "user", data: r.body as UserMetricsSnapshot } as AnySnapshot);
@@ -146,8 +147,9 @@ export function MetricsPage() {
 
   const decay = useMutation({
     mutationFn: async () => {
+      // api() throws ApiError on non-OK (issue #23).
       const r = await api<{ demoted: number; promoted: number }>("POST", "/v1/decay", {});
-      if (!r.ok || !r.body) throw new Error(r.error ?? `decay ${r.status}`);
+      if (!r.body) throw new Error(`decay: empty body`);
       return r.body;
     },
     onSuccess: (body) => {
