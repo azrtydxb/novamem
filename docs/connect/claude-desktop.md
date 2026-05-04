@@ -32,7 +32,7 @@ If your build doesn't support `"type": "sse"`, use the npm-published shim:
   "mcpServers": {
     "novamem": {
       "command": "npx",
-      "args": ["@azrty/novamem-mcp"],
+      "args": ["@azertydxb/novamem-mcp"],
       "env": {
         "NOVAMEM_BASE_URL": "http://localhost:7778",
         "NOVAMEM_TOKEN": "nm_..."

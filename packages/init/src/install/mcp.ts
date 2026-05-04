@@ -6,7 +6,7 @@
  *
  * Transports:
  *   - sse:   { type: "sse", url, headers: { Authorization: "Bearer nm_..." } }
- *   - stdio: { command: "npx", args: ["@azrty/novamem-mcp"], env: { ... } }
+ *   - stdio: { command: "npx", args: ["@azertydxb/novamem-mcp"], env: { ... } }
  */
 
 import { join } from "node:path";
@@ -51,7 +51,7 @@ export function buildMcpEntry(adapter: NonNullable<ToolEntry["mcp"]>, p: McpInst
   // stdio fallback for hosts that need the npm shim
   return {
     command: "npx",
-    args: ["-y", "@azrty/novamem-mcp"],
+    args: ["-y", "@azertydxb/novamem-mcp"],
     env: {
       NOVAMEM_BASE_URL: trimTrailingSlash(p.baseUrl),
       NOVAMEM_TOKEN: p.bearer,

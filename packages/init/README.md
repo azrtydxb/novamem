@@ -1,9 +1,9 @@
-# @azrty/novamem-init
+# @azertydxb/novamem-init
 
 Interactive installer that wires every supported AI agent host on your machine to a [novamem](https://github.com/azrtydxb/novamem) server in one command.
 
 ```bash
-npx @azrty/novamem-init
+npx @azertydxb/novamem-init
 ```
 
 It will:

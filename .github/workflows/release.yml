@@ -1,0 +1,92 @@
+name: Release
+
+# Tag-driven npm publish for the three public packages:
+#   @azertydxb/novamem        (TypeScript client)
+#   @azertydxb/novamem-mcp    (stdio shim)
+#   @azertydxb/novamem-init   (auto-installer)
+#
+# Trigger: push a tag matching v* (e.g. `git tag v0.2.0 && git push --tags`).
+# Each publishable package's package.json `version` field must already be set
+# to that version — the workflow doesn't bump for you. Run `pnpm changeset`
+# or edit by hand, commit, then tag.
+#
+# Auth: uses the NPM_TOKEN repo secret (Settings → Secrets and variables →
+# Actions). Generate a granular Automation token at npmjs.com scoped to the
+# three packages above.
+#
+# Provenance: each `npm publish --provenance` attaches a Sigstore attestation
+# tying the tarball to this exact workflow run + commit. Shows up as the
+# green "Built and signed by GitHub Actions" badge on npmjs.com. Requires
+# `id-token: write` and `publishConfig.provenance: true` in each package.json
+# (already set).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run (run `npm publish --dry-run`, don't actually publish)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # for `gh release create`
+  id-token: write   # for npm provenance attestations
+
+jobs:
+  publish:
+    name: publish to npm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - run: pnpm test
+      - name: Publish @azertydxb/novamem
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd packages/client
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --access public --provenance --dry-run
+          else
+            npm publish --access public --provenance
+          fi
+      - name: Publish @azertydxb/novamem-mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd packages/mcp
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --access public --provenance --dry-run
+          else
+            npm publish --access public --provenance
+          fi
+      - name: Publish @azertydxb/novamem-init
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd packages/init
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --access public --provenance --dry-run
+          else
+            npm publish --access public --provenance
+          fi
+      - name: GitHub release notes
+        if: ${{ !inputs.dry_run }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
