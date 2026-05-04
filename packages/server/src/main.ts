@@ -20,6 +20,8 @@ async function main() {
     // Loud, unmissable: a docker-compose default with no auth is fine for
     // local dev but a footgun in production. The default exists so the
     // service "just works" out of the box; this warning is the receipt.
+    // console.* reserved for pre-logger bootstrap only — Fastify's pino
+    // logger doesn't exist until buildHttpServer runs.
     // eslint-disable-next-line no-console
     console.warn(
       "[novamem] WARNING: auth.mode=none — every request is accepted as the 'public' user. " +
@@ -28,6 +30,7 @@ async function main() {
     );
   } else if (cfg.auth.mode === "bearer") {
     // Bearer mode is fine for single-user deployments but doesn't isolate.
+    // console.* reserved for pre-logger bootstrap only.
     // eslint-disable-next-line no-console
     console.warn(
       "[novamem] auth.mode=bearer — single shared token, single 'public' user. " +
@@ -35,7 +38,7 @@ async function main() {
     );
   }
 
-  const warm = new WarmStore({ url: cfg.warm.url });
+  const warm = new WarmStore({ url: cfg.warm.url, pgPoolMax: cfg.service.pgPoolMax });
   await warm.initialize();
 
   const cold = new ColdStore({ url: cfg.cold.url, vectorSize: cfg.cold.vectorSize });
@@ -106,76 +109,15 @@ async function main() {
     metrics,
   });
 
-
-  const decayTimer = setInterval(async () => {
-    try {
-      await engine.decay();
-      // Run the cold-orphan reaper on the same cadence — both touch cold
-      // storage and there's no value in running them at different rates.
-      const reap = await engine.reapOrphans();
-      if (reap.attempted > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[novamem] reaped orphans:`, reap);
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("decay/reap loop error", err);
-    }
-  }, cfg.decay.intervalMs);
-
-  // Dream cycle — periodic compaction. Runs daily at the same cadence
-  // as decay (the heavy work is the per-entry vector lookup; we don't
-  // want to fire it more often than once per cold-store-write batch).
-  // No-op on small stores, useful on large ones.
-  const dreamTimer = setInterval(async () => {
-    try {
-      const r = await engine.dreamCycle();
-      if (r.merged > 0 || r.edgesPromoted > 0) {
-        // eslint-disable-next-line no-console
-        console.log(
-          `[novamem] dream cycle: walked=${r.walked} merged=${r.merged} ` +
-            `edgesPromoted=${r.edgesPromoted} durationMs=${r.durationMs}`,
-        );
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("dream cycle error", err);
-    }
-  }, 24 * 60 * 60 * 1000);
-  dreamTimer.unref?.();
-
-  // 24h persistent throughput: every minute, flush pending per-user
-  // counters from the in-mem MetricsCollector to metrics_samples so the
-  // history chart survives reboots. Same loop also prunes >25h-old rows
-  // so the table can't grow without bound.
-  const metricsFlushTimer = setInterval(async () => {
-    try {
-      // Floor sampledAt to the minute so the bucket is stable across
-      // races between record() and drain().
-      const now = new Date();
-      now.setSeconds(0, 0);
-      const samples = metrics.drainPendingSamples(now);
-      if (samples.length > 0) await warm.recordMetricsSamples(samples);
-      // Keep ~25h of history (24h chart + a margin) so a chart query at
-      // sample-time-minus-24h always finds a left edge.
-      const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000);
-      await warm.pruneMetricsSamples(cutoff);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("metrics flush error", err);
-    }
-  }, 60 * 1000);
-  metricsFlushTimer.unref?.();
-
   // Better Auth instance — owns the dashboard control plane (login,
   // sessions, JWT issuance). Phase 1: scaffolded alongside the existing
   // /v1/auth/* routes; both flows live until the SPA cuts over.
-  const baseUrl = process.env.NOVAMEM_BASE_URL ?? `http://${cfg.service.host}:${cfg.service.port}`;
+  const baseUrl = cfg.service.baseUrl;
   const ba = buildAuth({
     pool: warm.pool,
     baseUrl,
     secret: cfg.cookieSecret,
-    secureCookies: process.env.NOVAMEM_INSECURE_COOKIES !== "1",
+    secureCookies: !cfg.service.insecureCookies,
     trustedOrigins: [baseUrl, "http://localhost:5173"],
   });
 
@@ -185,9 +127,15 @@ async function main() {
   // is present. Better Auth's admin plugin can promote a user via
   // setRole; we do that immediately after sign-up so the dashboard's
   // role-gated routes work on the first login.
+  // Scrub the bootstrap password from the env immediately after
+  // loadConfig captured it, so `docker inspect` / a later spawn can't
+  // recover it for the lifetime of the process. The captured value
+  // lives only on the cfg object below.
+  delete process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD;
+
   try {
-    const adminEmail = process.env.NOVAMEM_BOOTSTRAP_ADMIN_EMAIL ?? null;
-    const adminPassword = process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD ?? null;
+    const adminEmail = cfg.bootstrap.adminEmail ?? null;
+    const adminPassword = cfg.bootstrap.adminPassword ?? null;
     if (adminEmail && adminPassword) {
       // Seed when the system has no admin yet — even if regular users
       // already exist. Admin is the operator account (user management +
@@ -217,15 +165,15 @@ async function main() {
           // to make the call. The warm store exposes `promoteToAdmin`
           // as the documented escape hatch for the bootstrap case.
           await warm.promoteToAdmin(newUserId);
+          // console.* reserved for pre-logger bootstrap only — `app` and
+          // its pino logger don't exist yet at this point.
           // eslint-disable-next-line no-console
           console.log(`[novamem] seeded bootstrap admin "${adminEmail}" via Better Auth`);
         }
-        // Scrub the bootstrap password from the env so docker inspect
-        // can't recover it for the lifetime of the process.
-        delete process.env.NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD;
       }
     }
   } catch (err) {
+    // console.* reserved for pre-logger bootstrap only.
     // eslint-disable-next-line no-console
     console.error("[novamem] bootstrap admin failed:", (err as Error).message);
   }
@@ -236,6 +184,8 @@ async function main() {
     auth: cfg.auth,
     cookieSecret: cfg.cookieSecret,
     rateLimitPerMinute: cfg.service.rateLimitPerMinute,
+    logLevel: cfg.service.logLevel,
+    corsOrigins: cfg.service.corsOrigins,
     metrics,
     adminDashboard: cfg.admin.dashboard,
     betterAuth: {
@@ -243,14 +193,105 @@ async function main() {
       getSession: (headers) => ba.api.getSession({ headers }) as Promise<{ user?: { id: string }; session?: { id: string } } | null>,
     },
   });
+
+  // Now that the Fastify pino logger exists, swap the engine + graph
+  // store boot-time console fallbacks for component-tagged child
+  // loggers. Anything they log from this point on lands in the same
+  // structured stream as request logs.
+  engine.setLogger(app.log.child({ component: "engine" }));
+  if (graph) graph.setLogger(app.log.child({ component: "graph-store" }));
+
+  // ─── Background timers ──────────────────────────────────────────────
+  // Each timer wraps its async body in an `inFlight` reentrancy guard:
+  // if the previous tick is still running when the next fires, the next
+  // is skipped. Per spec each timer keeps its own flag — a slow decay()
+  // shouldn't block the dream cycle and vice-versa. The metrics flush
+  // is idempotent so the guard is mostly belt-and-braces; dream is the
+  // one that genuinely cannot run twice concurrently (the dedup-merge
+  // phase races itself on the canonical-vs-loser pick).
+  let decayInFlight = false;
+  const decayTimer = setInterval(async () => {
+    if (decayInFlight) return;
+    decayInFlight = true;
+    try {
+      await engine.decay();
+      // Run the cold-orphan reaper on the same cadence — both touch cold
+      // storage and there's no value in running them at different rates.
+      const reap = await engine.reapOrphans();
+      if (reap.attempted > 0) {
+        app.log.info({ ...reap }, "reaped orphans");
+      }
+    } catch (err) {
+      app.log.error({ err: (err as Error).message }, "decay/reap loop error");
+    } finally {
+      decayInFlight = false;
+    }
+  }, cfg.decay.intervalMs);
+
+  // Dream cycle — periodic compaction. Runs daily at the same cadence
+  // as decay (the heavy work is the per-entry vector lookup; we don't
+  // want to fire it more often than once per cold-store-write batch).
+  // No-op on small stores, useful on large ones.
+  let dreamInFlight = false;
+  const dreamTimer = setInterval(async () => {
+    if (dreamInFlight) return;
+    dreamInFlight = true;
+    try {
+      const r = await engine.dreamCycle();
+      if (r.merged > 0 || r.edgesPromoted > 0) {
+        app.log.info(
+          {
+            walked: r.walked,
+            merged: r.merged,
+            edgesPromoted: r.edgesPromoted,
+            durationMs: r.durationMs,
+          },
+          "dream cycle",
+        );
+      }
+    } catch (err) {
+      app.log.error({ err: (err as Error).message }, "dream cycle error");
+    } finally {
+      dreamInFlight = false;
+    }
+  }, 24 * 60 * 60 * 1000);
+  dreamTimer.unref?.();
+
+  // 24h persistent throughput: every minute, flush pending per-user
+  // counters from the in-mem MetricsCollector to metrics_samples so the
+  // history chart survives reboots. Same loop also prunes >25h-old rows
+  // so the table can't grow without bound.
+  let metricsFlushInFlight = false;
+  const metricsFlushTimer = setInterval(async () => {
+    if (metricsFlushInFlight) return;
+    metricsFlushInFlight = true;
+    try {
+      // Floor sampledAt to the minute so the bucket is stable across
+      // races between record() and drain().
+      const now = new Date();
+      now.setSeconds(0, 0);
+      const samples = metrics.drainPendingSamples(now);
+      if (samples.length > 0) await warm.recordMetricsSamples(samples);
+      // Keep ~25h of history (24h chart + a margin) so a chart query at
+      // sample-time-minus-24h always finds a left edge.
+      const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      await warm.pruneMetricsSamples(cutoff);
+    } catch (err) {
+      app.log.error({ err: (err as Error).message }, "metrics flush error");
+    } finally {
+      metricsFlushInFlight = false;
+    }
+  }, 60 * 1000);
+  metricsFlushTimer.unref?.();
+
   await app.listen({ host: cfg.service.host, port: cfg.service.port });
 
-  // eslint-disable-next-line no-console
-  console.log(`[novamem] listening on ${cfg.service.host}:${cfg.service.port}`);
+  app.log.info({ host: cfg.service.host, port: cfg.service.port }, "novamem listening");
 
   const shutdown = async () => {
     clearInterval(decayTimer);
     clearInterval(dreamTimer);
+    clearInterval(metricsFlushTimer);
     await app.close();
     if (graph) await graph.close();
     await warm.close();

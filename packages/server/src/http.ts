@@ -75,6 +75,11 @@ export interface HttpOptions {
   cookieSecret?: string;
   /** Per-IP requests-per-minute. Default 600 (10/sec sustained). */
   rateLimitPerMinute?: number;
+  /** Pino log level. Sourced from `cfg.service.logLevel`. */
+  logLevel?: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
+  /** CORS allow-list. Sourced from `cfg.service.corsOrigins`. Empty array
+   *  = same-origin only; ["*"] = reflect-any (legacy permissive). */
+  corsOrigins?: string[];
   /** Metrics collector — when set, /v1/admin/metrics is available (subject
    *  to the dashboard flag below). When unset, the route 404s. */
   metrics?: MetricsCollector;
@@ -109,7 +114,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   const app = Fastify({
     logger: {
-      level: process.env.LOG_LEVEL ?? "info",
+      level: opts.logLevel ?? "info",
       // P1-S2: never log Authorization headers, login passwords, or minted
       // token plaintexts. Pino's `redact` is field-path based; cover both
       // request-time fields and response shapes that pass through `req.log`.
@@ -136,16 +141,19 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // P1-S3: tighten CORS. `origin: true` reflects every Origin, which makes
-  // the API a CSRF surface for any site that knows the URL. Operators can
-  // override via NOVAMEM_CORS_ORIGINS (comma-separated allowlist) or set
-  // the value `*` for the legacy permissive behaviour.
-  const corsOriginsEnv = process.env.NOVAMEM_CORS_ORIGINS ?? "";
-  const corsOrigin: boolean | string[] | RegExp =
-    corsOriginsEnv === "" || corsOriginsEnv === "self"
-      ? false // same-origin only — dashboard fetch from /admin works fine
-      : corsOriginsEnv === "*"
+  // the API a CSRF surface for any site that knows the URL. The allow-list
+  // is parsed in `loadConfig()` from NOVAMEM_CORS_ORIGINS; here we just
+  // map the resolved array onto Fastify-CORS' shape:
+  //   undefined / []  → same-origin only (false)
+  //   ["*"]           → reflect-any (true) — legacy permissive
+  //   [origins…]      → exact allow-list
+  const corsList = opts.corsOrigins;
+  const corsOrigin: boolean | string[] =
+    !corsList || corsList.length === 0
+      ? false
+      : corsList.length === 1 && corsList[0] === "*"
         ? true
-        : corsOriginsEnv.split(",").map((s) => s.trim()).filter(Boolean);
+        : corsList;
   app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false });
 
   // P1-S3: cookie support for HttpOnly session storage. Cookies are
