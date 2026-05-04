@@ -2,9 +2,10 @@
  * Hand-written OpenAPI 3.0 document for the novamem HTTP surface. Served
  * at /openapi.json and rendered by Swagger UI at /api-docs.
  *
- * We don't auto-generate from Zod schemas (would need fastify-type-provider-
- * zod and a wholesale route refactor); a hand-rolled spec is small enough
- * to maintain and gives us full control over examples and prose.
+ * Hand-rolled (not Zod-generated) so we keep control over examples and
+ * prose. Better Auth's own surface (/api/auth/*) is documented at
+ * https://www.better-auth.com/docs and is not duplicated here — this
+ * spec covers only routes we own.
  */
 
 export type OpenApiDocument = ReturnType<typeof openapiSpec>;
@@ -18,10 +19,12 @@ export function openapiSpec() {
       description:
         "Tiered memory service with hybrid search (keyword + vector + graph), " +
         "per-user isolation, and project-scoped sub-brains.\n\n" +
-        "**Auth**: data-plane routes accept user bearer tokens (`nm_…`) minted " +
-        "for a user's devices/agents; control-plane and admin routes accept " +
-        "dashboard session tokens (`ns_…`) — log in via `POST /v1/auth/login` " +
-        "first.",
+        "**Auth**: every authenticated route accepts either an `nm_…` user " +
+        "bearer (created from the dashboard's API Tokens page) or a Better " +
+        "Auth session cookie/bearer (set by `POST /api/auth/sign-in/email`). " +
+        "Both flow through the same auth hook and resolve to the same user. " +
+        "Better Auth's own routes are mounted at `/api/auth/*` — see the " +
+        "Better Auth documentation for their shapes.",
       license: { name: "MIT" },
     },
     servers: [{ url: "/", description: "this server" }],
@@ -32,22 +35,18 @@ export function openapiSpec() {
           scheme: "bearer",
           bearerFormat: "nm_…",
           description:
-            "Per-device API token belonging to one user. Used for the memory " +
-            "data plane (search/remember/recent/forget/neighbors).",
+            "Per-device API token belonging to one user. Carries every " +
+            "right the owning user has — data plane, project CRUD, " +
+            "membership, metrics. Created from the dashboard's API Tokens " +
+            "page; the plaintext is shown once.",
         },
-        SessionBearer: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "ns_…",
-          description: "Dashboard session token. Used for /v1/auth/* and /v1/me/*.",
-        },
-        AdminBearer: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "ns_…",
+        SessionCookie: {
+          type: "apiKey",
+          in: "cookie",
+          name: "nm.session_token",
           description:
-            "Admin user's session bearer (ns_…). Required for /v1/admin/*. " +
-            "Obtain by logging in as a user with role=admin.",
+            "Better Auth session cookie set by /api/auth/sign-in/email. " +
+            "HttpOnly + SameSite=Lax. Browsers attach it automatically.",
         },
       },
       schemas: {
@@ -63,7 +62,19 @@ export function openapiSpec() {
             project: {
               type: "string",
               nullable: true,
-              description: "Project (sub-brain) id. Omit for the user's whole-namespace entries.",
+              description: "Project id (ULID) or human name. Omit to use the active project, falling back to user-wide entries.",
+            },
+            includeProjects: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 16,
+              description: "Active-project mode: union user-wide with the listed projects. Each entry may be an id or human name.",
+            },
+            includeNamespaces: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 16,
+              description: "Cross-namespace search: union the result across these namespace shelves.",
             },
             weights: {
               type: "object",
@@ -74,11 +85,7 @@ export function openapiSpec() {
               },
             },
           },
-          example: {
-            query: "coffee preference",
-            k: 5,
-            project: "phoenix",
-          },
+          example: { query: "coffee preference", k: 5, project: "Phoenix" },
         },
         SearchResult: {
           type: "object",
@@ -90,6 +97,9 @@ export function openapiSpec() {
             namespace: { type: "string" },
             project: { type: "string", nullable: true },
             source: { type: "string" },
+            sourceType: { type: "string", nullable: true },
+            capturedFrom: { type: "string", nullable: true },
+            confidence: { type: "number" },
             metadata: { type: "object", additionalProperties: true },
             signals: {
               type: "object",
@@ -105,54 +115,94 @@ export function openapiSpec() {
           type: "object",
           properties: {
             results: { type: "array", items: { $ref: "#/components/schemas/SearchResult" } },
-            degraded: { type: "boolean" },
+            degraded: { type: "boolean", description: "True when the graph leg failed; results returned without graph signal." },
           },
         },
         RememberRequest: {
           type: "object",
           required: ["content"],
           properties: {
-            content: { type: "string", minLength: 1, maxLength: 262_144 },
+            content: { type: "string", minLength: 1, maxLength: 262144 },
             namespace: { type: "string", maxLength: 128 },
             source: { type: "string", maxLength: 128 },
             agentName: { type: "string", maxLength: 128, nullable: true },
-            project: { type: "string", nullable: true },
+            project: { type: "string", nullable: true, description: "Project id or human name." },
             metadata: { type: "object", additionalProperties: true },
+            sourceType: {
+              type: "string",
+              maxLength: 64,
+              description: "Open-string vocab: chat / email / code-review / doc / inference / observation / system / manual.",
+            },
+            capturedFrom: { type: "string", maxLength: 256 },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            force: {
+              type: "boolean",
+              description: "Bypass the worthiness gate. Default false.",
+            },
           },
           example: {
-            content: "Pascal prefers dark roast coffee",
-            namespace: "preferences",
-            project: "phoenix",
+            content: "User profile: Pascal Watteel lives in Singapore.",
+            sourceType: "chat",
+            capturedFrom: "claude-desktop",
+            confidence: 0.95,
           },
         },
         RememberResponse: {
           type: "object",
-          properties: { id: { type: "string" } },
+          properties: {
+            id: { type: "string", nullable: true, description: "ULID of the new entry, or null when rejected by the worthiness gate." },
+            rejected: { type: "string", description: "When set, explains why the gate refused the write." },
+            deduplicated: { type: "boolean", description: "True when an exact duplicate already existed; the response id is the existing entry's." },
+          },
+        },
+        UpdateMemoryRequest: {
+          type: "object",
+          properties: {
+            content: { type: "string", minLength: 1, maxLength: 262144, description: "Omit to update only metadata-side fields without re-embedding." },
+            namespace: { type: "string", maxLength: 128 },
+            metadata: { type: "object", additionalProperties: true },
+            sourceType: { type: "string", maxLength: 64 },
+            capturedFrom: { type: "string", maxLength: 256 },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            project: { type: "string", nullable: true, description: "Scope check; must match the entry's project." },
+          },
+        },
+        UpdateMemoryResponse: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            updated: { type: "boolean" },
+            embeddingChanged: { type: "boolean" },
+          },
         },
         RecentRequest: {
           type: "object",
           properties: {
             namespace: { type: "string", maxLength: 128 },
+            includeNamespaces: { type: "array", items: { type: "string" }, maxItems: 16 },
             k: { type: "integer", minimum: 1, maximum: 200 },
-            since: { type: "string", description: "ISO-8601 timestamp" },
+            since: { type: "string", format: "date-time" },
             project: { type: "string", nullable: true },
+            includeProjects: { type: "array", items: { type: "string" }, maxItems: 16 },
           },
         },
         NeighborsRequest: {
           type: "object",
           required: ["id"],
           properties: {
-            id: { type: "string", maxLength: 128 },
+            id: { type: "string" },
             depth: { type: "integer", minimum: 1, maximum: 3 },
             k: { type: "integer", minimum: 1, maximum: 50 },
             project: { type: "string", nullable: true },
+            includeProjects: { type: "array", items: { type: "string" }, maxItems: 16 },
+            includeNamespaces: { type: "array", items: { type: "string" }, maxItems: 16 },
           },
         },
         ForgetRequest: {
           type: "object",
           required: ["id"],
           properties: {
-            id: { type: "string", maxLength: 128 },
+            id: { type: "string" },
             project: { type: "string", nullable: true },
           },
         },
@@ -169,13 +219,70 @@ export function openapiSpec() {
         },
         DecayResponse: {
           type: "object",
+          properties: { demoted: { type: "integer" }, promoted: { type: "integer" } },
+        },
+        DreamCycleResponse: {
+          type: "object",
           properties: {
-            demoted: { type: "integer" },
-            promoted: { type: "integer" },
+            walked: { type: "integer" },
+            merged: { type: "integer" },
+            edgesPromoted: { type: "integer" },
+            durationMs: { type: "integer" },
           },
         },
-        // ─── Health / Stats / Metrics ──────────────────────────────────
-        HealthResponse: {
+        // ─── Projects ───────────────────────────────────────────────────
+        Project: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "ULID, server-assigned." },
+            name: { type: "string" },
+            ownerUserId: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+        CreateProjectRequest: {
+          type: "object",
+          required: ["name"],
+          properties: { name: { type: "string", minLength: 1, maxLength: 128 } },
+        },
+        AddMemberRequest: {
+          type: "object",
+          required: ["username"],
+          properties: {
+            username: { type: "string", description: "Email or display name of the user to invite." },
+            role: { type: "string", enum: ["owner", "member"] },
+          },
+        },
+        ActiveProjectRequest: {
+          type: "object",
+          required: ["project"],
+          properties: { project: { type: "string", description: "Project id or human name." } },
+        },
+        ActiveProjectResponse: {
+          type: "object",
+          properties: {
+            active: {
+              type: "object",
+              nullable: true,
+              properties: { id: { type: "string" }, name: { type: "string" } },
+            },
+          },
+        },
+        // ─── Tokens ─────────────────────────────────────────────────────
+        MintTokenRequest: {
+          type: "object",
+          properties: { label: { type: "string", maxLength: 128 } },
+        },
+        MintTokenResponse: {
+          type: "object",
+          properties: {
+            token: { type: "string", description: "Plaintext bearer (`nm_…`) — shown once. Server stores only the sha256 hash." },
+            userId: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+            warning: { type: "string" },
+          },
+        },
+        Health: {
           type: "object",
           properties: {
             ok: { type: "boolean" },
@@ -189,480 +296,354 @@ export function openapiSpec() {
             },
           },
         },
-        StatsResponse: {
-          type: "object",
-          properties: {
-            byNamespace: {
-              type: "object",
-              additionalProperties: {
-                type: "object",
-                properties: {
-                  warm: { type: "integer" },
-                  cold: { type: "integer" },
-                },
-              },
-            },
-            totalWarm: { type: "integer" },
-            totalCold: { type: "integer" },
-            lastDecayAt: { type: "string", nullable: true },
-            uptimeMs: { type: "integer" },
-          },
-        },
-        MetricsSnapshot: {
-          type: "object",
-          properties: {
-            counters: { type: "object", additionalProperties: { type: "integer" } },
-            gauges: { type: "object", additionalProperties: true },
-            rates: { type: "object", additionalProperties: { type: "number" } },
-            uptime_ms: { type: "integer" },
-          },
-        },
-        // ─── Tokens ─────────────────────────────────────────────────────
-        UserToken: {
-          type: "object",
-          properties: {
-            tokenHash: { type: "string" },
-            label: { type: "string", nullable: true },
-            projectId: { type: "string", nullable: true },
-            createdAt: { type: "string", format: "date-time" },
-            lastUsedAt: { type: "string", format: "date-time", nullable: true },
-            revoked: { type: "boolean" },
-          },
-        },
-        MintTokenResponse: {
-          type: "object",
-          properties: {
-            token: {
-              type: "string",
-              description: "Plaintext bearer token — shown ONCE; server stores only the hash.",
-            },
-            userId: { type: "string" },
-            projectId: { type: "string", nullable: true },
-            createdAt: { type: "string", format: "date-time" },
-            warning: { type: "string" },
-          },
-        },
-        // ─── Auth / Users ──────────────────────────────────────────────
-        LoginRequest: {
-          type: "object",
-          required: ["username", "password"],
-          properties: {
-            username: { type: "string" },
-            password: { type: "string", format: "password" },
-          },
-          example: { username: "alice", password: "********" },
-        },
-        LoginResponse: {
-          type: "object",
-          properties: {
-            token: { type: "string", description: "Session bearer (ns_…)" },
-            expiresAt: { type: "string", format: "date-time" },
-            user: { $ref: "#/components/schemas/SessionUser" },
-          },
-        },
-        SessionUser: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            username: { type: "string" },
-            role: { type: "string", enum: ["admin", "user"] },
-            userId: { type: "string", nullable: true },
-          },
-        },
-        DashUser: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            username: { type: "string" },
-            role: { type: "string", enum: ["admin", "user"] },
-            userId: { type: "string", nullable: true },
-            createdAt: { type: "string", format: "date-time" },
-            lastLoginAt: { type: "string", format: "date-time", nullable: true },
-          },
-        },
-        CreateUserRequest: {
-          type: "object",
-          required: ["username", "password", "role"],
-          properties: {
-            username: { type: "string" },
-            password: { type: "string", format: "password", minLength: 8 },
-            role: { type: "string", enum: ["admin", "user"] },
-            userId: {
-              type: "string",
-              nullable: true,
-              description: "Required for role 'user'.",
-            },
-          },
-        },
-        // ─── Projects ──────────────────────────────────────────────────
-        Project: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            name: { type: "string" },
-            role: { type: "string", enum: ["owner", "member"] },
-            ownerUserId: { type: "string" },
-            createdAt: { type: "string", format: "date-time" },
-          },
-        },
-        ProjectMember: {
-          type: "object",
-          properties: {
-            userId: { type: "string" },
-            username: { type: "string" },
-            role: { type: "string", enum: ["owner", "member"] },
-            joinedAt: { type: "string", format: "date-time" },
-          },
-        },
-        CreateProjectRequest: {
-          type: "object",
-          required: ["id", "name"],
-          properties: {
-            id: { type: "string", description: "Slug, 2–64 chars." },
-            name: { type: "string" },
-          },
-          example: { id: "phoenix", name: "Phoenix Project" },
-        },
-        // ─── Common error ──────────────────────────────────────────────
         Error: {
           type: "object",
-          properties: { error: { type: "string" } },
+          properties: { error: { type: "string" }, code: { type: "string" } },
+        },
+      },
+    },
+    paths: {
+      // ─── Memory data plane ─────────────────────────────────────────
+      "/v1/search": {
+        post: {
+          tags: ["memory"],
+          summary: "Hybrid search across stored memories",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/SearchRequest" } } },
+          },
+          responses: {
+            "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/SearchResponse" } } } },
+            "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "404": { description: "No such project", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "403": { description: "Not a member of the requested project", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          },
+        },
+      },
+      "/v1/remember": {
+        post: {
+          tags: ["memory"],
+          summary: "Store a new memory entry",
+          description:
+            "Subject to the worthiness gate (rejects content < 12 chars or matching the conversational-filler regex unless `force: true`). Exact duplicates within the same scope return the existing id with `deduplicated: true`.",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/RememberRequest" } } },
+          },
+          responses: {
+            "200": { description: "Either the new entry id, a dedup hit, or a worthiness-gate rejection.", content: { "application/json": { schema: { $ref: "#/components/schemas/RememberResponse" } } } },
+            "401": { description: "Unauthorized" },
+          },
+        },
+      },
+      "/v1/memories/{id}": {
+        put: {
+          tags: ["memory"],
+          summary: "Rewrite an existing memory in place",
+          description:
+            "Preserves id, hit count, graph edges, and creation timestamp. Re-embeds the cold vector when `content` changes; skips the embedder when only metadata moves.",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: {
+            required: false,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/UpdateMemoryRequest" } } },
+          },
+          responses: {
+            "200": { description: "Updated", content: { "application/json": { schema: { $ref: "#/components/schemas/UpdateMemoryResponse" } } } },
+            "404": { description: "No such memory in the caller's scope" },
+          },
+        },
+      },
+      "/v1/recent": {
+        post: {
+          tags: ["memory"],
+          summary: "Newest entries, optionally filtered by namespace + since",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          requestBody: {
+            required: false,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/RecentRequest" } } },
+          },
+          responses: { "200": { description: "OK" } },
+        },
+      },
+      "/v1/neighbors": {
+        post: {
+          tags: ["memory"],
+          summary: "Graph-neighbour traversal from a seed memory id",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/NeighborsRequest" } } },
+          },
+          responses: { "200": { description: "OK" } },
+        },
+      },
+      "/v1/forget": {
+        post: {
+          tags: ["memory"],
+          summary: "Delete a memory entry across warm + FTS + cold + graph",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/ForgetRequest" } } },
+          },
+          responses: { "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/ForgetResponse" } } } } },
+        },
+      },
+      "/v1/decay": {
+        post: {
+          tags: ["lifecycle"],
+          summary: "Run the demotion pass on demand",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          requestBody: {
+            required: false,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/DecayRequest" } } },
+          },
+          responses: { "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/DecayResponse" } } } } },
+        },
+      },
+      "/v1/dream-cycle": {
+        post: {
+          tags: ["lifecycle"],
+          summary: "Run dedup-merge + edge-promotion compaction now",
+          description:
+            "The same logic runs daily on a timer. Manual trigger is useful after a bulk import or for testing. Cross-user — operates on whatever rows exist.",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          responses: { "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/DreamCycleResponse" } } } } },
+        },
+      },
+      "/v1/reap-orphans": {
+        post: {
+          tags: ["lifecycle"],
+          summary: "Manually retry queued cold-store deletes",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          responses: { "200": { description: "OK" } },
+        },
+      },
+      "/v1/stats": {
+        get: {
+          tags: ["lifecycle"],
+          summary: "Per-namespace counts, last decay timestamp",
+          security: [{ UserBearer: [] }, { SessionCookie: [] }],
+          responses: { "200": { description: "OK" } },
+        },
+      },
+      // ─── Bearer rotation ──────────────────────────────────────────
+      "/v1/auth/rotate-token": {
+        post: {
+          tags: ["auth"],
+          summary: "Rotate the caller's nm_… bearer atomically",
+          description:
+            "Authed by the current bearer (sent as `Authorization: Bearer <current>`). Returns a new plaintext (shown once) and revokes the old. Only available in `user` auth mode.",
+          security: [{ UserBearer: [] }],
+          responses: {
+            "201": { description: "New bearer minted; old one revoked." },
+            "401": { description: "Unauthorized — current bearer invalid or missing." },
+          },
+        },
+      },
+      // ─── User self-service ────────────────────────────────────────
+      "/v1/me/active-project": {
+        get: {
+          tags: ["self-service"],
+          summary: "Read the caller's active project pointer",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          responses: { "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/ActiveProjectResponse" } } } } },
+        },
+        put: {
+          tags: ["self-service"],
+          summary: "Set the caller's active project",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/ActiveProjectRequest" } } },
+          },
+          responses: {
+            "200": { description: "OK" },
+            "403": { description: "Not a member of the requested project" },
+            "404": { description: "No such project" },
+          },
+        },
+        delete: {
+          tags: ["self-service"],
+          summary: "Clear the caller's active project",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          responses: { "204": { description: "Cleared" } },
+        },
+      },
+      "/v1/me/projects": {
+        get: {
+          tags: ["projects"],
+          summary: "List projects the caller is a member of",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          responses: { "200": { description: "OK" } },
+        },
+        post: {
+          tags: ["projects"],
+          summary: "Create a project; caller becomes owner",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/CreateProjectRequest" } } },
+          },
+          responses: {
+            "201": { description: "Created", content: { "application/json": { schema: { $ref: "#/components/schemas/Project" } } } },
+          },
+        },
+      },
+      "/v1/me/projects/{id}": {
+        delete: {
+          tags: ["projects"],
+          summary: "Delete a project (owner only). Purges every memory in it.",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: {
+            "200": { description: "Deleted" },
+            "403": { description: "Caller is not the owner" },
+            "404": { description: "No such project" },
+          },
+        },
+      },
+      "/v1/me/projects/{id}/members": {
+        get: {
+          tags: ["projects"],
+          summary: "List members of a project the caller can access",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "OK" } },
+        },
+        post: {
+          tags: ["projects"],
+          summary: "Add a member by username (owner only)",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/AddMemberRequest" } } },
+          },
+          responses: { "201": { description: "Added" }, "403": { description: "Not the owner" } },
+        },
+      },
+      "/v1/me/projects/{id}/members/{userId}": {
+        delete: {
+          tags: ["projects"],
+          summary: "Remove a member. Owner removes anyone; member can leave themselves.",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "userId", in: "path", required: true, schema: { type: "string" } },
+          ],
+          responses: { "200": { description: "Removed" } },
+        },
+      },
+      "/v1/me/tokens": {
+        get: {
+          tags: ["tokens"],
+          summary: "List the caller's nm_… bearers",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          responses: { "200": { description: "OK" } },
+        },
+        post: {
+          tags: ["tokens"],
+          summary: "Mint a new nm_… bearer for the caller",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          requestBody: {
+            required: false,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/MintTokenRequest" } } },
+          },
+          responses: {
+            "201": { description: "Created", content: { "application/json": { schema: { $ref: "#/components/schemas/MintTokenResponse" } } } },
+          },
+        },
+      },
+      "/v1/me/tokens/{hash}": {
+        delete: {
+          tags: ["tokens"],
+          summary: "Hard-delete a bearer by sha256 hash",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          parameters: [{ name: "hash", in: "path", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "Deleted" } },
+        },
+      },
+      "/v1/me/metrics": {
+        get: {
+          tags: ["metrics"],
+          summary: "Operational metrics scoped to the caller",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          responses: { "200": { description: "OK" } },
+        },
+      },
+      "/v1/me/metrics/history": {
+        get: {
+          tags: ["metrics"],
+          summary: "Persistent throughput history (1-min buckets)",
+          security: [{ SessionCookie: [] }, { UserBearer: [] }],
+          parameters: [
+            {
+              name: "hours",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 48, default: 24 },
+            },
+          ],
+          responses: { "200": { description: "OK" } },
+        },
+      },
+      // /v1/me/{search,remember,recent,neighbors,forget,memories/:id}
+      // mirror the data-plane shapes exactly; documented under their /v1/*
+      // counterparts. They exist so cookie-authenticated dashboard SPAs
+      // can hit them without sending Authorization.
+      // ─── Admin ────────────────────────────────────────────────────
+      "/v1/admin/audit-log": {
+        get: {
+          tags: ["admin"],
+          summary: "All admin actions, newest first",
+          security: [{ SessionCookie: [] }],
+          responses: {
+            "200": { description: "OK" },
+            "401": { description: "Unauthorized — requires role=admin" },
+          },
+        },
+      },
+      "/v1/admin/metrics": {
+        get: {
+          tags: ["admin"],
+          summary: "Global operational metrics snapshot (in-process; resets on restart)",
+          security: [{ SessionCookie: [] }],
+          responses: { "200": { description: "OK" } },
+        },
+      },
+      "/v1/admin/metrics/prom": {
+        get: {
+          tags: ["admin"],
+          summary: "Same as /v1/admin/metrics in Prometheus exposition format",
+          security: [{ SessionCookie: [] }],
+          responses: { "200": { description: "text/plain; version=0.0.4" } },
+        },
+      },
+      // ─── Liveness ─────────────────────────────────────────────────
+      "/health": {
+        get: {
+          tags: ["liveness"],
+          summary: "Liveness + dependency snapshot",
+          responses: {
+            "200": { description: "Up", content: { "application/json": { schema: { $ref: "#/components/schemas/Health" } } } },
+            "503": { description: "A dependency is unreachable" },
+          },
         },
       },
     },
     tags: [
-      { name: "Memory", description: "Search, store, and recall memory entries." },
-      { name: "Health", description: "Liveness probes and operational metrics." },
-      { name: "Auth", description: "Dashboard sign-in and self-service token rotation." },
-      { name: "Me", description: "User-scoped self-service: tokens, projects, metrics." },
-      { name: "Admin", description: "User management and system metrics." },
-      { name: "MCP", description: "SSE-MCP transport for remote MCP-aware hosts." },
+      { name: "memory", description: "Read/write the memory data plane" },
+      { name: "lifecycle", description: "Decay, dream cycle, orphan reaper, stats" },
+      { name: "auth", description: "Rotate `nm_…` bearers (Better Auth's own surface lives at /api/auth/*)" },
+      { name: "self-service", description: "Per-caller settings (active project)" },
+      { name: "projects", description: "Project CRUD + membership" },
+      { name: "tokens", description: "Per-device `nm_…` bearer management" },
+      { name: "metrics", description: "Per-user metrics + 24h history" },
+      { name: "admin", description: "Admin-only endpoints (role=admin)" },
+      { name: "liveness", description: "Health checks" },
     ],
-    paths: buildPaths(),
-  } as const;
-}
-
-function buildPaths() {
-  const errorResponse = {
-    description: "Error",
-    content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
-  };
-  const authError = { 401: errorResponse, 403: errorResponse };
-  const adminError = { ...authError, 404: errorResponse };
-
-  const userBearer = [{ UserBearer: [] as string[] }];
-  const session = [{ SessionBearer: [] as string[] }];
-  const admin = [{ AdminBearer: [] as string[] }];
-
-  const jsonBody = (schemaRef: string) => ({
-    required: true,
-    content: { "application/json": { schema: { $ref: `#/components/schemas/${schemaRef}` } } },
-  });
-  const jsonResponse = (schemaRef: string, description = "OK") => ({
-    description,
-    content: { "application/json": { schema: { $ref: `#/components/schemas/${schemaRef}` } } },
-  });
-
-  return {
-    "/health": {
-      get: {
-        tags: ["Health"],
-        summary: "Liveness probe + dependency snapshot",
-        responses: { 200: jsonResponse("HealthResponse") },
-      },
-    },
-    "/v1/search": {
-      post: {
-        tags: ["Memory"],
-        summary: "Hybrid search (keyword + vector + graph)",
-        security: userBearer,
-        requestBody: jsonBody("SearchRequest"),
-        responses: { 200: jsonResponse("SearchResponse"), ...authError },
-      },
-    },
-    "/v1/remember": {
-      post: {
-        tags: ["Memory"],
-        summary: "Store a new memory entry",
-        security: userBearer,
-        requestBody: jsonBody("RememberRequest"),
-        responses: { 201: jsonResponse("RememberResponse", "Created"), ...authError },
-      },
-    },
-    "/v1/recent": {
-      post: {
-        tags: ["Memory"],
-        summary: "Recent entries by namespace, newest first",
-        security: userBearer,
-        requestBody: jsonBody("RecentRequest"),
-        responses: { 200: jsonResponse("SearchResponse"), ...authError },
-      },
-    },
-    "/v1/neighbors": {
-      post: {
-        tags: ["Memory"],
-        summary: "Graph-neighbour traversal from a seed entry",
-        security: userBearer,
-        requestBody: jsonBody("NeighborsRequest"),
-        responses: { 200: jsonResponse("SearchResponse"), ...authError },
-      },
-    },
-    "/v1/forget": {
-      post: {
-        tags: ["Memory"],
-        summary: "Hard-delete a memory entry",
-        security: userBearer,
-        requestBody: jsonBody("ForgetRequest"),
-        responses: { 200: jsonResponse("ForgetResponse"), ...authError },
-      },
-    },
-    "/v1/decay": {
-      post: {
-        tags: ["Health"],
-        summary: "Run the decay (warm→cold) pass",
-        security: userBearer,
-        requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/DecayRequest" } } } },
-        responses: { 200: jsonResponse("DecayResponse") },
-      },
-    },
-    "/v1/reap-orphans": {
-      post: {
-        tags: ["Health"],
-        summary: "Drain the cold-orphan queue",
-        security: userBearer,
-        responses: { 200: { description: "Reaper run summary" } },
-      },
-    },
-    "/v1/stats": {
-      get: {
-        tags: ["Health"],
-        summary: "Per-namespace counts and last decay timestamp",
-        security: userBearer,
-        responses: { 200: jsonResponse("StatsResponse") },
-      },
-    },
-    "/openapi.json": {
-      get: {
-        tags: ["Health"],
-        summary: "Raw OpenAPI document",
-        responses: { 200: { description: "OpenAPI 3.0 document" } },
-      },
-    },
-    "/v1/auth/status": {
-      get: {
-        tags: ["Auth"],
-        summary: "Bootstrap status (is there at least one admin?)",
-        responses: { 200: { description: "{ ready, bootstrapNeeded }" } },
-      },
-    },
-    "/v1/auth/login": {
-      post: {
-        tags: ["Auth"],
-        summary: "Sign in with username + password",
-        requestBody: jsonBody("LoginRequest"),
-        responses: { 201: jsonResponse("LoginResponse"), 401: errorResponse },
-      },
-    },
-    "/v1/auth/logout": {
-      post: {
-        tags: ["Auth"],
-        summary: "Revoke this session bearer",
-        security: session,
-        responses: { 204: { description: "Logged out" } },
-      },
-    },
-    "/v1/auth/me": {
-      get: {
-        tags: ["Auth"],
-        summary: "Current user info",
-        security: session,
-        responses: { 200: { description: "{ user }", content: { "application/json": { schema: { type: "object", properties: { user: { $ref: "#/components/schemas/SessionUser" } } } } } } },
-      },
-    },
-    "/v1/auth/rotate-token": {
-      post: {
-        tags: ["Auth"],
-        summary: "Rotate a user bearer token (CLI / device path)",
-        security: userBearer,
-        responses: { 201: jsonResponse("MintTokenResponse"), 400: errorResponse, 401: errorResponse },
-      },
-    },
-    "/v1/me/metrics": {
-      get: {
-        tags: ["Me"],
-        summary: "Operational metrics scoped to the user",
-        security: session,
-        responses: { 200: jsonResponse("MetricsSnapshot") },
-      },
-    },
-    "/v1/me/tokens": {
-      get: {
-        tags: ["Me"],
-        summary: "List the user's API tokens",
-        security: session,
-        responses: { 200: { description: "{ tokens }", content: { "application/json": { schema: { type: "object", properties: { tokens: { type: "array", items: { $ref: "#/components/schemas/UserToken" } } } } } } } },
-      },
-      post: {
-        tags: ["Me"],
-        summary: "Mint a new API token (optionally project-scoped)",
-        security: session,
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  label: { type: "string" },
-                  projectId: { type: "string", nullable: true },
-                },
-              },
-            },
-          },
-        },
-        responses: { 201: jsonResponse("MintTokenResponse"), ...authError },
-      },
-    },
-    "/v1/me/tokens/{hash}/revoke": {
-      post: {
-        tags: ["Me"],
-        summary: "Revoke an API token by sha256 hash",
-        security: session,
-        parameters: [{ name: "hash", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "{ revoked: true }" }, ...adminError },
-      },
-    },
-    "/v1/me/projects": {
-      get: {
-        tags: ["Me"],
-        summary: "List projects this user is a member of",
-        security: session,
-        responses: { 200: { description: "{ projects }", content: { "application/json": { schema: { type: "object", properties: { projects: { type: "array", items: { $ref: "#/components/schemas/Project" } } } } } } } },
-      },
-      post: {
-        tags: ["Me"],
-        summary: "Create a project (caller becomes owner)",
-        security: session,
-        requestBody: jsonBody("CreateProjectRequest"),
-        responses: { 201: jsonResponse("Project"), 409: errorResponse, ...authError },
-      },
-    },
-    "/v1/me/projects/{id}": {
-      delete: {
-        tags: ["Me"],
-        summary: "Delete a project (owner only) and purge its memory",
-        security: session,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "Purge summary" }, ...adminError },
-      },
-    },
-    "/v1/me/projects/{id}/members": {
-      get: {
-        tags: ["Me"],
-        summary: "List members of a project",
-        security: session,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "{ members }", content: { "application/json": { schema: { type: "object", properties: { members: { type: "array", items: { $ref: "#/components/schemas/ProjectMember" } } } } } } }, ...adminError },
-      },
-      post: {
-        tags: ["Me"],
-        summary: "Add a member to a project (owner only)",
-        security: session,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["username"],
-                properties: {
-                  username: { type: "string" },
-                  role: { type: "string", enum: ["owner", "member"] },
-                },
-              },
-            },
-          },
-        },
-        responses: { 201: { description: "Added" }, ...adminError, 409: errorResponse },
-      },
-    },
-    "/v1/me/projects/{id}/members/{userId}": {
-      delete: {
-        tags: ["Me"],
-        summary: "Remove a member (owner removes anyone; non-owner can only remove themselves)",
-        security: session,
-        parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string" } },
-          { name: "userId", in: "path", required: true, schema: { type: "string" } },
-        ],
-        responses: { 200: { description: "{ removed: true }" }, ...adminError },
-      },
-    },
-    "/v1/admin/tokens/revoke": {
-      post: {
-        tags: ["Admin"],
-        summary: "Revoke a user bearer token by its plaintext value (CLI path)",
-        security: admin,
-        requestBody: { content: { "application/json": { schema: { type: "object", required: ["token"], properties: { token: { type: "string" } } } } } },
-        responses: { 200: { description: "{ revoked: boolean }" } },
-      },
-    },
-    "/v1/admin/users": {
-      get: {
-        tags: ["Admin"],
-        summary: "List dashboard users",
-        security: admin,
-        responses: { 200: { description: "{ users }", content: { "application/json": { schema: { type: "object", properties: { users: { type: "array", items: { $ref: "#/components/schemas/DashUser" } } } } } } } },
-      },
-      post: {
-        tags: ["Admin"],
-        summary: "Create a dashboard user (admin or user role)",
-        security: admin,
-        requestBody: jsonBody("CreateUserRequest"),
-        responses: { 201: jsonResponse("DashUser"), 400: errorResponse, 409: errorResponse },
-      },
-    },
-    "/v1/admin/users/{id}": {
-      delete: {
-        tags: ["Admin"],
-        summary: "Delete a user (refuses self / last-admin)",
-        security: admin,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "{ deleted: boolean }" }, 400: errorResponse, ...adminError },
-      },
-    },
-    "/v1/admin/users/{id}/role": {
-      post: {
-        tags: ["Admin"],
-        summary: "Change a user's role",
-        security: admin,
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        requestBody: { content: { "application/json": { schema: { type: "object", required: ["role"], properties: { role: { type: "string", enum: ["admin", "user"] }, userId: { type: "string", nullable: true } } } } } },
-        responses: { 200: { description: "{ updated: boolean }" }, ...adminError },
-      },
-    },
-    "/v1/admin/metrics": {
-      get: {
-        tags: ["Admin"],
-        summary: "Operational metrics snapshot (cross-user)",
-        security: admin,
-        responses: { 200: jsonResponse("MetricsSnapshot") },
-      },
-    },
-    "/mcp/sse": {
-      get: {
-        tags: ["MCP"],
-        summary: "Open an SSE event stream for an MCP session",
-        security: userBearer,
-        responses: { 200: { description: "text/event-stream — long-lived connection" } },
-      },
-    },
-    "/mcp/messages": {
-      post: {
-        tags: ["MCP"],
-        summary: "Send a JSON-RPC message on an open SSE-MCP session",
-        parameters: [{ name: "sessionId", in: "query", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "OK" }, 400: errorResponse, 404: errorResponse },
-      },
-    },
   };
 }
