@@ -7,8 +7,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "novamem-mcp": "dist/bin.js",
-    "novamem-login": "dist/login.js"
+    "novamem-mcp": "dist/bin.js"
   },
   "exports": {
     ".": "./dist/index.js"
