@@ -28,6 +28,13 @@ describe("tool registry", () => {
     expect(findTool("cursor")?.name).toBe("Cursor");
     expect(findTool("codex")?.scope).toBe("user");
   });
+  it("claude-desktop uses stdio (its loader rejects {type:sse} entries)", () => {
+    // Regression: writing the SSE shape to claude_desktop_config.json
+    // produced "not valid MCP server configurations and were skipped:
+    // novamem" on launch. The stdio shim is the only universally
+    // supported transport for Claude Desktop today.
+    expect(findTool("claude-desktop")?.mcp?.transport).toBe("stdio");
+  });
   it("MCP-capable tools all use known formats and transports", () => {
     for (const t of TOOLS) {
       if (!t.mcp) continue;

@@ -70,7 +70,7 @@ export function SignIn() {
           </div>
           <div className="leading-tight">
             <div className="text-base font-semibold text-ink">NovaMem</div>
-            <div className="font-mono text-[10px] text-dim">v1.1.1</div>
+            <div className="font-mono text-[10px] text-dim">v1.1.2</div>
           </div>
         </div>
 
