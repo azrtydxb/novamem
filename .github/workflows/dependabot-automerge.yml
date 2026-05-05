@@ -1,0 +1,41 @@
+name: Dependabot auto-merge
+
+# Auto-merges dependabot PRs that are patch-or-minor bumps once all
+# required CI checks have gone green. Major bumps (and the npm-major
+# bumps already ignored in dependabot.yml) still require manual review.
+#
+# Branch protection on `main` is the actual gate — this workflow only
+# enables auto-merge; GitHub blocks the merge until checks pass and
+# squash-merges the PR once they do. If a check fails, nothing happens.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Patch + minor are routine — branch protection still gates the
+      # actual merge, so the worst case if a bump breaks something is
+      # the PR sits open with red CI.
+      - name: Enable auto-merge (patch or minor)
+        if: |
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
