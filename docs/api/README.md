@@ -1,6 +1,6 @@
 # API reference
 
-The HTTP API is fully described by an **OpenAPI 3.0 spec** generated from the running server. The generated artefact lives next to this file:
+The HTTP API is fully described by an **OpenAPI 3.0 spec**. The spec is **hand-rolled** in [`packages/server/src/openapi.ts`](../../packages/server/src/openapi.ts) (not derived from the route Zod schemas) and emitted as a static artefact next to this file:
 
 - [`openapi.json`](openapi.json) — committed, regenerated via `pnpm docs:api`
 
@@ -15,7 +15,7 @@ The dashboard sidebar links straight to it.
 
 ## Regenerating the static spec
 
-The committed `openapi.json` is generated, not handwritten. To refresh it after changing routes:
+`openapi.json` is the generated artefact; the spec source is the hand-rolled `openapiSpec()` in `packages/server/src/openapi.ts`. To refresh `openapi.json` after editing the spec source or adding routes:
 
 ```bash
 pnpm docs:api
@@ -30,16 +30,16 @@ The spec groups operations by tag:
 | Tag | Routes |
 |---|---|
 | `memory` | `POST /v1/search` · `POST /v1/remember` · `PUT /v1/memories/:id` · `POST /v1/recent` · `POST /v1/neighbors` · `POST /v1/forget` · `GET /v1/stats` |
-| `lifecycle` | `POST /v1/decay` · `POST /v1/dream-cycle` |
+| `lifecycle` | `POST /v1/decay` · `POST /v1/dream-cycle` · `POST /v1/reap-orphans` |
 | `auth` | `POST /v1/auth/rotate-token` (`/api/auth/*` is owned by Better Auth, not described here) |
-| `self-service` | `/v1/me/*` — same shape as `/v1/*`, gated by the dashboard session |
+| `self-service` | `/v1/me/*` — gated by the dashboard session (or an `nm_…` bearer). The data-plane `/v1/me/*` mirrors of `/v1/search`/`remember`/etc. were removed; `/v1/me/*` is now metrics, tokens, projects, active-project, onboarding, and today |
 | `projects` | `/v1/me/projects[/:id[/members[/:userId]]]` · `/v1/me/active-project` |
-| `tokens` | `/v1/me/tokens[/:hash]` |
+| `tokens` | `/v1/me/tokens` · `DELETE /v1/me/tokens/:hash` |
 | `metrics` | `/v1/me/metrics` · `/v1/me/metrics/history` |
-| `admin` | `/v1/admin/audit-log` · `/v1/admin/metrics` · `/v1/admin/metrics/prom` |
-| `liveness` | `GET /health` |
+| `admin` | `/v1/admin/audit-log` · `/v1/admin/metrics` · `/v1/admin/metrics/prom` · `/v1/admin/health/deep` |
+| `liveness` | `GET /health` (boolean-only) |
 
-Everything except `/health` and `/openapi.json` requires authentication. Two security schemes are defined:
+Most routes require authentication, but several public surfaces bypass the app auth hook in addition to the OpenAPI doc itself: `/health`, `/openapi.json`, `/api-docs` (Swagger UI), the `/admin` SPA shell + assets, `/favicon.ico`, and Better Auth's public endpoints under `/api/auth/*` (sign-in, get-session, etc.). Two security schemes are defined:
 
 - `BearerToken` — `Authorization: Bearer nm_…` (user bearer; carries every right the owning user has)
 - `SessionCookie` — Better Auth's HttpOnly cookie (dashboard sessions; also accepted as `Authorization: Bearer <session>`)

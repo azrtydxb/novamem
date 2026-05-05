@@ -88,7 +88,14 @@ Full env reference: [.env.example](../../.env.example). The fields you'll touch 
 
 ```bash
 curl http://localhost:7778/health
-# { "ok": true, "deps": { "postgres": "ok", "qdrant": "ok", "falkordb": "ok" } }
+# { "ok": true }
+```
+
+Public `/health` is boolean-only — no infrastructure detail leaks to unauthenticated callers. For a per-dependency snapshot, sign in to the dashboard and hit the admin-gated deep-health endpoint with your session cookie:
+
+```bash
+curl --cookie cookies.txt http://localhost:7778/v1/admin/health/deep
+# { "ok": true, "deps": { "warm": "ok", "cold": "ok", "graph": "ok" } }
 ```
 
 Then [mint a bearer](../getting-started.md#3-mint-a-bearer-token) and connect a client.

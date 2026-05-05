@@ -36,7 +36,7 @@ The server ships these same rules to compliant clients via the MCP `instructions
 - `project_create` — new project, you become owner
 - `project_delete` — owner-only purge
 - `project_activate` / `project_deactivate` — set or clear the active project; `memory_*` calls then default to it
-- `project_share` / `project_unshare` — owner adds / removes members by email or display name
+- `project_share` / `project_unshare` — owner adds / removes members by **exact email address**
 
 ## When to call `memory_search`
 

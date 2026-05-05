@@ -67,13 +67,14 @@ export interface StatsResponse {
   uptimeMs: number;
 }
 
+/**
+ * Public `/health` is boolean-only by design — no infrastructure detail
+ * leaks to unauthenticated callers. Per-dependency status lives behind the
+ * admin-gated `/v1/admin/health/deep` route, which this client does not
+ * expose.
+ */
 export interface HealthResponse {
   ok: boolean;
-  deps: {
-    warm: "ok" | "unreachable";
-    cold: "ok" | "unreachable";
-    graph: "ok" | "unreachable" | "disabled";
-  };
 }
 
 export interface Project {
@@ -260,8 +261,9 @@ export class NovamemClient {
     );
   }
 
-  /** Convenience for the MCP shim: remove a member by their human handle
-   *  (email or display name). Resolves the username to an id via the
+  /** Convenience for the MCP shim: remove a member by their handle as it
+   *  appears in the members listing (the `username` column, which the
+   *  server populates from the user's email). Resolves to an id via the
    *  members listing rather than exposing a separate user-lookup API. */
   async removeProjectMemberByUsername(
     project: string,
@@ -310,9 +312,11 @@ export class NovamemClient {
     return this.request("/v1/me/tokens");
   }
 
+  /** Hard-delete a bearer by sha256 hash. Wire route is
+   *  `DELETE /v1/me/tokens/:hash`. */
   async revokeMyToken(tokenHash: string): Promise<{ revoked: boolean }> {
-    return this.request(`/v1/me/tokens/${encodeURIComponent(tokenHash)}/revoke`, {
-      method: "POST",
+    return this.request(`/v1/me/tokens/${encodeURIComponent(tokenHash)}`, {
+      method: "DELETE",
     });
   }
 }
