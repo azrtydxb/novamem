@@ -1175,12 +1175,16 @@ export class WarmStore {
    *    - user-wide (`projectId` null/undefined): user_id matches AND
    *      project_id IS NULL.
    */
-  /** Distinct namespaces the caller has entries in for the given scope.
-   *  Used by engine.search / engine.recent when the request specifies
-   *  neither `namespace` nor `includeNamespaces` — instead of silently
-   *  defaulting to "default" (and missing every entry the caller wrote
-   *  to a custom namespace), fan out across the namespaces that actually
-   *  contain data. Scope semantics mirror `listRecent`:
+  /** Distinct namespaces with entries visible in the given scope. The
+   *  isolation boundary is the same as `listRecent`: in project scope a
+   *  project member sees every member's entries, so the result is
+   *  "namespaces with entries in this scope" — not "namespaces the
+   *  caller personally wrote to". Used by engine.search / engine.recent
+   *  when the request specifies neither `namespace` nor
+   *  `includeNamespaces` — instead of silently defaulting to "default"
+   *  (and missing every entry written to a custom namespace), fan out
+   *  across the namespaces that actually contain visible data. Scope
+   *  semantics:
    *    - includeProjects: user-global ∪ each listed project
    *    - projectId: that project only
    *    - neither: user-global only (no project membership). */
