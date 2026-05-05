@@ -1058,7 +1058,10 @@ export class MemoryEngine {
    *  cold collections, graph nodes, project-scoped tokens, members).
    *  Does NOT enforce permissions — the HTTP layer must verify the
    *  caller is the project owner before invoking this. */
-  async deleteProject(projectId: string): Promise<{
+  async deleteProject(
+    projectId: string,
+    ownerUserId: string,
+  ): Promise<{
     deleted: boolean;
     entriesRemoved: number;
     coldCollectionsDropped: string[];
@@ -1079,7 +1082,13 @@ export class MemoryEngine {
     }
     let graphCleared = false;
     if (this.graph?.isConnected()) {
-      graphCleared = await this.graph.removeAllForProject(projectId);
+      // Defence-in-depth: scope the delete to the owner's user namespace
+      // (issue #45). Project-scoped graph nodes outside the owner's
+      // namespace are left for the dream-cycle / orphan reaper to mop up.
+      graphCleared = await this.graph.removeAllForProject({
+        userId: ownerUserId,
+        projectId,
+      });
     }
     return {
       deleted: true,
