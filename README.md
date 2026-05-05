@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml)
 [![Release](https://github.com/azrtydxb/novamem/actions/workflows/release.yml/badge.svg)](https://github.com/azrtydxb/novamem/actions/workflows/release.yml)
-[![npm: client](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem.svg?label=%40azrtydxb%2Fnovamem)](https://www.npmjs.com/package/@azrtydxb/novamem)
-[![npm: mcp](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-mcp.svg?label=%40azrtydxb%2Fnovamem-mcp)](https://www.npmjs.com/package/@azrtydxb/novamem-mcp)
-[![npm: init](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-init.svg?label=%40azrtydxb%2Fnovamem-init)](https://www.npmjs.com/package/@azrtydxb/novamem-init)
+[![npm: client](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem.svg?label=%40azrtydxb%2Fnovamem&cacheSeconds=300)](https://www.npmjs.com/package/@azrtydxb/novamem)
+[![npm: mcp](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-mcp.svg?label=%40azrtydxb%2Fnovamem-mcp&cacheSeconds=300)](https://www.npmjs.com/package/@azrtydxb/novamem-mcp)
+[![npm: init](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-init.svg?label=%40azrtydxb%2Fnovamem-init&cacheSeconds=300)](https://www.npmjs.com/package/@azrtydxb/novamem-init)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
+[![Node ≥ 20.19](https://img.shields.io/badge/node-%E2%89%A520.19-brightgreen.svg)](https://nodejs.org)
 
 Standalone tiered memory service for AI agents. Hybrid keyword + vector + graph search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard.
 
@@ -62,7 +62,7 @@ Full docs live in [`docs/`](docs/):
 
 ## Status
 
-Pre-1.0 — current release: [`v0.1.0`](https://github.com/azrtydxb/novamem/releases/tag/v0.1.0) (2026-05-04). The `/v1/*` API is stable but schema migrations are forward-only — back up Postgres before upgrading in place.
+Each package versions independently via [Changesets](https://github.com/changesets/changesets) — see [GitHub Releases](https://github.com/azrtydxb/novamem/releases) for the latest tag of each, or the npm badges above. The `/v1/*` API is stable; schema migrations are forward-only — back up Postgres before upgrading in place.
 
 ## License
 
