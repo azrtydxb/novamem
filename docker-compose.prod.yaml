@@ -4,7 +4,7 @@
 #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
 #
 # This override hardens the dev-friendly base file for real deployments:
-#   - Datastore host ports (postgres 5432, qdrant 6333/6334, falkordb 6379)
+#   - Datastore host ports (postgres 5432, qdrant 6333, falkordb 6379)
 #     are removed so those services stay reachable only on the internal
 #     compose network.
 #   - The novamem app port (7778) is NOT published here either: production
