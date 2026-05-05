@@ -2,7 +2,17 @@
 
 Recent Claude Desktop builds support remote MCP via SSE. Older builds need the stdio shim.
 
-## Recommended: direct SSE
+## One-shot installer (recommended)
+
+```bash
+npx @azrtydxb/novamem-init
+```
+
+Signs you in, mints a fresh `nm_…` bearer, finds Claude Desktop's `claude_desktop_config.json` (macOS/Windows/Linux), and merges the `novamem` MCP entry into it. Idempotent.
+
+The rest of this page is the manual path.
+
+## Manual: direct SSE
 
 Edit `claude_desktop_config.json`:
 
