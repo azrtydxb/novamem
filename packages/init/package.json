@@ -1,6 +1,6 @@
 {
   "name": "@azrtydxb/novamem-init",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "private": false,
   "description": "Interactive installer that signs in to a novamem server, mints a bearer, and wires every supported AI agent host (Claude Code, Cursor, Codex, OpenCode, Cline, Continue, Kilo Code, RooCode, Claude Desktop, …) to use it",
   "license": "Apache-2.0",
