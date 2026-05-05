@@ -598,6 +598,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     metrics: opts.metrics,
     auth: opts.auth,
     adminDashboard: opts.adminDashboard !== false,
+    corsOrigins: opts.corsOrigins ?? [],
     betterAuth: opts.betterAuth,
     authLimiter,
     audit,

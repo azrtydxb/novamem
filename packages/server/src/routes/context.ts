@@ -42,6 +42,10 @@ export interface RouteContext {
   auth: { mode: "none" | "bearer" | "user"; token?: string };
   /** Master switch for /admin/* + /v1/admin/metrics. */
   adminDashboard: boolean;
+  /** Browser Origin allowlist (echoed into per-route MCP guards). Same
+   *  shape as `cfg.service.corsOrigins` — used for the spec-required
+   *  Origin validation on /mcp* routes. */
+  corsOrigins: readonly string[];
   /** Better Auth bridge — when set, /api/auth/* is mounted as a passthrough. */
   betterAuth?: BetterAuthBridge;
   /** Shared per-account auth-failure limiter (rotate-token + Better Auth). */

@@ -44,7 +44,13 @@ export function buildMcpServer(
   const userId = ctx.userId;
   const server = new Server(
     { name: "novamem", version: "0.1.0" },
-    { capabilities: { tools: {} }, instructions: NOVAMEM_INSTRUCTIONS },
+    {
+      // listChanged: false — our tool list is static across the
+      // process lifetime, so we never emit notifications/tools/list_changed.
+      // Spec § "Capability Negotiation" lets us say so explicitly.
+      capabilities: { tools: { listChanged: false } },
+      instructions: NOVAMEM_INSTRUCTIONS,
+    },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

@@ -20,6 +20,7 @@ import type { FastifyInstance } from "fastify";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 import { buildMcpServer } from "../mcp.js";
+import { applyMcpGuards } from "./mcp-spec-guards.js";
 import type { RouteContext } from "./context.js";
 
 /** Max concurrent SSE sessions for a single userId. Prevents an event-loop-
@@ -110,6 +111,9 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   });
 
   app.get("/mcp/sse", async (req, reply) => {
+    // Spec MUSTs apply on the legacy transport too — Origin (DNS
+    // rebinding defence) and MCP-Protocol-Version validation.
+    if (!applyMcpGuards(req, reply, { allowedOrigins: ctx.corsOrigins })) return;
     const userId = req.userId;
     // Per-user concurrent-session cap. Reject before opening the SSE
     // stream so we don't allocate a transport + mcpServer pair only to
@@ -164,6 +168,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   });
 
   app.post("/mcp/messages", async (req, reply) => {
+    if (!applyMcpGuards(req, reply, { allowedOrigins: ctx.corsOrigins })) return;
     const sessionId = (req.query as { sessionId?: string }).sessionId;
     if (!sessionId) return reply.code(400).send({ error: "missing sessionId" });
     const session = sseTransports.get(sessionId);
