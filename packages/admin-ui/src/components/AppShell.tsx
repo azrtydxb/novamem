@@ -79,15 +79,18 @@ export function AppShell({ active, onChange, children }: Props) {
         {/* Brand block — synapse logo + name + role caption. */}
         <div className="px-4 py-4 border-b border-rule-soft flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-lg bg-accent flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M4 6 L12 12 M20 6 L12 12 M4 18 L12 12 M20 18 L12 12"
-                stroke="white"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                fill="none"
-              />
-              <circle cx="12" cy="12" r="2.6" fill="white" />
+            <svg width="18" height="18" viewBox="0 0 32 32" aria-hidden="true" fill="none">
+              <g stroke="white" strokeWidth="1.8" strokeLinecap="round">
+                <line x1="7" y1="24" x2="7" y2="8" />
+                <line x1="7" y1="8" x2="25" y2="24" />
+                <line x1="25" y1="24" x2="25" y2="8" />
+              </g>
+              <g fill="white">
+                <circle cx="7" cy="24" r="2.6" />
+                <circle cx="7" cy="8" r="2.6" />
+                <circle cx="25" cy="24" r="2.6" />
+                <circle cx="25" cy="8" r="2.6" />
+              </g>
             </svg>
           </div>
           <div className="leading-tight">
