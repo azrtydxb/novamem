@@ -1,44 +1,49 @@
 name: Release
 
-# Tag-driven npm publish for the three public packages:
-#   @azrtydxb/novamem        (TypeScript client)
-#   @azrtydxb/novamem-mcp    (stdio shim)
-#   @azrtydxb/novamem-init   (auto-installer)
+# Per-package npm publish driven by Changesets.
 #
-# Trigger: push a tag matching v* (e.g. `git tag v0.2.0 && git push --tags`).
-# Each publishable package's package.json `version` field must already be set
-# to that version — the workflow doesn't bump for you. Run `pnpm changeset`
-# or edit by hand, commit, then tag.
+# Flow:
+#   1. PR adds `.changeset/<slug>.md` describing what changed and which
+#      packages bump (patch / minor / major). Run `pnpm changeset` to
+#      generate one. The file is committed alongside the change.
+#   2. On every push to `main`, the changesets action looks for unconsumed
+#      `.changeset/*.md` files. If any exist, it opens (or updates) a
+#      "Version Packages" PR that bumps the affected package.json
+#      versions, regenerates per-package CHANGELOGs, and deletes the
+#      consumed changeset files.
+#   3. When that "Version Packages" PR is merged, this same workflow runs
+#      with no pending changesets — the action then runs `pnpm publish
+#      -r --provenance` which only publishes packages whose package.json
+#      version doesn't yet exist on npm. So one merge = N publishes
+#      (only the changed packages).
 #
-# Auth: npm Trusted Publishers (OIDC) — no token, no secret to rotate.
-# Each of the three packages has a trusted publisher configured on npmjs.com
-# linking it to this workflow file (release.yml) on this repo. `npm publish`
-# detects it's running inside GitHub Actions, swaps an OIDC token from the
-# `id-token: write` permission, and the registry validates the binding.
+# Auth: npm Trusted Publishers (OIDC) only. Each of the three publishable
+# packages has a TP binding on npmjs.com pointing at this workflow file.
+# Node 24 ships npm 11.x which does the OIDC handshake for the publish
+# PUT itself — Node ≤ 22 ships npm 10.x where TP only works for Sigstore
+# provenance signing and the publish silently 404s.
 #
-# Provenance: each `npm publish --provenance` attaches a Sigstore attestation
-# tying the tarball to this exact workflow run + commit. Shows up as the
-# green "Built and signed by GitHub Actions" badge on npmjs.com. Requires
-# `id-token: write` and `publishConfig.provenance: true` in each package.json
-# (already set). With trusted publishing, this is the only auth we need.
+# Provenance: --provenance attaches a Sigstore attestation tying each
+# tarball to this exact workflow run + commit. Requires `id-token: write`
+# and `publishConfig.provenance: true` in each package.json (already set).
 
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Dry-run (run `npm publish --dry-run`, don't actually publish)"
-        type: boolean
-        default: false
+    branches: [main]
+  workflow_dispatch: {}
 
 permissions:
-  contents: write   # for `gh release create`
-  id-token: write   # for npm provenance attestations
+  contents: write       # for the "Version Packages" PR that the action opens
+  pull-requests: write  # same
+  id-token: write       # for npm Trusted Publishers + Sigstore provenance
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    name: publish to npm
+  release:
+    name: changesets release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -48,47 +53,25 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
-          # Node 24 ships with npm 11.x, which does the OIDC handshake
-          # for the publish PUT itself (not just Sigstore provenance
-          # signing). Node ≤ 22 ships npm 10.x; on those, Trusted
-          # Publishers silently falls through to .npmrc auth and the
-          # publish 404s. Tried `npm install -g npm@latest` first —
-          # it corrupts the install (MODULE_NOT_FOUND promise-retry).
+          # Node 24 ships npm 11.x — required for Trusted Publishers OIDC
+          # to authenticate the publish PUT (npm 10 only does OIDC for
+          # provenance signing and the publish silently 404s).
           node-version: 24
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
       - run: pnpm test
-      - name: Publish @azrtydxb/novamem
-        run: |
-          cd packages/client
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            npm publish --access public --provenance --dry-run
-          else
-            npm publish --access public --provenance
-          fi
-      - name: Publish @azrtydxb/novamem-mcp
-        run: |
-          cd packages/mcp
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            npm publish --access public --provenance --dry-run
-          else
-            npm publish --access public --provenance
-          fi
-      - name: Publish @azrtydxb/novamem-init
-        run: |
-          cd packages/init
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            npm publish --access public --provenance --dry-run
-          else
-            npm publish --access public --provenance
-          fi
-      - name: GitHub release notes
-        if: ${{ !inputs.dry_run }}
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes
+      # The `version` script consumes pending .changeset/*.md and bumps
+      # affected package.json versions; the `publish` script invokes
+      # `pnpm publish -r` which skips packages whose version is already
+      # on the registry.
+      - name: Version + publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          publish: pnpm changeset publish
+          title: "chore(release): version packages"
+          commit: "chore(release): version packages"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

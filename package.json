@@ -16,12 +16,16 @@
     "typecheck": "pnpm -r typecheck",
     "docs:api": "pnpm --filter @azrtydxb/novamem-server build && pnpm --filter @azrtydxb/novamem-server docs:api",
     "docs:smoke": "node scripts/doc-smoke.mjs",
-    "release:preflight": "node scripts/release-preflight.mjs"
+    "release:preflight": "node scripts/release-preflight.mjs",
+    "changeset": "changeset",
+    "release:version": "changeset version",
+    "release:publish": "pnpm -r build && changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "@types/node": "^22.10.0",
     "typescript": "^6.0.3",
-    "vitest": "^3.2.4",
-    "@types/node": "^22.10.0"
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=20.19"
