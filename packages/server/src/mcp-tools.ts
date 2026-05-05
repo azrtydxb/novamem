@@ -209,7 +209,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "memory_stats",
-    description: "Service-wide stats snapshot",
+    description:
+      "Per-caller stats: byNamespace warm/cold entry counts, total warm/cold, plus service-wide lastDecayAt + uptimeMs as context. Not the dashboard's Metrics view.",
     inputSchema: { type: "object", properties: {} },
   },
   {

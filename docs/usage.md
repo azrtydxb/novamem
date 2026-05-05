@@ -121,14 +121,43 @@ Edges come from two sources:
 
 When the graph store is offline, the response carries `degraded: true` and the neighbour set is empty. Tell the user.
 
-## Active project (sub-brains)
+## Projects (sub-brains)
 
-A user can `project_activate({ project: <id-or-name> })` to set their active project. Subsequent `memory_*` calls **without** an explicit `project` arg default to it:
+A project is a named collection of memories the owner can share with other users. Project memories are visible to every member; the owner can add or remove members at any time.
+
+The seven `project_*` tools cover the full lifecycle:
+
+| Tool | Who | Purpose |
+|---|---|---|
+| `project_list` | any user | list projects the caller owns or is a member of |
+| `project_create` | any user | create a new project; the caller becomes its owner. Returns the assigned ULID |
+| `project_delete` | owner only | delete the project and **every** memory entry, vector, and graph node in it. No undo |
+| `project_share` | owner only | add another user as a member by username/email. Member can read and write |
+| `project_unshare` | owner only | remove a member. The owner cannot unshare themselves — `project_delete` instead |
+| `project_activate` | any user | set the caller's active project (server-side per-user state) |
+| `project_deactivate` | any user | clear the active project |
+
+### Active project
+
+`project_activate({ project: <id-or-name> })` makes subsequent `memory_*` calls **without** an explicit `project` arg default to it:
 
 - `search` / `recent` / `neighbors` union the active project with user-global
 - `remember` / `forget` / `update` target the active project directly
 
-Use this when the user signals they're working on a specific project ("let's switch to Phoenix"). `project_deactivate` clears it. The pointer is server-side state per user, so a switch on one device is visible to every other device the user signs in from.
+Use this when the user signals they're working on a specific project ("let's switch to Phoenix"). The pointer is server-side state per user, so a switch on one device is visible to every other device the user signs in from.
+
+## Stats (`memory_stats`)
+
+Per-caller snapshot of how big the caller's memory is, scoped to the authenticated user. No arguments; non-mutating. Returns:
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `byNamespace` | `Record<string, {warm, cold}>` | Entry counts grouped by namespace, split by tier |
+| `totalWarm` / `totalCold` | `number` | Caller's totals across all namespaces |
+| `lastDecayAt` | ISO-8601 or `null` | When the service last ran the decay loop (service-wide context) |
+| `uptimeMs` | `number` | Service uptime in ms (service-wide context) |
+
+Useful for skills that want to surface a "you have N entries across M namespaces" hint without polling the dashboard. **Not** the dashboard's full Metrics view — that's `/v1/me/metrics` (per-user counters + rolling rates) or `/v1/admin/metrics` (the whole service).
 
 ## Decay and reinforcement
 
