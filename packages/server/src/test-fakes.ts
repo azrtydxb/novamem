@@ -979,10 +979,19 @@ export class FakeGraphStore {
     return n;
   }
 
-  async removeAllForProject(projectId: string): Promise<boolean> {
+  async removeAllForProject({
+    userId,
+    projectId,
+  }: {
+    userId: string;
+    projectId: string;
+  }): Promise<boolean> {
     if (!this.connected) return false;
     for (const [k, list] of [...this.edges.entries()]) {
-      if (k.includes(`:${projectId}:`)) this.edges.delete(k);
+      // Edge-list keys are `user:project:from`. Only purge entries that
+      // match BOTH user and project — mirrors the real graph store's
+      // user+project scoping (issue #45).
+      if (k.startsWith(`${userId}:${projectId}:`)) this.edges.delete(k);
       else this.edges.set(k, list.filter((e) => e.projectId !== projectId));
     }
     return true;
