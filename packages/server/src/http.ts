@@ -39,6 +39,7 @@ import type { Auth } from "./auth-betterauth.js";
 type BAGetSessionResult = Awaited<ReturnType<Auth["api"]["getSession"]>>;
 
 import {
+  adminAuth,
   type AuthFailLimiter,
   type DashboardUser,
   type RouteContext,
@@ -167,9 +168,34 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   const cookieSecret = opts.cookieSecret ?? "novamem-dev-cookie-secret-change-me";
   app.register(fastifyCookie, { secret: cookieSecret });
 
+  // ─── Global hardening headers (#47) ────────────────────────────────
+  // Applied to every response. We deliberately do NOT set CSP globally —
+  // the data plane is a JSON API, has no rendering surface, and a CSP
+  // here would only collide with the per-route policies for /admin/* and
+  // /api-docs/*. Per-route handlers that need a different X-Frame-Options
+  // (none currently — we want DENY everywhere, including the Swagger UI
+  // that's already locked down via `frame-ancestors 'none'`) can override
+  // by calling `reply.header(…)` after `reply.send(…)` is queued.
+  app.addHook("onSend", async (_req, reply, payload) => {
+    if (!reply.getHeader("X-Content-Type-Options")) {
+      reply.header("X-Content-Type-Options", "nosniff");
+    }
+    if (!reply.getHeader("Referrer-Policy")) {
+      reply.header("Referrer-Policy", "no-referrer");
+    }
+    if (!reply.getHeader("X-Frame-Options")) {
+      reply.header("X-Frame-Options", "DENY");
+    }
+    return payload;
+  });
+
   // Standardised error body shape: {error, code?, issues?}. ZodError →
-  // 400 with the issue list; everything else falls through to Fastify's
-  // default handler.
+  // 400 with the issue list. For everything else we log the full error
+  // server-side but only surface a generic message to the client — leaking
+  // the raw Error (stack, file paths, lib versions) is an information-
+  // disclosure vector (#46). Fastify HttpErrors with a 4xx statusCode are
+  // already client-safe (e.g. validation, rate-limit) so we forward those
+  // verbatim; 5xx and unknown errors collapse to a generic 500.
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof z.ZodError) {
       reply.code(400).send({
@@ -183,7 +209,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return;
     }
     req.log.error(err);
-    reply.send(err);
+    const e = err as { statusCode?: number; message?: string };
+    if (typeof e.statusCode === "number" && e.statusCode >= 400 && e.statusCode < 500) {
+      reply.code(e.statusCode).send({ error: e.message || "request failed" });
+      return;
+    }
+    reply.code(500).send({ error: "internal server error" });
   });
 
   // ─── OpenAPI + Swagger UI ──────────────────────────────────────────────
@@ -191,6 +222,17 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     mode: "static",
     specification: { document: openapiSpec() as never },
   });
+  // Swagger UI is publicly accessible. Combined with `tryItOutEnabled` +
+  // `persistAuthorization` it would otherwise be a CSRF surface: a
+  // malicious page could embed it in an iframe and ride a logged-in
+  // user's session cookie. The exploitable vector is iframe embedding,
+  // so we close it via `frame-ancestors 'none'` + a legacy
+  // `X-Frame-Options: DENY` (set in the per-response onSend hook below,
+  // which deliberately runs after this plugin's static CSP).
+  //
+  // `unsafe-inline` for style-src stays — Swagger UI ships its own
+  // inline <style> tags and rewriting the bundle to use nonces is
+  // disproportionate to the risk now that frame embedding is blocked.
   app.register(fastifySwaggerUi, {
     routePrefix: "/api-docs",
     uiConfig: {
@@ -199,7 +241,6 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       tryItOutEnabled: true,
       persistAuthorization: true,
     },
-    // Swagger UI bundles inline styles; relax style-src for this surface.
     staticCSP: {
       "default-src": ["'self'"],
       "img-src": ["'self'", "data:", "https:"],
@@ -207,6 +248,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       "script-src": ["'self'"],
       "connect-src": ["'self'"],
       "font-src": ["'self'", "data:"],
+      "frame-ancestors": ["'none'"],
     },
   });
   app.get("/openapi.json", async (_req, reply) => {
@@ -430,6 +472,12 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         root: uiRoot,
         prefix: "/admin/",
         setHeaders: (res) => {
+          // `unsafe-inline` for style-src is intentional: Tailwind v4 +
+          // React inline-style props produce inline <style>/style="…"
+          // attributes that no static hash list can cover. The exploitable
+          // vector (iframe embedding for clickjacking / CSRF) is closed
+          // by `frame-ancestors 'none'` + the global `X-Frame-Options:
+          // DENY` set by the onSend hook below.
           res.setHeader(
             "Content-Security-Policy",
             [
@@ -439,6 +487,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
               "font-src 'self' data:",
               "script-src 'self'",
               "connect-src 'self'",
+              "frame-ancestors 'none'",
             ].join("; "),
           );
           res.setHeader("X-Content-Type-Options", "nosniff");
@@ -450,7 +499,23 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
   }
 
+  // Public liveness/readiness probe. Exposes only `{ ok }` so an
+  // unauthenticated caller cannot fingerprint the dep stack (Postgres,
+  // Qdrant, FalkorDB) or read connection error details (#46). K8s probes
+  // only need the boolean. Operators who want the per-dep snapshot
+  // should hit /v1/admin/health/deep with a session-admin bearer.
   app.get("/health", async (_req, reply) => {
+    const h = await opts.engine.health();
+    reply.code(h.ok ? 200 : 503).send({ ok: h.ok });
+  });
+
+  // Admin-gated deep health: full per-dependency snapshot. Same status
+  // semantics as /health (200 vs 503) but exposes the `deps` map.
+  app.get("/v1/admin/health/deep", async (req, reply) => {
+    if (!adminAuth(req)) {
+      reply.code(401).send({ error: "unauthorized" });
+      return;
+    }
     const h = await opts.engine.health();
     reply.code(h.ok ? 200 : 503).send(h);
   });
