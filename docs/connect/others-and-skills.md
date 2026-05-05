@@ -5,6 +5,14 @@ Two routes for hosts not covered by a dedicated guide:
 1. **MCP** — the same SSE / stdio shim works for any MCP-compliant client
 2. **Agent Skills** — a markdown bundle compatible with [agentskills.io](https://agentskills.io), for clients that prefer skills over MCP (or want both)
 
+## One-shot installer (try this first)
+
+```bash
+npx @azrtydxb/novamem-init
+```
+
+Detects 30+ AI hosts (Claude Code/Desktop, Cursor, Kilo Code, OpenCode, Codex CLI, Gemini CLI, Copilot, Cline, RooCode, Continue, Factory, Windsurf, Amazon Q, plus 16 skill-only hosts) and wires up whatever it finds — MCP config, skill bundle, slash commands. Idempotent. Skip ahead only if your host isn't in that list or you want to script it.
+
 ## MCP — generic config
 
 ### Direct SSE (recommended)

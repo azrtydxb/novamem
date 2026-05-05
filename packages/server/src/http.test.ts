@@ -95,19 +95,82 @@ async function userAuth(
 }
 
 describe("http: /health", () => {
-  it("returns 200 + dep snapshot when everything is up", async () => {
+  it("returns 200 + minimal { ok } when everything is up", async () => {
     const { app } = makeApp();
     const r = await app.inject({ method: "GET", url: "/health" });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ ok: true, deps: { warm: "ok", cold: "ok", graph: "ok" } });
+    // Public probe must NOT leak dep names/status — that's what
+    // /v1/admin/health/deep is for (see #46).
+    expect(r.json()).toEqual({ ok: true });
   });
 
-  it("returns 503 when cold is unreachable", async () => {
+  it("returns 503 + minimal { ok: false } when a dep is unreachable", async () => {
     const { app, cold } = makeApp();
     cold.fail = true;
     const r = await app.inject({ method: "GET", url: "/health" });
     expect(r.statusCode).toBe(503);
-    expect(r.json().deps.cold).toBe("unreachable");
+    expect(r.json()).toEqual({ ok: false });
+    expect(r.json().deps).toBeUndefined();
+  });
+
+  it("admin-gated /v1/admin/health/deep returns the dep snapshot", async () => {
+    const { app, warm } = makeApp();
+    const adminH = await adminAuth(warm);
+    const r = await app.inject({
+      method: "GET",
+      url: "/v1/admin/health/deep",
+      headers: adminH,
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ ok: true, deps: { warm: "ok", cold: "ok", graph: "ok" } });
+  });
+
+  it("/v1/admin/health/deep returns 401 without admin auth", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({ method: "GET", url: "/v1/admin/health/deep" });
+    expect(r.statusCode).toBe(401);
+  });
+});
+
+describe("http: error handler does not leak details (#46)", () => {
+  it("returns a generic message — never the raw Error / stack", async () => {
+    const { app } = makeApp();
+    // Trigger a 500 by handing the error handler a synthetic non-Zod
+    // throw via a registered route. Use a route that already exists but
+    // hand it a payload that will fail downstream — easiest: register a
+    // throw-route inline. Fastify lets us add routes after build.
+    app.get("/__throw_internal__", async () => {
+      throw new Error("super secret stack /home/app/x.ts:42 line three");
+    });
+    const r = await app.inject({ method: "GET", url: "/__throw_internal__" });
+    expect(r.statusCode).toBe(500);
+    const body = r.json();
+    expect(body).toEqual({ error: "internal server error" });
+    expect(JSON.stringify(body)).not.toContain("super secret stack");
+    expect(JSON.stringify(body)).not.toContain("/home/app/x.ts");
+    expect(body.stack).toBeUndefined();
+  });
+});
+
+describe("http: global hardening headers (#47)", () => {
+  it("sets X-Frame-Options: DENY on a data-plane response", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/remember",
+      payload: { content: "header probe", force: true },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(r.headers["x-frame-options"]).toBe("DENY");
+    expect(r.headers["x-content-type-options"]).toBe("nosniff");
+    expect(r.headers["referrer-policy"]).toBe("no-referrer");
+  });
+
+  it("sets the same headers on /health", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({ method: "GET", url: "/health" });
+    expect(r.headers["x-frame-options"]).toBe("DENY");
+    expect(r.headers["x-content-type-options"]).toBe("nosniff");
   });
 });
 
