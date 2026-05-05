@@ -4,6 +4,22 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+
+- **Per-user SSE concurrency cap** — `/mcp/sse` refuses an 11th concurrent session per `userId` with `429` and reaps any session idle (no `POST /mcp/messages`) for 30 minutes. Prevents an `nm_…` token from exhausting fds on a long-running server.
+- **`ApiError` in `@azrtydxb/novamem-admin-ui`** — `api()` throws a typed `ApiError extends Error { status: number; code?: string }` on non-OK HTTP, replacing bare `Error` strings. Toasts and tests can branch on `status`/`code`.
+
+### Changed
+
+- **Schema validation hardening** — `RememberBody.metadata` capped at 8KB serialized + 64-char keys; project names NFKC-normalized before the regex check so visually-identical Unicode/ASCII names collide instead of co-existing.
+- **Logger unification** — `MemoryEngine` and `GraphStore` log via Fastify's pino child logger (object-first). `console.*` is reserved for the early-bootstrap path before the logger exists. All `LOG_LEVEL` / `NOVAMEM_*` env reads centralised in `loadConfig` / `ConfigSchema`.
+- **Timer reentrancy guards** — decay, dream-cycle, and metrics-flush loops each have an `inFlight` flag so a slow run can't overlap with the next tick.
+- **`recharts` bumped to 3.x** in the admin dashboard. No call-site changes; bundle shrinks slightly.
+
+### Removed
+
+- **Legacy `NOVAMEM_ADMIN_TOKEN`** — admin routes now require a logged-in admin session. `auth.adminToken` dropped from config; CI scripts must mint a session via Better Auth.
+
 ## [0.1.0] - 2026-05-04
 
 First public npm release. Three packages on the `@azrtydxb` scope:
