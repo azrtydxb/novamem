@@ -2,7 +2,17 @@
 
 Cursor reads MCP config from `~/.cursor/mcp.json` (global) or `<workspace>/.cursor/mcp.json` (project-local). Recent versions support remote MCP; older versions need the stdio shim.
 
-## Recommended: direct SSE
+## One-shot installer (recommended)
+
+```bash
+npx @azrtydxb/novamem-init
+```
+
+Signs you in, mints a fresh `nm_…` bearer, detects Cursor, and writes `~/.cursor/mcp.json` for you. Idempotent — merges into existing config rather than overwriting.
+
+The rest of this page is the manual path.
+
+## Manual: direct SSE
 
 `~/.cursor/mcp.json`:
 
