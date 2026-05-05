@@ -24,6 +24,14 @@ export interface McpAdapter {
   serverKey?: string;
   /** Transport our entry advertises. Default: "sse". */
   transport?: "sse" | "stdio";
+  /** Field name a host expects for stdio env-var maps. Default: "env".
+   *  OpenCode uses "environment". */
+  stdioEnvKey?: "env" | "environment";
+  /** Some hosts disambiguate stdio entries with a `type` field. Example:
+   *  OpenCode uses `type: "local"` for stdio, `type: "remote"` for HTTP.
+   *  Set to inject `{type: <value>}` into the stdio entry; leave unset
+   *  to omit (Claude Desktop / Codex don't need it). */
+  stdioTypeField?: string;
 }
 
 export interface CommandAdapter {
@@ -122,7 +130,20 @@ export const TOOLS: readonly ToolEntry[] = [
     scope: "project",
     skillsBase: ".opencode",
     detect: [".opencode"],
-    mcp: { path: ".opencode/opencode.json", format: "json", transport: "sse" },
+    // OpenCode's remote-MCP path is broken for SSE servers (sst/opencode
+    // #834: \"Server error: UnknownError\" on every SSE handshake) and
+    // Streamable HTTP isn't shipped yet (#8058). Plus their config schema
+    // uses `mcp` (not `mcpServers`) as the top-level key, with stdio
+    // entries shaped `{type: "local", command, args, environment}` —
+    // not `env`. Route through the stdio shim until either lands.
+    mcp: {
+      path: ".opencode/opencode.json",
+      format: "json",
+      rootKey: "mcp",
+      transport: "stdio",
+      stdioTypeField: "local",
+      stdioEnvKey: "environment",
+    },
     commands: { dir: ".opencode/commands", format: "claude-md" },
   },
   {
@@ -170,7 +191,17 @@ export const TOOLS: readonly ToolEntry[] = [
     scope: "user",
     skillsBase: ".gemini",
     detect: [".gemini"],
-    mcp: { path: ".gemini/settings.json", format: "json", transport: "sse" },
+    // Gemini CLI's `url`-keyed remote SSE entry historically dropped
+    // configured `headers` (google-gemini/gemini-cli#2427); the fix
+    // (#13762) shipped, but older installs still in the wild silently
+    // strip our `Authorization: Bearer …` and the server 401s.
+    // Route through the stdio shim — env vars are guaranteed-forwarded
+    // and the protocol is the same regardless of CLI version.
+    mcp: {
+      path: ".gemini/settings.json",
+      format: "json",
+      transport: "stdio",
+    },
     commands: { dir: ".gemini/commands", format: "gemini-toml" },
   },
   {
