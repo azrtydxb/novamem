@@ -23,8 +23,14 @@ export function ActiveProjectProvider({ children }: { children: ReactNode }) {
     return v && v.length > 0 ? v : null;
   });
 
+  // Same query key as ProjectsPage (`["me", "projects"]`) so a single
+  // `invalidateQueries` after create/share/leave/delete refreshes both
+  // the page and this sidebar switcher in lock-step. The two query
+  // ID's used to differ (sidebar had `["me","projects","switcher"]`),
+  // which made the sidebar miss new projects until a hard refresh — and
+  // worse, made it surface deleted ones until the cache aged out.
   const { data: projects = [] } = useQuery({
-    queryKey: ["me", "projects", "switcher"],
+    queryKey: ["me", "projects"],
     queryFn: async () => {
       const r = await api<{ projects: Project[] }>("GET", "/v1/me/projects");
       return r.ok && r.body ? r.body.projects : [];

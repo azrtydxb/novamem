@@ -36,9 +36,16 @@ export function UsersPage() {
       if (!r.ok || !r.body) throw new Error(r.error ?? `users ${r.status}`);
       return r.body.users;
     },
+    // Refetch when the user re-enters the tab and on window focus —
+    // Better Auth occasionally returns 401 on the very first call after
+    // session establishment, leaving the page blank without an obvious
+    // reason. With these on, a tab-back recovers automatically.
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   });
   const users: BAUser[] | null = usersQ.data ?? null;
   const busy = usersQ.isFetching;
+  const fetchErr = usersQ.error as Error | null;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
   };
@@ -59,7 +66,17 @@ export function UsersPage() {
       <CreateUserCard onCreated={refresh} />
 
       <div className="space-y-3">
-        {users === null ? (
+        {fetchErr ? (
+          <Card className="p-8 text-center text-sm text-err">
+            <div className="font-medium mb-1">Couldn't load users</div>
+            <div className="text-dim text-xs">
+              {fetchErr.message}
+            </div>
+            <Button size="sm" variant="ghost" onClick={refresh} className="mt-3">
+              <RefreshCw className="h-3.5 w-3.5" /> Try again
+            </Button>
+          </Card>
+        ) : users === null ? (
           <Card className="p-8 text-center text-sm text-dim">Loading users…</Card>
         ) : users.length === 0 ? (
           <Card className="p-12 text-center">
