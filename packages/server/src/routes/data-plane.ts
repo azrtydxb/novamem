@@ -19,6 +19,7 @@ import {
   UpdateMemoryBody,
 } from "./schemas.js";
 import {
+  adminAuth,
   checkProjectAccess,
   type RouteContext,
 } from "./context.js";
@@ -44,10 +45,13 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     reply.send(r);
   });
 
-  app.post("/v1/dream-cycle", async (_req, reply) => {
+  app.post("/v1/dream-cycle", async (req, reply) => {
     // Manual trigger for the dedup-merge + edge-promotion pass. The same
     // logic runs daily via the timer in main.ts; this endpoint exists
     // for ad-hoc compaction (after a bulk import) and tests.
+    // Admin-only (issue #45): scans memory across all users and is
+    // expensive — non-admins must not be able to trigger it.
+    if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
     const r = await ctx.engine.dreamCycle();
     reply.send(r);
   });
@@ -61,9 +65,11 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     reply.send({ id, ...r });
   });
 
-  app.post("/v1/reap-orphans", async (_req, reply) => {
+  app.post("/v1/reap-orphans", async (req, reply) => {
     // Manual trigger for the cold-orphan reaper. The same pass also runs
     // automatically inside the decay loop (main.ts). Cross-user by design.
+    // Admin-only (issue #45): cross-user scan + DoS-class workload.
+    if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
     reply.send(await ctx.engine.reapOrphans());
   });
 

@@ -163,7 +163,62 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     reply.send(text);
   };
 
+  // ─── Better Auth passthrough allowlist (issue #45) ─────────────────
+  // Previously every method on `/api/auth/*` was forwarded blindly. That
+  // means any new endpoint Better Auth ships in a minor release becomes
+  // publicly reachable without a code review. We now mount only the
+  // paths we actually rely on; everything else returns 404.
+  //
+  // TODO(better-auth-upgrade): keep this list in sync with the Better
+  // Auth version pinned in packages/server/package.json (currently
+  // ^1.6.9). When bumping, audit the changelog for new endpoints and
+  // explicitly opt them in here.
+  //
+  // The admin subtree is wildcarded because Better Auth's admin plugin
+  // adds endpoints over time and the role gate inside Better Auth itself
+  // already restricts access; the `guardLastAdmin` interceptor above
+  // adds our own last-admin protection on top.
+  const exactPaths: readonly string[] = [
+    "/api/auth/sign-in/email",
+    "/api/auth/sign-up/email",
+    "/api/auth/sign-out",
+    "/api/auth/get-session",
+    "/api/auth/token",
+    "/api/auth/jwks",
+    "/api/auth/change-password",
+    "/api/auth/list-sessions",
+    "/api/auth/revoke-session",
+    "/api/auth/forget-password",
+    "/api/auth/reset-password",
+    "/api/auth/verify-email",
+    "/api/auth/send-verification-email",
+  ];
+  const wildcardPrefixes: readonly string[] = ["/api/auth/admin/"];
+
   for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"] as const) {
-    app.route({ method, url: "/api/auth/*", handler: passthrough });
+    for (const url of exactPaths) {
+      app.route({ method, url, handler: passthrough });
+    }
+    // Mount the admin subtree as a single wildcard route per method.
+    app.route({ method, url: "/api/auth/admin/*", handler: passthrough });
+  }
+
+  // Catch-all for any other `/api/auth/*` path — log a warning so we
+  // notice when Better Auth (or a misconfigured client) tries to reach
+  // an endpoint that isn't on our allowlist, then 404.
+  const denyHandler = async (req: FastifyRequest, reply: FastifyReply) => {
+    const path = req.url.split("?")[0] ?? req.url;
+    // Defence in depth: a static prefix check belt-and-braces in case
+    // Fastify's route order ever changes.
+    for (const p of wildcardPrefixes) if (path.startsWith(p)) return passthrough(req, reply);
+    if (exactPaths.includes(path)) return passthrough(req, reply);
+    req.log.warn(
+      { method: req.method, path },
+      "[/api/auth] rejected: path not on Better Auth passthrough allowlist",
+    );
+    reply.code(404).send({ error: "not found" });
+  };
+  for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"] as const) {
+    app.route({ method, url: "/api/auth/*", handler: denyHandler });
   }
 }
