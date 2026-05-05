@@ -81,7 +81,11 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@25.6.0)(esbuild@0.27.7)(happy-dom@20.9.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
 
-  packages/client: {}
+  packages/client:
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@25.6.0)(esbuild@0.27.7)(happy-dom@20.9.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
 
   packages/init:
     dependencies:
