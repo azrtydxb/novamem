@@ -52,7 +52,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "memory_search",
     description:
-      "Hybrid search across stored memories. Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` to force exact-string match for ids/symbols, or `{ vector: 1, keyword: 0 }` to ignore literal token overlap and lean entirely on semantic similarity.",
+      "Search the user's persistent memory store for facts about them. CALL THIS PROACTIVELY at the start of any conversation where personal context might matter — preferences, project context, biographical details, prior decisions. Do not wait for the user to remind you they've stored something. If the user references \"my project\", \"what I told you\", \"as we discussed\", \"the same as before\", or any personal context that isn't already in this conversation, search here FIRST before asking them to repeat. This store contains facts the user has explicitly chosen to persist, so its contents are higher-confidence than inferences from your built-in conversation memory or `memory_user_edits`. Hybrid keyword (FTS) + vector (cosine) + graph (neighbours) fused via weighted scoring (defaults keyword 0.3, vector 0.6, graph 0.1). Override `weights` only with a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id / symbol lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap and lean fully on semantic similarity.",
     inputSchema: {
       type: "object",
       properties: {
@@ -95,7 +95,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "memory_remember",
-    description: "Store a new memory entry",
+    description:
+      "Store a personal fact about the user in their persistent memory store. USE THIS FOR ALL personal facts the user asks you to remember: preferences (favourite tools, foods, response style), biographical info (location, role, family), project context (what they're building, what stack they use), recurring tasks, communication preferences, and anything the user says with phrases like \"remember\", \"don't forget\", \"save this\", \"please remember that\", \"for future reference\", \"keep this in mind\", or \"note that\". This is the user's primary memory system and TAKES PRECEDENCE OVER `memory_user_edits` for any user-specific content. Use `memory_user_edits` only for routing rules about your own behaviour (e.g. \"always respond in French\") — not for facts about the user. When in doubt between the two, use this tool. Pass `project` to scope the fact to a sub-brain; omit for user-wide facts that should apply across all contexts. The worthiness gate rejects content under 12 chars or filler (\"ok\", \"thanks\"); pass `force: true` only when the short content is a deliberate anchor (id, version pin, phone number).",
     inputSchema: {
       type: "object",
       properties: {
@@ -125,7 +126,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "memory_today",
-    description: "Recent entries (last 24h) for an optional namespace",
+    description:
+      "Surface what the user has worked on today. CALL THIS AT THE START OF A NEW CONVERSATION when the user asks \"what was I doing\", \"where did we leave off\", \"recap\", \"what's new today\", \"catch me up\" — or proactively at session start to ground yourself in the user's current focus before answering anything substantive. Returns the last 24 h of entries newest-first. Cheaper than a full search when the user's question is about *recent* state. Combine with `memory_search` when the question spans further back than today.",
     inputSchema: {
       type: "object",
       properties: {
@@ -140,7 +142,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "memory_recent",
     description:
-      "Recent entries, ordered newest first. Optional ISO-8601 `since` lower bound.",
+      "Time-bounded feed of memory entries newest-first. USE THIS when the user asks \"what have I been working on lately\", \"this week\", \"this month\", \"since [date]\", \"what changed after X\". Pass `since` as ISO-8601 to set the lower bound; without it, returns the latest entries unbounded. This is the right tool when the question is *temporal*; use `memory_search` when the question is about a *topic*; use `memory_today` for the 24 h convenience window. All three are cheap — pick the one whose framing fits the user's phrasing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -159,7 +161,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "memory_neighbors",
-    description: "Graph-neighbour traversal from a seed memory id",
+    description:
+      "Walk graph edges from a known memory id to its strongly-linked neighbours. CALL THIS WHEN you've already found one relevant memory via `memory_search` and want adjacent context that the user may have stored alongside it but didn't mention by name — supporting decisions, prior incidents, related ADRs, the rest of a cluster of related facts. Best for \"why did we make decision X\", \"what was the context around Y\", \"what's connected to this\". Depth 1 is the hot path (default); 2 and 3 walk further but cost more. Pass the seed `id` returned by a previous search/recent call. Use this as a *follow-up* to `memory_search`, not as a first-pass tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -178,7 +181,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "memory_forget",
     description:
-      "Explicit deletion. Removes warm row, FTS, cold vector, and graph edges.",
+      "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.",
     inputSchema: {
       type: "object",
       properties: {
@@ -191,7 +194,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "memory_update",
     description:
-      "Rewrite an existing memory in place. Preserves id, hit count, edges, and creation date; rewrites content (re-embedded), namespace, metadata, and provenance fields. Use this when a fact changes (e.g. user moved cities) instead of forget+remember, which would lose hit count and graph connections. Omit `content` to update only metadata-side fields without re-embedding.",
+      "Rewrite an existing memory in place when a fact about the user has CHANGED. USE THIS — not forget+remember — when the user says \"actually, I moved\", \"that's outdated\", \"correction\", \"I switched to X now\", \"I no longer use Y\", \"update what you have on Z\". Preserves id, hit count, graph edges, and creation date — so the new content keeps every connection the original had. forget+remember would lose all of that. Omit `content` to update only metadata-side fields (sourceType, confidence, capturedFrom) without re-embedding. If you're not sure whether the old fact still applies somewhere else, search first to find related entries that may also need updating.",
     inputSchema: {
       type: "object",
       properties: {
@@ -210,19 +213,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "memory_stats",
     description:
-      "Per-caller stats: byNamespace warm/cold entry counts, total warm/cold, plus service-wide lastDecayAt + uptimeMs as context. Not the dashboard's Metrics view.",
+      "Diagnostic snapshot of the user's memory store. CALL THIS only when the user asks \"how much have I stored\", \"how many memories do I have\", \"is my store healthy\", or when troubleshooting why search results seem incomplete. Returns byNamespace warm/cold entry counts, totals, and service-wide lastDecayAt + uptimeMs as context. This is NOT a primary tool — don't call it before normal search/remember operations. Useful as a sanity check before bulk operations or when the user reports unexpected results.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "project_list",
     description:
-      "List projects (sub-brains) the caller is a member of. Returns id + name + role for each.",
+      "List the projects (sub-brains) the user belongs to. CALL THIS PROACTIVELY whenever the user mentions \"my project\", \"the X project\", \"the team workspace\", or any project-by-name reference you don't already know the id for — instead of asking the user to clarify which project they mean, list them and disambiguate yourself. Also call before `project_activate`, `project_share`, or `project_unshare` if the user used a name and you want to confirm it exists / spell it correctly. Returns id + name + role (owner/member) per project.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "project_create",
     description:
-      "Create a new project (sub-brain) and become its owner. Returns the new project's id (server-assigned ULID).",
+      "Create a new project (sub-brain) — a shared scope of memory the user can later invite teammates to. USE THIS when the user says \"start a new project\", \"create a workspace for X\", \"I'm starting work on Y\", \"new sub-brain\", \"set up a memory bucket for the Z initiative\". The user becomes owner automatically. Pick a clear, short name — the user will see it in the dashboard switcher. Don't create projects unprompted; if the user just mentions working on something, ask first whether they want a dedicated project or whether a namespace within their user-global store is enough. The server assigns a ULID — you don't pick the id.",
     inputSchema: {
       type: "object",
       properties: {
@@ -234,7 +237,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "project_delete",
     description:
-      "Delete a project owned by the caller. Removes every memory entry, vector, and graph node in the project. The caller must be the owner.",
+      "PERMANENTLY delete a project and every memory entry inside it. Cascades through warm rows, FTS, cold-tier Qdrant collections, and graph nodes — irreversible. CALL THIS ONLY after the user has explicitly confirmed: phrases like \"yes delete the X project\", \"go ahead and remove it permanently\", \"trash the whole project\". If the user just says \"delete X\" without confirming consequences, ask first — once. Owner-only; if the user is a member but not owner, they should `project_unshare` themselves (or be unshared by the owner). Accepts id or name; the server resolves names automatically. Mention how many entries / collections / edges were removed in your reply so the user has receipts.",
     inputSchema: {
       type: "object",
       properties: {
@@ -246,7 +249,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "project_activate",
     description:
-      "Set the caller's active project. Subsequent memory_* calls without an explicit `project` arg default to this scope: search/recent/neighbors union it with user-global, remember/forget target it directly. Idempotent.",
+      "Pin the user's active project so subsequent `memory_*` calls default to that scope without you having to pass `project` every time. CALL THIS when the user says \"let's work on X\", \"switch to project Y\", \"focus on Z for the rest of this session\", \"context me into X\". Reads (search / recent / today / neighbors) union the active project with user-global. Writes (remember / forget / update) target the active project directly — so a remember call no longer lands in user-global by default. Server-side state, persists across SSE reconnects. Idempotent.",
     inputSchema: {
       type: "object",
       properties: {
@@ -258,13 +261,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "project_deactivate",
     description:
-      "Clear the caller's active project. Subsequent memory_* calls without an explicit `project` arg fall back to user-global only.",
+      "Clear the active-project pin so subsequent `memory_*` calls fall back to user-global only. CALL THIS when the user says \"back to global\", \"context out\", \"clear active project\", \"back to my personal store\", \"no project for now\". Also call when the user pivots away from the current project context to discuss something unrelated and they don't want new memories landing in the old project's scope. Idempotent — safe to call when nothing's active.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "project_share",
     description:
-      "Add another user as a member of a project the caller owns. The invitee can read and write the project's memories. Username may be the user's email or display name.",
+      "Invite another user to a project the user owns — gives them read AND write access to every entry in it. CALL THIS when the user says \"share X with bob\", \"add alice to my project\", \"give the team access\", \"invite [user] to Y\". Owner-only — if the calling user is just a member, surface that and tell them to ask the owner. Use the invitee's email or display name; the server resolves both. Confirm the username back in your reply (\"added alice@example.com to mcp-fulltest\") so the user catches typos. The invitee will see the project in their dashboard switcher immediately — no email is sent.",
     inputSchema: {
       type: "object",
       properties: {
@@ -280,7 +283,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "project_unshare",
     description:
-      "Remove a member from a project. The caller must be the owner. The owner cannot unshare themselves — delete the project instead.",
+      "Revoke a member's access to a project. CALL THIS when the user says \"remove bob from X\", \"unshare alice\", \"kick [user] off Y\", \"revoke their access\". Effective immediately — the removed user's next request scoped to the project will 403. The owner cannot unshare themselves; if the user wants to abandon a project they own, use `project_delete` instead (cascade-deletes everything) or transfer ownership first (planned, not yet implemented). Members can unshare themselves to leave the project — they don't need owner permission.",
     inputSchema: {
       type: "object",
       properties: {
