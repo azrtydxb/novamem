@@ -4,6 +4,13 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-05-05
+
+### Fixed
+
+- **`@azrtydxb/novamem-init` configured Claude Desktop with an invalid MCP entry.** The installer wrote `{"type": "sse", "url": …, "headers": …}` to `claude_desktop_config.json`, which Claude Desktop rejects on launch with "not valid MCP server configurations and were skipped: novamem" — its loader only accepts stdio entries (`command`/`args`). Fix: switch the `claude-desktop` adapter from `transport: "sse"` to `transport: "stdio"`, so the bundled `@azrtydxb/novamem-mcp` shim runs locally and bridges to the server. New regression test in `packages/init/test/tools.test.ts`.
+- **`docs/connect/claude-desktop.md`** rewritten to match — stdio is the documented path; the SSE example is gone.
+
 ## [1.1.1] - 2026-05-05
 
 ### Fixed
