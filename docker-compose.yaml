@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: novamem
-      POSTGRES_PASSWORD: novamem
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: novamem
     ports:
       - "5432:5432"
@@ -39,14 +39,14 @@ services:
       falkordb:
         condition: service_started
     environment:
-      NOVAMEM_WARM_URL: postgres://novamem:novamem@postgres:5432/novamem
+      NOVAMEM_WARM_URL: postgres://novamem:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/novamem
       NOVAMEM_COLD_URL: http://qdrant:6333
       NOVAMEM_GRAPH_URL: redis://falkordb:6379
       NOVAMEM_EMBEDDINGS_PROVIDER: local-transformers
       NOVAMEM_AUTH_MODE: ${NOVAMEM_AUTH_MODE:-user}
       NOVAMEM_ADMIN_DASHBOARD: ${NOVAMEM_ADMIN_DASHBOARD:-1}
       NOVAMEM_BOOTSTRAP_ADMIN_EMAIL: ${NOVAMEM_BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
-      NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD: ${NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD:-novaflow}
+      NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD: ${NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD:?Set NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD in .env}
       NOVAMEM_COOKIE_SECRET: ${NOVAMEM_COOKIE_SECRET}
       # Local-dev only: serves cookies over plain HTTP. Strip in production.
       NOVAMEM_INSECURE_COOKIES: ${NOVAMEM_INSECURE_COOKIES:-1}
