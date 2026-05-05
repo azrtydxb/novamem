@@ -48,13 +48,15 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # Node 24 ships with npm 11.x, which does the OIDC handshake
+          # for the publish PUT itself (not just Sigstore provenance
+          # signing). Node ≤ 22 ships npm 10.x; on those, Trusted
+          # Publishers silently falls through to .npmrc auth and the
+          # publish 404s. Tried `npm install -g npm@latest` first —
+          # it corrupts the install (MODULE_NOT_FOUND promise-retry).
+          node-version: 24
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
-      # npm 11.5+ does the OIDC handshake for the publish itself (not just
-      # provenance). Node 22 ships with npm 10.x, so upgrade explicitly.
-      # Trusted Publishers won't work without this on Node ≤ 22.
-      - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
       - run: pnpm test
