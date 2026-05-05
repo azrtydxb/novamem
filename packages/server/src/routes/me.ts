@@ -145,14 +145,17 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     if (!ctx.warm) return reply.code(404).send({ error: "projects disabled" });
     const u = requireDashUser(req, reply);
     if (!u) return;
-    const id = (req.params as { id: string }).id;
-    const project = await ctx.warm.getProject(id);
-    if (!project) return reply.code(404).send({ error: "unknown project" });
-    if (project.ownerUserId !== u.id) {
+    const ref = (req.params as { id: string }).id;
+    // Accept id OR human name. The MCP tool surface and CLIs pass names
+    // through this route; without the resolver, names hit `getProject`
+    // (id-only) and 404'd as "unknown project".
+    const resolved = await resolveProjectRef(ctx, u.id, ref);
+    if (!resolved) return reply.code(404).send({ error: "unknown project" });
+    if (resolved.ownerUserId !== u.id) {
       return reply.code(403).send({ error: "only the owner can delete a project" });
     }
-    const r = await ctx.engine.deleteProject(id, project.ownerUserId);
-    await ctx.audit(req, "project.delete", id, { entriesRemoved: r.entriesRemoved });
+    const r = await ctx.engine.deleteProject(resolved.id, resolved.ownerUserId);
+    await ctx.audit(req, "project.delete", resolved.id, { entriesRemoved: r.entriesRemoved });
     reply.send(r);
   });
 
@@ -160,20 +163,22 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     if (!ctx.warm) return reply.code(404).send({ error: "projects disabled" });
     const u = requireDashUser(req, reply);
     if (!u) return;
-    const id = (req.params as { id: string }).id;
-    const m = await ctx.warm.getProjectMembership(id, u.id);
+    const ref = (req.params as { id: string }).id;
+    const resolved = await resolveProjectRef(ctx, u.id, ref);
+    if (!resolved) return reply.code(404).send({ error: "unknown project" });
+    const m = await ctx.warm.getProjectMembership(resolved.id, u.id);
     if (!m) return reply.code(403).send({ error: "not a member of this project" });
-    reply.send({ members: await ctx.warm.listProjectMembers(id) });
+    reply.send({ members: await ctx.warm.listProjectMembers(resolved.id) });
   });
 
   app.post("/v1/me/projects/:id/members", async (req, reply) => {
     if (!ctx.warm) return reply.code(404).send({ error: "projects disabled" });
     const u = requireDashUser(req, reply);
     if (!u) return;
-    const id = (req.params as { id: string }).id;
-    const project = await ctx.warm.getProject(id);
-    if (!project) return reply.code(404).send({ error: "unknown project" });
-    if (project.ownerUserId !== u.id) {
+    const ref = (req.params as { id: string }).id;
+    const resolved = await resolveProjectRef(ctx, u.id, ref);
+    if (!resolved) return reply.code(404).send({ error: "unknown project" });
+    if (resolved.ownerUserId !== u.id) {
       return reply.code(403).send({ error: "only the owner can add members" });
     }
     const body = AddMemberBody.parse(req.body);
@@ -182,9 +187,9 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     // and be invited in their place.
     const target = await ctx.warm.findUserByExactEmail(body.username);
     if (!target) return reply.code(404).send({ error: "unknown user" });
-    const ok = await ctx.warm.addProjectMember(id, target.id, body.role ?? "member");
+    const ok = await ctx.warm.addProjectMember(resolved.id, target.id, body.role ?? "member");
     if (!ok) return reply.code(409).send({ error: "user is already a member" });
-    await ctx.audit(req, "project.member.add", id, {
+    await ctx.audit(req, "project.member.add", resolved.id, {
       memberUserId: target.id,
       memberUsername: target.username,
       role: body.role ?? "member",
@@ -196,19 +201,19 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     if (!ctx.warm) return reply.code(404).send({ error: "projects disabled" });
     const u = requireDashUser(req, reply);
     if (!u) return;
-    const { id, userId } = req.params as { id: string; userId: string };
-    const project = await ctx.warm.getProject(id);
-    if (!project) return reply.code(404).send({ error: "unknown project" });
-    const isOwner = project.ownerUserId === u.id;
+    const { id: ref, userId } = req.params as { id: string; userId: string };
+    const resolved = await resolveProjectRef(ctx, u.id, ref);
+    if (!resolved) return reply.code(404).send({ error: "unknown project" });
+    const isOwner = resolved.ownerUserId === u.id;
     if (!isOwner && userId !== u.id) {
       return reply.code(403).send({ error: "only the owner can remove other members" });
     }
-    if (userId === project.ownerUserId) {
+    if (userId === resolved.ownerUserId) {
       return reply.code(400).send({ error: "owner cannot leave; delete the project instead" });
     }
-    const r = await ctx.warm.removeProjectMember(id, userId);
+    const r = await ctx.warm.removeProjectMember(resolved.id, userId);
     if (!r.removed) return reply.code(404).send({ error: "user is not a member" });
-    await ctx.audit(req, "project.member.remove", id, { memberUserId: userId });
+    await ctx.audit(req, "project.member.remove", resolved.id, { memberUserId: userId });
     reply.send({ removed: true });
   });
 
