@@ -4,7 +4,7 @@ title: MCP tools
 
 # MCP tools
 
-novamem advertises 14 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for both the in-process server (used by `/mcp/sse`) and the stdio shim (`@azrtydxb/novamem-mcp`).
+novamem advertises 14 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for the three transports the server exposes (Streamable HTTP, legacy SSE, and the stdio-shim bridge).
 
 ## Memory tools
 
@@ -33,16 +33,32 @@ novamem advertises 14 tools via the Model Context Protocol. The same shapes live
 
 ## Transports
 
-Two equivalent paths:
+Three equivalent paths:
 
-### SSE — recommended
+### Streamable HTTP — recommended for new clients
+
+The current MCP spec (2025-03-26). Single endpoint, content-negotiated:
 
 ```
-GET  /mcp/sse              — opens the event stream
-POST /mcp/messages?sessionId=…  — sends JSON-RPC requests
+POST   /mcp   — JSON-RPC requests; `initialize` without Mcp-Session-Id starts a session
+GET    /mcp   — opens server→client SSE channel for an existing session
+DELETE /mcp   — terminates a session
 ```
 
-Connect with `Authorization: Bearer nm_…`. The session id is returned in the first SSE event. The route enforces:
+Connect with `Authorization: Bearer nm_…`. Session id is returned in the `Mcp-Session-Id` response header on the initialize POST and must be echoed on every subsequent request. Session ownership is bound to the bearer holder — a leaked session id can't be driven by a different authenticated user.
+
+What clients speak this transport: OpenAI Codex CLI, recent Cursor / Kilo Code (auto-detect with SSE fallback), GitHub Copilot in VS Code, anything built on the Rust `rmcp` crate.
+
+### Legacy SSE — still supported
+
+The pre-2025 MCP spec, two-endpoint dance. Kept indefinitely for clients that haven't migrated.
+
+```
+GET  /mcp/sse                    — opens the event stream
+POST /mcp/messages?sessionId=…   — sends JSON-RPC requests
+```
+
+The route enforces:
 
 - `MAX_SESSIONS_PER_USER = 10` — concurrency cap, returns 429
 - 30 min idle timeout — sessions with no `POST /mcp/messages` activity are reaped
@@ -50,7 +66,7 @@ Connect with `Authorization: Bearer nm_…`. The session id is returned in the f
 
 ### stdio shim
 
-The `@azrtydxb/novamem-mcp` package proxies stdio JSON-RPC ↔ SSE. Used by hosts that don't support remote MCP yet (most desktop apps).
+The `@azrtydxb/novamem-mcp` package proxies stdio JSON-RPC ↔ remote SSE. Used by hosts that don't support remote MCP at all (Claude Desktop) or whose remote-MCP implementation is broken (OpenCode pre-Streamable-HTTP).
 
 ```bash
 NOVAMEM_BASE_URL=https://novamem.example.com \
