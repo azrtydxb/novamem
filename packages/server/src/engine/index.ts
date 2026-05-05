@@ -160,8 +160,10 @@ export class MemoryEngine {
   /** Resolve the implicit namespace fanout for search/recent when the
    *  caller specified neither `namespace` nor `includeNamespaces`. Walks
    *  every scope (user-global + each active project) and unions the
-   *  distinct namespaces found there. Falls back to `["default"]` when
-   *  nothing has been written yet — the embedder / FTS still need a
+   *  distinct namespaces with entries *visible* in that scope — note
+   *  that in project scope a member sees other members' namespaces too
+   *  (project is the isolation boundary). Falls back to `["default"]`
+   *  when nothing is visible yet — the embedder / FTS still need a
    *  target name. Deduplicated; order is not stable. */
   private async resolveDefaultNamespaces(
     userId: string,
