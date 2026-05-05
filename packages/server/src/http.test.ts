@@ -174,6 +174,49 @@ describe("http: global hardening headers (#47)", () => {
   });
 });
 
+describe("http: request correlation (#75)", () => {
+  it("sets a unique X-Request-Id on /v1/recent responses", async () => {
+    const { app } = makeApp();
+    const a = await app.inject({ method: "POST", url: "/v1/recent", payload: { k: 1 } });
+    const b = await app.inject({ method: "POST", url: "/v1/recent", payload: { k: 1 } });
+    const idA = a.headers["x-request-id"];
+    const idB = b.headers["x-request-id"];
+    expect(typeof idA).toBe("string");
+    expect(typeof idB).toBe("string");
+    expect((idA as string).length).toBeGreaterThan(0);
+    expect(idA).not.toBe(idB);
+  });
+
+  it("echoes a safe inbound x-request-id", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/recent",
+      payload: { k: 1 },
+      headers: { "x-request-id": "ext-trace-abc123" },
+    });
+    expect(r.headers["x-request-id"]).toBe("ext-trace-abc123");
+  });
+
+  it("rejects unsafe inbound x-request-id and falls back to a generated one", async () => {
+    const { app } = makeApp();
+    // Anything outside [A-Za-z0-9_.:-] (e.g. spaces, control bytes,
+    // semicolons) is replaced by a generated id rather than echoed —
+    // closes log/response-header injection vectors.
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/recent",
+      payload: { k: 1 },
+      headers: { "x-request-id": "spaces and ; semicolons" },
+    });
+    expect(r.statusCode).toBe(200);
+    const echoed = r.headers["x-request-id"];
+    expect(typeof echoed).toBe("string");
+    expect(echoed).not.toBe("spaces and ; semicolons");
+    expect(echoed).toMatch(/^[A-Za-z0-9_.:-]+$/);
+  });
+});
+
 describe("http: /v1/remember", () => {
   it("accepts a valid body and returns 201 + id", async () => {
     const { app } = makeApp();
