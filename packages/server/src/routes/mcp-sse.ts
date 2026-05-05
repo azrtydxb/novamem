@@ -35,6 +35,12 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 /** How often the idle reaper scans the session map. */
 const REAP_INTERVAL_MS = 60 * 1000;
 
+/** SSE keepalive cadence. Must be shorter than the client's HTTP body-read
+ *  timeout. undici (Node 20+ fetch / mcp-remote) defaults to 5 min before
+ *  emitting `terminated: Body Timeout Error`; 25 s gives a comfortable
+ *  margin even with a sluggish proxy in between. */
+const KEEPALIVE_INTERVAL_MS = 25 * 1000;
+
 interface SseSessionEntry {
   transport: SSEServerTransport;
   userId: string;
@@ -122,7 +128,22 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     });
     await mcpServer.connect(transport);
     req.log.info({ sessionId, userId }, "mcp-sse: session opened");
+    // SSE keepalive. Without periodic bytes, the client's HTTP body-read
+    // hits its 5-minute idle timeout (undici's default in Node 20+) and
+    // the EventSource emits "terminated: Body Timeout Error", forcing a
+    // reconnect. Writing `:` followed by CRLFCRLF is the canonical SSE
+    // comment — clients ignore it but the bytes reset their read timer.
+    const keepalive = setInterval(() => {
+      try {
+        reply.raw.write(": ping\n\n");
+      } catch {
+        // Connection already torn down; the close/error listener below
+        // will run cleanup on the next tick.
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+    keepalive.unref?.();
     const cleanup = () => {
+      clearInterval(keepalive);
       sseTransports.delete(sessionId);
       mcpServer.close().catch(() => undefined);
       req.log.info({ sessionId }, "mcp-sse: session closed");
