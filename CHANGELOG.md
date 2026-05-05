@@ -4,21 +4,47 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-05
+
+End-to-end production deploy on a real k3s cluster surfaced and fixed four real bugs; full-codebase review closed 14 quality + 7 security issues; CI gates and dependabot auto-merge wired so future bumps land safely without manual review.
+
 ### Added
 
 - **Per-user SSE concurrency cap** — `/mcp/sse` refuses an 11th concurrent session per `userId` with `429` and reaps any session idle (no `POST /mcp/messages`) for 30 minutes. Prevents an `nm_…` token from exhausting fds on a long-running server.
 - **`ApiError` in `@azrtydxb/novamem-admin-ui`** — `api()` throws a typed `ApiError extends Error { status: number; code?: string }` on non-OK HTTP, replacing bare `Error` strings. Toasts and tests can branch on `status`/`code`.
+- **`/v1/admin/health/deep`** — admin-only per-dependency snapshot. Public `/health` is now a boolean liveness probe only (no infrastructure detail).
+- **Global hardening headers** — `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` on every response. Per-route override before `reply.send` for the rare case it's needed.
+- **Admin-UI test suite** — 12 vitest tests covering `api.ts` + presentational components. First runtime coverage for the dashboard.
+- **Dependabot auto-merge workflow** — patch/minor PRs auto-merge once required checks go green. Major bumps still require manual review.
+- **Branch protection on `main`** — required: `test (amd64/arm64)`, `audit`, `package (npm)`, `docker (amd64/arm64)`. `strict: true`.
+- **Project-root `CLAUDE.md`** — rule that no PR merges before all Copilot/Claude review comments are resolved.
 
 ### Changed
 
-- **Schema validation hardening** — `RememberBody.metadata` capped at 8KB serialized + 64-char keys; project names NFKC-normalized before the regex check so visually-identical Unicode/ASCII names collide instead of co-existing.
-- **Logger unification** — `MemoryEngine` and `GraphStore` log via Fastify's pino child logger (object-first). `console.*` is reserved for the early-bootstrap path before the logger exists. All `LOG_LEVEL` / `NOVAMEM_*` env reads centralised in `loadConfig` / `ConfigSchema`.
+- **Schema validation hardening** — `RememberBody.metadata` capped at 8KB serialized + 64-char keys; project names NFKC-normalised before the regex check so visually-identical Unicode/ASCII names collide instead of co-existing.
+- **Logger unification** — `MemoryEngine` and `GraphStore` log via Fastify's pino child logger (object-first). `console.*` reserved for the early-bootstrap path before the logger exists. All `LOG_LEVEL` / `NOVAMEM_*` env reads centralised in `loadConfig` / `ConfigSchema`.
 - **Timer reentrancy guards** — decay, dream-cycle, and metrics-flush loops each have an `inFlight` flag so a slow run can't overlap with the next tick.
-- **`recharts` bumped to 3.x** in the admin dashboard. No call-site changes; bundle shrinks slightly.
+- **`recharts` bumped to 3.x** in the admin dashboard. Tooltip formatter signature widened for the v3 type change. Bundle shrinks (MetricsPage 397KB → 365KB gzipped).
+- **Cypher param hardening** — `graph-store.neighbors()` uses an allowlist of `{1,2,3}` for `depth`, validates non-finite numerics, and `removeAllForProject` is now user-scoped (defence-in-depth against future Cypher-bug exploits).
+- **Admin-only `/v1/dream-cycle`, `/v1/reap-orphans`** — were accessible to any authenticated user; now gated by `adminAuth`.
+- **Better Auth passthrough** — replaced wildcard `/api/auth/*` with an explicit allowlist of supported paths.
+- **Error-handler tightening** — non-Zod errors return `{error: "internal server error"}` to clients; the full Error is logged server-side only.
+- **Safe config defaults** — `auth.mode` now defaults to `user`. The dev cookie-secret fallback is gone; processes refuse to start if `auth.mode != none` and no cookie secret is set. `auth.mode=none` binds only to loopback.
+- **K8s deploy** — `deploy/k8s/secrets.yaml` is now a placeholder template (real values via `kubectl create secret` / Sealed Secrets / external-secrets-operator). Postgres DSN moved out of the ConfigMap. Sample Ingress with cert-manager + TLS termination shipped; Service downgraded from `LoadBalancer` to `ClusterIP`.
+- **`http.ts` route split** — 1333 LOC reduced to a 493 LOC shell + 5 `routes/` modules. `/v1/me/*` data-plane mirrors collapsed onto `/v1/*` (cookie auth still works on the canonical path).
+
+### Fixed
+
+- **`/v1/me/today` 500** — `WarmStore.listRecentActivity` UNION ALL was ordered by `at` (a JS-side property name) which drizzle does not emit as a SQL column alias; switched to positional `ORDER BY 2 DESC`.
+- **Embed-using endpoints 500** — Dockerfile `--omit=optional` stripped `onnxruntime-node` (an optional dep of `@xenova/transformers`); every `/v1/remember` and `/v1/search` call returned `ERR_MODULE_NOT_FOUND`. Removed the flag.
+- **Admin-UI HealthPage showed UNKNOWN** — page was hitting `/health` (now `{ok}` only) instead of `/v1/admin/health/deep`.
+- **Admin-UI Browse + Graph 404s** — pages still called `/v1/me/{recent,search,remember,neighbors}` (collapsed onto `/v1/*` in this release). Updated all call sites.
 
 ### Removed
 
 - **Legacy `NOVAMEM_ADMIN_TOKEN`** — admin routes now require a logged-in admin session. `auth.adminToken` dropped from config; CI scripts must mint a session via Better Auth.
+- **Stale `P0/P1/P2` review markers** — 25 review-tracker comments scrubbed across the codebase (mechanical sweep).
+- **`Co-Authored-By: Claude` trailers** — git history rewrite stripped the trailer from all 61 commits on `main`. The `v0.1.0` tag still resolves to the original SHA so npm Sigstore provenance attestations remain valid.
 
 ## [0.1.0] - 2026-05-04
 
