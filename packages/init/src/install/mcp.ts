@@ -27,10 +27,11 @@ export interface McpInstallParams {
   bearer: string;
   /** The version of `@azrtydxb/novamem-mcp` to pin in stdio entries.
    *  Should match this `init` package's version so the two always ship
-   *  together (Changesets bumps both packages from one changeset).
-   *  Defaults to a floating "latest" via plain package name when unset
-   *  — primarily to avoid breaking pre-1.1.4 callers that didn't pass
-   *  this. New callers should always pass an explicit version. */
+   *  together — `.changeset/config.json` lists `novamem-init` and
+   *  `novamem-mcp` in `linked`, which makes a bump on either trigger
+   *  the same bump on the other. Defaults to a floating "latest" via
+   *  plain package name when unset (legacy callers; new code should
+   *  always pass an explicit version). */
   shimVersion?: string;
 }
 
@@ -74,6 +75,24 @@ export function buildMcpEntry(adapter: NonNullable<ToolEntry["mcp"]>, p: McpInst
 }
 
 /**
+ * Pure helper: scan parsed `npm view <spec> dependencies --json` output
+ * for the `workspace:` protocol that npm/npx can't resolve. Returns the
+ * first offending entry, or null if everything looks clean. Exported
+ * for unit testing.
+ */
+export function findWorkspaceDep(
+  raw: unknown,
+): { name: string; value: string } | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string" && value.startsWith("workspace:")) {
+      return { name, value };
+    }
+  }
+  return null;
+}
+
+/**
  * Verify the npm-published shim at `version` is installable + runnable
  * before we write a config that points at it. Catches the bug class
  * that produced the silent v0.1.0–1.1.2 outage where every published
@@ -109,12 +128,18 @@ export async function verifyShim(version: string, opts: { timeoutMs?: number } =
     const { stdout } = await exec("npm", ["view", spec, "dependencies", "--json"], {
       timeout: timeoutMs,
     });
-    const deps = stdout.trim() ? JSON.parse(stdout) as Record<string, string> : {};
-    for (const [name, value] of Object.entries(deps)) {
-      if (typeof value === "string" && value.startsWith("workspace:")) {
+    // `npm view` may print nothing (no deps), `null`, an array (multiple
+    // versions matched), or an object {name: spec}. Only the object case
+    // has fields to inspect — anything else is "no workspace: deps to
+    // worry about" and we move on to the runtime check.
+    const trimmed = stdout.toString().trim();
+    if (trimmed) {
+      const parsed: unknown = JSON.parse(trimmed);
+      const offender = findWorkspaceDep(parsed);
+      if (offender) {
         return {
           ok: false,
-          reason: `published tarball has \`${name}: ${value}\` — npm/npx can't resolve workspace: protocol. The shim publish pipeline is broken.`,
+          reason: `published tarball has \`${offender.name}: ${offender.value}\` — npm/npx can't resolve workspace: protocol. The shim publish pipeline is broken.`,
         };
       }
     }

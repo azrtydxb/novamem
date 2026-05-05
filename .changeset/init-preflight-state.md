@@ -1,5 +1,6 @@
 ---
 "@azrtydxb/novamem-init": minor
+"@azrtydxb/novamem-mcp": minor
 ---
 
 `@azrtydxb/novamem-init` now pre-flights the stdio shim and remembers your last base URL + email.
