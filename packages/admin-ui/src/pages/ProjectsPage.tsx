@@ -326,22 +326,27 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
 }
 
 function AddMemberForm({ projectId, onAdded }: { projectId: string; onAdded: () => void }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
+    // Wire payload key stays `username` because the server schema's
+    // `AddMemberBody.username` is documented as a deprecated legacy
+    // handle kept for back-compat (see routes/schemas.ts). The route
+    // resolves it via `findUserByExactEmail`, so passing the typed
+    // email through the deprecated key is correct end-to-end.
     const r = await api(
       "POST",
       `/v1/me/projects/${encodeURIComponent(projectId)}/members`,
-      { username: username.trim() },
+      { username: email.trim() },
     );
     setBusy(false);
     if (r.ok) {
-      toast.success(`${username} added`);
-      setUsername("");
+      toast.success(`${email} added`);
+      setEmail("");
       onAdded();
     } else {
       toast.error("Could not add member", r.error ?? `status ${r.status}`);
@@ -355,10 +360,10 @@ function AddMemberForm({ projectId, onAdded }: { projectId: string; onAdded: () 
         type="email"
         label="Add a member by email"
         placeholder="carol@example.com"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
       />
-      <Button type="submit" variant="primary" loading={busy} disabled={!username.trim()}>
+      <Button type="submit" variant="primary" loading={busy} disabled={!email.trim()}>
         <UserPlus className="h-3.5 w-3.5" /> Add
       </Button>
     </form>

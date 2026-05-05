@@ -19,6 +19,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/copy-assets.mjs",
+    "pretest": "pnpm build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/main.ts"
