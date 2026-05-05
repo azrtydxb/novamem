@@ -183,7 +183,14 @@ export const TOOLS: readonly ToolEntry[] = [
       path: ".codex/config.toml",
       format: "toml",
       rootKey: "mcp_servers",
-      transport: "sse",
+      // Codex CLI's MCP client speaks Streamable-HTTP, not the legacy
+      // SSE transport novamem currently exposes at /mcp/sse. Pointing
+      // it at the SSE URL produces a cryptic handshake failure:
+      //   \"Deserialize error: data did not match any variant of
+      //    untagged enum JsonRpcMessage\"
+      // Use the stdio shim — it bridges to /mcp/sse internally and is
+      // protocol-agnostic to the host.
+      transport: "stdio",
     },
     commands: { dir: ".codex/prompts", format: "claude-md", prefix: "memory-" },
   },

@@ -106,14 +106,21 @@ describe("installMcp", () => {
     const b = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
     expect(b.changed).toBe(false);
   });
-  it("writes TOML for Codex with mcp_servers root key", async () => {
+  it("writes TOML for Codex with mcp_servers root key + stdio shim", async () => {
+    // Codex CLI's MCP client speaks Streamable HTTP, not SSE. We use
+    // the @azrtydxb/novamem-mcp stdio shim (same as Claude Desktop)
+    // so it works regardless of host transport. The base URL + token
+    // are forwarded via env vars on the spawned shim process.
     const tool = findTool("codex")!;
     const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
     expect(r.changed).toBe(true);
     expect(r.configPath.endsWith("config.toml")).toBe(true);
     const raw = await readFile(r.configPath, "utf8");
     expect(raw).toContain("[mcp_servers.novamem]");
-    expect(raw).toContain('url = "http://x:7778/mcp/sse"');
+    expect(raw).toContain('command = "npx"');
+    expect(raw).toContain("@azrtydxb/novamem-mcp");
+    expect(raw).toContain('NOVAMEM_BASE_URL = "http://x:7778"');
+    expect(raw).toContain('NOVAMEM_TOKEN = "nm_t"');
   });
   it("skips tools with no MCP adapter", async () => {
     const tool = findTool("trae")!;
