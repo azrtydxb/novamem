@@ -51,6 +51,7 @@ import { register as registerMe } from "./routes/me.js";
 import { register as registerAdmin } from "./routes/admin.js";
 import { register as registerAuth } from "./routes/auth.js";
 import { register as registerMcpSse } from "./routes/mcp-sse.js";
+import { register as registerMcpStreamable } from "./routes/mcp-streamable.js";
 
 export type { DashboardUser } from "./routes/context.js";
 
@@ -609,6 +610,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   registerMe(app, ctx);
   registerAdmin(app, ctx);
   registerMcpSse(app, ctx);
+  registerMcpStreamable(app, ctx);
 
   return app;
 }
