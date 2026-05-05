@@ -14,7 +14,9 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "docs:api": "pnpm --filter @azrtydxb/novamem-server build && pnpm --filter @azrtydxb/novamem-server docs:api"
+    "docs:api": "pnpm --filter @azrtydxb/novamem-server build && pnpm --filter @azrtydxb/novamem-server docs:api",
+    "docs:smoke": "node scripts/doc-smoke.mjs",
+    "release:preflight": "node scripts/release-preflight.mjs"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

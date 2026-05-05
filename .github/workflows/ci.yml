@@ -52,6 +52,9 @@ jobs:
       # Guard against schema.ts ↔ migrations/ drift. Fails if someone
       # edited the schema without committing a paired migration.
       - run: pnpm --filter @azrtydxb/novamem-server db:check
+      # Guard against stale prose drift in docs (issue #73). Cheap regex
+      # checks; no extra deps. See scripts/doc-smoke.mjs for invariants.
+      - run: pnpm docs:smoke
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
