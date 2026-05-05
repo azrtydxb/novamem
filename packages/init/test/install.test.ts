@@ -6,7 +6,7 @@ import { TOOLS, findTool } from "../src/tools.js";
 import type { ToolEntry } from "../src/tools.js";
 import type { DetectionContext } from "../src/detect.js";
 import { installSkill } from "../src/install/skill.js";
-import { installMcp, buildMcpEntry } from "../src/install/mcp.js";
+import { installMcp, buildMcpEntry, findWorkspaceDep } from "../src/install/mcp.js";
 import {
   installCommands,
   parseCommandFile,
@@ -145,6 +145,47 @@ describe("buildMcpEntry", () => {
     const e = buildMcpEntry({ path: "x", format: "json", transport: "stdio" }, { baseUrl: "http://h:7778", bearer: "tok" }) as Record<string, unknown>;
     expect(e.command).toBe("npx");
     expect(e.env).toMatchObject({ NOVAMEM_BASE_URL: "http://h:7778", NOVAMEM_TOKEN: "tok" });
+  });
+  it("pins the shim version in args when shimVersion is provided", () => {
+    const e = buildMcpEntry(
+      { path: "x", format: "json", transport: "stdio" },
+      { baseUrl: "http://h:7778", bearer: "tok", shimVersion: "1.1.4" },
+    ) as { args: string[] };
+    expect(e.args).toEqual(["-y", "@azrtydxb/novamem-mcp@1.1.4"]);
+  });
+  it("falls back to the floating spec when shimVersion is not provided", () => {
+    const e = buildMcpEntry(
+      { path: "x", format: "json", transport: "stdio" },
+      { baseUrl: "http://h:7778", bearer: "tok" },
+    ) as { args: string[] };
+    expect(e.args).toEqual(["-y", "@azrtydxb/novamem-mcp"]);
+  });
+});
+
+describe("findWorkspaceDep", () => {
+  it("returns the first workspace: entry it finds", () => {
+    expect(findWorkspaceDep({ "@a/b": "1.0.0", "@a/c": "workspace:*" })).toEqual({
+      name: "@a/c",
+      value: "workspace:*",
+    });
+  });
+  it("flags any workspace: prefix, not just workspace:*", () => {
+    expect(findWorkspaceDep({ "@a/b": "workspace:^" })).not.toBeNull();
+    expect(findWorkspaceDep({ "@a/b": "workspace:1.0.0" })).not.toBeNull();
+  });
+  it("returns null on a clean object with concrete deps", () => {
+    expect(findWorkspaceDep({ "@a/b": "1.0.0", "@a/c": "^2.3.4" })).toBeNull();
+  });
+  it("returns null on the shapes `npm view` can produce when there are no deps", () => {
+    expect(findWorkspaceDep(null)).toBeNull();
+    expect(findWorkspaceDep(undefined)).toBeNull();
+    expect(findWorkspaceDep({})).toBeNull();
+    // npm view on a package with multiple matched versions can return arrays
+    expect(findWorkspaceDep([])).toBeNull();
+    expect(findWorkspaceDep([{ "@a/b": "workspace:*" }])).toBeNull();
+  });
+  it("ignores non-string dep values without crashing", () => {
+    expect(findWorkspaceDep({ "@a/b": 42, "@a/c": null })).toBeNull();
   });
 });
 
