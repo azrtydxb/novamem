@@ -40,6 +40,11 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   });
 
   app.post("/v1/decay", async (req, reply) => {
+    // Admin-only (issue #55): MemoryEngine.decay scans and updates
+    // memory_entries globally — a regular bearer holder must not be able
+    // to trigger demotion work for other users or pass an
+    // effectiveDaysOverride that affects everyone's tiering.
+    if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
     const body = DecayBody.parse(req.body ?? {});
     const r = await ctx.engine.decay({ effectiveDaysOverride: body.effectiveDays });
     reply.send(r);
