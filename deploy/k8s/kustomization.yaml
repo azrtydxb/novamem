@@ -8,3 +8,4 @@ resources:
   - qdrant.yaml
   - falkordb.yaml
   - novamem.yaml
+  - ingress.yaml
