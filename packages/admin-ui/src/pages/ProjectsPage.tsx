@@ -351,9 +351,10 @@ function AddMemberForm({ projectId, onAdded }: { projectId: string; onAdded: () 
   return (
     <form onSubmit={submit} className="grid grid-cols-[1fr_auto] gap-3 items-end">
       <Input
-        name="add_member_username"
-        label="Add a member by username"
-        placeholder="carol"
+        name="add_member_email"
+        type="email"
+        label="Add a member by email"
+        placeholder="carol@example.com"
         value={username}
         onChange={(e) => setUsername(e.target.value)}
       />
