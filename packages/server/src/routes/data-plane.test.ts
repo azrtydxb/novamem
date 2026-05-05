@@ -115,3 +115,39 @@ describe("data-plane: admin-only gates (issue #45)", () => {
     expect(r.statusCode).toBe(200);
   });
 });
+
+/**
+ * Issue #55: /v1/decay scans and updates memory_entries globally and
+ * accepts an effectiveDaysOverride that affects everyone's tiering. It
+ * must therefore be admin-only, mirroring /v1/dream-cycle and
+ * /v1/reap-orphans.
+ */
+describe("data-plane: /v1/decay admin-only gate (issue #55)", () => {
+  it("/v1/decay returns 403 for non-admin users", async () => {
+    const { app, warm } = makeApp();
+    const headers = await userSession(warm, "user");
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/decay",
+      headers,
+      payload: {},
+    });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it("/v1/decay passes the admin gate for admin users", async () => {
+    // We only assert that the admin gate doesn't reject — the engine
+    // call itself depends on warm-store SQL the fake doesn't fully
+    // emulate, so the route may return non-200; what we care about is
+    // that it is NOT a 403.
+    const { app, warm } = makeApp();
+    const headers = await userSession(warm, "admin");
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/decay",
+      headers,
+      payload: {},
+    });
+    expect(r.statusCode).not.toBe(403);
+  });
+});
