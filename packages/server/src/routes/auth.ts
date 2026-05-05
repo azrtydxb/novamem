@@ -163,7 +163,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     reply.send(text);
   };
 
-  // ─── Better Auth passthrough allowlist (issue #45) ─────────────────
+  // ─── Better Auth passthrough allowlist (issues #45, #56, #58) ──────
   // Previously every method on `/api/auth/*` was forwarded blindly. That
   // means any new endpoint Better Auth ships in a minor release becomes
   // publicly reachable without a code review. We now mount only the
@@ -174,13 +174,22 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   // ^1.6.9). When bumping, audit the changelog for new endpoints and
   // explicitly opt them in here.
   //
-  // The admin subtree is wildcarded because Better Auth's admin plugin
-  // adds endpoints over time and the role gate inside Better Auth itself
-  // already restricts access; the `guardLastAdmin` interceptor above
-  // adds our own last-admin protection on top.
+  // Issue #56: `/api/auth/sign-up/email` is intentionally NOT on this
+  // allowlist. The product flow is admin-created users via the dashboard
+  // Users tab (which posts to `/api/auth/admin/create-user`); open
+  // self-registration is not supported. The bootstrap-admin seed in
+  // main.ts calls `ba.api.signUpEmail({...})` directly (in-process,
+  // through Better Auth's API surface — not through this HTTP
+  // passthrough), so removing the public route doesn't break bootstrap.
+  //
+  // Issue #58: the admin subtree was previously a `/api/auth/admin/*`
+  // wildcard. Better Auth's admin plugin adds endpoints over time, and
+  // a minor-version bump could expose a new one without local review.
+  // We now hand-roll an explicit allowlist of admin endpoints (Better
+  // Auth ^1.6.9). Any new BA admin endpoint MUST be added explicitly
+  // here, with method semantics matching BA's spec.
   const exactPaths: readonly string[] = [
     "/api/auth/sign-in/email",
-    "/api/auth/sign-up/email",
     "/api/auth/sign-out",
     "/api/auth/get-session",
     "/api/auth/token",
@@ -192,15 +201,27 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     "/api/auth/reset-password",
     "/api/auth/verify-email",
     "/api/auth/send-verification-email",
+    // Better Auth admin-plugin endpoints (^1.6.9). Each entry must be
+    // re-audited when BA is bumped — see TODO(better-auth-upgrade) above.
+    "/api/auth/admin/list-users",
+    "/api/auth/admin/create-user",
+    "/api/auth/admin/update-user",
+    "/api/auth/admin/set-role",
+    "/api/auth/admin/set-user-password",
+    "/api/auth/admin/remove-user",
+    "/api/auth/admin/ban-user",
+    "/api/auth/admin/unban-user",
+    "/api/auth/admin/list-user-sessions",
+    "/api/auth/admin/revoke-user-session",
+    "/api/auth/admin/revoke-user-sessions",
+    "/api/auth/admin/impersonate-user",
+    "/api/auth/admin/stop-impersonating",
   ];
-  const wildcardPrefixes: readonly string[] = ["/api/auth/admin/"];
 
   for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"] as const) {
     for (const url of exactPaths) {
       app.route({ method, url, handler: passthrough });
     }
-    // Mount the admin subtree as a single wildcard route per method.
-    app.route({ method, url: "/api/auth/admin/*", handler: passthrough });
   }
 
   // Catch-all for any other `/api/auth/*` path — log a warning so we
@@ -208,9 +229,6 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   // an endpoint that isn't on our allowlist, then 404.
   const denyHandler = async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.url.split("?")[0] ?? req.url;
-    // Defence in depth: a static prefix check belt-and-braces in case
-    // Fastify's route order ever changes.
-    for (const p of wildcardPrefixes) if (path.startsWith(p)) return passthrough(req, reply);
     if (exactPaths.includes(path)) return passthrough(req, reply);
     req.log.warn(
       { method: req.method, path },

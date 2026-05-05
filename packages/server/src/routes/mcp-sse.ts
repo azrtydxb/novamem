@@ -138,6 +138,21 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     if (!sessionId) return reply.code(400).send({ error: "missing sessionId" });
     const session = sseTransports.get(sessionId);
     if (!session) return reply.code(404).send({ error: "unknown sessionId" });
+    // Bind message posts to the session owner (issue #57). The SSE
+    // sessionId is carried in the query string and is more likely to leak
+    // (logs, browser history, traces, copied URLs) than an Authorization
+    // header. Without this check, any authenticated user who learns a
+    // sessionId can submit JSON-RPC messages into another user's MCP
+    // session. Strict equality of req.userId to the userId captured at
+    // the GET /mcp/sse handshake is enough — bearer auth always populates
+    // req.userId on the POST.
+    if (session.userId !== req.userId) {
+      req.log.warn(
+        { sessionId, sessionOwner: session.userId, caller: req.userId },
+        "mcp-sse: rejected POST /mcp/messages from non-owner",
+      );
+      return reply.code(403).send({ error: "session belongs to another user" });
+    }
     // Refresh activity stamp so the idle reaper leaves this session alone.
     session.lastActivity = Date.now();
     await session.transport.handlePostMessage(req.raw, reply.raw, req.body);
