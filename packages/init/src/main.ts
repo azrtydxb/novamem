@@ -16,6 +16,10 @@
 
 import { Command, Option } from "commander";
 import { input, password as passwordPrompt, checkbox, confirm } from "@inquirer/prompts";
+import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
+// Note: readFileSync is also imported below for PKG_VERSION; keeping a
+// single import reads cleaner if both end up needed long-term.
 import { hostname } from "node:os";
 import { TOOLS, findTool, type ToolEntry } from "./tools.js";
 import { detectAll, defaultContext, isInstalled } from "./detect.js";
@@ -33,7 +37,18 @@ interface CliOptions {
   dryRun?: boolean;
 }
 
-const PKG_VERSION = "0.1.0";
+// Read the published version from the bundled package.json so commander's
+// --version stays in sync with what's on npm without a manual bump every
+// release. The runtime tarball ships package.json next to dist/.
+import { readFileSync } from "node:fs";
+const PKG_VERSION: string = (() => {
+  try {
+    const pkgUrl = new URL("../package.json", import.meta.url);
+    return JSON.parse(readFileSync(pkgUrl, "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 export async function runCli(argv: string[]): Promise<number> {
   const program = new Command();
@@ -193,6 +208,19 @@ function printSummary(results: ToolResult[], dryRun: boolean): void {
 
 // CLI entrypoint. The `dist/main.js` shebang line + this guard let us
 // also import { runCli } from tests without launching the program.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// `process.argv[1]` is whatever path Node was launched with — when npm
+// links bin scripts (npx / global install / project node_modules), that
+// path is a symlink to this file. Compare *resolved* paths so the
+// symlink-based invocation runs the CLI; otherwise `npx
+// @azrtydxb/novamem-init` exits silently with no output (the symbolic
+// equality check the original guard used never matched the symlink).
+const here = fileURLToPath(import.meta.url);
+let invokedAsCli = false;
+try {
+  invokedAsCli = process.argv[1] ? realpathSync(process.argv[1]) === here : false;
+} catch {
+  // If realpath fails (e.g. argv[1] doesn't exist), don't auto-run.
+}
+if (invokedAsCli) {
   runCli(process.argv).then((code) => process.exit(code));
 }
