@@ -151,7 +151,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     if (project.ownerUserId !== u.id) {
       return reply.code(403).send({ error: "only the owner can delete a project" });
     }
-    const r = await ctx.engine.deleteProject(id);
+    const r = await ctx.engine.deleteProject(id, project.ownerUserId);
     await ctx.audit(req, "project.delete", id, { entriesRemoved: r.entriesRemoved });
     reply.send(r);
   });

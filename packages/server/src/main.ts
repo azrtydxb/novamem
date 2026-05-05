@@ -17,6 +17,19 @@ async function main() {
   const cfg = loadConfig();
 
   if (cfg.auth.mode === "none") {
+    // Hard guard: auth=none is a dev convenience. Binding it to a
+    // non-loopback interface exposes every request as `public` to the
+    // network. Refuse to start instead of warning-and-continuing.
+    const host = cfg.service.host;
+    const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+    if (!loopback) {
+      throw new Error(
+        `[novamem] refusing to start: auth.mode=none with host=${host}. ` +
+          "auth=none is dev-only and must bind to loopback (127.0.0.1, ::1, or localhost). " +
+          "Set NOVAMEM_AUTH_MODE=user for real isolation, " +
+          "or =bearer + NOVAMEM_AUTH_TOKEN for a shared single-user bearer.",
+      );
+    }
     // Loud, unmissable: a docker-compose default with no auth is fine for
     // local dev but a footgun in production. The default exists so the
     // service "just works" out of the box; this warning is the receipt.
