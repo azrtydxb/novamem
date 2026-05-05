@@ -146,6 +146,20 @@ describe("buildMcpEntry", () => {
     expect(e.command).toBe("npx");
     expect(e.env).toMatchObject({ NOVAMEM_BASE_URL: "http://h:7778", NOVAMEM_TOKEN: "tok" });
   });
+  it("pins the shim version in args when shimVersion is provided", () => {
+    const e = buildMcpEntry(
+      { path: "x", format: "json", transport: "stdio" },
+      { baseUrl: "http://h:7778", bearer: "tok", shimVersion: "1.1.4" },
+    ) as { args: string[] };
+    expect(e.args).toEqual(["-y", "@azrtydxb/novamem-mcp@1.1.4"]);
+  });
+  it("falls back to the floating spec when shimVersion is not provided", () => {
+    const e = buildMcpEntry(
+      { path: "x", format: "json", transport: "stdio" },
+      { baseUrl: "http://h:7778", bearer: "tok" },
+    ) as { args: string[] };
+    expect(e.args).toEqual(["-y", "@azrtydxb/novamem-mcp"]);
+  });
 });
 
 describe("parseCommandFile", () => {
