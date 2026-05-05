@@ -1,9 +1,14 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
 // VitePress builds into `site/docs/` so the existing landing page at
 // `site/index.html` and the docs share one Pages artifact. The
 // pages.yml workflow uploads `site/` as a whole.
-export default defineConfig({
+//
+// `withMermaid` wraps the config so ```mermaid fenced blocks render
+// as live SVG via the official mermaid.js. Without it the blocks fall
+// through to plain code-highlighting.
+export default withMermaid(defineConfig({
   title: "novamem",
   description: "Tiered memory for AI agents — full documentation",
   base: "/novamem/docs/",
@@ -164,4 +169,10 @@ export default defineConfig({
   // an absolute github.com URL is a follow-up; for now skip the check so
   // the build passes.
   ignoreDeadLinks: true,
-});
+
+  // Mermaid theme to match the dark palette. Tokens picked from the
+  // Grid stylesheet so diagrams blend with the rest of the docs page.
+  mermaid: {
+    theme: "dark",
+  },
+}));
