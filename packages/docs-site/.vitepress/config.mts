@@ -28,7 +28,9 @@ export default withMermaid(defineConfig({
 
     // Top nav — minimal; the sidebar carries the bulk of navigation.
     nav: [
-      { text: "Landing", link: "/novamem/" },
+      // Absolute URL — VitePress would otherwise prepend `base` to a
+      // path-style link, turning /novamem/ into /novamem/docs/novamem/.
+      { text: "Landing", link: "https://azrtydxb.github.io/novamem/" },
       { text: "GitHub", link: "https://github.com/azrtydxb/novamem" },
       {
         text: "Releases",
