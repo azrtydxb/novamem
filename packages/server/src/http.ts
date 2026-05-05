@@ -145,6 +145,20 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       },
     },
     bodyLimit: 2 * 1024 * 1024,
+    // Override Fastify's default sequential `req-N` ids with an 8-byte
+    // hex random. Sequential ids collide across process restarts, which
+    // makes correlation across crash/restart boundaries ambiguous.
+    // Fastify already exposes the value as `req.id` and binds it on
+    // `req.log` (`reqId` field), so every log line for a request carries
+    // it automatically. Honour an inbound `x-request-id` so an upstream
+    // proxy / dashboard / load-test rig can pin its own correlation id.
+    genReqId: (req) => {
+      const inbound = req.headers["x-request-id"];
+      if (typeof inbound === "string" && inbound.length > 0 && inbound.length <= 128) {
+        return inbound;
+      }
+      return randomBytes(8).toString("hex");
+    },
   });
 
   // Tighten CORS. `origin: true` reflects every Origin, which makes
@@ -182,7 +196,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // by calling `reply.header("X-Frame-Options", …)` BEFORE `reply.send`;
   // the onSend hook below only sets the header when it's still unset, so
   // the route-level value wins.
-  app.addHook("onSend", async (_req, reply, payload) => {
+  app.addHook("onSend", async (req, reply, payload) => {
     if (!reply.getHeader("X-Content-Type-Options")) {
       reply.header("X-Content-Type-Options", "nosniff");
     }
@@ -191,6 +205,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
     if (!reply.getHeader("X-Frame-Options")) {
       reply.header("X-Frame-Options", "DENY");
+    }
+    // Surface the request id so operators / the dashboard can correlate
+    // a user-visible response with server-side logs and audit rows. The
+    // id is whatever Fastify generated via `genReqId` above (or echoed
+    // from an inbound `x-request-id`).
+    if (!reply.getHeader("X-Request-Id") && req.id) {
+      reply.header("X-Request-Id", String(req.id));
     }
     return payload;
   });
@@ -540,13 +561,22 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   ): Promise<void> {
     if (!opts.warm) return;
     const actorLabel = req.dashUser ? `user:${req.dashUser.username}` : "unknown";
+    // Stamp the request id into the audit row's metadata JSONB so an
+    // operator reading audit-log rows can correlate them with Fastify
+    // request logs (which carry the same id under `reqId`). Camel-case
+    // matches the existing JSONB key style; adding a key is backward
+    // compatible — the schema is open JSONB and the dashboard already
+    // renders unknown keys generically.
+    const requestId = req.id ? String(req.id) : null;
+    const mergedMetadata: Record<string, unknown> | undefined =
+      requestId !== null ? { ...(metadata ?? {}), requestId } : metadata;
     try {
       await opts.warm.writeAudit({
         actorUserId: req.dashUser?.id ?? null,
         actorLabel,
         action,
         target: target ?? null,
-        metadata,
+        metadata: mergedMetadata,
         requestIp: req.ip ?? null,
       });
     } catch (err) {

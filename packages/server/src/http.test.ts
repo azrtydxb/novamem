@@ -174,6 +174,20 @@ describe("http: global hardening headers (#47)", () => {
   });
 });
 
+describe("http: request correlation (#75)", () => {
+  it("sets a unique X-Request-Id on /v1/recent responses", async () => {
+    const { app } = makeApp();
+    const a = await app.inject({ method: "POST", url: "/v1/recent", payload: { k: 1 } });
+    const b = await app.inject({ method: "POST", url: "/v1/recent", payload: { k: 1 } });
+    const idA = a.headers["x-request-id"];
+    const idB = b.headers["x-request-id"];
+    expect(typeof idA).toBe("string");
+    expect(typeof idB).toBe("string");
+    expect((idA as string).length).toBeGreaterThan(0);
+    expect(idA).not.toBe(idB);
+  });
+});
+
 describe("http: /v1/remember", () => {
   it("accepts a valid body and returns 201 + id", async () => {
     const { app } = makeApp();
