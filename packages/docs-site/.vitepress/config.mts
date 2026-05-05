@@ -30,7 +30,10 @@ export default withMermaid(defineConfig({
     nav: [
       // Absolute URL — VitePress would otherwise prepend `base` to a
       // path-style link, turning /novamem/ into /novamem/docs/novamem/.
-      { text: "Landing", link: "https://azrtydxb.github.io/novamem/" },
+      // `target: "_self"` + `noIcon: true` undo the external-link
+      // styling so the Landing tab feels like part of the same site
+      // (which it is — different sub-path of the same Pages deployment).
+      { text: "Landing", link: "https://azrtydxb.github.io/novamem/", target: "_self", noIcon: true },
       { text: "GitHub", link: "https://github.com/azrtydxb/novamem" },
       {
         text: "Releases",
