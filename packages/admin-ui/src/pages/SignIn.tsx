@@ -57,15 +57,20 @@ export function SignIn() {
         {/* Brand row — synapse logo + name + version pill (Grid spec). */}
         <div className="flex items-center gap-2.5 mb-6">
           <div className="h-9 w-9 rounded-[10px] bg-accent flex items-center justify-center">
-            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M4 6 L12 12 M20 6 L12 12 M4 18 L12 12 M20 18 L12 12"
-                stroke="white"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                fill="none"
-              />
-              <circle cx="12" cy="12" r="2.6" fill="white" />
+            {/* novamem mark — 4-node graph traces an 'N'. Reads as graph
+                (the product) and as the letter (the brand). */}
+            <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true" fill="none">
+              <g stroke="white" strokeWidth="1.7" strokeLinecap="round">
+                <line x1="7" y1="24" x2="7" y2="8" />
+                <line x1="7" y1="8" x2="25" y2="24" />
+                <line x1="25" y1="24" x2="25" y2="8" />
+              </g>
+              <g fill="white">
+                <circle cx="7" cy="24" r="2.6" />
+                <circle cx="7" cy="8" r="2.6" />
+                <circle cx="25" cy="24" r="2.6" />
+                <circle cx="25" cy="8" r="2.6" />
+              </g>
             </svg>
           </div>
           <div className="leading-tight">

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="novamem">
+  <title>novamem</title>
+  <!-- Four nodes arranged so the connecting edges trace an 'N' silhouette.
+       Reads as a graph (the product) and as the letter (the brand). -->
+  <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+    <!-- left edge: bottom-left → top-left -->
+    <line x1="7" y1="24" x2="7" y2="8"/>
+    <!-- diagonal: top-left → bottom-right -->
+    <line x1="7" y1="8" x2="25" y2="24"/>
+    <!-- right edge: bottom-right → top-right -->
+    <line x1="25" y1="24" x2="25" y2="8"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="7"  cy="24" r="2.6"/>
+    <circle cx="7"  cy="8"  r="2.6"/>
+    <circle cx="25" cy="24" r="2.6"/>
+    <circle cx="25" cy="8"  r="2.6"/>
+  </g>
+</svg>
