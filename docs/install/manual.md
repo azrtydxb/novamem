@@ -91,9 +91,15 @@ curl http://localhost:7778/health
 # { "ok": true }
 ```
 
-Public `/health` is boolean-only — no infrastructure detail leaks to unauthenticated callers. For a per-dependency snapshot, sign in to the dashboard and hit the admin-gated deep-health endpoint with your session cookie:
+Public `/health` is boolean-only — no infrastructure detail leaks to unauthenticated callers. For a per-dependency snapshot, sign in as an admin first and re-use the session cookie:
 
 ```bash
+# 1. Sign in (writes the session cookie to cookies.txt)
+curl -sS -c cookies.txt -X POST http://localhost:7778/api/auth/sign-in/email \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@example.com","password":"…"}'
+
+# 2. Use the cookie for the admin-only deep-health endpoint
 curl --cookie cookies.txt http://localhost:7778/v1/admin/health/deep
 # { "ok": true, "deps": { "warm": "ok", "cold": "ok", "graph": "ok" } }
 ```

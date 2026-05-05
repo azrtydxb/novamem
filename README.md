@@ -20,7 +20,7 @@ docker compose up -d
 curl http://localhost:7778/health
 ```
 
-Compose fails fast unless those three env vars are set. See [`.env.example`](.env.example) for the full reference and [`docs/install/docker.md`](docs/install/docker.md) for the long-form walkthrough.
+Compose itself enforces `POSTGRES_PASSWORD` and `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` at interpolation time and refuses to start without them. The server then refuses to start without `NOVAMEM_COOKIE_SECRET` (sessions need a stable secret across restarts). See [`.env.example`](.env.example) for the full reference and [`docs/install/docker.md`](docs/install/docker.md) for the long-form walkthrough.
 
 ## What it does
 

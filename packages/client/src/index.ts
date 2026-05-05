@@ -314,7 +314,7 @@ export class NovamemClient {
 
   /** Hard-delete a bearer by sha256 hash. Wire route is
    *  `DELETE /v1/me/tokens/:hash`. */
-  async revokeMyToken(tokenHash: string): Promise<{ revoked: boolean }> {
+  async revokeMyToken(tokenHash: string): Promise<{ deleted: boolean }> {
     return this.request(`/v1/me/tokens/${encodeURIComponent(tokenHash)}`, {
       method: "DELETE",
     });
