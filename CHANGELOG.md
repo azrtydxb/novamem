@@ -4,6 +4,15 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-05
+
+### Fixed
+
+- **`npx @azrtydxb/novamem-init` exited silently with no output.** The entrypoint guard in `dist/main.js` compared `import.meta.url === \`file://${process.argv[1]}\`` — which never matched when invoked via the symlink npm puts in `node_modules/.bin/`. `runCli` never ran, exit 0, no output. Fix: resolve `process.argv[1]` via `realpathSync` before comparing. Last manual mono-version bump — Changesets is being introduced for per-package versions next.
+- **`PKG_VERSION` was hardcoded `"0.1.0"`** in the init CLI; `--version` now reads from the bundled `package.json`.
+- **ProjectsPage "Add a member" form** said "by username" / placeholder "carol"; server requires exact email per #62. Now labeled "by email" / "carol@example.com" with `type="email"`. Internal state renamed `username` → `email` to match.
+- **`packages/init` test gap.** Added `test/cli.test.ts` regression that runs the CLI through a symlink and asserts `--version` matches `package.json` exactly. The earlier 56 tests imported `runCli` directly and never exercised the bin entrypoint path.
+
 ## [1.1.0] - 2026-05-05
 
 Issue cleanup release. 18 GH issues from the post-v1.0.0 audit triaged and closed across docs, server hardening, deploy improvements, observability, and test coverage. Two architectural issues (#68, #69 — single source of truth for the API contract) deferred to a future release.

@@ -1,6 +1,6 @@
 {
   "name": "@azrtydxb/novamem-mcp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "MCP-stdio shim for the novamem memory service",
   "license": "Apache-2.0",
   "type": "module",
