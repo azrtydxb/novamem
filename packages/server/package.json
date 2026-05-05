@@ -1,6 +1,6 @@
 {
   "name": "@azrtydxb/novamem-server",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Standalone tiered memory service — HTTP + MCP transports",
   "license": "Apache-2.0",
