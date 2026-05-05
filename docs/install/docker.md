@@ -94,3 +94,47 @@ For multi-node use [Kubernetes](kubernetes.md) instead.
 - `403 Invalid origin` on sign-in → set `NOVAMEM_BASE_URL` to the exact URL the browser uses and restart.
 - Sign-in works but session doesn't stick → set `NOVAMEM_INSECURE_COOKIES=1` for dev, or terminate TLS in front for prod.
 - First `memory_search` is slow → the local embedder is downloading the model on first call; subsequent calls are fast.
+
+## Production deploy
+
+`docker-compose.yaml` is intentionally dev-friendly: it publishes the
+Postgres (5432), Qdrant (6333), and FalkorDB (6379) ports on the host so
+you can poke at them from your laptop, and it pins FalkorDB to `:edge`.
+Neither is appropriate for a real deployment.
+
+The repo ships a `docker-compose.prod.yaml` override that:
+
+- Removes the host port publishes for postgres, qdrant, and falkordb so
+  the datastores stay on the internal compose network only.
+- Removes the host port publish for the `novamem` app (port 7778) — the
+  expectation is that a TLS-terminating reverse proxy on the same docker
+  network forwards traffic to it.
+- Pins `falkordb/falkordb` to a stable release tag instead of `:edge`.
+
+Combine the two files when you bring the stack up:
+
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+```
+
+### Reverse proxy
+
+Run your TLS terminator (Caddy, Traefik, nginx, …) on the same
+`default` docker network created by compose, and point it at
+`novamem:7778`. A minimal Caddy `Caddyfile`:
+
+```
+memory.example.com {
+  reverse_proxy novamem:7778
+}
+```
+
+Set `NOVAMEM_BASE_URL=https://memory.example.com` and
+`NOVAMEM_INSECURE_COOKIES=0` in your `.env` so Better Auth stamps secure
+cookies and validates the Origin header. For Traefik, attach the same
+labels to the `novamem` service via a second override file, or extend
+`docker-compose.prod.yaml` in your fork.
+
+Datastores remain unreachable from outside the docker network. If you
+need ad-hoc access for backups or debugging, run `docker compose exec`
+into the relevant service rather than re-publishing ports.

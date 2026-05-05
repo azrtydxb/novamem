@@ -33,7 +33,7 @@
     "@types/node": "^22.10.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "repository": {
     "type": "git",
