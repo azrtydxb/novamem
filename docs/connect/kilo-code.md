@@ -2,6 +2,16 @@
 
 [Kilo Code](https://kilocode.ai) reads project-scoped rules, slash commands, and MCP config from `.kilocode/`. The structure mirrors Claude Code, so the same content works with small path tweaks.
 
+## One-shot installer (recommended)
+
+```bash
+npx @azrtydxb/novamem-init
+```
+
+Signs you in, mints a fresh `nm_…` bearer, detects Kilo Code, and writes `.kilocode/mcp.json` + the rules + slash commands for you. Idempotent.
+
+The rest of this page is the manual path.
+
 ## MCP config
 
 Either drop a `.mcp.json` at the project root (Kilo honours the same file Claude Code does) or paste into `.kilocode/mcp.json`:

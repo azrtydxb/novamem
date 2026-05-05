@@ -1,8 +1,18 @@
 # Connect Claude Code
 
-Claude Code speaks remote MCP natively, so you point it at `/mcp/sse` directly — no shim, no `npx`.
+Claude Code speaks remote MCP natively, so you point it at `/mcp/sse` directly — no shim, no `npx` for the runtime.
 
-## Recommended: project-local config
+## One-shot installer (recommended)
+
+```bash
+npx @azrtydxb/novamem-init
+```
+
+Asks for the server URL + your dashboard email/password, mints a fresh `nm_…` bearer, detects Claude Code on your machine, and writes `.mcp.json` + the `commands/` bundle + the `CLAUDE.md` fragment for you. Idempotent — won't clobber existing config.
+
+The rest of this page is the manual path — useful when you're scripting deployments or want to see what `novamem-init` actually wrote.
+
+## Manual: project-local config
 
 Drop a `.mcp.json` at your project root:
 
