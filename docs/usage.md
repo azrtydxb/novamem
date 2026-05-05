@@ -148,7 +148,16 @@ Use this when the user signals they're working on a specific project ("let's swi
 
 ## Stats (`memory_stats`)
 
-Service-wide snapshot of counters, gauges, and rolling rates — the same numbers the dashboard's Metrics page shows. Useful for one-shot health checks from an agent ("how big is my memory?") and for skills that want to surface a "you have N entries" hint without polling. Non-mutating; no arguments.
+Per-caller snapshot of how big the caller's memory is, scoped to the authenticated user. No arguments; non-mutating. Returns:
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `byNamespace` | `Record<string, {warm, cold}>` | Entry counts grouped by namespace, split by tier |
+| `totalWarm` / `totalCold` | `number` | Caller's totals across all namespaces |
+| `lastDecayAt` | ISO-8601 or `null` | When the service last ran the decay loop (service-wide context) |
+| `uptimeMs` | `number` | Service uptime in ms (service-wide context) |
+
+Useful for skills that want to surface a "you have N entries across M namespaces" hint without polling the dashboard. **Not** the dashboard's full Metrics view — that's `/v1/me/metrics` (per-user counters + rolling rates) or `/v1/admin/metrics` (the whole service).
 
 ## Decay and reinforcement
 
