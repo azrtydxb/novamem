@@ -30,3 +30,6 @@ data/
 *.md
 !README.md
 !SECURITY.md
+
+# Static-site assets that aren't part of the server image.
+site/
