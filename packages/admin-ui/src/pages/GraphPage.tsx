@@ -54,7 +54,7 @@ export function GraphPage() {
   const { data: recent } = useQuery({
     queryKey: ["graph-recent", activeProjectId ?? "global"],
     queryFn: async () => {
-      const r = await api<RecentResp>("POST", "/v1/me/recent", {
+      const r = await api<RecentResp>("POST", "/v1/recent", {
         k: 30,
         ...(includeProjects ? { includeProjects } : {}),
       });
@@ -73,7 +73,7 @@ export function GraphPage() {
     queryKey: ["graph-neighbors", seed, activeProjectId ?? "global"],
     queryFn: async () => {
       if (!seed) return { seed: "", results: [] };
-      const r = await api<NeighborsResp>("POST", "/v1/me/neighbors", {
+      const r = await api<NeighborsResp>("POST", "/v1/neighbors", {
         id: seed,
         depth: 1,
         k: 6,

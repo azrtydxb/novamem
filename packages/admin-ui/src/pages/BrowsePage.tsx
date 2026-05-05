@@ -13,8 +13,8 @@ import { useToast } from "../components/Toast";
 interface RecentResp { results: SearchResult[] }
 interface SearchResp { results: SearchResult[]; degraded: boolean }
 
-/** Browse memories — combines `/v1/me/recent` (default view, last
- *  20 entries by created-time) with `/v1/me/search` (when the user
+/** Browse memories — combines `/v1/recent` (default view, last
+ *  20 entries by created-time) with `/v1/search` (when the user
  *  types a query). The API returns the same SearchResult shape so the
  *  list rendering is identical. */
 export function BrowsePage() {
@@ -34,7 +34,7 @@ export function BrowsePage() {
   const { data: recent, isFetching: recentLoading } = useQuery({
     queryKey: ["browse-recent", activeProjectId ?? "global"],
     queryFn: async () => {
-      const r = await api<RecentResp>("POST", "/v1/me/recent", {
+      const r = await api<RecentResp>("POST", "/v1/recent", {
         k: 20,
         ...(includeProjects ? { includeProjects } : {}),
       });
@@ -47,7 +47,7 @@ export function BrowsePage() {
   const { data: searchResp, isFetching: searchLoading } = useQuery({
     queryKey: ["browse-search", debounced, activeProjectId ?? "global"],
     queryFn: async () => {
-      const r = await api<SearchResp>("POST", "/v1/me/search", {
+      const r = await api<SearchResp>("POST", "/v1/search", {
         query: debounced,
         k: 20,
         ...(includeProjects ? { includeProjects } : {}),
@@ -76,7 +76,7 @@ export function BrowsePage() {
     mutationFn: async () => {
       // Writes follow the active scope: when a project is active, store
       // the new memory inside it; otherwise it's user-global.
-      const r = await api<{ id: string }>("POST", "/v1/me/remember", {
+      const r = await api<{ id: string }>("POST", "/v1/remember", {
         content: newContent.trim(),
         ...(activeProjectId ? { project: activeProjectId } : {}),
       });
