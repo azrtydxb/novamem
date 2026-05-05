@@ -1175,6 +1175,40 @@ export class WarmStore {
    *    - user-wide (`projectId` null/undefined): user_id matches AND
    *      project_id IS NULL.
    */
+  /** Distinct namespaces the caller has entries in for the given scope.
+   *  Used by engine.search / engine.recent when the request specifies
+   *  neither `namespace` nor `includeNamespaces` — instead of silently
+   *  defaulting to "default" (and missing every entry the caller wrote
+   *  to a custom namespace), fan out across the namespaces that actually
+   *  contain data. Scope semantics mirror `listRecent`:
+   *    - includeProjects: user-global ∪ each listed project
+   *    - projectId: that project only
+   *    - neither: user-global only (no project membership). */
+  async listNamespaces(
+    userId: string,
+    args: {
+      projectId?: string | null;
+      includeProjects?: string[] | null;
+    } = {},
+  ): Promise<string[]> {
+    const { projectId = null, includeProjects = null } = args;
+    const isActive = !!includeProjects && includeProjects.length > 0;
+    const isProject = !isActive && typeof projectId === "string";
+    const scopeClause = isActive
+      ? or(
+          and(eq(schema.memoryEntries.userId, userId), isNull(schema.memoryEntries.projectId)),
+          inArray(schema.memoryEntries.projectId, includeProjects),
+        )
+      : isProject
+        ? eq(schema.memoryEntries.projectId, projectId as string)
+        : and(eq(schema.memoryEntries.userId, userId), isNull(schema.memoryEntries.projectId));
+    const rows = await this.db
+      .selectDistinct({ namespace: schema.memoryEntries.namespace })
+      .from(schema.memoryEntries)
+      .where(scopeClause);
+    return rows.map((r) => r.namespace);
+  }
+
   async listRecent(
     userId: string,
     args: {

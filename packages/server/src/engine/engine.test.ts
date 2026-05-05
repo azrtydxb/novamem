@@ -108,6 +108,35 @@ describe("engine.search", () => {
     expect(keywordOnly.results[0]!.signals.keyword).toBeGreaterThan(0);
     expect(keywordOnly.results[0]!.score).toBeGreaterThan(0);
   });
+
+  // Regression: a user who wrote everything to a custom namespace
+  // (e.g. `diag`) used to get an empty result set when they searched
+  // without specifying namespace, because the engine silently defaulted
+  // to "default". Now: when neither `namespace` nor `includeNamespaces`
+  // is provided, fan out across the namespaces the caller actually has
+  // entries in.
+  it("when no namespace param is set, fans out across populated namespaces", async () => {
+    const b = bench();
+    const e = await b.engine.remember("public", {
+      content: "alpha beta gamma in custom namespace",
+      namespace: "diag",
+      force: true,
+    });
+    // No namespace, no includeNamespaces — old behaviour returned [].
+    const r = await b.engine.search("public", { query: "alpha beta gamma" });
+    const ids = r.results.map((x) => x.id);
+    expect(ids).toContain(e.id);
+  });
+
+  it("when no namespace param is set and store is empty, falls back to ['default']", async () => {
+    const b = bench();
+    // Write nothing. A search shouldn't throw — it should return
+    // empty cleanly, just like the old behaviour but without the
+    // silent miss-on-data bug.
+    const r = await b.engine.search("public", { query: "anything" });
+    expect(r.results).toEqual([]);
+    expect(r.degraded).toBe(false);
+  });
 });
 
 describe("engine.recent", () => {
