@@ -31,7 +31,10 @@ export function HealthPage() {
   const { data, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ["health"],
     queryFn: async () => {
-      const r = await api<HealthSnapshot>("GET", "/health");
+      // /v1/admin/health/deep returns {ok, deps} (admin-only). The plain
+      // /health endpoint is a boolean liveness probe shape after #50 and
+      // does NOT include `deps`, so the per-dep cards would show UNKNOWN.
+      const r = await api<HealthSnapshot>("GET", "/v1/admin/health/deep");
       if (!r.ok || !r.body) throw new Error(r.error ?? `health ${r.status}`);
       return r.body;
     },
