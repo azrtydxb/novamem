@@ -2,6 +2,12 @@
 # plus a manual trigger. Uses the official actions/configure-pages →
 # upload-pages-artifact → deploy-pages chain so we don't need a separate
 # gh-pages branch.
+#
+# Two artifacts get combined into one Pages deploy:
+#   1. site/index.html (+ static assets)  — the marketing landing page
+#   2. packages/docs-site/.vitepress/dist — the VitePress docs, built into site/docs/
+#
+# So the final upload is the entire site/ directory.
 name: Pages
 
 on:
@@ -9,11 +15,10 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "packages/docs-site/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
-# Only one Pages deploy at a time; cancel earlier runs in flight rather
-# than queueing them — a stale build serves nothing useful.
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -31,9 +36,27 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # Node + pnpm so we can build VitePress.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build VitePress docs
+        run: pnpm --filter @azrtydxb/novamem-docs-site build
+
       - uses: actions/configure-pages@v5
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
       - id: deployment
         uses: actions/deploy-pages@v4

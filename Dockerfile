@@ -15,11 +15,18 @@ COPY packages/client/package.json packages/client/
 COPY packages/mcp/package.json packages/mcp/
 COPY packages/admin-ui/package.json packages/admin-ui/
 COPY packages/init/package.json packages/init/
+# docs-site is a workspace member — we need its package.json present so
+# pnpm install sees a consistent workspace, but we'll skip building it
+# in the build stage below. The Pages workflow builds it separately.
+COPY packages/docs-site/package.json packages/docs-site/
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
-RUN pnpm -r build
+# Skip docs-site — VitePress isn't part of the server runtime and the
+# Pages workflow builds it on its own. Without the filter, `pnpm -r`
+# would try to run `vitepress build` here.
+RUN pnpm -r --filter '!@azrtydxb/novamem-docs-site' build
 # Generate a runtime package.json with devDependencies stripped — keeps
 # `dependencies` only so npm in the runtime stage doesn't choke on
 # `workspace:*` URL schemes it doesn't understand. Writing to a fresh
