@@ -6,6 +6,33 @@
 
 import { FalkorDB, type Graph } from "falkordb";
 
+/** Allowlist for graph-traversal depth. FalkorDB can't bind a path-length
+ *  via `$param`, so depth is interpolated directly into Cypher; this list
+ *  is the authoritative gate for what's acceptable. We keep it tight
+ *  ({1,2,3}) because multi-hop walks scale exponentially and the default
+ *  caller only ever asks for depth=1. */
+const ALLOWED_GRAPH_DEPTHS = new Set<number>([1, 2, 3]);
+
+/** Validate `depth` and `limit` *before* they're concatenated into a
+ *  Cypher string. Throws on non-finite / NaN values, on `depth` outside
+ *  the allowlist, and on `limit` outside 1..200. The `limit` check is
+ *  deliberately a finiteness assertion only — the caller numerically
+ *  clamps the value afterwards; this just stops `NaN`/`Infinity` from
+ *  ever reaching the clamp. Exported so unit tests can assert the
+ *  contract directly. */
+export function validateGraphParams(depth: unknown, limit: unknown): void {
+  if (
+    typeof depth !== "number" ||
+    !Number.isFinite(depth) ||
+    !ALLOWED_GRAPH_DEPTHS.has(depth)
+  ) {
+    throw new Error("invalid graph traversal params");
+  }
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    throw new Error("invalid graph traversal params");
+  }
+}
+
 /** Minimal logger surface — structurally compatible with Pino /
  *  Fastify's logger. Object-first: `(obj, msg)` is the idiomatic Pino
  *  call shape. Defaults to console when no logger is supplied. */
@@ -148,9 +175,22 @@ export class GraphStore {
     projectId: string | null = null,
   ): Promise<Array<{ id: string; score: number }>> {
     if (!this.graph) return [];
-    // Defensive clamp — `${limit}` is interpolated into Cypher (FalkorDB
-    // doesn't bind LIMIT). Upstream Zod gates already cap k, but pinning
-    // the bound here removes the implicit coupling.
+    // ── Cypher param hardening (issue #44) ─────────────────────────────
+    // FalkorDB cannot bind LIMIT or relationship-path length (`*1..N`)
+    // through `$param` placeholders, so we MUST interpolate `depth` and
+    // `limit` into the Cypher string. To keep that safe we:
+    //   1. Reject non-finite / NaN inputs up front (a stray `NaN` would
+    //      otherwise stringify to `"NaN"` and either error out leaking a
+    //      stack trace or — worse if templating ever changes — open a
+    //      structural-injection sink.
+    //   2. Constrain `depth` to a tiny allowlist `{1, 2, 3}` because
+    //      multi-hop traversal cost is exponential and only depth=1 is
+    //      used on the hot path; larger depths are explicit power-user
+    //      requests, not arbitrary numbers.
+    //   3. Numeric-clamp `limit` into 1..200 after the finiteness check.
+    // Any callers passing untrusted values will throw before we ever
+    // build a query string.
+    validateGraphParams(depth, limit);
     limit = Math.max(1, Math.min(200, Math.trunc(limit)));
     const project = projectId ?? "";
     // The depth-1 hot path uses a single relationship variable so the
@@ -182,16 +222,27 @@ export class GraphStore {
   /** Drop every Memory node belonging to a project. Returns `true` only
    *  when the delete actually ran — silently swallowing errors used to
    *  make the engine report `graphCleared: true` falsely. */
-  async removeAllForProject(projectId: string): Promise<boolean> {
+  async removeAllForProject({
+    userId,
+    projectId,
+  }: {
+    userId: string;
+    projectId: string;
+  }): Promise<boolean> {
     if (!this.graph || !this.connected) return false;
     try {
-      await this.graph.query("MATCH (n:Memory {project: $project}) DETACH DELETE n", {
-        params: { project: projectId },
-      });
+      // Defence-in-depth user scoping (issue #45): even though the HTTP
+      // layer verifies the caller owns the project, double-keying the
+      // delete on `user` ensures a malformed Cypher template or a future
+      // caller mistake can't reach across user boundaries.
+      await this.graph.query(
+        "MATCH (n:Memory {user: $user, project: $project}) DETACH DELETE n",
+        { params: { user: userId, project: projectId } },
+      );
       return true;
     } catch (err) {
       this.logger.warn(
-        { projectId, err: (err as Error).message },
+        { userId, projectId, err: (err as Error).message },
         "graph-store removeAllForProject failed",
       );
       return false;

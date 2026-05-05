@@ -204,7 +204,7 @@ export function buildMcpServer(
           if (project.ownerUserId !== userId) {
             throw new Error("only the owner can delete a project");
           }
-          const r = await engine.deleteProject(scope.project);
+          const r = await engine.deleteProject(scope.project, project.ownerUserId);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "project_activate": {

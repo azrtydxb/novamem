@@ -13,6 +13,7 @@
  *   routes/mcp-sse.ts     — /mcp/sse + /mcp/messages
  */
 
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -164,8 +165,11 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
 
   // Cookie support for HttpOnly session storage. Cookies are
   // signed with a server-side secret so any bit-flip / tamper invalidates
-  // the value before it reaches our auth hook.
-  const cookieSecret = opts.cookieSecret ?? "novamem-dev-cookie-secret-change-me";
+  // the value before it reaches our auth hook. config.ts is the single
+  // authoritative source for this value (with a process-lifetime random
+  // fallback only when auth.mode=none); tests that don't go through
+  // loadConfig must supply their own.
+  const cookieSecret = opts.cookieSecret ?? randomBytes(32).toString("base64url");
   app.register(fastifyCookie, { secret: cookieSecret });
 
   // ─── Global hardening headers (#47) ────────────────────────────────
