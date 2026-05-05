@@ -11,9 +11,16 @@
 Standalone tiered memory service for AI agents. Hybrid keyword + vector + graph search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard.
 
 ```bash
+cp .env.example .env
+# Edit .env to set the three required secrets:
+#   POSTGRES_PASSWORD=$(openssl rand -base64 24)
+#   NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 24)
+#   NOVAMEM_COOKIE_SECRET=$(openssl rand -hex 32)
 docker compose up -d
 curl http://localhost:7778/health
 ```
+
+Compose itself enforces `POSTGRES_PASSWORD` and `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` at interpolation time and refuses to start without them. The server then refuses to start without `NOVAMEM_COOKIE_SECRET` (sessions need a stable secret across restarts). See [`.env.example`](.env.example) for the full reference and [`docs/install/docker.md`](docs/install/docker.md) for the long-form walkthrough.
 
 ## What it does
 

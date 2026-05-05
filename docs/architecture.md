@@ -112,9 +112,9 @@ Enforced in three places:
 
 - **Warm store** — `getEntry`, `ftsSearch`, `engine.recent`, `engine.forget`. Project-scoped queries filter on `project_id` ALONE; user-scoped queries filter on `user_id` AND `project_id IS NULL`.
 - **Cold store** — separate qdrant collections per scope:
-  - User-wide: `novamem_<userId>_<namespace>`
+  - User-wide: `novamem_u_<userId>_<namespace>` (the older unprefixed `novamem_<userId>_<namespace>` form is kept only as a read fallback for collections that pre-date the rename)
   - Project: `novamem_p_<projectId>_<namespace>`
-  - The user-id regex forbids `p` and `p_*` so the prefixes can't collide.
+  - The `u_` / `p_` prefixes guarantee user and project namespaces can't collide.
 - **Graph store** — every `Memory` node carries `user` + `project` properties. `addEdge`/`neighbors`/`removeAllForUser` filter on the appropriate one.
 
 ### Active project
@@ -130,7 +130,7 @@ Two coexisting credential types resolve to the same `req.dashUser` shape:
 
 The auth hook in `http.ts` runs on every request: it asks Better Auth for a session via `auth.api.getSession({ headers })`. If that hits, `req.dashUser` is populated. If not, and the route is `/v1/auth/*` or `/v1/me/*` and an `nm_…` bearer is present, it resolves the bearer to its underlying user and synthesises a `dashUser` from Better Auth's `"user"` row. Data-plane routes (`/v1/search`, `/v1/remember`, …) accept either path; admin routes additionally require `role: admin`.
 
-A passthrough handler at `/api/auth/*` forwards every request to Better Auth's WHATWG-style handler. A pre-handler intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` to refuse operations that would leave zero admins.
+A passthrough handler at `/api/auth/*` forwards Better Auth-owned routes to its WHATWG-style handler — but the forwarding is now an **explicit allowlist** of the sign-in, sign-out, sign-up, get-session, token, and JWKS paths novamem actually uses, plus a single wildcard for `/api/auth/admin/*` (the dashboard's user CRUD surface). Anything outside the allowlist returns 404 from the app instead of being blindly proxied. A pre-handler on the admin wildcard still intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` to refuse operations that would leave zero admins.
 
 ## Provenance
 
@@ -257,7 +257,7 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - pnpm workspaces. `pnpm -r build` builds in dependency order (client → mcp → admin-ui → server).
 - The runtime Dockerfile drops privileges, ships only `dist/` + production deps, and declares `HEALTHCHECK`.
 - Default port 7778 on both host + container.
-- k3s manifests live under `deploy/k8s/` — single-replica StatefulSets for Postgres / Qdrant / FalkorDB on local-path PVCs, plus a `LoadBalancer` Service that binds 7778 on the node's host network. The ConfigMap pins `NOVAMEM_BASE_URL` to the public origin so Better Auth's trusted-origin check accepts the SPA.
+- k3s manifests live under `deploy/k8s/` — single-replica StatefulSets for Postgres / Qdrant / FalkorDB on local-path PVCs, plus a `ClusterIP` Service for novamem fronted by a TLS-terminating Ingress (`deploy/k8s/ingress.yaml`). The ConfigMap pins `NOVAMEM_BASE_URL` to the public Ingress origin so Better Auth's trusted-origin check accepts the SPA.
 
 ## Things that aren't here yet
 

@@ -45,15 +45,15 @@ Use when the user signals they're done with the current project ("switching cont
 
 Inputs:
 - `project` (required, string) — id or human name
-- `username` (required, string) — invitee's email or display name
+- `username` (required, string) — invitee's **exact email address**
 
-**Owner-only.** Adds another user as a member; the invitee can read and write the project's memories. Use when the user says "let X access the Phoenix project" or "share Phoenix with alice@…".
+**Owner-only.** Adds another user as a member; the invitee can read and write the project's memories. The server resolves invitees with `findUserByExactEmail` — display names and partial matches are not accepted, and a non-matching value returns `404 unknown user`. Use when the user says "share Phoenix with alice@example.com".
 
 ## project_unshare
 
 Inputs:
 - `project` (required, string) — id or human name
-- `username` (required, string) — member's email or display name
+- `username` (required, string) — member's **exact email address**
 
 **Owner-only.** Removes a member's access. The owner cannot unshare themselves — use `project_delete` instead. Removing a member also drops the membership row atomically.
 
