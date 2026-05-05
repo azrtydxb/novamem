@@ -16,8 +16,8 @@ const memory = new NovamemClient({
   token: process.env.NOVAMEM_TOKEN, // user bearer `nm_…`
 });
 
-await memory_remember({ content: "User prefers dark roast" });
-const hits = await memory_search({ query: "coffee preference", k: 5 });
+await memory.remember({ content: "User prefers dark roast" });
+const hits = await memory.search({ query: "coffee preference", k: 5 });
 ```
 
 A `nm_…` bearer carries every right the owning user has — the user's whole memory plus every project they're a member of. Mint one from the dashboard's API Tokens page.
@@ -27,8 +27,8 @@ A `nm_…` bearer carries every right the owning user has — the user's whole m
 Each entry can belong to a **project** (sub-brain). Pass `project` (id or human name) to scope:
 
 ```ts
-await memory_remember({ content: "phoenix sprint plan", project: "Phoenix" });
-await memory_search({ query: "sprint", project: "Phoenix" });
+await memory.remember({ content: "phoenix sprint plan", project: "Phoenix" });
+await memory.search({ query: "sprint", project: "Phoenix" });
 ```
 
 When the user has an active project set (`setActiveProject`), memory_* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly.
@@ -59,7 +59,7 @@ await memory.updateMemory(oldId, {
 | `neighbors(opts)` | Graph-neighbour traversal from a seed id |
 | `forget(id, opts?)` | Hard delete |
 | `stats()` | Per-namespace counts |
-| `health()` | Liveness + dependency status |
+| `health()` | Public liveness probe — returns `{ ok }` only. Per-dependency status lives behind the admin-gated `/v1/admin/health/deep` route, which the client does not expose |
 | `decay(opts?)` | Run the warm→cold demotion pass on demand |
 
 ### Projects
@@ -70,7 +70,7 @@ await memory.updateMemory(oldId, {
 | `createProject({name})` | Caller becomes owner; id is server-assigned (ULID) |
 | `deleteProject(id)` | Owner-only; purges all project data |
 | `listProjectMembers(id)` | Members of a project |
-| `addProjectMember(id, {username, role?})` | Owner-only; username may be email or display name |
+| `addProjectMember(id, {username, role?})` | Owner-only; `username` must be the invitee's **exact email address** (the server resolves via `findUserByExactEmail`) |
 | `removeProjectMember(id, userId)` | Owner removes anyone; non-owner self-leave only |
 | `removeProjectMemberByUsername(id, username)` | Convenience — resolves the username via members listing |
 
@@ -88,7 +88,7 @@ await memory.updateMemory(oldId, {
 |---|---|
 | `mintToken({label?})` | Plaintext shown once |
 | `listTokens()` | sha256 hashes + metadata |
-| `revokeMyToken(tokenHash)` | Revoke by hash |
+| `revokeMyToken(tokenHash)` | Hard-delete a bearer by sha256 hash (`DELETE /v1/me/tokens/:hash`) |
 
 ### Dashboard auth (browser-style flow)
 

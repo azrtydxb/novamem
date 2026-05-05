@@ -132,7 +132,7 @@ The seven `project_*` tools cover the full lifecycle:
 | `project_list` | any user | list projects the caller owns or is a member of |
 | `project_create` | any user | create a new project; the caller becomes its owner. Returns the assigned ULID |
 | `project_delete` | owner only | delete the project and **every** memory entry, vector, and graph node in it. No undo |
-| `project_share` | owner only | add another user as a member by username/email. Member can read and write |
+| `project_share` | owner only | add another user as a member by their **exact email address**. Member can read and write |
 | `project_unshare` | owner only | remove a member. The owner cannot unshare themselves — `project_delete` instead |
 | `project_activate` | any user | set the caller's active project (server-side per-user state) |
 | `project_deactivate` | any user | clear the active project |

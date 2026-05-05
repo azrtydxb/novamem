@@ -81,7 +81,7 @@ Schema migrations are forward-only — back up Postgres first.
 
 The compose file is geared for development:
 
-- Postgres has a default password (`novamem:novamem`) — change it
+- Compose now requires `POSTGRES_PASSWORD` (no default — `docker compose up` fails fast if it's unset). Keep the generated value strong and secret, and don't expose the Postgres port to anything other than the application container.
 - `NOVAMEM_INSECURE_COOKIES=1` allows plain-HTTP cookies — flip to `0` and put a TLS-terminating reverse proxy (nginx, Caddy, Traefik) in front
 - `NOVAMEM_BASE_URL` must match the public URL exactly (Better Auth checks Origin)
 - Read [SECURITY.md](../../SECURITY.md) for the full hardening checklist
