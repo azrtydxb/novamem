@@ -46,6 +46,16 @@ jobs:
     name: changesets release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Releases run only from main. Without this guard a workflow_dispatch
+    # from a feature branch could open a Version Packages PR or attempt
+    # to publish from non-canonical state.
+    if: github.ref == 'refs/heads/main'
+    # `NPM_CONFIG_PROVENANCE` makes `npm publish` (which `pnpm changeset
+    # publish` invokes per package) attach a Sigstore attestation. The
+    # `--provenance` CLI flag isn't pluggable through the changesets
+    # action; the env var is the documented way to flip it on globally.
+    env:
+      NPM_CONFIG_PROVENANCE: "true"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -62,10 +72,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
       - run: pnpm test
-      # The `version` script consumes pending .changeset/*.md and bumps
-      # affected package.json versions; the `publish` script invokes
-      # `pnpm publish -r` which skips packages whose version is already
-      # on the registry.
+      # `version` consumes pending .changeset/*.md and bumps affected
+      # package.json versions. `publish` calls `npm publish` per package,
+      # which skips versions already on the registry. Provenance attaches
+      # via `NPM_CONFIG_PROVENANCE=true` set at the job level above.
       - name: Version + publish
         uses: changesets/action@v1
         with:

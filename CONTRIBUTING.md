@@ -113,7 +113,7 @@ Pick the affected packages and the bump kind (`patch` / `minor` / `major`), writ
 When the PR merges to `main`, the release workflow looks for unconsumed `.changeset/*.md` files. Two states:
 
 1. **Pending changesets exist** → workflow opens (or updates) a `chore(release): version packages` PR that bumps every affected `package.json` version, regenerates per-package `CHANGELOG.md`s, and deletes the consumed changeset files. **Review and merge that PR** when ready to ship.
-2. **No pending changesets** (i.e. you just merged the version PR) → workflow runs `pnpm changeset publish`, which calls `pnpm publish -r --provenance` and skips packages whose version is already on the registry. Result: only the changed packages publish, each with a Sigstore provenance attestation.
+2. **No pending changesets** (i.e. you just merged the version PR) → workflow runs `pnpm changeset publish`, which calls `npm publish` per package and skips versions already on the registry. Provenance attaches via `NPM_CONFIG_PROVENANCE=true` set at the workflow job level (the `--provenance` flag isn't pluggable through the changesets action). Result: only the changed packages publish, each with a Sigstore attestation.
 
 ### Notes
 
