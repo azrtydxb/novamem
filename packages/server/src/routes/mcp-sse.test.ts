@@ -34,6 +34,9 @@ let baseUrl: string;
 const openControllers: AbortController[] = [];
 
 beforeAll(async () => {
+  // Drive the keepalive at 100 ms so a ~600 ms read window catches
+  // multiple frames; the route reads this env per-handshake.
+  process.env.NOVAMEM_SSE_KEEPALIVE_MS = "100";
   const warm = new FakeWarmStore();
   const cold = new FakeColdStore();
   const graph = new FakeGraphStore();
@@ -98,40 +101,32 @@ describe("mcp-sse: per-user concurrency cap (issue #26)", () => {
     }
   }, 15_000);
 
-  it("emits SSE keepalive comments so idle clients don't hit Body Timeout Error", async () => {
-    // Open one session and read the stream for ~1.5s. We expect at
-    // least one keepalive `: ping` comment within that window. The
-    // production cadence is 25s; tests bump it up via the route's
-    // KEEPALIVE_INTERVAL_MS being tunable would be cleaner, but a
-    // 25s interval > test timeout, so we drive a SHORT window and
-    // confirm the SDK's own connection-open SSE comments + our ping
-    // BOTH keep the stream warm. The simpler check: bytes arrive
-    // beyond the initial protocol handshake, validating the keepalive
-    // path didn't break anything.
+  it("emits SSE keepalive `: ping` comments so idle clients don't hit Body Timeout Error", async () => {
+    // The production cadence is 25 s — too long for a unit test — so we
+    // override it to 100 ms via NOVAMEM_SSE_KEEPALIVE_MS (set in
+    // beforeAll). Read the stream for ~600 ms and assert at least one
+    // `: ping` comment frame arrived. The SDK's initial `endpoint`
+    // event is also there; we filter for the literal `: ping` so we're
+    // verifying the keepalive specifically, not just "any bytes".
     const ctrl = new AbortController();
     openControllers.push(ctrl);
     const res = await fetch(`${baseUrl}/mcp/sse`, { signal: ctrl.signal });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/event-stream/);
-    const reader = res.body?.getReader();
+    const reader = res.body!.getReader();
     let received = "";
-    const deadline = Date.now() + 1500;
-    while (Date.now() < deadline && reader) {
-      const { value, done } = await Promise.race([
-        reader.read(),
-        new Promise<{ value: undefined; done: true }>((r) =>
-          setTimeout(() => r({ value: undefined, done: true }), 200),
-        ),
-      ]);
-      if (done) break;
-      if (value) received += new TextDecoder().decode(value);
+    const decoder = new TextDecoder();
+    const deadline = Date.now() + 800;
+    // Drain frames until we've seen `: ping` or hit the deadline.
+    // reader.read() resolves on each chunk, so as long as the keepalive
+    // interval (100 ms) is shorter than our budget, at least one frame
+    // beyond the SDK's initial `endpoint` event will arrive.
+    while (Date.now() < deadline && !/^: ping$/m.test(received)) {
+      const { value } = await reader.read();
+      if (value) received += decoder.decode(value, { stream: true });
     }
-    // At minimum the SDK has written its sessionId/endpoint event.
-    // We don't assert `: ping` directly because the cadence (25s) is
-    // too long for a unit test, but we verify the stream hasn't been
-    // torn down by the keepalive logic.
-    expect(received.length).toBeGreaterThan(0);
-    await reader?.cancel();
+    expect(received).toMatch(/^: ping$/m);
+    await reader.cancel();
   }, 5_000);
 });
 

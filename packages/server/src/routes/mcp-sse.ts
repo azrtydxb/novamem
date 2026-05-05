@@ -35,11 +35,17 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 /** How often the idle reaper scans the session map. */
 const REAP_INTERVAL_MS = 60 * 1000;
 
-/** SSE keepalive cadence. Must be shorter than the client's HTTP body-read
+/** SSE keepalive cadence. Override via `NOVAMEM_SSE_KEEPALIVE_MS` so tests
+ *  can drive a short window without waiting 25 s. Must be shorter than
+ *  the client's HTTP body-read
  *  timeout. undici (Node 20+ fetch / mcp-remote) defaults to 5 min before
  *  emitting `terminated: Body Timeout Error`; 25 s gives a comfortable
  *  margin even with a sluggish proxy in between. */
-const KEEPALIVE_INTERVAL_MS = 25 * 1000;
+const DEFAULT_KEEPALIVE_INTERVAL_MS = 25 * 1000;
+function resolveKeepaliveMs(): number {
+  const raw = Number(process.env.NOVAMEM_SSE_KEEPALIVE_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_KEEPALIVE_INTERVAL_MS;
+}
 
 interface SseSessionEntry {
   transport: SSEServerTransport;
@@ -131,8 +137,11 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     // SSE keepalive. Without periodic bytes, the client's HTTP body-read
     // hits its 5-minute idle timeout (undici's default in Node 20+) and
     // the EventSource emits "terminated: Body Timeout Error", forcing a
-    // reconnect. Writing `:` followed by CRLFCRLF is the canonical SSE
-    // comment — clients ignore it but the bytes reset their read timer.
+    // reconnect. `: ping\n\n` is the canonical SSE comment frame — `:`
+    // marks a comment line, then a blank line ends the event. The SSE
+    // spec accepts LF-LF, CRLF-CRLF, or CR-CR as separators; LF-LF is
+    // what every browser and Node EventSource implementation expects.
+    // Clients ignore the comment but the bytes reset their read timer.
     const keepalive = setInterval(() => {
       try {
         reply.raw.write(": ping\n\n");
@@ -140,7 +149,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         // Connection already torn down; the close/error listener below
         // will run cleanup on the next tick.
       }
-    }, KEEPALIVE_INTERVAL_MS);
+    }, resolveKeepaliveMs());
     keepalive.unref?.();
     const cleanup = () => {
       clearInterval(keepalive);
