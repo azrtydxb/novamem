@@ -37,7 +37,30 @@ export { NOVAMEM_INSTRUCTIONS } from "./mcp-instructions.js";
 // ─── Tool list (JSON-Schema for tools/list) ─────────────────────────────
 
 /** A single MCP tool advertisement. The `inputSchema` follows JSON Schema
- *  Draft-07 conventions as expected by MCP `tools/list`. */
+ *  Draft-07 conventions as expected by MCP `tools/list`.
+ *
+ *  `annotations` is the optional behavioural-hint surface added in the
+ *  MCP 2025-03-26 spec (carried through 2025-11-25). Hosts that respect
+ *  it use these flags to decide which tools auto-approve, which to gate
+ *  behind a confirmation, and which to surface in a "read-only safe"
+ *  mode — so accurate hints materially affect UX. */
+export interface ToolAnnotations {
+  /** Human-readable display name; falls back to `name` if absent. */
+  title?: string;
+  /** True for tools that don't mutate state. Hosts may auto-approve
+   *  these even in safe mode. Default: false (assume side effects). */
+  readOnlyHint?: boolean;
+  /** True for tools that may delete or overwrite — hosts surface a
+   *  prominent confirmation. Default: false. */
+  destructiveHint?: boolean;
+  /** True when calling repeatedly with the same args has the same
+   *  effect as calling once. Default: false. */
+  idempotentHint?: boolean;
+  /** True when the tool reaches outside its sandbox (network, files,
+   *  external APIs). Default: true (assume open-world). */
+  openWorldHint?: boolean;
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -45,7 +68,9 @@ export interface ToolDefinition {
     type: "object";
     properties?: Record<string, unknown>;
     required?: string[];
+    additionalProperties?: boolean;
   };
+  annotations?: ToolAnnotations;
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -92,6 +117,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["query"],
     },
+    annotations: {
+      title: "Search memory",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "memory_remember",
@@ -123,6 +154,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["content"],
     },
+    annotations: {
+      title: "Remember a fact",
+      readOnlyHint: false,
+      destructiveHint: false,
+      // Idempotent because of the SHA-dedup branch — the same content
+      // remembered twice returns the existing id with deduplicated:true.
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "memory_today",
@@ -137,6 +177,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         project: { type: "string", description: "Project id or name." },
         includeProjects: { type: "array", items: { type: "string" } },
       },
+    },
+    annotations: {
+      title: "Today's memory feed",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
   {
@@ -158,6 +204,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         includeProjects: { type: "array", items: { type: "string" } },
       },
     },
+    annotations: {
+      title: "Recent memory feed",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "memory_neighbors",
@@ -177,6 +229,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["id"],
     },
+    annotations: {
+      title: "Walk graph neighbours",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "memory_forget",
@@ -189,6 +247,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         project: { type: "string", description: "Project id or name (scope check)." },
       },
       required: ["id"],
+    },
+    annotations: {
+      title: "Forget a memory",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
   {
@@ -209,18 +274,37 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["id"],
     },
+    annotations: {
+      title: "Update a memory in place",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "memory_stats",
     description:
       "Diagnostic snapshot of the user's memory store. CALL THIS only when the user asks \"how much have I stored\", \"how many memories do I have\", \"is my store healthy\", or when troubleshooting why search results seem incomplete. Returns byNamespace warm/cold entry counts, totals, and service-wide lastDecayAt + uptimeMs as context. This is NOT a primary tool — don't call it before normal search/remember operations. Useful as a sanity check before bulk operations or when the user reports unexpected results.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: {
+      title: "Memory store stats",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "project_list",
     description:
       "List the projects (sub-brains) the user belongs to. CALL THIS PROACTIVELY whenever the user mentions \"my project\", \"the X project\", \"the team workspace\", or any project-by-name reference you don't already know the id for — instead of asking the user to clarify which project they mean, list them and disambiguate yourself. Also call before `project_activate`, `project_share`, or `project_unshare` if the user used a name and you want to confirm it exists / spell it correctly. Returns id + name + role (owner/member) per project.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: {
+      title: "List projects",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "project_create",
@@ -232,6 +316,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         name: { type: "string", description: "Project name (1-128 chars)." },
       },
       required: ["name"],
+    },
+    annotations: {
+      title: "Create project",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
     },
   },
   {
@@ -245,6 +336,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["project"],
     },
+    annotations: {
+      title: "Delete project",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "project_activate",
@@ -257,12 +355,26 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["project"],
     },
+    annotations: {
+      title: "Activate project",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "project_deactivate",
     description:
       "Clear the active-project pin so subsequent `memory_*` calls fall back to user-global only. CALL THIS when the user says \"back to global\", \"context out\", \"clear active project\", \"back to my personal store\", \"no project for now\". Also call when the user pivots away from the current project context to discuss something unrelated and they don't want new memories landing in the old project's scope. Idempotent — safe to call when nothing's active.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: {
+      title: "Deactivate project",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "project_share",
@@ -279,6 +391,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["project", "username"],
     },
+    annotations: {
+      title: "Share project with a user",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "project_unshare",
@@ -294,6 +413,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
       },
       required: ["project", "username"],
+    },
+    annotations: {
+      title: "Unshare project from a user",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
 ];

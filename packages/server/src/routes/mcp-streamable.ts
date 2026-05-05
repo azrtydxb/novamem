@@ -26,6 +26,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import { buildMcpServer } from "../mcp.js";
+import { applyMcpGuards } from "./mcp-spec-guards.js";
 import type { RouteContext } from "./context.js";
 
 /** Max concurrent Streamable-HTTP sessions for a single userId. Matches
@@ -163,6 +164,9 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
    * activity stamp, and delegate to the SDK transport's handleRequest.
    */
   async function dispatch(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+    // Spec MUSTs: validate Origin (DNS rebinding defence) and the
+    // MCP-Protocol-Version header before any session work.
+    if (!applyMcpGuards(req, reply, { allowedOrigins: ctx.corsOrigins })) return;
     const userId = req.userId;
     const sessionId = readSessionId(req);
     let transport: StreamableHTTPServerTransport;
