@@ -157,6 +157,34 @@ export class MemoryEngine {
     return true;
   }
 
+  /** Resolve the implicit namespace fanout for search/recent when the
+   *  caller specified neither `namespace` nor `includeNamespaces`. Walks
+   *  every scope (user-global + each active project) and unions the
+   *  distinct namespaces found there. Falls back to `["default"]` when
+   *  nothing has been written yet — the embedder / FTS still need a
+   *  target name. Deduplicated; order is not stable. */
+  private async resolveDefaultNamespaces(
+    userId: string,
+    scopes: Array<string | null>,
+  ): Promise<string[]> {
+    // includeProjects mode (multi-scope) and single-scope (one entry,
+    // possibly null for user-global) collapse to the same fanout per
+    // listNamespaces call.
+    const found = new Set<string>();
+    if (scopes.length > 1) {
+      // Active-project mode: pass the project-id list through.
+      const includeProjects = scopes.filter((s): s is string => s !== null);
+      const ns = await this.warm.listNamespaces(userId, { includeProjects });
+      for (const n of ns) found.add(n);
+    } else {
+      const single = scopes[0] ?? null;
+      const ns = await this.warm.listNamespaces(userId, { projectId: single });
+      for (const n of ns) found.add(n);
+    }
+    if (found.size === 0) return ["default"];
+    return [...found];
+  }
+
   private lastGraphWarn = 0;
   private maybeWarnGraphDown(): void {
     const now = Date.now();
@@ -364,9 +392,19 @@ export class MemoryEngine {
     // each namespace within each scope. Cold-store collections are keyed
     // per (scope × namespace) so this fans out as a 2D matrix. The single
     // singular `namespace` field is ignored in this mode.
+    //
+    // When *neither* `namespace` nor `includeNamespaces` is given, fan out
+    // across every namespace the caller has entries in (this scope). The
+    // old behaviour silently defaulted to "default" — which meant a user
+    // who wrote everything to a custom namespace got `[]` from search-
+    // without-namespace, which was strictly a bug. Falls back to
+    // ["default"] for fresh callers with no entries yet so the embedder /
+    // FTS path still has a sensible target.
     const namespaces: string[] = req.includeNamespaces?.length
       ? req.includeNamespaces
-      : [req.namespace ?? "default"];
+      : req.namespace
+        ? [req.namespace]
+        : await this.resolveDefaultNamespaces(userId, scopes);
 
     const [embedding] = await this.embedder.embed(req.query);
     // FTS supports multi-namespace via `namespace = ANY(...)` in one query
@@ -599,12 +637,22 @@ export class MemoryEngine {
       includeNamespaces?: string[];
     },
   ): Promise<{ results: SearchResult[] }> {
-    const namespaces = args.includeNamespaces?.length
-      ? args.includeNamespaces
-      : [args.namespace ?? "default"];
-    const k = args.k ?? 20;
+    // See engine.search for the reasoning behind the no-arg fanout.
+    // recent() obeys the same rules: explicit namespace param wins;
+    // includeNamespaces wins over that; otherwise resolve the user's
+    // populated namespaces in-scope and fall back to ["default"] only
+    // when there's nothing yet.
     const projectId = args.project ?? null;
     const includeProjects = args.includeProjects ?? null;
+    const recentScopes: Array<string | null> = includeProjects?.length
+      ? [null, ...includeProjects]
+      : [projectId];
+    const namespaces = args.includeNamespaces?.length
+      ? args.includeNamespaces
+      : args.namespace
+        ? [args.namespace]
+        : await this.resolveDefaultNamespaces(userId, recentScopes);
+    const k = args.k ?? 20;
     // Isolation matches ftsSearch / getEntry / getEntries — see
     // `WarmStore.listRecent` for the breakdown. Engine just maps the
     // request shape onto the store call and converts entry rows into

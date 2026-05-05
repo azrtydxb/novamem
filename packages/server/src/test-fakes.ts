@@ -357,6 +357,31 @@ export class FakeWarmStore {
     };
   }
 
+  async listNamespaces(
+    userId: string,
+    args: {
+      projectId?: string | null;
+      includeProjects?: string[] | null;
+    } = {},
+  ): Promise<string[]> {
+    const { projectId = null, includeProjects = null } = args;
+    const isActive = !!includeProjects && includeProjects.length > 0;
+    const isProject = !isActive && typeof projectId === "string";
+    const out = new Set<string>();
+    for (const r of this.rows.values()) {
+      if (isActive) {
+        if (r.projectId === null && r.userId !== userId) continue;
+        if (r.projectId !== null && !includeProjects!.includes(r.projectId)) continue;
+      } else if (isProject) {
+        if (r.projectId !== projectId) continue;
+      } else {
+        if (r.projectId !== null || r.userId !== userId) continue;
+      }
+      out.add(r.namespace);
+    }
+    return [...out];
+  }
+
   async listRecent(
     userId: string,
     args: {

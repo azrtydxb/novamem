@@ -61,13 +61,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         namespace: {
           type: "string",
           description:
-            "Single namespace shelf (default 'default'). Ignored when includeNamespaces is set.",
+            "Single namespace shelf to search. Omit to search every namespace you've written to (the default fanout).",
         },
         includeNamespaces: {
           type: "array",
           items: { type: "string" },
           description:
-            "Cross-namespace search: union results across these shelves. Use when you don't know which namespace a memory was written to.",
+            "Cross-namespace search: union results across these shelves. Equivalent to omitting `namespace` when you want a search that doesn't miss entries written to alternate shelves; use this form only when you want to restrict the fanout to a specific subset.",
         },
         project: {
           type: "string",
