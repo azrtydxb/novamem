@@ -156,6 +156,21 @@ describe("engine.neighbors", () => {
     expect(r.degraded).toBe(true);
     expect(r.results).toEqual([]);
   });
+
+  // Regression for the FalkorDB driver-decode error path
+  // ("expected List or Null but was Path/Edge"). The engine now
+  // catches the throw and surfaces it as a degraded result instead of
+  // letting it bubble to /v1/neighbors / the MCP tool.
+  it("degrades to {results:[], degraded:true} when graph.neighbors throws", async () => {
+    const b = bench();
+    const a = await b.engine.remember("public", { content: "alpha", force: true });
+    // Stub the FakeGraphStore to throw, mirroring a driver-decode error.
+    b.graph.neighbors = async () => {
+      throw new Error("Type mismatch: expected List or Null but was Path");
+    };
+    const r = await b.engine.neighbors("public", { id: a.id });
+    expect(r).toEqual({ results: [], degraded: true });
+  });
 });
 
 describe("engine.forget", () => {

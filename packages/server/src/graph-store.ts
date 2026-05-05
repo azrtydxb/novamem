@@ -198,16 +198,31 @@ export class GraphStore {
     // bug where `RELATES*1..N` decodes as Edge for paths of length 1 and
     // the client throws "Type mismatch: expected List or Null but was
     // Edge" — the engine swallowed that and reported degraded:true on
-    // every search. Multi-hop traversal still uses the path form.
+    // every search.
+    //
+    // For depth ≥ 2 the variable-length pattern `[r:RELATES*1..N]` causes
+    // a related decoder error: "expected List or Null but was Path" —
+    // the driver receives a Path-typed value where the result-set
+    // descriptor expected a list. The fix is to bind the path with
+    // `MATCH p = …`, project the strengths into a primitive list via a
+    // list comprehension `[rel IN relationships(p) | rel.strength]`,
+    // and aggregate the scalars in a follow-up WITH. That way no
+    // Path / Relationship value ever reaches the wire as a column,
+    // and the client decodes pure numbers.
+    // `b.id <> $id` excludes the seed itself from results — without it,
+    // a self-loop edge (fromId === toId) would surface the seed as its
+    // own neighbour. The depth ≥ 2 branch has the same predicate.
     const cypher =
       depth <= 1
         ? `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES]-(b:Memory)
-             WHERE b.user = $user AND b.project = $project
+             WHERE b.user = $user AND b.project = $project AND b.id <> $id
              RETURN b.id AS id, MAX(r.strength) AS score
              LIMIT ${limit}`
-        : `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES*1..${depth}]-(b:Memory)
-             WHERE b.user = $user AND b.project = $project
-             RETURN b.id AS id, MAX(reduce(s = 1.0, e IN r | s * e.strength)) AS score
+        : `MATCH p = (a:Memory {id: $id, user: $user, project: $project})-[:RELATES*1..${depth}]-(b:Memory)
+             WHERE b.user = $user AND b.project = $project AND b.id <> $id
+             WITH b.id AS id,
+                  reduce(s = 1.0, x IN [rel IN relationships(p) | rel.strength] | s * x) AS pathScore
+             RETURN id, MAX(pathScore) AS score
              LIMIT ${limit}`;
     const r = await this.graph.query<{ id: string; score: number }>(cypher, {
       params: { id: seedId, user: userId, project },
