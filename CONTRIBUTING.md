@@ -96,17 +96,31 @@ Each release ships a self-contained migration; the application code in each rele
 
 ## Releases
 
-Tag-driven, no token, OIDC publish via npm Trusted Publishers. See `.github/workflows/release.yml`.
+Driven by [Changesets](https://github.com/changesets/changesets). No token, OIDC publish via npm Trusted Publishers. Each publishable package (`@azrtydxb/novamem`, `@azrtydxb/novamem-mcp`, `@azrtydxb/novamem-init`) versions independently — you only release what changed. See `.github/workflows/release.yml`.
 
-To cut a release:
+### What you do on a PR
 
-1. Bump version: edit `version` in the three publishable `package.json` files (`packages/client`, `packages/mcp`, `packages/init`) — keep them aligned.
-2. Update `CHANGELOG.md`: convert `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD` with the day's date, add a fresh `[Unreleased]` heading on top.
-3. Commit the bump.
-4. `git tag vX.Y.Z && git push --tags`
-5. CI publishes all three packages to npm with provenance attestations and creates a GitHub release.
+If your PR changes a publishable package, run:
 
-Re-run with `--dry-run: true` via Actions → Release → Run workflow if you want to preview.
+```bash
+pnpm changeset
+```
+
+Pick the affected packages and the bump kind (`patch` / `minor` / `major`), write a one-line summary. This writes a `.changeset/<random-name>.md` file. **Commit it with the rest of your PR.** Changes that only touch private packages (`@azrtydxb/novamem-server`, `@azrtydxb/novamem-admin-ui`) or non-source paths (docs/CI/tests) don't need a changeset.
+
+### What CI does on merge
+
+When the PR merges to `main`, the release workflow looks for unconsumed `.changeset/*.md` files. Two states:
+
+1. **Pending changesets exist** → workflow opens (or updates) a `chore(release): version packages` PR that bumps every affected `package.json` version, regenerates per-package `CHANGELOG.md`s, and deletes the consumed changeset files. **Review and merge that PR** when ready to ship.
+2. **No pending changesets** (i.e. you just merged the version PR) → workflow runs `pnpm changeset publish`, which calls `npm publish` per package and skips versions already on the registry. Provenance attaches via `NPM_CONFIG_PROVENANCE=true` set at the workflow job level (the `--provenance` flag isn't pluggable through the changesets action). Result: only the changed packages publish, each with a Sigstore attestation.
+
+### Notes
+
+- Versions are **independent per package** — bumping `@azrtydxb/novamem` doesn't bump `-mcp` or `-init`.
+- Tags become per-package: `@azrtydxb/novamem@1.2.0`, `@azrtydxb/novamem-init@1.1.4`. The legacy mono `vX.Y.Z` tags (v0.1.0 – v1.1.1) stay around but won't be added to.
+- npm Trusted Publishers binding requires Node 24 (npm 11+) so OIDC authenticates the publish PUT, not just the Sigstore signing. Don't downgrade `node-version` in `release.yml`.
+- `pnpm release:preflight` / `pnpm docs:smoke` still run via CI's `test` job — they're independent of the release flow.
 
 ## Per-package source layout
 
