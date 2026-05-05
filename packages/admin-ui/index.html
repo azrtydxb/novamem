@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- vite `base: "/admin/"` rewrites %BASE_URL% to /admin/ so this
+         resolves to /admin/favicon.svg in production. -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <title>novamem · admin</title>
   </head>
   <body class="bg-bg text-ink antialiased">

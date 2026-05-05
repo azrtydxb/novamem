@@ -1,4 +1,12 @@
+<div align="center">
+
+<img src="site/favicon.svg" alt="novamem" width="92" height="92" />
+
 # novamem
+
+**Tiered memory for AI agents.** Hybrid keyword + vector + graph search, per-user isolation with shareable sub-brains, MCP and HTTP transports, built-in dashboard.
+
+[**azrtydxb.github.io/novamem**](https://azrtydxb.github.io/novamem/) · [Documentation](docs/) · [Packages](#packages) · [Quick start](#quick-start)
 
 [![CI](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml)
 [![Release](https://github.com/azrtydxb/novamem/actions/workflows/release.yml/badge.svg)](https://github.com/azrtydxb/novamem/actions/workflows/release.yml)
@@ -8,7 +16,9 @@
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node ≥ 20.19](https://img.shields.io/badge/node-%E2%89%A520.19-brightgreen.svg)](https://nodejs.org)
 
-Standalone tiered memory service for AI agents. Hybrid keyword + vector + graph search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard.
+</div>
+
+## Quick start
 
 ```bash
 cp .env.example .env
