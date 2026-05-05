@@ -4,6 +4,7 @@
  * matches the docker-compose deployment.
  */
 
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
 export const ConfigSchema = z
@@ -39,7 +40,7 @@ export const ConfigSchema = z
         // - "none": dev only, every request becomes the synthetic `public` user.
         // - "bearer": single shared token, single implicit `public` user — back-compat.
         // - "user": per-user bearers via user_tokens table, real isolation.
-        mode: z.enum(["none", "bearer", "user"]).default("none"),
+        mode: z.enum(["none", "bearer", "user"]).default("user"),
         token: z.string().optional(),
       })
       .refine((v) => v.mode !== "bearer" || !!v.token, {
@@ -106,25 +107,24 @@ export const ConfigSchema = z
   });
 export type Config = z.infer<typeof ConfigSchema>;
 
-/** Dev-only fallback used when auth.mode = "none" and no
- *  NOVAMEM_COOKIE_SECRET was supplied. Long enough to satisfy the schema's
- *  min(16). Never used in production — `loadConfig` refuses to start in
- *  any other auth mode without an explicit secret. */
-const DEV_COOKIE_SECRET_FALLBACK = "novamem-dev-cookie-secret-change-me";
-
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const authMode = env.NOVAMEM_AUTH_MODE ?? "none";
+  // Default mirrors the schema default ("user") so the start-up secret
+  // check below treats unset as the safe-by-default mode.
+  const authMode = env.NOVAMEM_AUTH_MODE ?? "user";
   const explicitSecret = env.NOVAMEM_COOKIE_SECRET;
   let cookieSecret = explicitSecret;
   if (!cookieSecret) {
     if (authMode === "none") {
-      // Dev fallback — emit a one-time warning so it's visible in logs.
+      // Dev fallback: a process-lifetime random secret. Every restart
+      // invalidates existing sessions — fine for `pnpm dev`, and there
+      // is no shared, attacker-knowable string anywhere in the binary.
       // eslint-disable-next-line no-console
       console.warn(
-        "[novamem] WARNING: NOVAMEM_COOKIE_SECRET unset — using a public dev fallback. " +
-          "Set NOVAMEM_COOKIE_SECRET to a 32+ char random value before going to production.",
+        "[novamem] WARNING: NOVAMEM_COOKIE_SECRET unset — generated an ephemeral random secret " +
+          "for this process. Sessions will not survive restarts. " +
+          "Set NOVAMEM_COOKIE_SECRET to a 32+ char random value for any persistent deployment.",
       );
-      cookieSecret = DEV_COOKIE_SECRET_FALLBACK;
+      cookieSecret = randomBytes(32).toString("base64url");
     } else {
       throw new Error(
         "NOVAMEM_COOKIE_SECRET is required when auth.mode != 'none'. " +

@@ -6,6 +6,11 @@ const baseEnv = {
   NOVAMEM_WARM_URL: "postgres://x@y:5432/z",
   NOVAMEM_COLD_URL: "http://qdrant:6333",
   NOVAMEM_GRAPH_URL: "redis://falkordb:6379",
+  // Schema default for auth.mode is "user" (safe-by-default), which
+  // requires NOVAMEM_COOKIE_SECRET. Tests that exercise unrelated config
+  // surfaces want the dev path; pin to none + supply a secret so they
+  // don't trip the start-up cookie-secret guard.
+  NOVAMEM_AUTH_MODE: "none",
 };
 
 /** Min-length-satisfying cookie secret used in ConfigSchema.parse tests
@@ -19,6 +24,24 @@ describe("config: defaults + env loading", () => {
     expect(cfg.auth.mode).toBe("none");
     expect(cfg.embeddings.provider).toBe("local-transformers");
     expect(cfg.decay.defaultEffectiveDays).toBe(7);
+  });
+
+  it("auth.mode defaults to 'user' (safe-by-default) when env unset", () => {
+    // Without NOVAMEM_AUTH_MODE the schema default kicks in. With user
+    // mode and no NOVAMEM_COOKIE_SECRET supplied, loadConfig refuses to
+    // start — the throw IS the safe default in action.
+    const env = {
+      NOVAMEM_WARM_URL: baseEnv.NOVAMEM_WARM_URL,
+      NOVAMEM_COLD_URL: baseEnv.NOVAMEM_COLD_URL,
+      NOVAMEM_GRAPH_URL: baseEnv.NOVAMEM_GRAPH_URL,
+    };
+    expect(() => loadConfig(env as NodeJS.ProcessEnv)).toThrow(/NOVAMEM_COOKIE_SECRET/);
+    // With a secret supplied the default resolves to "user".
+    const cfg = loadConfig({
+      ...env,
+      NOVAMEM_COOKIE_SECRET: "x".repeat(32),
+    } as NodeJS.ProcessEnv);
+    expect(cfg.auth.mode).toBe("user");
   });
 
   it("respects port + rate-limit overrides from env", () => {
