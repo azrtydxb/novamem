@@ -1,0 +1,48 @@
+# Example Ingress with cert-manager + Let's Encrypt TLS termination.
+#
+# Prereqs in the cluster:
+#   - An Ingress controller (nginx-ingress, Traefik, …). Adjust
+#     `ingressClassName` below to match.
+#   - cert-manager installed, plus a `ClusterIssuer` named
+#     `letsencrypt-prod` (or change the annotation). Minimal example:
+#       apiVersion: cert-manager.io/v1
+#       kind: ClusterIssuer
+#       metadata: { name: letsencrypt-prod }
+#       spec:
+#         acme:
+#           server: https://acme-v02.api.letsencrypt.org/directory
+#           email: ops@example.com
+#           privateKeySecretRef: { name: letsencrypt-prod }
+#           solvers:
+#             - http01: { ingress: { class: nginx } }
+#
+# Replace `novamem.example.com` with your real DNS hostname before
+# applying — and make sure that name resolves to the Ingress controller's
+# external IP.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: novamem
+  namespace: novamem
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # nginx-ingress: force HTTPS. Set the equivalent for your controller
+    # if you're not on nginx-ingress (Traefik: middleware redirect; etc.).
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - novamem.example.com
+      secretName: novamem-tls
+  rules:
+    - host: novamem.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: novamem
+                port:
+                  number: 7778

@@ -10,17 +10,17 @@ data:
   NOVAMEM_PORT: "7778"
   # Public-facing URL the dashboard SPA reaches the API on. Better Auth
   # uses this for trusted-origin / CSRF checks — it must match the
-  # browser's `Origin:` header exactly. Update when DNS or the LB IP
-  # changes.
-  NOVAMEM_BASE_URL: "http://192.168.10.248:7778"
+  # browser's `Origin:` header exactly. Set to your TLS-terminated origin
+  # (the Ingress hostname, not the Service IP).
+  NOVAMEM_BASE_URL: "https://novamem.example.com"
   NOVAMEM_EMBEDDINGS_PROVIDER: "local-transformers"
-  # In-cluster service DNS — k3s registers `<name>.<ns>.svc.cluster.local`.
-  NOVAMEM_WARM_URL: "postgres://novamem:novamempg@postgres.novamem.svc.cluster.local:5432/novamem"
+  # NOVAMEM_WARM_URL has moved to the Secret (it embeds the Postgres
+  # password). See secrets.yaml.
   NOVAMEM_COLD_URL: "http://qdrant.novamem.svc.cluster.local:6333"
   NOVAMEM_GRAPH_URL: "redis://falkordb.novamem.svc.cluster.local:6379"
-  # Behind an HTTP-only Ingress for now — flip to 0 (and set Ingress TLS)
-  # when there's a real cert.
-  NOVAMEM_INSECURE_COOKIES: "1"
+  # TLS is terminated at the Ingress (see ingress.yaml), so cookies must
+  # carry the Secure flag. Leave at "0" in production.
+  NOVAMEM_INSECURE_COOKIES: "0"
   LOG_LEVEL: "info"
 ---
 apiVersion: apps/v1
@@ -70,12 +70,11 @@ metadata:
   name: novamem
   namespace: novamem
 spec:
-  # LoadBalancer + k3s ServiceLB (Klipper) binds the service port directly
-  # on every node's host network. So 7778 is reachable on
-  # http://<node-ip>:7778 with no ingress in front. Production with a
-  # real LB swaps Klipper for MetalLB or cloud-native LBs without
-  # changing this manifest.
-  type: LoadBalancer
+  # ClusterIP — the Service is fronted by the Ingress in ingress.yaml,
+  # which terminates TLS. Don't expose this directly via LoadBalancer:
+  # the app speaks plain HTTP and credentials/cookies must not travel
+  # unencrypted on a node IP.
+  type: ClusterIP
   selector: { app: novamem }
   ports:
     - { port: 7778, targetPort: http }
