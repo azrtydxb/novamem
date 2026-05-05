@@ -4,6 +4,34 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-05
+
+Issue cleanup release. 18 GH issues from the post-v1.0.0 audit triaged and closed across docs, server hardening, deploy improvements, observability, and test coverage. Two architectural issues (#68, #69 — single source of truth for the API contract) deferred to a future release.
+
+### Added
+
+- **Request correlation IDs** — every HTTP response carries `X-Request-Id` (8-byte hex; honours a safe inbound `x-request-id` from a trusted proxy with a `/^[A-Za-z0-9_.:-]{1,128}$/` allowlist). Audit-log rows include `requestId` in metadata. Fastify's `req.log` is auto-bound to the same id, so every log line for a request can be grepped together. (#75)
+- **Production Docker Compose override** — `docker-compose.prod.yaml` removes datastore host port publishes and pins `falkordb/falkordb:v4.18.3`. Use as `docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d` behind a TLS-terminating proxy. (#72)
+- **Docs smoke test** (`pnpm docs:smoke`, also wired into CI) catches stale claims: public `/health` shape, deep-health endpoint path, project-share exact-email wording, lifecycle admin-only, no leftover `Co-Authored-By: Claude` trailers, no leftover `P[0-9]-` review markers. (#73)
+- **Release preflight** (`pnpm release:preflight`) verifies aligned versions, CHANGELOG entry for the canonical version, fresh `docs/api/openapi.json`, clean working tree post-build. (#74)
+- **Consolidated security regression suite** — `packages/server/src/security.test.ts` asserts the boundaries from #55, #56, #57, #58 in one readable file.
+- **TypeScript client contract tests** — `packages/client/test/contract.test.ts` mocks `fetch` and asserts the SDK's URL/method match `docs/api/openapi.json` for every public method. (#71)
+
+### Changed
+
+- **Default Node version for releases** — `release.yml` runs on Node 24 (ships npm 11.x) so Trusted Publishers OIDC handles publish auth, not just Sigstore signing. (#80, #81)
+- **`/v1/decay` admin-only** — was reachable by any authenticated bearer holder (could trigger global decay scans). Now matches `/v1/dream-cycle` and `/v1/reap-orphans`. (#55)
+- **Better Auth admin passthrough** — wildcard `/api/auth/admin/*` replaced with an explicit allowlist of 13 admin endpoints pinned to BA `^1.6.9`. Future BA admin endpoints don't auto-expose. (#58)
+- **Public BA sign-up dropped** — `POST /api/auth/sign-up/email` is no longer routed; the bootstrap admin flow uses `ba.api.signUpEmail` in-process. (#56)
+- **Vite/esbuild moderate audit findings cleared** — pnpm overrides force `vite ≥ 6.4.2` and `esbuild ≥ 0.25.0`. `pnpm audit --audit-level moderate` returns clean. (#59)
+- **Engines floor bumped** to `>=20.19` across all packages to match Vite 8's transitive Node requirement.
+- **Docs sweep** — README quickstart, `docs/install/{docker,manual,kubernetes}.md`, `docs/api/README.md`, `docs/architecture.md`, `docs/usage.md`, `skills/novamem/**`, `packages/{client,mcp}/README.md`, `packages/client/src/index.ts` rewritten to match the post-v1.0.0 surface (boolean `/health`, exact-email project sharing, env-required Postgres password). (#60-66)
+
+### Fixed
+
+- **MCP SSE session ownership** — `POST /mcp/messages?sessionId=…` now verifies `session.userId === req.userId`; cross-user POSTs return 403. (#57)
+- **`revokeMyToken` return type** in the TS SDK was `{ revoked: boolean }` but the server returns `{ deleted: true }`. Aligned. (#66)
+
 ## [1.0.0] - 2026-05-05
 
 End-to-end production deploy on a real k3s cluster surfaced and fixed four real bugs; full-codebase review closed 14 quality + 7 security issues; CI gates and dependabot auto-merge wired so future bumps land safely without manual review.
