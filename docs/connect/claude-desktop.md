@@ -1,6 +1,6 @@
 # Connect Claude Desktop
 
-Recent Claude Desktop builds support remote MCP via SSE. Older builds need the stdio shim.
+Claude Desktop's MCP loader only accepts **stdio** entries (`command` + `args`). Writing `{"type": "sse", "url": …}` produces "not valid MCP server configurations and were skipped: novamem" on launch — even on the most recent builds. Use the stdio shim, which runs locally and bridges to the server's `/mcp/sse` endpoint with your bearer.
 
 ## One-shot installer (recommended)
 
@@ -12,30 +12,12 @@ Signs you in, mints a fresh `nm_…` bearer, finds Claude Desktop's `claude_desk
 
 The rest of this page is the manual path.
 
-## Manual: direct SSE
+## Manual: stdio shim
 
 Edit `claude_desktop_config.json`:
 
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "novamem": {
-      "type": "sse",
-      "url": "http://localhost:7778/mcp/sse",
-      "headers": { "Authorization": "Bearer nm_..." }
-    }
-  }
-}
-```
-
-Quit and relaunch Claude Desktop. The novamem tools (`memory_*`, `project_*`) appear under the 🔌 menu.
-
-## Stdio shim (legacy builds)
-
-If your build doesn't support `"type": "sse"`, use the npm-published shim:
 
 ```json
 {
