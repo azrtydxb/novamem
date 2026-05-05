@@ -287,7 +287,7 @@ export function MetricsPage() {
                     fontSize: 12,
                   }}
                   labelFormatter={(t) => new Date(t as number).toLocaleTimeString()}
-                  formatter={(v: number) => (typeof v === "number" ? v.toFixed(2) : v)}
+                  formatter={(v) => (typeof v === "number" ? v.toFixed(2) : String(v ?? ""))}
                 />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
                 <Line
