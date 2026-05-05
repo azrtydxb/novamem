@@ -209,10 +209,13 @@ export class GraphStore {
     // and aggregate the scalars in a follow-up WITH. That way no
     // Path / Relationship value ever reaches the wire as a column,
     // and the client decodes pure numbers.
+    // `b.id <> $id` excludes the seed itself from results — without it,
+    // a self-loop edge (fromId === toId) would surface the seed as its
+    // own neighbour. The depth ≥ 2 branch has the same predicate.
     const cypher =
       depth <= 1
         ? `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES]-(b:Memory)
-             WHERE b.user = $user AND b.project = $project
+             WHERE b.user = $user AND b.project = $project AND b.id <> $id
              RETURN b.id AS id, MAX(r.strength) AS score
              LIMIT ${limit}`
         : `MATCH p = (a:Memory {id: $id, user: $user, project: $project})-[:RELATES*1..${depth}]-(b:Memory)

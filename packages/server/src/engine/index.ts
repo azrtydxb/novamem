@@ -664,8 +664,8 @@ export class MemoryEngine {
     // FalkorDB occasionally surfaces driver-side decode errors for
     // certain depth/topology combinations ("expected List or Null but
     // was Path/Edge"). Treat those the same as an unreachable graph —
-    // return empty + degraded:true — so the data-plane (search) and the
-    // /v1/me/neighbors SPA path don't 500. The Cypher we emit at depth
+    // return empty + degraded:true — so the data-plane (/v1/search)
+    // and /v1/neighbors don't 500. The Cypher we emit at depth
     // ≤ 1 and ≥ 2 is structured to avoid these decode hits in the
     // common case; this guard catches the long tail.
     let hits: Array<{ id: string; score: number }>;
