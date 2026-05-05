@@ -179,7 +179,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // /api-docs/*. Per-route handlers that need a different X-Frame-Options
   // (none currently — we want DENY everywhere, including the Swagger UI
   // that's already locked down via `frame-ancestors 'none'`) can override
-  // by calling `reply.header(…)` after `reply.send(…)` is queued.
+  // by calling `reply.header("X-Frame-Options", …)` BEFORE `reply.send`;
+  // the onSend hook below only sets the header when it's still unset, so
+  // the route-level value wins.
   app.addHook("onSend", async (_req, reply, payload) => {
     if (!reply.getHeader("X-Content-Type-Options")) {
       reply.header("X-Content-Type-Options", "nosniff");
