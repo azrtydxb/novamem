@@ -39,7 +39,11 @@ WORKDIR /app
 # vitest). Smaller image, smaller attack surface.
 COPY --from=build /tmp/runtime-package.json ./package.json
 COPY --from=build /app/packages/server/dist ./dist
-RUN npm install --omit=dev --omit=optional --no-audit --no-fund --no-package-lock \
+# Keep --omit=dev but NOT --omit=optional. `onnxruntime-node` ships as an
+# optionalDependency of `@xenova/transformers` (its native binary varies
+# per platform); stripping optional deps breaks the local-transformers
+# embedder at runtime with ERR_MODULE_NOT_FOUND on every embed call.
+RUN npm install --omit=dev --no-audit --no-fund --no-package-lock \
  && npm cache clean --force \
  # Drop the global npm tree once install is done — we run plain `node` at
  # runtime, not npm. Keeps Trivy from flagging CVEs in npm's own bundled
