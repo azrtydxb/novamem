@@ -34,7 +34,10 @@
     --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   html, body { margin: 0; padding: 0; }
+  /* Anchor jumps account for the 60px sticky header. */
+  section[id] { scroll-margin-top: 72px; }
   body {
     background: var(--bg);
     color: var(--ink);
@@ -74,13 +77,16 @@
   .nav-row { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 24px; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; font-size: 16px; }
   .brand-mark { width: 26px; height: 26px; color: var(--accent); }
-  .nav-links { display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--dim); }
+  .nav-links { display: flex; align-items: center; gap: 18px; font-size: 13.5px; color: var(--dim); }
   .nav-links a:hover { color: var(--ink); }
+  .nav-links a[href^="#"] { position: relative; }
   .nav-links .pill {
     font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; border-radius: 999px;
     border: 1px solid var(--rule); color: var(--dim); letter-spacing: 0.02em;
   }
-  @media (max-width: 720px) { .nav-links .docs-link, .nav-links .pill { display: none; } }
+  @media (max-width: 1080px) { .nav-links a[href="#api"], .nav-links a[href="#usage"] { display: none; } }
+  @media (max-width: 880px) { .nav-links a[href="#install"], .nav-links a[href="#connect"] { display: none; } }
+  @media (max-width: 720px) { .nav-links a[href="#one-brain"], .nav-links a[href="#tiers"], .nav-links .docs-link, .nav-links .pill { display: none; } }
 
   /* ── Hero ─────────────────────────────────────────── */
   section.hero { padding: 88px 0 64px; }
@@ -146,7 +152,7 @@
   .section-lede { font-size: 16px; color: var(--dim); max-width: 680px; margin: 0 0 48px; }
 
   /* ── Problem grid ─────────────────────────────────── */
-  .pain-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .pain-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
   .pain-card {
     border: 1px solid var(--rule); border-radius: 10px; background: var(--panel);
     padding: 22px; display: flex; flex-direction: column; gap: 10px;
@@ -157,7 +163,93 @@
   }
   .pain-title { font-size: 16px; font-weight: 600; color: var(--ink); }
   .pain-desc { font-size: 13px; color: var(--dim); line-height: 1.55; }
-  @media (max-width: 880px) { .pain-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px) { .pain-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .pain-grid { grid-template-columns: 1fr; } }
+
+  /* ── One brain / every agent — agent grid ───────────── */
+  .agent-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 36px; }
+  .agent-tile {
+    border: 1px solid var(--rule); border-radius: 10px; background: var(--panel);
+    padding: 18px 12px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    transition: 120ms;
+  }
+  .agent-tile:hover { border-color: var(--accent); background: var(--subtle); }
+  .agent-tile .name { font-size: 13px; font-weight: 500; color: var(--ink); }
+  .agent-tile .kind { font-family: var(--font-mono); font-size: 10px; color: var(--dim); letter-spacing: 0.05em; text-transform: uppercase; }
+  .agent-tile .glyph {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  }
+  @media (max-width: 920px) { .agent-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 520px) { .agent-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .one-brain-callout {
+    border: 1px solid var(--rule); border-radius: 12px; background: var(--panel);
+    padding: 28px 32px;
+    display: grid; grid-template-columns: 1fr 1.2fr; gap: 32px; align-items: center;
+  }
+  .one-brain-callout .label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .one-brain-callout h3 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.015em; line-height: 1.2; }
+  .one-brain-callout p { font-size: 14px; color: var(--dim); margin: 0; line-height: 1.6; }
+  @media (max-width: 760px) { .one-brain-callout { grid-template-columns: 1fr; } }
+
+  /* ── Solo → enterprise scaling rail ─────────────────── */
+  .scale-track { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .scale-card {
+    border: 1px solid var(--rule); border-radius: 12px; background: var(--panel);
+    padding: 24px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .scale-card .stage { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); }
+  .scale-card .stage-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--dim); margin-right: 6px; vertical-align: middle; }
+  .scale-card .scope { font-size: 17px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+  .scale-card .desc { font-size: 13px; color: var(--dim); line-height: 1.55; }
+  .scale-card .footer { font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 6px; padding-top: 12px; border-top: 1px dashed var(--rule-soft); }
+  .scale-card.featured { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .scale-card.featured .stage-dot { background: var(--accent); }
+  @media (max-width: 920px) { .scale-track { grid-template-columns: 1fr; } }
+
+  /* ── Three-tier explainer with example query ────────── */
+  .tier-ex { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .tier-ex-card {
+    border: 1px solid var(--rule); border-radius: 12px; background: var(--panel);
+    padding: 22px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .tier-ex-card.warm { border-top: 3px solid var(--warm); }
+  .tier-ex-card.cold { border-top: 3px solid var(--cold); }
+  .tier-ex-card.graph { border-top: 3px solid var(--graph); }
+  .tier-ex-card .label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .tier-ex-card.warm .label { color: var(--warm); }
+  .tier-ex-card.cold .label { color: var(--cold); }
+  .tier-ex-card.graph .label { color: var(--graph); }
+  .tier-ex-card .name { font-size: 18px; font-weight: 600; color: var(--ink); }
+  .tier-ex-card .desc { font-size: 13px; color: var(--dim); line-height: 1.55; }
+  .tier-ex-card .strength { font-size: 13px; color: var(--ink); }
+  .tier-ex-card .strength b { color: var(--ink); }
+  .tier-ex-card .example {
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
+    background: var(--bg); border: 1px solid var(--rule-soft); border-radius: 6px;
+    padding: 10px 12px; color: var(--ink); margin-top: 4px;
+  }
+  .tier-ex-card .example .q { color: var(--dim); }
+  .tier-ex-card .example .hit { color: var(--ink); }
+
+  .tier-ex-prompt {
+    border: 1px solid var(--rule); border-radius: 12px; background: var(--panel);
+    padding: 18px 22px; margin-bottom: 28px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .tier-ex-prompt .ico {
+    width: 32px; height: 32px; border-radius: 8px; flex: 0 0 32px;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+  }
+  .tier-ex-prompt .q-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--dim); margin-bottom: 2px; }
+  .tier-ex-prompt .q-text { font-size: 15px; color: var(--ink); }
+  @media (max-width: 920px) { .tier-ex { grid-template-columns: 1fr; } }
 
   /* ── How it works — diagram + side rail ─────────────── */
   .how-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
@@ -275,8 +367,13 @@
       <span>novamem</span>
     </a>
     <nav class="nav-links">
-      <a class="docs-link" href="https://github.com/azrtydxb/novamem/tree/main/docs">Docs</a>
-      <a href="https://github.com/azrtydxb/novamem">GitHub</a>
+      <a href="#one-brain">Why</a>
+      <a href="#tiers">How</a>
+      <a href="#install">Install</a>
+      <a href="#connect">Connect</a>
+      <a href="#usage">Usage</a>
+      <a href="#api">API</a>
+      <a class="docs-link" href="https://github.com/azrtydxb/novamem">GitHub</a>
       <a class="pill" href="https://www.npmjs.com/package/@azrtydxb/novamem-init">npm</a>
     </nav>
   </div>
@@ -285,15 +382,15 @@
 <!-- ─── Hero ─────────────────────────────────────────── -->
 <section class="hero" id="top">
   <div class="container">
-    <div class="hero-kicker">Tiered memory for AI agents</div>
+    <div class="hero-kicker">One brain. Every agent. Solo to enterprise.</div>
     <h1 class="hero-title">
-      Your agents stop forgetting. <em>Permanently.</em>
+      One memory across <em>every AI agent</em> you use.
     </h1>
     <p class="hero-sub">
-      novamem is a standalone memory service that gives AI agents a brain that persists across sessions, projects, and machines. Hybrid keyword&nbsp;+&nbsp;vector&nbsp;+&nbsp;graph retrieval. Per-user isolation with shareable sub-brains. Self-hostable.
+      Claude, ChatGPT, Cursor, Cline, Continue, Kilo Code &mdash; whatever your team picks today and switches to tomorrow, they all read and write the <strong style="color:var(--ink);font-weight:600">same</strong> memory store. Hybrid keyword&nbsp;+&nbsp;vector&nbsp;+&nbsp;graph retrieval. Self-hostable on a laptop or as a multi-tenant brain for a whole company.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="#quickstart">
+      <a class="btn btn-primary" href="#install">
         Get started
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
@@ -333,13 +430,25 @@
   </div>
 </section>
 
+<!-- ─── Dashboard preview ────────────────────────────── -->
+<section style="padding: 24px 0 64px;">
+  <div class="container">
+    <div style="border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; box-shadow: 0 12px 60px rgba(0,0,0,0.45); background: var(--panel);">
+      <img src="dashboard.png" alt="novamem dashboard — metrics page showing per-token throughput, tier hit rates, store sizes" style="display: block; width: 100%; height: auto;" />
+    </div>
+    <p style="text-align: center; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin: 18px 0 0;">
+      Built-in dashboard · live throughput · per-token usage · 24h history · tier hit rates
+    </p>
+  </div>
+</section>
+
 <!-- ─── Problem ──────────────────────────────────────── -->
 <section class="block" id="why">
   <div class="container">
     <div class="section-kicker">The problem</div>
-    <h2 class="section-title">LLMs don't remember. Bolt-on RAG falls short.</h2>
+    <h2 class="section-title">LLMs forget. RAG isolates. Each agent reinvents.</h2>
     <p class="section-lede">
-      A 200K-token context isn't memory — it's a goldfish bowl that resets every session. And the usual workaround, "stuff a vector DB behind it," misses everything you actually want from memory.
+      A 200K-token context isn't memory — it's a goldfish bowl that resets every session. The usual workaround, "stuff a vector DB behind it," misses everything you actually want from memory. And the moment you have more than one agent, every one of them ends up with its own private notes.
     </p>
     <div class="pain-grid">
       <div class="pain-card">
@@ -350,12 +459,87 @@
       <div class="pain-card">
         <div class="pain-num">02 / vector-only</div>
         <div class="pain-title">Pure vector search misses literals</div>
-        <div class="pain-desc">Cosine similarity is great for "fuzzy" recall and useless for exact ids, function names, or hashes. You need keyword + vector + graph fused, not one of three.</div>
+        <div class="pain-desc">Cosine similarity is great for "fuzzy" recall and useless for exact ids, function names, or hashes. You need keyword + vector + graph fused.</div>
       </div>
       <div class="pain-card">
-        <div class="pain-num">03 / no isolation</div>
-        <div class="pain-title">One shared bucket per agent</div>
+        <div class="pain-num">03 / fragmented agents</div>
+        <div class="pain-title">Each agent has its own brain</div>
+        <div class="pain-desc">Ask Claude on Monday, Cursor on Tuesday, ChatGPT on Wednesday. Each builds its own siloed notes. Switch tools and the context is gone — same project, same you, three brains.</div>
+      </div>
+      <div class="pain-card">
+        <div class="pain-num">04 / no isolation</div>
+        <div class="pain-title">One bucket for the whole team</div>
         <div class="pain-desc">Most "memory" tools assume one user. Real teams need per-user isolation with deliberate sharing — sub-brains for projects, a private store for everything else.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── One brain. Every agent. ──────────────────────── -->
+<section class="block" id="one-brain">
+  <div class="container">
+    <div class="section-kicker">One brain. Every agent.</div>
+    <h2 class="section-title">Different agents. Same memory.</h2>
+    <p class="section-lede">
+      The agent landscape moves fast. Whatever you and your team use this quarter — and whatever you switch to next quarter — they all read and write the same novamem store. No re-onboarding. No silos. One canonical place where everything goes.
+    </p>
+
+    <div class="agent-grid" aria-label="Supported AI agent hosts">
+      <div class="agent-tile"><div class="glyph">CC</div><div class="name">Claude Code</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">CD</div><div class="name">Claude Desktop</div><div class="kind">MCP stdio</div></div>
+      <div class="agent-tile"><div class="glyph">CG</div><div class="name">ChatGPT</div><div class="kind">HTTP / GPT</div></div>
+      <div class="agent-tile"><div class="glyph">CR</div><div class="name">Cursor</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">CL</div><div class="name">Cline</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">CO</div><div class="name">Continue</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">OC</div><div class="name">OpenCode</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">KC</div><div class="name">Kilo Code</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">RC</div><div class="name">RooCode</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">CX</div><div class="name">Codex</div><div class="kind">MCP</div></div>
+      <div class="agent-tile"><div class="glyph">SDK</div><div class="name">Agent SDKs</div><div class="kind">HTTP</div></div>
+      <div class="agent-tile"><div class="glyph">+</div><div class="name">Anything else</div><div class="kind">REST + MCP</div></div>
+    </div>
+
+    <div class="one-brain-callout">
+      <div>
+        <div class="label">Why it matters</div>
+        <h3>Claude on Monday, ChatGPT on Tuesday — the project keeps going.</h3>
+      </div>
+      <div>
+        <p>Tell Claude Code that the deploy target is <code>k3s on 192.168.10.248</code>. Switch to Cursor on a different machine — the same fact is there, retrievable by hybrid search, automatically scoped to the project. Switch to ChatGPT through the HTTP API for an architecture review — it sees every decision the others made. <strong style="color:var(--ink)">One canonical memory.</strong> Not three.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Solo → enterprise scaling ─────────────────────── -->
+<section class="block" id="scale">
+  <div class="container">
+    <div class="section-kicker">Solo to enterprise</div>
+    <h2 class="section-title">Same product, three deploys.</h2>
+    <p class="section-lede">
+      Same code. Same MCP surface. Same dashboard. The only thing that changes between a personal laptop and a 5,000-engineer company is how you stand it up. Multi-tenancy and project-based sub-brains are first-class from day one.
+    </p>
+
+    <div class="scale-track">
+      <div class="scale-card">
+        <span class="stage"><span class="stage-dot"></span>Stage 01</span>
+        <div class="scope">Solo developer</div>
+        <div class="desc"><code>docker compose up -d</code> on your laptop or homelab. One user. Private memory across every AI host on your machine. Zero SaaS dependency, zero per-token cost.</div>
+        <div class="footer">~30 s to running</div>
+      </div>
+
+      <div class="scale-card">
+        <span class="stage"><span class="stage-dot"></span>Stage 02</span>
+        <div class="scope">Small team</div>
+        <div class="desc">One server, Postgres + Qdrant + FalkorDB on the same host. Each teammate signs in with their own account, mints their own bearer, gets their own private memory. Share a project, and that sub-brain becomes a team workspace — every member's agents see and contribute to the same notes.</div>
+        <div class="footer">single VM · multi-user</div>
+      </div>
+
+      <div class="scale-card featured">
+        <span class="stage"><span class="stage-dot"></span>Stage 03 · enterprise</span>
+        <div class="scope">Multi-tenant on Kubernetes</div>
+        <div class="desc">One central deployment serves the whole company. Tenants partition organisations, departments, or product lines. Users sit inside tenants. Projects are the cross-team unit of sharing. Standard k8s patterns: HA Postgres, Qdrant cluster, FalkorDB Sentinel, ingress with mTLS, OTel exports to your existing Tempo/Loki/Prometheus stack.</div>
+        <div class="footer">k8s · HA · multi-tenant · audit log</div>
       </div>
     </div>
   </div>
@@ -445,6 +629,55 @@
   </div>
 </section>
 
+<!-- ─── Three tiers explained, by example ─────────────── -->
+<section class="block" id="tiers">
+  <div class="container">
+    <div class="section-kicker">Three tiers, one query</div>
+    <h2 class="section-title">What each tier does — concretely.</h2>
+    <p class="section-lede">
+      A simple example. Imagine you've been remembering project-notes for weeks. Today you ask your agent: <em>"How did we end up choosing Postgres for the main store?"</em> Here's what each tier contributes — and why fusing all three beats any one alone.
+    </p>
+
+    <div class="tier-ex-prompt">
+      <div class="ico">Q</div>
+      <div>
+        <div class="q-label">Your question</div>
+        <div class="q-text">"How did we end up choosing Postgres for the main store?"</div>
+      </div>
+    </div>
+
+    <div class="tier-ex">
+      <div class="tier-ex-card warm">
+        <div class="label">Warm tier · Postgres FTS</div>
+        <div class="name">Exact &amp; recent</div>
+        <div class="strength"><b>Best for:</b> literal terms, recent entries, fast keyword recall.</div>
+        <div class="desc">Full-text-indexed memory entries that are active and frequently used. Tokenises your query (<code>postgres</code>, <code>main store</code>) and returns rows where those words appear verbatim.</div>
+        <div class="example"><span class="q">→ matches</span><br/><span class="hit">"ADR-021 — Postgres for main store. Decided 2026-02-14 because of MVCC + extensibility (pgvector, FTS, jsonb)."</span></div>
+      </div>
+
+      <div class="tier-ex-card cold">
+        <div class="label">Cold tier · Qdrant vectors</div>
+        <div class="name">Semantic recall</div>
+        <div class="strength"><b>Best for:</b> "remind me of related things even if I worded it differently."</div>
+        <div class="desc">Embedding-based recall over older entries that have decayed off the warm tier. Doesn't care about literal words — it understands the meaning.</div>
+        <div class="example"><span class="q">→ matches</span><br/><span class="hit">"We rejected SQLite back in Jan because we needed concurrent writes and FTS5 wasn't enough for our query shapes."</span></div>
+      </div>
+
+      <div class="tier-ex-card graph">
+        <div class="label">Graph tier · FalkorDB edges</div>
+        <div class="name">Adjacent context</div>
+        <div class="strength"><b>Best for:</b> "what was related to this decision that I forgot to ask about?"</div>
+        <div class="desc">Walks edges from any matching entry to its strongly-linked neighbours. Surfaces the supporting context that lives <em>around</em> a hit.</div>
+        <div class="example"><span class="q">→ pulls in</span><br/><span class="hit">"ADR-024 — pgvector for embeddings, same Postgres instance" + "Cost analysis: managed Postgres on Hetzner = €40/mo"</span></div>
+      </div>
+    </div>
+
+    <p class="section-lede" style="margin-top: 36px;">
+      <strong style="color:var(--ink)">All three signals run in parallel and fuse into one ranked list.</strong> The warm hit gets you the literal ADR. The cold hit pulls in the prior reasoning even though it never said "Postgres". The graph hit ties the decision to its supporting cost analysis. Your agent answers with all of it — not just the one tier that happened to match.
+    </p>
+  </div>
+</section>
+
 <!-- ─── Features grid ───────────────────────────────── -->
 <section class="block" id="features">
   <div class="container">
@@ -488,42 +721,177 @@
   </div>
 </section>
 
-<!-- ─── Quick start ─────────────────────────────────── -->
-<section class="block" id="quickstart">
+<!-- ─── Install ─────────────────────────────────────── -->
+<section class="block" id="install">
   <div class="container">
-    <div class="section-kicker">Get started</div>
-    <h2 class="section-title">Two paths. Both finish in under a minute.</h2>
+    <div class="section-kicker">Install</div>
+    <h2 class="section-title">Stand it up. Three paths.</h2>
     <p class="section-lede">
-      Self-host the whole stack with Docker Compose, or skip the server entirely and connect your AI host to a pre-existing novamem deployment.
+      Pick whichever fits your environment. All three lead to the same server image, the same dashboard, the same MCP surface.
     </p>
 
-    <div class="qs-grid">
+    <div class="qs-grid" style="grid-template-columns: 1fr 1fr 1fr;">
       <div class="qs-block">
-        <div class="qs-head"><span class="dot"></span> self-host the server</div>
-<pre class="qs-pre"><span class="c"># pull repo + secrets, then up</span>
+        <div class="qs-head"><span class="dot"></span> Docker Compose · recommended</div>
+<pre class="qs-pre"><span class="c"># clone, set 3 secrets, up</span>
 git clone https://github.com/azrtydxb/novamem.git
-<span class="k">cd</span> novamem
-cp .env.example .env
+<span class="k">cd</span> novamem &amp;&amp; cp .env.example .env
 
-<span class="c"># required: three secrets in .env</span>
 <span class="k">echo</span> <span class="s">"POSTGRES_PASSWORD=$(openssl rand -base64 24)"</span> &gt;&gt; .env
 <span class="k">echo</span> <span class="s">"NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 24)"</span> &gt;&gt; .env
 <span class="k">echo</span> <span class="s">"NOVAMEM_COOKIE_SECRET=$(openssl rand -hex 32)"</span> &gt;&gt; .env
 
 docker compose up -d
-<span class="c"># dashboard now at http://localhost:7778/admin</span></pre>
+<span class="c"># http://localhost:7778/admin</span></pre>
+        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">Single-host. ~30 s. <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/install/docker.md">Full walkthrough →</a></div>
       </div>
 
       <div class="qs-block">
-        <div class="qs-head"><span class="dot" style="background: var(--accent)"></span> connect your AI host</div>
-<pre class="qs-pre"><span class="c"># one command. signs you in, mints a token,</span>
-<span class="c"># wires every supported AI host on your machine</span>
-npx <span class="k">-y</span> @azrtydxb/novamem-init
+        <div class="qs-head"><span class="dot" style="background: var(--cold)"></span> Manual</div>
+<pre class="qs-pre"><span class="c"># bring your own Postgres + Qdrant + FalkorDB</span>
+<span class="c"># prereqs: Node 20+, pnpm 9+</span>
+git clone https://github.com/azrtydxb/novamem.git
+<span class="k">cd</span> novamem
+pnpm install &amp;&amp; pnpm build
 
-<span class="c"># supported out of the box:</span>
-<span class="c">#   Claude Code · Claude Desktop · Cursor</span>
-<span class="c">#   OpenCode · Cline · Continue · Kilo Code</span>
-<span class="c">#   RooCode · &amp; more</span></pre>
+cp .env.example .env
+<span class="c"># point at your existing datastores</span>
+pnpm --filter @azrtydxb/novamem-server start</pre>
+        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">Local dev / custom stack. <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/install/manual.md">Full walkthrough →</a></div>
+      </div>
+
+      <div class="qs-block">
+        <div class="qs-head"><span class="dot" style="background: var(--accent)"></span> Kubernetes</div>
+<pre class="qs-pre"><span class="c"># multi-arch image on ghcr.io</span>
+<span class="c"># manifests in deploy/k8s/</span>
+git clone https://github.com/azrtydxb/novamem.git
+<span class="k">cd</span> novamem/deploy/k8s
+
+<span class="c"># edit secrets.yaml + ingress.yaml host</span>
+<span class="c"># then:</span>
+kubectl apply <span class="k">-k</span> .
+kubectl <span class="k">-n</span> novamem rollout status deploy/novamem</pre>
+        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">HA · multi-tenant · enterprise. <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/install/kubernetes.md">Full walkthrough →</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Connect ─────────────────────────────────────── -->
+<section class="block" id="connect">
+  <div class="container">
+    <div class="section-kicker">Connect</div>
+    <h2 class="section-title">Wire every AI host on your machine. One command.</h2>
+    <p class="section-lede">
+      <code>@azrtydxb/novamem-init</code> detects 30+ supported hosts, asks for your server URL + dashboard credentials, mints a fresh bearer, and writes the config each host expects. Idempotent — won't clobber existing entries.
+    </p>
+
+    <div class="qs-block" style="max-width: 720px; margin: 0 auto 32px;">
+      <div class="qs-head"><span class="dot" style="background: var(--accent)"></span> one command, every host</div>
+<pre class="qs-pre">npx <span class="k">-y</span> @azrtydxb/novamem-init
+
+<span class="c"># detects: Claude Code · Claude Desktop · ChatGPT (via HTTP)</span>
+<span class="c">#          Cursor · OpenCode · Codex CLI · Cline · Continue</span>
+<span class="c">#          Kilo Code · RooCode · Gemini CLI · Copilot · Windsurf</span>
+<span class="c">#          Factory · Amazon Q · &amp; ~16 skill-only hosts</span></pre>
+    </div>
+
+    <p class="section-lede" style="text-align: center; margin: 0 auto;">
+      Prefer manual setup? Per-host walkthroughs:
+      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/claude-code.md">Claude Code</a> ·
+      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/claude-desktop.md">Claude Desktop</a> ·
+      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/cursor.md">Cursor</a> ·
+      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/kilo-code.md">Kilo Code</a> ·
+      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/others-and-skills.md">Other hosts &amp; skills</a>
+    </p>
+  </div>
+</section>
+
+<!-- ─── Usage — what your agent actually calls ────────── -->
+<section class="block" id="usage">
+  <div class="container">
+    <div class="section-kicker">Usage</div>
+    <h2 class="section-title">The mental model — and the seven tools.</h2>
+    <p class="section-lede">
+      Every entry belongs to a single user. An entry can additionally belong to a <strong style="color:var(--ink)">project</strong> — a sub-brain that's shareable. User-global entries are private; project entries are visible to every member of that project. Every search runs three signals in parallel and fuses them into one ranked list.
+    </p>
+
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4" stroke="currentColor" stroke-width="1.4"/><path d="M10 10l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+        <div class="feat-title"><code>memory_search</code></div>
+        <div class="feat-desc">Hybrid retrieval. Override <code>weights</code> for keyword-only / vector-only / graph-heavy. Fans out across populated namespaces by default.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><path d="M3 7h10M3 11h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M11 11l2 2 2-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="feat-title"><code>memory_remember</code></div>
+        <div class="feat-desc">Write a new entry with optional <code>namespace</code>, <code>sourceType</code>, <code>capturedFrom</code>, <code>confidence</code>. Worthiness gate + SHA dedup are applied automatically.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/></svg></div>
+        <div class="feat-title"><code>memory_recent</code> / <code>memory_today</code></div>
+        <div class="feat-desc">Newest-first feed of entries (recent: any window via <code>since</code>; today: last 24 h). Useful for "what did the agent learn today" digests.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="12" r="2" stroke="currentColor" stroke-width="1.4"/><path d="M5.4 5.4l1.6 5M10.6 5.4l-1.6 5" stroke="currentColor" stroke-width="1.4"/></svg></div>
+        <div class="feat-title"><code>memory_neighbors</code></div>
+        <div class="feat-desc">Walk graph edges from a seed entry to its strongly-linked neighbours. Depth 1, 2, or 3 — adjacent context for free.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><path d="M3 4h10v9H3z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 7h4M6 10h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+        <div class="feat-title"><code>memory_update</code> / <code>memory_forget</code></div>
+        <div class="feat-desc">In-place rewrite (preserves id + edges + hits, re-embeds content) and explicit deletion. Idempotent — second-call <code>forget</code> returns <code>deleted:false</code>.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg></div>
+        <div class="feat-title"><code>project_*</code></div>
+        <div class="feat-desc">Create / list / activate / share / unshare / delete sub-brains. Active project mode unions the project with your private store on every search.</div>
+      </div>
+    </div>
+
+    <p class="section-lede" style="margin-top: 36px;">
+      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/usage.md">Full usage guide →</a> covers worthiness gates, decay maths, dream cycle, namespaces, and weight tuning.
+    </p>
+  </div>
+</section>
+
+<!-- ─── API + Architecture + Security ─────────────────── -->
+<section class="block" id="api">
+  <div class="container">
+    <div class="section-kicker">API · architecture · security</div>
+    <h2 class="section-title">Specs &amp; references.</h2>
+    <p class="section-lede">
+      Everything you need to operate, integrate, or audit. The OpenAPI spec is generated from the same Zod schemas the server uses at runtime — so it's always accurate.
+    </p>
+
+    <div class="why-grid">
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">OpenAPI 3.0</div>
+          <div class="d">Generated spec at <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json">docs/api/openapi.json</a> + <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/tree/main/docs/api">human-readable reference</a>. Live Swagger UI at <code>/api-docs</code> on your deployment.</div>
+        </div>
+      </div>
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">Architecture diagrams</div>
+          <div class="d"><a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/architecture.md">docs/architecture.md</a> — system shape, data flow, the engine layer, mermaid diagrams of search and remember paths.</div>
+        </div>
+      </div>
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">Security model</div>
+          <div class="d"><a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/SECURITY.md">SECURITY.md</a> — auth flows (Better Auth sessions, tenant bearers), RBAC, hardening checklist for production deploys.</div>
+        </div>
+      </div>
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">Packages &amp; releases</div>
+          <div class="d">Per-package versioning via <a style="color:var(--accent)" href="https://github.com/changesets/changesets">Changesets</a>; see <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/releases">GitHub Releases</a>. Server image at <code>ghcr.io/azrtydxb/novamem</code>.</div>
+        </div>
       </div>
     </div>
   </div>
