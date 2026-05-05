@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>novamem — tiered memory for AI agents</title>
+<meta name="description" content="Standalone tiered memory service for AI agents. Hybrid keyword + vector + graph search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard." />
+<meta property="og:title" content="novamem" />
+<meta property="og:description" content="Tiered memory for AI agents — hybrid retrieval, per-user isolation, MCP + HTTP." />
+<meta property="og:type" content="website" />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0d12;
+    --panel: #11151c;
+    --subtle: #161b24;
+    --hover: #1c2230;
+    --rule: #1f2530;
+    --rule-soft: #171c25;
+    --ink: #e6ebf2;
+    --dim: #8a93a3;
+    --faint: #5a6373;
+    --accent: oklch(70% 0.16 250);
+    --accent-soft: oklch(28% 0.10 250);
+    --warm: oklch(72% 0.17 35);
+    --cold: oklch(72% 0.14 220);
+    --graph: oklch(72% 0.16 165);
+    --warn: oklch(78% 0.16 80);
+    --max: 1140px;
+    --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { color: inherit; text-decoration: none; }
+  code, pre { font-family: var(--font-mono); }
+  ::selection { background: var(--accent-soft); color: var(--ink); }
+
+  /* Subtle dotted-grid backdrop, fixed so it doesn't scroll-bleed. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.025) 1px, transparent 0);
+    background-size: 24px 24px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body > * { position: relative; z-index: 1; }
+
+  .container { max-width: var(--max); margin: 0 auto; padding: 0 28px; }
+
+  /* ── Top nav ─────────────────────────────────────────── */
+  header.nav {
+    position: sticky; top: 0;
+    backdrop-filter: blur(12px);
+    background: color-mix(in oklab, var(--bg) 80%, transparent);
+    border-bottom: 1px solid var(--rule-soft);
+    z-index: 10;
+  }
+  .nav-row { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; font-size: 16px; }
+  .brand-mark { width: 26px; height: 26px; color: var(--accent); }
+  .nav-links { display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--dim); }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-links .pill {
+    font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; border-radius: 999px;
+    border: 1px solid var(--rule); color: var(--dim); letter-spacing: 0.02em;
+  }
+  @media (max-width: 720px) { .nav-links .docs-link, .nav-links .pill { display: none; } }
+
+  /* ── Hero ─────────────────────────────────────────── */
+  section.hero { padding: 88px 0 64px; }
+  .hero-kicker {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 18px;
+  }
+  h1.hero-title {
+    font-size: clamp(36px, 5.5vw, 60px);
+    font-weight: 700; letter-spacing: -0.025em; line-height: 1.05;
+    margin: 0 0 20px;
+    max-width: 780px;
+  }
+  h1.hero-title em { font-style: normal; color: var(--accent); }
+  .hero-sub {
+    font-size: 18px; color: var(--dim); max-width: 680px; line-height: 1.5;
+    margin: 0 0 32px;
+  }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 18px; border-radius: 8px; font-size: 14px; font-weight: 500;
+    border: 1px solid transparent; cursor: pointer; transition: 100ms;
+  }
+  .btn-primary { background: var(--accent); color: #06080c; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-secondary { border-color: var(--rule); color: var(--ink); background: var(--panel); }
+  .btn-secondary:hover { border-color: var(--dim); background: var(--subtle); }
+  .btn svg { width: 16px; height: 16px; }
+
+  /* ── Visual rail under the hero — three pulsing tier nodes. ── */
+  .tier-rail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 56px; }
+  .tier-card {
+    border: 1px solid var(--rule); border-radius: 12px; background: var(--panel);
+    padding: 22px; box-shadow: 0 1px 0 rgba(255,255,255,0.02);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .tier-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    box-shadow: 0 0 0 5px color-mix(in oklab, currentColor 25%, transparent);
+    animation: pulse 4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .tier-warm  { color: var(--warm); }
+  .tier-cold  { color: var(--cold); }
+  .tier-graph { color: var(--graph); }
+  .tier-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+  .tier-name  { font-size: 18px; font-weight: 600; color: var(--ink); }
+  .tier-desc  { font-size: 13px; color: var(--dim); line-height: 1.5; }
+  @media (max-width: 720px) { .tier-rail { grid-template-columns: 1fr; } }
+
+  /* ── Section frame ─────────────────────────────────── */
+  section.block { padding: 96px 0; border-top: 1px solid var(--rule-soft); }
+  .section-kicker {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 14px;
+  }
+  h2.section-title {
+    font-size: clamp(28px, 3.4vw, 38px);
+    font-weight: 700; letter-spacing: -0.02em; line-height: 1.15;
+    margin: 0 0 14px; max-width: 720px;
+  }
+  .section-lede { font-size: 16px; color: var(--dim); max-width: 680px; margin: 0 0 48px; }
+
+  /* ── Problem grid ─────────────────────────────────── */
+  .pain-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .pain-card {
+    border: 1px solid var(--rule); border-radius: 10px; background: var(--panel);
+    padding: 22px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .pain-num {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em;
+    color: var(--accent); margin-bottom: 4px;
+  }
+  .pain-title { font-size: 16px; font-weight: 600; color: var(--ink); }
+  .pain-desc { font-size: 13px; color: var(--dim); line-height: 1.55; }
+  @media (max-width: 880px) { .pain-grid { grid-template-columns: 1fr; } }
+
+  /* ── How it works — diagram + side rail ─────────────── */
+  .how-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
+  .diagram {
+    border: 1px solid var(--rule); border-radius: 12px; background: var(--panel);
+    padding: 28px;
+  }
+  .how-steps { display: flex; flex-direction: column; gap: 22px; }
+  .how-step { display: flex; gap: 14px; }
+  .step-num {
+    flex: 0 0 28px; height: 28px; border-radius: 6px;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  }
+  .step-body h3 { font-size: 15px; font-weight: 600; margin: 4px 0 6px; }
+  .step-body p { font-size: 13px; color: var(--dim); margin: 0; line-height: 1.55; }
+  @media (max-width: 920px) { .how-grid { grid-template-columns: 1fr; gap: 36px; } }
+
+  /* ── Features ─────────────────────────────────────── */
+  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .feat-card {
+    border: 1px solid var(--rule); border-radius: 10px; background: var(--panel);
+    padding: 22px; display: flex; flex-direction: column; gap: 10px;
+    transition: 120ms;
+  }
+  .feat-card:hover { border-color: var(--accent); background: var(--subtle); }
+  .feat-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .feat-icon svg { width: 16px; height: 16px; }
+  .feat-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .feat-desc { font-size: 13px; color: var(--dim); line-height: 1.55; }
+  @media (max-width: 920px) { .feat-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px) { .feat-grid { grid-template-columns: 1fr; } }
+
+  /* ── Quickstart ───────────────────────────────────── */
+  .qs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+  .qs-block {
+    border: 1px solid var(--rule); border-radius: 10px; background: var(--panel);
+    overflow: hidden;
+  }
+  .qs-head {
+    border-bottom: 1px solid var(--rule); padding: 12px 16px;
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 12px; color: var(--dim);
+  }
+  .qs-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--graph); }
+  .qs-pre {
+    padding: 18px 20px; margin: 0;
+    font-family: var(--font-mono); font-size: 13px; line-height: 1.7;
+    color: var(--ink); background: var(--bg);
+    overflow-x: auto;
+  }
+  .qs-pre .c { color: var(--faint); }
+  .qs-pre .k { color: var(--accent); }
+  .qs-pre .s { color: var(--graph); }
+  @media (max-width: 920px) { .qs-grid { grid-template-columns: 1fr; } }
+
+  /* ── Why grid ─────────────────────────────────────── */
+  .why-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .why-row {
+    display: flex; gap: 14px; align-items: flex-start;
+    border: 1px solid var(--rule); border-radius: 10px; background: var(--panel);
+    padding: 18px 20px;
+  }
+  .why-check {
+    flex: 0 0 22px; height: 22px; border-radius: 50%;
+    background: color-mix(in oklab, var(--graph) 25%, transparent);
+    color: var(--graph);
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 1px;
+  }
+  .why-check svg { width: 12px; height: 12px; }
+  .why-row .t { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
+  .why-row .d { font-size: 13px; color: var(--dim); line-height: 1.5; }
+  @media (max-width: 720px) { .why-grid { grid-template-columns: 1fr; } }
+
+  /* ── Footer ───────────────────────────────────────── */
+  footer {
+    border-top: 1px solid var(--rule-soft); padding: 36px 0 56px;
+    color: var(--dim); font-size: 13px;
+  }
+  .foot-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .foot-links { display: flex; gap: 22px; }
+  .foot-links a:hover { color: var(--ink); }
+
+  /* ── Tiny "kbd" style for inline keystrokes / cmds ─── */
+  .kbd {
+    font-family: var(--font-mono); font-size: 12px;
+    border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px;
+    padding: 1px 6px; color: var(--ink); background: var(--subtle);
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Top nav ──────────────────────────────────────── -->
+<header class="nav">
+  <div class="container nav-row">
+    <a class="brand" href="#top">
+      <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <line x1="7" y1="24" x2="7" y2="8"/>
+          <line x1="7" y1="8" x2="25" y2="24"/>
+          <line x1="25" y1="24" x2="25" y2="8"/>
+        </g>
+        <g fill="currentColor">
+          <circle cx="7" cy="24" r="2.6"/><circle cx="7" cy="8" r="2.6"/>
+          <circle cx="25" cy="24" r="2.6"/><circle cx="25" cy="8" r="2.6"/>
+        </g>
+      </svg>
+      <span>novamem</span>
+    </a>
+    <nav class="nav-links">
+      <a class="docs-link" href="https://github.com/azrtydxb/novamem/tree/main/docs">Docs</a>
+      <a href="https://github.com/azrtydxb/novamem">GitHub</a>
+      <a class="pill" href="https://www.npmjs.com/package/@azrtydxb/novamem-init">npm</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ─── Hero ─────────────────────────────────────────── -->
+<section class="hero" id="top">
+  <div class="container">
+    <div class="hero-kicker">Tiered memory for AI agents</div>
+    <h1 class="hero-title">
+      Your agents stop forgetting. <em>Permanently.</em>
+    </h1>
+    <p class="hero-sub">
+      novamem is a standalone memory service that gives AI agents a brain that persists across sessions, projects, and machines. Hybrid keyword&nbsp;+&nbsp;vector&nbsp;+&nbsp;graph retrieval. Per-user isolation with shareable sub-brains. Self-hostable.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#quickstart">
+        Get started
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/azrtydxb/novamem">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38l-.01-1.49c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.06-.49.06-.49.81.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.51-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.66 3.95.29.25.54.74.54 1.49l-.01 2.21c0 .21.15.46.55.38A8 8 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+
+    <!-- Tier rail -->
+    <div class="tier-rail" aria-label="Storage tiers">
+      <div class="tier-card tier-warm">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="tier-dot" style="background: currentColor"></span>
+          <span class="tier-label">Warm tier</span>
+        </div>
+        <div class="tier-name">Postgres FTS</div>
+        <div class="tier-desc">Active entries, full-text indexed, milliseconds to retrieve. Hot-path queries hit here first.</div>
+      </div>
+      <div class="tier-card tier-cold">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="tier-dot" style="background: currentColor"></span>
+          <span class="tier-label">Cold tier</span>
+        </div>
+        <div class="tier-name">Qdrant vectors</div>
+        <div class="tier-desc">Demoted entries kept as embeddings. Reactive promotion back to warm on relevant search hit.</div>
+      </div>
+      <div class="tier-card tier-graph">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="tier-dot" style="background: currentColor"></span>
+          <span class="tier-label">Relations</span>
+        </div>
+        <div class="tier-name">FalkorDB graph</div>
+        <div class="tier-desc">Edges between related memories. Surfaces neighbours of a hit so adjacent context comes for free.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Problem ──────────────────────────────────────── -->
+<section class="block" id="why">
+  <div class="container">
+    <div class="section-kicker">The problem</div>
+    <h2 class="section-title">LLMs don't remember. Bolt-on RAG falls short.</h2>
+    <p class="section-lede">
+      A 200K-token context isn't memory — it's a goldfish bowl that resets every session. And the usual workaround, "stuff a vector DB behind it," misses everything you actually want from memory.
+    </p>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="pain-num">01 / context limit</div>
+        <div class="pain-title">Sessions lose state</div>
+        <div class="pain-desc">Every new conversation rebuilds the agent's worldview from scratch. Decisions, preferences, ongoing projects — all evaporate at session end.</div>
+      </div>
+      <div class="pain-card">
+        <div class="pain-num">02 / vector-only</div>
+        <div class="pain-title">Pure vector search misses literals</div>
+        <div class="pain-desc">Cosine similarity is great for "fuzzy" recall and useless for exact ids, function names, or hashes. You need keyword + vector + graph fused, not one of three.</div>
+      </div>
+      <div class="pain-card">
+        <div class="pain-num">03 / no isolation</div>
+        <div class="pain-title">One shared bucket per agent</div>
+        <div class="pain-desc">Most "memory" tools assume one user. Real teams need per-user isolation with deliberate sharing — sub-brains for projects, a private store for everything else.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── How it works ────────────────────────────────── -->
+<section class="block" id="how">
+  <div class="container">
+    <div class="section-kicker">How it works</div>
+    <h2 class="section-title">Three retrieval signals, fused. One coherent answer.</h2>
+    <p class="section-lede">
+      Every search runs keyword (FTS), vector (cosine), and graph (neighbour traversal) in parallel. Results fuse via min-max-normalised weighted scoring with sensible defaults you can override per call.
+    </p>
+    <div class="how-grid">
+      <div class="diagram">
+        <svg viewBox="0 0 480 320" width="100%" height="auto" aria-label="Retrieval flow">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#5a6373"/>
+            </marker>
+          </defs>
+          <!-- query bubble -->
+          <rect x="20" y="140" width="120" height="48" rx="8" fill="#161b24" stroke="#1f2530"/>
+          <text x="80" y="170" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#e6ebf2">query</text>
+          <!-- three branches -->
+          <g stroke="#5a6373" stroke-width="1.4" fill="none" marker-end="url(#arr)">
+            <path d="M140,164 C200,164 200,60 260,60"/>
+            <path d="M140,164 L260,164"/>
+            <path d="M140,164 C200,164 200,268 260,268"/>
+          </g>
+          <!-- tier boxes -->
+          <g font-family="Inter, sans-serif" font-size="13" fill="#e6ebf2">
+            <rect x="260" y="36" width="140" height="48" rx="8" fill="#161b24" stroke="oklch(72% 0.17 35)"/>
+            <text x="330" y="56" text-anchor="middle" font-weight="600">keyword (FTS)</text>
+            <text x="330" y="72" text-anchor="middle" font-size="11" fill="#8a93a3" font-family="JetBrains Mono, monospace">postgres</text>
+
+            <rect x="260" y="140" width="140" height="48" rx="8" fill="#161b24" stroke="oklch(72% 0.14 220)"/>
+            <text x="330" y="160" text-anchor="middle" font-weight="600">vector</text>
+            <text x="330" y="176" text-anchor="middle" font-size="11" fill="#8a93a3" font-family="JetBrains Mono, monospace">qdrant</text>
+
+            <rect x="260" y="244" width="140" height="48" rx="8" fill="#161b24" stroke="oklch(72% 0.16 165)"/>
+            <text x="330" y="264" text-anchor="middle" font-weight="600">graph neighbours</text>
+            <text x="330" y="280" text-anchor="middle" font-size="11" fill="#8a93a3" font-family="JetBrains Mono, monospace">falkordb</text>
+          </g>
+          <!-- fuse arrows -->
+          <g stroke="#5a6373" stroke-width="1.4" fill="none" marker-end="url(#arr)">
+            <path d="M400,60 C440,60 440,164 460,164"/>
+            <path d="M400,164 L460,164"/>
+            <path d="M400,268 C440,268 440,164 460,164"/>
+          </g>
+          <!-- fuse dot -->
+          <circle cx="460" cy="164" r="6" fill="oklch(70% 0.16 250)"/>
+          <text x="460" y="200" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#8a93a3">fuse</text>
+        </svg>
+      </div>
+      <div class="how-steps">
+        <div class="how-step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h3>Remember</h3>
+            <p>Write a memory entry. A worthiness gate rejects conversational filler; a SHA-256 dedupe path returns the existing id for exact duplicates. The entry lands in warm + cold + graph atomically.</p>
+          </div>
+        </div>
+        <div class="how-step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3>Search hybrid</h3>
+            <p>One query fans out to all three indexes. Results are fused with weighted scoring. Override weights per call — `{keyword:1, vector:0}` for exact-id lookups, `{vector:1}` to lean fully semantic.</p>
+          </div>
+        </div>
+        <div class="how-step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h3>Decay &amp; promote</h3>
+            <p>Entries decay on a synaptic schedule — <code>effectiveDays = 7 · log₂(hits + 1)</code>. Hits in cold reactively promote back to warm. A nightly dream cycle compacts duplicates and promotes shared neighbours.</p>
+          </div>
+        </div>
+        <div class="how-step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h3>Isolate &amp; share</h3>
+            <p>Every entry is per-user by default. Create a project to carve out a sub-brain; share it by adding members. Memory crosses user boundaries only through explicit project membership.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Features grid ───────────────────────────────── -->
+<section class="block" id="features">
+  <div class="container">
+    <div class="section-kicker">What you get</div>
+    <h2 class="section-title">Batteries included. No vendor SaaS.</h2>
+    <p class="section-lede">
+      One <code>docker compose up -d</code> brings the whole stack online. No external services. No proprietary embedding API. No hidden per-token charges.
+    </p>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="feat-title">Hybrid retrieval</div>
+        <div class="feat-desc">Keyword + vector + graph fused per query. Adjustable weights. The graph signal alone is unique to novamem — it surfaces "what was related" to your hit.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg></div>
+        <div class="feat-title">Projects = sub-brains</div>
+        <div class="feat-desc">Carve out a project, share it with teammates. Memory stays isolated by default; sharing is explicit and revocable. Active-project mode unions the project with your private store.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/></svg></div>
+        <div class="feat-title">Synaptic decay</div>
+        <div class="feat-desc">Old, unused entries demote to cold. Frequently-hit ones re-promote. The math (<code>7 · log₂(hits+1)</code>) is tunable per-tenant.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+        <div class="feat-title">MCP + HTTP, both first-class</div>
+        <div class="feat-desc">Model Context Protocol via SSE and stdio for Claude Code, Claude Desktop, Cursor, OpenCode, Cline, Continue. Plain JSON HTTP for everything else.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><circle cx="5" cy="6" r="2" stroke="currentColor" stroke-width="1.4"/><path d="M3 13c0-2 1-3 2-3h0c1 0 2 1 2 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M9 7h5M9 11h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+        <div class="feat-title">Built-in dashboard</div>
+        <div class="feat-desc">Sign in, mint tokens, browse memories, watch the graph, monitor health and per-token throughput. No separate Grafana to wire up.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 16 16" fill="none"><path d="M3 5l5-3 5 3v6l-5 3-5-3V5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M3 5l5 3 5-3M8 8v6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+        <div class="feat-title">Pluggable embeddings</div>
+        <div class="feat-desc">Local <code>@xenova/transformers</code> by default — no API keys, runs on CPU. Swap in any OpenAI-compatible endpoint with a single env var.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Quick start ─────────────────────────────────── -->
+<section class="block" id="quickstart">
+  <div class="container">
+    <div class="section-kicker">Get started</div>
+    <h2 class="section-title">Two paths. Both finish in under a minute.</h2>
+    <p class="section-lede">
+      Self-host the whole stack with Docker Compose, or skip the server entirely and connect your AI host to a pre-existing novamem deployment.
+    </p>
+
+    <div class="qs-grid">
+      <div class="qs-block">
+        <div class="qs-head"><span class="dot"></span> self-host the server</div>
+<pre class="qs-pre"><span class="c"># pull repo + secrets, then up</span>
+git clone https://github.com/azrtydxb/novamem.git
+<span class="k">cd</span> novamem
+cp .env.example .env
+
+<span class="c"># required: three secrets in .env</span>
+<span class="k">echo</span> <span class="s">"POSTGRES_PASSWORD=$(openssl rand -base64 24)"</span> &gt;&gt; .env
+<span class="k">echo</span> <span class="s">"NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 24)"</span> &gt;&gt; .env
+<span class="k">echo</span> <span class="s">"NOVAMEM_COOKIE_SECRET=$(openssl rand -hex 32)"</span> &gt;&gt; .env
+
+docker compose up -d
+<span class="c"># dashboard now at http://localhost:7778/admin</span></pre>
+      </div>
+
+      <div class="qs-block">
+        <div class="qs-head"><span class="dot" style="background: var(--accent)"></span> connect your AI host</div>
+<pre class="qs-pre"><span class="c"># one command. signs you in, mints a token,</span>
+<span class="c"># wires every supported AI host on your machine</span>
+npx <span class="k">-y</span> @azrtydxb/novamem-init
+
+<span class="c"># supported out of the box:</span>
+<span class="c">#   Claude Code · Claude Desktop · Cursor</span>
+<span class="c">#   OpenCode · Cline · Continue · Kilo Code</span>
+<span class="c">#   RooCode · &amp; more</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Why novamem ─────────────────────────────────── -->
+<section class="block" id="why-stack">
+  <div class="container">
+    <div class="section-kicker">Why this stack</div>
+    <h2 class="section-title">The decisions, on the table.</h2>
+    <p class="section-lede">novamem is opinionated about a few things — and the rest is yours.</p>
+    <div class="why-grid">
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">Self-hostable, zero SaaS dependency</div>
+          <div class="d">Postgres, Qdrant, FalkorDB. All open source. Run on your laptop, your homelab, your cluster.</div>
+        </div>
+      </div>
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">Worthiness gate at write</div>
+          <div class="d">Hard rules drop "thanks", "ok", and 12-char filler. SHA-256 dedupe collapses exact duplicates within a scope. Your memory store stays signal.</div>
+        </div>
+      </div>
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">Provenance on every entry</div>
+          <div class="d"><code>sourceType</code>, <code>capturedFrom</code>, <code>confidence</code> — so you can filter "what did Claude infer" from "what was directly observed".</div>
+        </div>
+      </div>
+      <div class="why-row">
+        <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div>
+          <div class="t">Apache 2.0, no telemetry</div>
+          <div class="d">Use commercially. Fork it. We don't phone home. The project ships with a <code>SECURITY.md</code> and an audited auth model.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Final CTA ──────────────────────────────────── -->
+<section class="block" id="cta">
+  <div class="container" style="text-align:center;">
+    <h2 class="section-title" style="margin: 0 auto 14px;">Give your agents a memory.</h2>
+    <p class="section-lede" style="margin: 0 auto 28px;">Self-host in a minute. Wire every AI host on your machine in one <span class="kbd">npx</span> command.</p>
+    <div class="cta-row" style="justify-content:center;">
+      <a class="btn btn-primary" href="https://github.com/azrtydxb/novamem">Open on GitHub</a>
+      <a class="btn btn-secondary" href="https://github.com/azrtydxb/novamem/tree/main/docs">Read the docs</a>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Footer ─────────────────────────────────────── -->
+<footer>
+  <div class="container foot-row">
+    <div>
+      <a class="brand" href="#top" style="font-size: 14px;">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="width: 20px; height: 20px;">
+          <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <line x1="7" y1="24" x2="7" y2="8"/>
+            <line x1="7" y1="8" x2="25" y2="24"/>
+            <line x1="25" y1="24" x2="25" y2="8"/>
+          </g>
+          <g fill="currentColor">
+            <circle cx="7" cy="24" r="2.6"/><circle cx="7" cy="8" r="2.6"/>
+            <circle cx="25" cy="24" r="2.6"/><circle cx="25" cy="8" r="2.6"/>
+          </g>
+        </svg>
+        novamem
+      </a>
+      <div style="margin-top: 6px; font-size: 12px; color: var(--faint);">Apache&nbsp;2.0 · self-hostable</div>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/azrtydxb/novamem">GitHub</a>
+      <a href="https://github.com/azrtydxb/novamem/tree/main/docs">Docs</a>
+      <a href="https://www.npmjs.com/package/@azrtydxb/novamem-init">npm</a>
+      <a href="https://github.com/azrtydxb/novamem/blob/main/SECURITY.md">Security</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
