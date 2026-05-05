@@ -88,7 +88,12 @@ export const TOOLS: readonly ToolEntry[] = [
       // installer still works if the dir exists.
       path: "Library/Application Support/Claude/claude_desktop_config.json",
       format: "json",
-      transport: "sse",
+      // Claude Desktop's MCP loader only accepts stdio entries
+      // (`command`/`args`). Writing `{type: "sse", url, headers}` makes
+      // it pop up "not valid MCP server configurations and were
+      // skipped". Use the stdio shim — it bridges to /mcp/sse on the
+      // server with the bearer in env.
+      transport: "stdio",
     },
     postInstallHint: "Quit Claude Desktop fully (Cmd-Q on macOS) and reopen — it doesn't hot-reload MCP config.",
   },
