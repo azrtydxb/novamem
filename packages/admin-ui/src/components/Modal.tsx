@@ -19,17 +19,25 @@ const SIZE = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-xl" };
 export function Modal({ open, onClose, title, description, children, footer, size = "md" }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const lastActive = useRef<HTMLElement | null>(null);
+  // Latest-onClose ref — the keydown handler reads this, but the effect
+  // does NOT depend on `onClose` directly. Otherwise every parent
+  // re-render (e.g. the input's setState on each keystroke) creates a
+  // fresh arrow-fn `onClose`, which would re-fire the effect, restart
+  // the auto-focus setTimeout, and yank focus out of the textarea on
+  // every key press. Pin the deps to `[open]` only.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   // Restore focus to the trigger after close, ESC closes, focus traps in
-  // dialog. Small useful nice-to-haves for a modal that doesn't depend on
-  // a heavy library.
+  // dialog. Auto-focus the first sensible input/textarea on open.
   useEffect(() => {
     if (!open) return;
     lastActive.current = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
+        return;
       }
       if (e.key === "Tab" && dialogRef.current) {
         const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
@@ -48,10 +56,13 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       }
     };
     document.addEventListener("keydown", onKey);
-    // Auto-focus the first focusable element after mount.
+    // Auto-focus the first input-like element after mount. `textarea`
+    // and `[autofocus]` belong here too — without them, the focus falls
+    // through to the first non-close button (Cancel/Save), which is
+    // wrong for a modal whose primary control is a textbox.
     setTimeout(() => {
       const first = dialogRef.current?.querySelector<HTMLElement>(
-        'input, button:not([data-close]), [href]',
+        'input, textarea, [autofocus], button:not([data-close]), [href]',
       );
       first?.focus();
     }, 10);
@@ -61,7 +72,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       document.body.style.overflow = "";
       lastActive.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
