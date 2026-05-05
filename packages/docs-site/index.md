@@ -6,7 +6,7 @@ title: novamem · documentation
 
 **One memory across every AI agent you use.** Hybrid keyword + vector + graph retrieval, per-user isolation with shareable sub-brains, MCP and HTTP transports, built-in dashboard. Self-hostable on a laptop or as a multi-tenant brain for a whole company.
 
-This is the long-form documentation. For the marketing landing page see [novamem.github.io/novamem](/novamem/). For source see [github.com/azrtydxb/novamem](https://github.com/azrtydxb/novamem).
+This is the long-form documentation. For the marketing landing page see [novamem.github.io/novamem](https://azrtydxb.github.io/novamem/). For source see [github.com/azrtydxb/novamem](https://github.com/azrtydxb/novamem).
 
 ::: tip Where to start
 - New to novamem? → [Getting started](/getting-started)
