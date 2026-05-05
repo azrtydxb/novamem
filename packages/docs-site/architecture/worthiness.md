@@ -1,0 +1,62 @@
+---
+title: Worthiness gate + dedup
+---
+
+# Worthiness gate + dedup
+
+`memory_remember` is the only write path that doesn't pass through a per-user retrieval check. Two filters run before the entry hits Postgres: a **worthiness gate** (rejects junk) and a **SHA-256 dedup** (collapses duplicates).
+
+## Worthiness gate
+
+Implemented as `MemoryEngine.shouldReject(content)` returning `null` (fit to store) or a short reason string. Two rules:
+
+1. **Too short** — `content.trim().length < 12`. A 12-char floor is a heuristic for "not durable knowledge." Single words, single emoji reactions, and most filler chat are blocked.
+2. **Conversational filler** — regex match against `^(thanks?|ok(ay)?|sure|got it|great|cool|yes|no|nope|yep|alright|noted|done)\.?$`. Closes the obvious "the agent said 'ok' and remembered it" failure mode.
+
+When rejected, `memory_remember` returns:
+
+```json
+{ "id": null, "rejected": "too short — not durable knowledge" }
+```
+
+## Bypass with `force`
+
+Set `force: true` on the remember call to skip the gate:
+
+```json
+{ "content": "x", "force": true }
+```
+
+Use only when you know what you're doing — short anchors (project ids, version pins, phone numbers) are valid; "ok" is not.
+
+## SHA-256 dedup
+
+Even past the gate, an entry whose content (after normalisation) hashes to a value already present in the same scope is collapsed to the existing id:
+
+```
+content_hash = sha256(normalize(content))
+```
+
+Normalisation: lowercase, collapse internal whitespace, trim. Two writes of "Tokio is the de-facto async runtime." (with different casing or extra spaces) produce the same hash.
+
+The dedup response surfaces the existing id:
+
+```json
+{ "id": "01KQW8EKAJYNTVSGA283SF2ZGQ", "deduplicated": true }
+```
+
+The original entry's `hits` counter is incremented — duplicates count as positive signal that the content is worth keeping.
+
+## Scope of dedup
+
+Dedup is per `(user, project, namespace)` — the same content under different namespaces stays as separate entries. Reasoning: namespaces exist precisely so the same fact can be filed under multiple categories ("decisions" + "incidents") without collision.
+
+## What the gate doesn't do
+
+- **Doesn't verify factual accuracy.** That's the agent's job.
+- **Doesn't check for PII.** novamem is unaware of content semantics.
+- **Doesn't scan for prompt injection.** Memory entries are content the user wrote; if your agent threatens to be tricked by what it remembers, that's an upstream concern.
+
+## Source
+
+[`packages/server/src/engine/index.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/engine/index.ts) — `shouldReject()` and the dedup branch in `remember()`.
