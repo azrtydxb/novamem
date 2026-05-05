@@ -18,6 +18,10 @@ export interface RunParams {
   bearer: string;
   ctx: DetectionContext;
   dryRun?: boolean;
+  /** Pin the published @azrtydxb/novamem-mcp version in any stdio
+   *  configs we write. Defaults to floating "latest" when unset (legacy
+   *  behavior pre-v1.1.4). */
+  shimVersion?: string;
 }
 
 export interface ToolResult {
@@ -37,7 +41,11 @@ export async function applyTools(
     const mcp = await installMcp(
       tool,
       params.ctx,
-      { baseUrl: params.baseUrl, bearer: params.bearer },
+      {
+        baseUrl: params.baseUrl,
+        bearer: params.bearer,
+        shimVersion: params.shimVersion,
+      },
       { dryRun: params.dryRun },
     );
     const commands = await installCommands(tool, params.ctx, { dryRun: params.dryRun });

@@ -25,6 +25,8 @@ import { TOOLS, findTool, type ToolEntry } from "./tools.js";
 import { detectAll, defaultContext, isInstalled } from "./detect.js";
 import { applyTools, type ToolResult } from "./run.js";
 import { mintToken, probeHealth, signIn, AuthError } from "./auth.js";
+import { loadState, saveState } from "./state.js";
+import { verifyShim } from "./install/mcp.js";
 
 interface CliOptions {
   baseUrl?: string;
@@ -35,6 +37,7 @@ interface CliOptions {
   all?: boolean;
   yes?: boolean;
   dryRun?: boolean;
+  skipShimCheck?: boolean;
 }
 
 // Read the published version from the bundled package.json so commander's
@@ -65,17 +68,41 @@ export async function runCli(argv: string[]): Promise<number> {
     .option("--tools <ids>", "comma-separated tool ids (default: detected ones)")
     .option("--all", "configure every tool in the registry, even undetected ones")
     .option("--yes, -y", "non-interactive: assume defaults, no confirmation prompt")
-    .option("--dry-run", "preview file paths without writing");
+    .option("--dry-run", "preview file paths without writing")
+    .option(
+      "--skip-shim-check",
+      "skip the npm pre-flight that verifies @azrtydxb/novamem-mcp is fetchable + runnable before writing stdio configs",
+    );
   program.parse(argv);
   const opts = program.opts<CliOptions>();
 
   try {
-    const baseUrl = await resolveBaseUrl(opts);
-    const bearer = await resolveBearer(opts, baseUrl);
+    // Re-runs feel less repetitive when the previous answer pre-fills.
+    // Tokens are NEVER cached — always re-mint or accept --token.
+    const state = loadState();
+    const baseUrl = await resolveBaseUrl(opts, state.lastBaseUrl);
+    const { bearer, email } = await resolveBearer(opts, baseUrl, state.lastEmail);
     const tools = await resolveTools(opts);
     if (tools.length === 0) {
       console.error("✗ No tools selected. Pass --all or --tools=<id,…> or run interactively.");
       return 1;
+    }
+    // Pre-flight: if any selected tool uses our stdio shim, verify the
+    // pinned shim version is fetchable + runnable BEFORE we write a
+    // config that points at it. Avoids the silent "Server disconnected"
+    // class of bug where the spawn dies because npm can't resolve a
+    // bad workspace:* (or any other) shim publish issue.
+    const needsShim = tools.some((t) => (t.mcp?.transport ?? "sse") === "stdio");
+    if (needsShim && !opts.skipShimCheck && !opts.dryRun) {
+      console.log(`→ Pre-flight: verifying @azrtydxb/novamem-mcp@${PKG_VERSION} is installable + runnable…`);
+      const v = await verifyShim(PKG_VERSION);
+      if (!v.ok) {
+        console.error(
+          `✗ Pre-flight failed: ${v.reason}\n  Refusing to write a stdio config that would silently fail.\n  Pass --skip-shim-check to override at your own risk.`,
+        );
+        return 1;
+      }
+      console.log(`✓ Shim ready.`);
     }
     if (!opts.yes && !opts.dryRun) {
       console.log(`\nAbout to configure ${tools.length} tool${tools.length === 1 ? "" : "s"}: ${tools.map((t) => t.name).join(", ")}.`);
@@ -90,8 +117,13 @@ export async function runCli(argv: string[]): Promise<number> {
       bearer,
       ctx: defaultContext(),
       dryRun: opts.dryRun ?? false,
+      shimVersion: PKG_VERSION,
     });
     printSummary(results, opts.dryRun ?? false);
+    if (!opts.dryRun) {
+      // Persist what worked so the next run pre-fills it.
+      saveState({ lastBaseUrl: baseUrl, lastEmail: email });
+    }
     return 0;
   } catch (e) {
     if (e instanceof AuthError) {
@@ -107,12 +139,14 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 }
 
-async function resolveBaseUrl(opts: CliOptions): Promise<string> {
+async function resolveBaseUrl(opts: CliOptions, lastBaseUrl?: string): Promise<string> {
   let baseUrl = opts.baseUrl;
   if (!baseUrl) {
+    // Prefer the last successful base URL over the local-dev default
+    // when re-running on a fresh terminal.
     baseUrl = await input({
       message: "novamem server URL",
-      default: "http://localhost:7778",
+      default: lastBaseUrl ?? "http://localhost:7778",
       validate: (v) => /^https?:\/\//.test(v) || "must start with http:// or https://",
     });
   }
@@ -121,12 +155,17 @@ async function resolveBaseUrl(opts: CliOptions): Promise<string> {
   return baseUrl;
 }
 
-async function resolveBearer(opts: CliOptions, baseUrl: string): Promise<string> {
+async function resolveBearer(
+  opts: CliOptions,
+  baseUrl: string,
+  lastEmail?: string,
+): Promise<{ bearer: string; email?: string }> {
   if (opts.token) {
-    return opts.token;
+    return { bearer: opts.token };
   }
   const email = opts.email ?? (await input({
     message: "dashboard email",
+    default: lastEmail,
     validate: (v) => v.includes("@") || "must be an email address",
   }));
   const pwd = opts.password ?? (await passwordPrompt({
@@ -139,7 +178,7 @@ async function resolveBearer(opts: CliOptions, baseUrl: string): Promise<string>
   const label = `novamem-init@${hostname()}`;
   const token = await mintToken({ baseUrl, sessionCookie: cookie, label });
   console.log(`✓ Minted token (label: ${label})`);
-  return token;
+  return { bearer: token, email };
 }
 
 async function resolveTools(opts: CliOptions): Promise<readonly ToolEntry[]> {
