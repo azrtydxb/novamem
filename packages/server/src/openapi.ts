@@ -284,6 +284,17 @@ export function openapiSpec() {
         },
         Health: {
           type: "object",
+          description:
+            "Public liveness probe shape. Boolean only — no infrastructure detail. " +
+            "For the dep-by-dep snapshot see `HealthDeep` returned by `/v1/admin/health/deep`.",
+          properties: {
+            ok: { type: "boolean" },
+          },
+          required: ["ok"],
+        },
+        HealthDeep: {
+          type: "object",
+          description: "Admin-only: per-dependency status snapshot.",
           properties: {
             ok: { type: "boolean" },
             deps: {
@@ -295,6 +306,7 @@ export function openapiSpec() {
               },
             },
           },
+          required: ["ok", "deps"],
         },
         Error: {
           type: "object",
@@ -627,9 +639,20 @@ export function openapiSpec() {
       "/health": {
         get: {
           tags: ["liveness"],
-          summary: "Liveness + dependency snapshot",
+          summary: "Liveness probe — boolean only (no infrastructure detail)",
           responses: {
             "200": { description: "Up", content: { "application/json": { schema: { $ref: "#/components/schemas/Health" } } } },
+            "503": { description: "A dependency is unreachable" },
+          },
+        },
+      },
+      "/v1/admin/health/deep": {
+        get: {
+          tags: ["admin"],
+          summary: "Admin-only dependency snapshot (warm/cold/graph status)",
+          security: [{ SessionCookie: [] }],
+          responses: {
+            "200": { description: "Up", content: { "application/json": { schema: { $ref: "#/components/schemas/HealthDeep" } } } },
             "503": { description: "A dependency is unreachable" },
           },
         },
