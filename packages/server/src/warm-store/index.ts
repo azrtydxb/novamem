@@ -326,10 +326,14 @@ export class WarmStore {
       })
       .from(schema.adminAuditLog)
       .where(eq(schema.adminAuditLog.actorUserId, userId));
+    // Order by the 2nd column (the timestamp). drizzle's `select({at: ...})`
+    // names the JS property `at` but does not emit a SQL `AS at` alias for
+    // the underlying column, so the outer UNION's ORDER BY can't reference
+    // `at` by name. Positional ordering is the portable fix for UNION ALL.
     const rows = await unionAll(remembers, tokens)
       .unionAll(joins)
       .unionAll(audits)
-      .orderBy(sql`at DESC`)
+      .orderBy(sql`2 DESC`)
       .limit(lim);
     return rows.map((row) => ({
       kind: row.kind,
