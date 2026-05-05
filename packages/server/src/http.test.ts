@@ -186,6 +186,35 @@ describe("http: request correlation (#75)", () => {
     expect((idA as string).length).toBeGreaterThan(0);
     expect(idA).not.toBe(idB);
   });
+
+  it("echoes a safe inbound x-request-id", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/recent",
+      payload: { k: 1 },
+      headers: { "x-request-id": "ext-trace-abc123" },
+    });
+    expect(r.headers["x-request-id"]).toBe("ext-trace-abc123");
+  });
+
+  it("rejects unsafe inbound x-request-id and falls back to a generated one", async () => {
+    const { app } = makeApp();
+    // Anything outside [A-Za-z0-9_.:-] (e.g. spaces, control bytes,
+    // semicolons) is replaced by a generated id rather than echoed —
+    // closes log/response-header injection vectors.
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/recent",
+      payload: { k: 1 },
+      headers: { "x-request-id": "spaces and ; semicolons" },
+    });
+    expect(r.statusCode).toBe(200);
+    const echoed = r.headers["x-request-id"];
+    expect(typeof echoed).toBe("string");
+    expect(echoed).not.toBe("spaces and ; semicolons");
+    expect(echoed).toMatch(/^[A-Za-z0-9_.:-]+$/);
+  });
 });
 
 describe("http: /v1/remember", () => {

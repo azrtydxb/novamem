@@ -153,8 +153,15 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     // it automatically. Honour an inbound `x-request-id` so an upstream
     // proxy / dashboard / load-test rig can pin its own correlation id.
     genReqId: (req) => {
+      // Honour an inbound `x-request-id` from a trusted proxy / load-test
+      // rig — but only when the value is a safe character set. Anything
+      // with CR/LF / control bytes / non-ASCII would either be rejected by
+      // Node's header validation later (turning a normal request into a
+      // 500) or smuggle log/response-header injection. Restrict to the
+      // characters a UUID / hex / base64url / hyphenated id needs.
+      const SAFE_REQ_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
       const inbound = req.headers["x-request-id"];
-      if (typeof inbound === "string" && inbound.length > 0 && inbound.length <= 128) {
+      if (typeof inbound === "string" && SAFE_REQ_ID.test(inbound)) {
         return inbound;
       }
       return randomBytes(8).toString("hex");
