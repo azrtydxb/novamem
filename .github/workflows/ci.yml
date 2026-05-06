@@ -3,6 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+    # Tag pushes also trigger CI so the docker job can publish semver
+    # image tags (`:vX.Y.Z`, `:X.Y.Z`). Server releases are tagged
+    # `vX.Y.Z` on the merge commit; without this trigger we'd only ever
+    # have `:main` + `:sha-<short>` and operators couldn't pin to a
+    # release version.
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -129,6 +135,16 @@ jobs:
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      # Strip the leading `v` off a tag ref to derive the bare semver.
+      # Empty when the trigger isn't a tag push — both forms (`v1.1.6`
+      # and `1.1.6`) get tagged so operators can use either.
+      - name: Compute semver tag
+        id: semver
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          REF="${GITHUB_REF#refs/tags/}"
+          echo "v=${REF}"        >> "$GITHUB_OUTPUT"   # vX.Y.Z
+          echo "bare=${REF#v}"   >> "$GITHUB_OUTPUT"   # X.Y.Z
       # Per-arch cache scope so the two arches don't fight for the same
       # gha cache slot — each gets its own slice keyed by `${arch}`.
       - name: Build runtime image (native ${{ matrix.arch }})
@@ -151,38 +167,54 @@ jobs:
       # but never publish. Arch-suffixed tags here; the `manifest` job
       # below stitches them into a multi-arch index.
       - name: Login to ghcr.io
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Re-run build-push-action with push:true so buildx handles
-      # attestation manifests correctly. The gha cache from the previous
+      # Push only on main-branch pushes OR vX.Y.Z tag pushes — PRs
+      # build + scan but never publish. Arch-suffixed tags here; the
+      # `manifest` job below stitches them into multi-arch indexes.
+      #
+      # Tag set:
+      #   :sha-<short>-<arch>          — always pushed
+      #   :main-<arch>                 — main-branch pushes only
+      #   :v<X.Y.Z>-<arch>             — tag pushes only (e.g. v1.1.6)
+      #   :<X.Y.Z>-<arch>              — tag pushes only (e.g. 1.1.6)
+      #
+      # `tags:` is newline-separated; empty lines are ignored, so
+      # interpolating a falsy value just drops the line.
+      #
+      # Re-runs build-push-action with push:true so buildx handles
+      # attestation manifests correctly. The gha cache from the build
       # step is fully populated; this call hits cache and just pushes.
       # `docker tag` + `docker push` on the locally-loaded image trips
       # an "unknown blob" error because the loaded variant strips the
       # attestation manifests the registry expects.
       - name: Push per-arch image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: |
-            ${{ env.REGISTRY_IMAGE }}:main-${{ matrix.arch }}
             ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:main-{1}', env.REGISTRY_IMAGE, matrix.arch) || '' }}
+            ${{ steps.semver.outputs.v && format('{0}:{1}-{2}', env.REGISTRY_IMAGE, steps.semver.outputs.v, matrix.arch) || '' }}
+            ${{ steps.semver.outputs.bare && format('{0}:{1}-{2}', env.REGISTRY_IMAGE, steps.semver.outputs.bare, matrix.arch) || '' }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
   # ── Multi-arch manifest ───────────────────────────────────────────────
-  # Stitches the two per-arch images into a single multi-arch index under
-  # ghcr.io/.../novamem:main (and :sha-<short>). Runs once on amd64 after
-  # both per-arch docker jobs finish; only on main-branch pushes.
+  # Stitches the two per-arch images into single multi-arch indexes.
+  # Runs once on amd64 after both per-arch docker jobs finish, on either
+  # a main-branch push (publishes :main + :sha-<short>) or a vX.Y.Z tag
+  # push (publishes :v<X.Y.Z> + :<X.Y.Z> + :sha-<short>).
   manifest:
     name: manifest (multi-arch)
     needs: [docker]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -196,13 +228,36 @@ jobs:
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - name: Create + push :main multi-arch manifest
+      - name: Compute semver tag
+        id: semver
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:main \
-            ${{ env.REGISTRY_IMAGE }}:main-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:main-arm64
+          REF="${GITHUB_REF#refs/tags/}"
+          echo "v=${REF}"      >> "$GITHUB_OUTPUT"
+          echo "bare=${REF#v}" >> "$GITHUB_OUTPUT"
+      # `:sha-<short>` is published on every triggering ref so operators
+      # can pin reproducibly regardless of whether they're following
+      # `:main` or a release tag.
       - name: Create + push :sha-<short> multi-arch manifest
         run: |
           docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }} \
             ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-amd64 \
             ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-arm64
+      - name: Create + push :main multi-arch manifest
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:main \
+            ${{ env.REGISTRY_IMAGE }}:main-amd64 \
+            ${{ env.REGISTRY_IMAGE }}:main-arm64
+      - name: Create + push :v<X.Y.Z> multi-arch manifest
+        if: steps.semver.outputs.v
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }} \
+            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }}-amd64 \
+            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }}-arm64
+      - name: Create + push :<X.Y.Z> multi-arch manifest
+        if: steps.semver.outputs.bare
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }} \
+            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-amd64 \
+            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-arm64
