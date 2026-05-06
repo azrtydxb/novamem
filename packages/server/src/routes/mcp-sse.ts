@@ -110,7 +110,17 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     }
   });
 
-  app.get("/mcp/sse", async (req, reply) => {
+  app.get("/mcp/sse", {
+    schema: {
+      tags: ["mcp"],
+      summary: "Legacy MCP SSE transport (2024-11-05) — open the event stream",
+      description:
+        "Opens the long-lived SSE event stream for the legacy two-endpoint MCP " +
+        "transport. Clients then POST JSON-RPC requests to " +
+        "`/mcp/messages?sessionId=<id>`. New integrations should prefer `/mcp` " +
+        "(Streamable HTTP).",
+    },
+  }, async (req, reply) => {
     // Spec MUSTs apply on the legacy transport too — Origin (DNS
     // rebinding defence) and MCP-Protocol-Version validation.
     if (!applyMcpGuards(req, reply, { allowedOrigins: ctx.corsOrigins })) return;
@@ -167,7 +177,16 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     reply.raw.on("error", cleanup);
   });
 
-  app.post("/mcp/messages", async (req, reply) => {
+  app.post("/mcp/messages", {
+    schema: {
+      tags: ["mcp"],
+      summary: "Legacy MCP SSE transport — submit a JSON-RPC request",
+      description:
+        "Submit a JSON-RPC request on a session opened via `/mcp/sse`. The " +
+        "JSON-RPC response is delivered on the SSE channel, not in this " +
+        "response body.",
+    },
+  }, async (req, reply) => {
     if (!applyMcpGuards(req, reply, { allowedOrigins: ctx.corsOrigins })) return;
     const sessionId = (req.query as { sessionId?: string }).sessionId;
     if (!sessionId) return reply.code(400).send({ error: "missing sessionId" });

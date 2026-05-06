@@ -18,6 +18,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+import { createRequire } from "node:module";
+
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import fastifyCookie from "@fastify/cookie";
@@ -25,12 +27,24 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
+import {
+  hasZodFastifySchemaValidationErrors,
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from "fastify-type-provider-zod";
 import { z } from "zod";
 
 import type { MemoryEngine } from "./engine/index.js";
 import type { MetricsCollector } from "./admin/metrics.js";
-import { openapiSpec } from "./openapi.js";
 import { SYSTEM_USER, type WarmStore } from "./warm-store/index.js";
+
+// Read once at module load so info.version on /openapi.json tracks the
+// running server's package.json instead of a hardcoded constant.
+const SERVER_VERSION = (
+  createRequire(import.meta.url)("../package.json") as { version: string }
+).version;
 import type { Auth } from "./auth-betterauth.js";
 
 /** Better Auth `getSession` return shape, derived directly from the
@@ -167,7 +181,15 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       }
       return randomBytes(8).toString("hex");
     },
-  });
+  }).withTypeProvider<ZodTypeProvider>();
+
+  // Wire fastify-type-provider-zod so per-route `schema: { body: <zod> }`
+  // both validates the request AND drives /openapi.json. This eliminates
+  // the hand-written spec — every documented route is the runtime
+  // validator. `setValidatorCompiler` replaces ajv on validation;
+  // `setSerializerCompiler` lets response schemas constrain output too.
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
 
   // Tighten CORS. `origin: true` reflects every Origin, which makes
   // the API a CSRF surface for any site that knows the URL. The allow-list
@@ -232,6 +254,21 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   // already client-safe (e.g. validation, rate-limit) so we forward those
   // verbatim; 5xx and unknown errors collapse to a generic 500.
   app.setErrorHandler((err, req, reply) => {
+    // Zod validation errors come through the type-provider's validator
+    // compiler now (fastify-type-provider-zod). They surface as a Fastify
+    // HTTP error with `validation: [...]` — detect and reshape to the
+    // legacy `{ error: "invalid request body", issues: [...] }` envelope.
+    if (hasZodFastifySchemaValidationErrors(err)) {
+      reply.code(400).send({
+        error: "invalid request body",
+        issues: err.validation.map((v) => ({
+          path: v.instancePath.replace(/^\//, "").replace(/\//g, "."),
+          message: v.message ?? "invalid",
+          code: v.keyword,
+        })),
+      });
+      return;
+    }
     if (err instanceof z.ZodError) {
       reply.code(400).send({
         error: "invalid request body",
@@ -253,9 +290,67 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   });
 
   // ─── OpenAPI + Swagger UI ──────────────────────────────────────────────
+  // Dynamic mode: @fastify/swagger walks the route tree and converts each
+  // route's `schema` (zod) into JSON Schema via `jsonSchemaTransform` from
+  // fastify-type-provider-zod. The hand-written spec is gone — what gets
+  // documented IS what's validated at runtime, so drift is impossible.
   app.register(fastifySwagger, {
-    mode: "static",
-    specification: { document: openapiSpec() as never },
+    openapi: {
+      openapi: "3.0.3",
+      info: {
+        title: "novamem",
+        version: SERVER_VERSION,
+        description:
+          "Tiered memory service with hybrid search (keyword + vector + graph), " +
+          "per-user isolation, and project-scoped sub-brains.\n\n" +
+          "**Auth**: every authenticated route accepts either an `nm_…` user " +
+          "bearer (created from the dashboard's API Tokens page) or a Better " +
+          "Auth session cookie/bearer (set by `POST /api/auth/sign-in/email`). " +
+          "Both flow through the same auth hook and resolve to the same user. " +
+          "Better Auth's own routes are mounted at `/api/auth/*` — see the " +
+          "Better Auth documentation for their shapes.",
+        license: { name: "Apache-2.0", url: "https://www.apache.org/licenses/LICENSE-2.0" },
+      },
+      servers: [{ url: "/", description: "this server" }],
+      components: {
+        securitySchemes: {
+          UserBearer: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "nm_…",
+            description:
+              "Per-device API token belonging to one user. Carries every " +
+              "right the owning user has — data plane, project CRUD, " +
+              "membership, metrics. Created from the dashboard's API Tokens " +
+              "page; the plaintext is shown once.",
+          },
+          SessionCookie: {
+            type: "apiKey",
+            in: "cookie",
+            name: "nm.session_token",
+            description:
+              "Better Auth session cookie set by /api/auth/sign-in/email. " +
+              "HttpOnly + SameSite=Lax. Browsers attach it automatically.",
+          },
+        },
+      },
+      tags: [
+        { name: "memory", description: "Read/write the memory data plane" },
+        { name: "lifecycle", description: "Decay, dream cycle, orphan reaper, stats" },
+        { name: "auth", description: "Rotate `nm_…` bearers (Better Auth's own surface lives at /api/auth/*)" },
+        { name: "self-service", description: "Per-caller settings (active project)" },
+        { name: "projects", description: "Project CRUD + membership" },
+        { name: "tokens", description: "Per-device `nm_…` bearer management" },
+        { name: "metrics", description: "Per-user metrics + 24h history" },
+        { name: "admin", description: "Admin-only endpoints (role=admin)" },
+        { name: "mcp", description: "Model Context Protocol transports (Streamable HTTP + legacy SSE)" },
+        { name: "liveness", description: "Health checks" },
+      ],
+    },
+    // jsonSchemaTransform converts each route's zod schemas into proper
+    // JSON Schema. Without it the spec contains zod-internal `_def`
+    // shapes that no OpenAPI consumer can render.
+    transform: jsonSchemaTransform,
   });
   // Swagger UI is publicly accessible. Combined with `tryItOutEnabled` +
   // `persistAuthorization` it would otherwise be a CSRF surface: a
@@ -286,9 +381,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       "frame-ancestors": ["'none'"],
     },
   });
-  app.get("/openapi.json", async (_req, reply) => {
-    reply.send(app.swagger());
-  });
+  app.get(
+    "/openapi.json",
+    { schema: { hide: true } },
+    async (_req, reply) => {
+      reply.send(app.swagger());
+    },
+  );
   app.register(rateLimit, {
     max: opts.rateLimitPerMinute ?? 600,
     timeWindow: "1 minute",
@@ -534,29 +633,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     }
   }
 
-  // Public liveness/readiness probe. Exposes only `{ ok }` so an
-  // unauthenticated caller cannot fingerprint the dep stack (Postgres,
-  // Qdrant, FalkorDB) or read connection error details (#46). K8s probes
-  // only need the boolean. Operators who want the per-dep snapshot
-  // should hit /v1/admin/health/deep with a session-admin bearer.
-  app.get("/health", async (_req, reply) => {
-    const h = await opts.engine.health();
-    reply.code(h.ok ? 200 : 503).send({ ok: h.ok });
-  });
-
-  // Admin-gated deep health: full per-dependency snapshot. Same status
-  // semantics as /health (200 vs 503) but exposes the `deps` map.
-  app.get("/v1/admin/health/deep", async (req, reply) => {
-    if (!adminAuth(req)) {
-      reply.code(401).send({ error: "unauthorized" });
-      return;
-    }
-    const h = await opts.engine.health();
-    reply.code(h.ok ? 200 : 503).send(h);
-  });
-
-  // Browsers automatically request /favicon.ico from the page origin.
-  app.get("/favicon.ico", async (_req, reply) => reply.code(204).send());
+  // /health, /v1/admin/health/deep, /favicon.ico are registered alongside
+  // the rest of the routes inside the swagger-aware register() block at
+  // the bottom of this function (so @fastify/swagger's onRoute hook can
+  // observe them).
 
   // ─── Audit-log writer ──────────────────────────────────────────────
   // Failures don't block the request — audit gaps are preferable to
@@ -604,14 +684,69 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     audit,
   };
 
+  // Routes go inside an `app.register(...)` callback so they queue *after*
+  // the @fastify/swagger plugin in avvio. fastify's onRoute hook fires
+  // synchronously when `app.post(...)` etc. is called; if we registered
+  // routes here directly they'd run BEFORE @fastify/swagger's onRoute hook
+  // gets installed (it's queued, runs at ready()), and the spec would
+  // come out empty. Wrapping the registrars in `app.register` puts them
+  // in the same avvio queue so they run after swagger sets up its hook.
   // Order matters only for prefix overlaps; Fastify's router resolves
   // each path uniquely so it's mostly a readability concern.
-  registerAuth(app, ctx);
-  registerDataPlane(app, ctx);
-  registerMe(app, ctx);
-  registerAdmin(app, ctx);
-  registerMcpSse(app, ctx);
-  registerMcpStreamable(app, ctx);
+  app.register(async (instance) => {
+    registerAuth(instance, ctx);
+    registerDataPlane(instance, ctx);
+    registerMe(instance, ctx);
+    registerAdmin(instance, ctx);
+    registerMcpSse(instance, ctx);
+    registerMcpStreamable(instance, ctx);
+
+    // Public liveness/readiness probe. Exposes only `{ ok }` so an
+    // unauthenticated caller cannot fingerprint the dep stack (Postgres,
+    // Qdrant, FalkorDB) or read connection error details (#46). K8s probes
+    // only need the boolean. Operators who want the per-dep snapshot
+    // should hit /v1/admin/health/deep with a session-admin bearer.
+    instance.get(
+      "/health",
+      {
+        schema: {
+          tags: ["liveness"],
+          summary: "Liveness probe — boolean only (no infrastructure detail)",
+        },
+      },
+      async (_req, reply) => {
+        const h = await opts.engine.health();
+        reply.code(h.ok ? 200 : 503).send({ ok: h.ok });
+      },
+    );
+
+    // Admin-gated deep health: full per-dependency snapshot.
+    instance.get(
+      "/v1/admin/health/deep",
+      {
+        schema: {
+          tags: ["admin"],
+          summary: "Admin-only dependency snapshot (warm/cold/graph status)",
+          security: [{ SessionCookie: [] }],
+        },
+      },
+      async (req, reply) => {
+        if (!adminAuth(req)) {
+          reply.code(401).send({ error: "unauthorized" });
+          return;
+        }
+        const h = await opts.engine.health();
+        reply.code(h.ok ? 200 : 503).send(h);
+      },
+    );
+
+    // Browsers automatically request /favicon.ico from the page origin.
+    instance.get(
+      "/favicon.ico",
+      { schema: { hide: true } },
+      async (_req, reply) => reply.code(204).send(),
+    );
+  });
 
   return app;
 }
