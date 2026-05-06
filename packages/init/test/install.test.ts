@@ -122,6 +122,38 @@ describe("installMcp", () => {
     expect(raw).toContain('NOVAMEM_BASE_URL = "http://x:7778"');
     expect(raw).toContain('NOVAMEM_TOKEN = "nm_t"');
   });
+  it("writes OpenCode JSON with mcp root key + type:local + environment env-key", async () => {
+    // OpenCode's SSE path is broken; we route via stdio shim. Its config
+    // schema is also unique: top-level `mcp` (not `mcpServers`), entries
+    // shaped `{type: "local", command, args, environment}`.
+    const tool = findTool("opencode")!;
+    const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    expect(r.changed).toBe(true);
+    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<string, unknown>;
+    const root = written.mcp as Record<string, unknown> | undefined;
+    expect(root).toBeDefined();
+    const entry = root!.novamem as Record<string, unknown>;
+    expect(entry.type).toBe("local");
+    expect(entry.command).toBe("npx");
+    expect(entry.environment).toMatchObject({
+      NOVAMEM_BASE_URL: "http://x:7778",
+      NOVAMEM_TOKEN: "nm_t",
+    });
+    expect(written.mcpServers).toBeUndefined();
+  });
+  it("writes Gemini settings.json via stdio shim", async () => {
+    const tool = findTool("gemini")!;
+    const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    expect(r.changed).toBe(true);
+    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<string, unknown>;
+    const entry = (written.mcpServers as Record<string, unknown>).novamem as Record<string, unknown>;
+    expect(entry.command).toBe("npx");
+    expect(entry.env).toMatchObject({
+      NOVAMEM_BASE_URL: "http://x:7778",
+      NOVAMEM_TOKEN: "nm_t",
+    });
+    expect(entry.url).toBeUndefined();
+  });
   it("skips tools with no MCP adapter", async () => {
     const tool = findTool("trae")!;
     const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });

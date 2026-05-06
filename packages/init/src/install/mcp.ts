@@ -64,14 +64,20 @@ export function buildMcpEntry(adapter: NonNullable<ToolEntry["mcp"]>, p: McpInst
   const spec = p.shimVersion
     ? `@azrtydxb/novamem-mcp@${p.shimVersion}`
     : "@azrtydxb/novamem-mcp";
-  return {
+  const envKey = adapter.stdioEnvKey ?? "env";
+  const entry: Record<string, unknown> = {
     command: "npx",
     args: ["-y", spec],
-    env: {
+    [envKey]: {
       NOVAMEM_BASE_URL: trimTrailingSlash(p.baseUrl),
       NOVAMEM_TOKEN: p.bearer,
     },
   };
+  // Hosts like OpenCode require an explicit `type: "local"` to identify
+  // stdio servers. Inject when the adapter declares it; omit otherwise
+  // (Claude Desktop / Codex parse fine without it).
+  if (adapter.stdioTypeField) entry.type = adapter.stdioTypeField;
+  return entry;
 }
 
 /**
