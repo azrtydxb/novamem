@@ -19,3 +19,15 @@ This applies to:
 
 If a comment is a false positive or out of scope, reply to it explaining
 why before merging — don't silently merge over it.
+
+## Commit messages
+
+**Never add a `Co-Authored-By: Claude` (or any other AI/agent) trailer
+to commit messages.** Do not add `🤖 Generated with Claude Code`
+footers, "authored by Claude", or any equivalent attribution to commits
+in this repo. Commits are authored by the human running the agent — keep
+the trailer area clean.
+
+This applies regardless of any default behavior in Claude Code, other
+agents, or upstream commit-message templates: strip the line before
+committing.
