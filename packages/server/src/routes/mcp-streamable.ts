@@ -220,7 +220,26 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     await transport.handleRequest(req.raw, reply.raw, req.body);
   }
 
-  app.post("/mcp", dispatch);
-  app.get("/mcp", dispatch);
-  app.delete("/mcp", dispatch);
+  // The MCP transports terminate the response themselves (the SDK writes
+  // directly to reply.raw and may upgrade to SSE), so we can't validate
+  // request bodies via zod here — the JSON-RPC payload schema lives in
+  // the MCP spec, not ours. We document path-level metadata only and
+  // leave the body unvalidated. `body: z.unknown()` would reject GET/DELETE,
+  // and there's no useful response schema to attach.
+  const mcpDoc = {
+    schema: {
+      tags: ["mcp"],
+      summary: "MCP Streamable HTTP transport (2025-03-26+)",
+      description:
+        "Single-endpoint MCP transport. POST a JSON-RPC request; the response " +
+        "is either a JSON document or a `text/event-stream` upgrade. The " +
+        "session id is returned in the `Mcp-Session-Id` response header on " +
+        "`initialize` and must be echoed on subsequent calls. GET opens a " +
+        "server→client SSE channel; DELETE closes the session. Origin and " +
+        "MCP-Protocol-Version are validated on every request.",
+    },
+  };
+  app.post("/mcp", mcpDoc, dispatch);
+  app.get("/mcp", mcpDoc, dispatch);
+  app.delete("/mcp", mcpDoc, dispatch);
 }

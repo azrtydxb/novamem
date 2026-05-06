@@ -5,10 +5,13 @@
  *                                    session, JWT, admin user-CRUD, etc.)
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
 
 import type { RouteContext } from "./context.js";
 
 export function register(app: FastifyInstance, ctx: RouteContext): void {
+  const r = app.withTypeProvider<ZodTypeProvider>();
+
   // ─── User bearer self-rotation (CLI / device path) ────────────────────
   // Holders of a user bearer (devices, CLIs) can rotate their own token
   // without needing admin access: present the current bearer, get a new
@@ -16,7 +19,16 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   // in user mode. Note: distinct from the dashboard's /v1/me/tokens —
   // this endpoint is for the *bearer* itself to roll over, the dashboard
   // is for user-facing CRUD.
-  app.post("/v1/auth/rotate-token", async (req, reply) => {
+  r.post(
+    "/v1/auth/rotate-token",
+    {
+      schema: {
+        tags: ["auth"],
+        summary: "Self-rotate the caller's `nm_…` bearer (user mode only)",
+        security: [{ UserBearer: [] }],
+      },
+    },
+    async (req, reply) => {
     if (ctx.auth.mode !== "user" || !ctx.warm) {
       return reply.code(400).send({ error: "rotate-token is only available in user mode" });
     }
@@ -45,7 +57,8 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       ...result,
       warning: "Store this token now — it will not be shown again. The previous token is revoked.",
     });
-  });
+  },
+  );
 
   // ─── Better Auth passthrough ────────────────────────────────────────
   // Better Auth speaks the WHATWG Request/Response interface; Fastify
@@ -218,9 +231,13 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     "/api/auth/admin/stop-impersonating",
   ];
 
+  // Better Auth owns these route shapes and documents them upstream
+  // (https://www.better-auth.com/docs). Hide them from /openapi.json so
+  // the spec only describes routes we own.
+  const hidden = { schema: { hide: true } };
   for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"] as const) {
     for (const url of exactPaths) {
-      app.route({ method, url, handler: passthrough });
+      app.route({ method, url, handler: passthrough, ...hidden });
     }
   }
 
@@ -237,6 +254,6 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     reply.code(404).send({ error: "not found" });
   };
   for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"] as const) {
-    app.route({ method, url: "/api/auth/*", handler: denyHandler });
+    app.route({ method, url: "/api/auth/*", handler: denyHandler, ...hidden });
   }
 }
