@@ -30,7 +30,7 @@
     "smol-toml": "^1.4.2"
   },
   "devDependencies": {
-    "tsx": "^4.19.2",
+    "tsx": "^4.22.1",
     "@types/node": "^22.10.0"
   },
   "engines": {
