@@ -38,6 +38,13 @@ RUN pnpm -r --filter '!@azrtydxb/novamem-docs-site' build
 RUN node -e "const p=require('./packages/server/package.json');delete p.devDependencies;delete p.scripts;p.overrides={protobufjs:'>=7.5.5',picomatch:'>=4.0.4',underscore:'>=1.13.8'};require('fs').writeFileSync('/tmp/runtime-package.json',JSON.stringify(p,null,2));"
 
 FROM node:25-bookworm-slim AS runtime
+
+# Keep the runtime image patched even when the upstream Node image lags
+# behind Debian security updates. Trivy gates HIGH/CRITICAL OS CVEs in CI.
+RUN apt-get update \
+ && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Ship only the server's compiled JS + a *fresh* prod-only node_modules
