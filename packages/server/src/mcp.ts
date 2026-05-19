@@ -62,6 +62,63 @@ export function buildMcpServer(
     const rawArgs = req.params.arguments ?? {};
     try {
       switch (name) {
+        case "memory_context": {
+          const args = parseToolArgs("memory_context", rawArgs);
+          const scope = await resolveScope(warm, userId, {
+            project: args.project ?? undefined,
+            includeProjects: args.includeProjects,
+            unionWithActive: true,
+          });
+          const k = args.k ?? 8;
+          const [relevant, recent] = await Promise.all([
+            engine.search(userId, {
+              query: args.message,
+              k,
+              namespace: args.namespace,
+              includeNamespaces: args.includeNamespaces,
+              project: scope.project,
+              includeProjects: scope.includeProjects,
+              weights: args.weights,
+            }),
+            engine.recent(userId, {
+              k: Math.min(k, 10),
+              namespace: args.namespace,
+              includeNamespaces: args.includeNamespaces,
+              project: scope.project,
+              includeProjects: scope.includeProjects,
+            }),
+          ]);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                relevant,
+                recent,
+                guidance: "Use this context before answering. If relevant is empty, run targeted memory_search before asking the user to repeat context.",
+              }),
+            }],
+          };
+        }
+        case "memory_capture": {
+          const args = parseToolArgs("memory_capture", rawArgs);
+          const scope = await resolveScope(warm, userId, {
+            project: args.project ?? undefined,
+            unionWithActive: false,
+          });
+          const r = await engine.remember(userId, {
+            content: args.content,
+            namespace: args.namespace,
+            source: args.source ?? "memory_capture",
+            agentName: args.agentName,
+            metadata: args.metadata,
+            sourceType: args.sourceType ?? "chat",
+            capturedFrom: args.capturedFrom ?? "memory_capture",
+            confidence: args.confidence,
+            force: args.force,
+            project: scope.project,
+          });
+          return { content: [{ type: "text", text: JSON.stringify({ saved: r.id ? 1 : 0, results: [r] }) }] };
+        }
         case "memory_search": {
           const args = parseToolArgs("memory_search", rawArgs);
           const scope = await resolveScope(warm, userId, {

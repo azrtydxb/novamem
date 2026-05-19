@@ -46,6 +46,22 @@ export interface SearchResponse {
   degraded: boolean;
 }
 
+export interface ContextRequest {
+  message: string;
+  k?: number;
+  namespace?: string;
+  project?: string | null;
+  includeProjects?: string[];
+  includeNamespaces?: string[];
+  weights?: { keyword?: number; vector?: number; graph?: number };
+}
+
+export interface ContextResponse {
+  relevant: SearchResponse;
+  recent: { results: SearchResult[] };
+  guidance: string;
+}
+
 export interface RememberRequest {
   content: string;
   namespace?: string;
@@ -53,6 +69,15 @@ export interface RememberRequest {
   agentName?: string | null;
   project?: string | null;
   metadata?: Record<string, unknown>;
+  sourceType?: string;
+  capturedFrom?: string;
+  confidence?: number;
+  force?: boolean;
+}
+
+export interface CaptureResponse {
+  saved: number;
+  results: RememberResponse[];
 }
 
 export interface RememberResponse {
@@ -162,6 +187,14 @@ export class NovamemClient {
 
   async search(req: SearchRequest): Promise<SearchResponse> {
     return this.request<SearchResponse>("/v1/search", { method: "POST", body: req });
+  }
+
+  async context(req: ContextRequest): Promise<ContextResponse> {
+    return this.request<ContextResponse>("/v1/context", { method: "POST", body: req });
+  }
+
+  async capture(req: RememberRequest): Promise<CaptureResponse> {
+    return this.request<CaptureResponse>("/v1/capture", { method: "POST", body: req });
   }
 
   async remember(req: RememberRequest): Promise<RememberResponse> {

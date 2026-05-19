@@ -34,8 +34,11 @@ const NOVAMEM_INSTRUCTIONS = `# NovaMem long-term memory
 
 You have a persistent memory system through the \`novamem\` MCP server. It
 exposes hybrid search (keyword + vector + graph) over durable entries the
-user has accumulated across sessions. **Use it.** Don't re-derive things the
-user already told you.
+user has accumulated across sessions. **Use it.** Do not wait for the user to say "use memory".
+
+## Mandatory memory protocol
+
+Before answering any substantive user request, call \`memory_context\` once with the user's current message. After meaningful work, call \`memory_capture\` for durable outcomes. Before asking the user to repeat context, call \`memory_context\` or \`memory_search\` first.
 
 ## When to call \`memory_search\`
 
@@ -121,7 +124,7 @@ Entries decay if not accessed: \`effectiveDays = 7 · log₂(hits + 1)\`.
 Searching counts as access — re-finding important memories keeps them warm.
 
 ## Tools available
-\`memory_search\`, \`memory_remember\`, \`memory_update\`,
+\`memory_context\`, \`memory_capture\`, \`memory_search\`, \`memory_remember\`, \`memory_update\`,
 \`memory_recent\`, \`memory_today\`, \`memory_neighbors\`,
 \`memory_forget\`, \`memory_stats\`, \`project_list\`,
 \`project_create\`, \`project_delete\`, \`project_activate\`,
@@ -131,6 +134,42 @@ Searching counts as access — re-finding important memories keeps them warm.
 /** Mirror of `TOOL_DEFINITIONS` in
  *  `packages/server/src/mcp-tools.ts`. Keep in sync. */
 const TOOL_DEFINITIONS = [
+  {
+    name: "memory_context",
+    description: "Mandatory first-pass grounding tool. Call before substantive requests; returns relevant + recent context.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: { type: "string" },
+        k: { type: "number" },
+        namespace: { type: "string" },
+        includeNamespaces: { type: "array", items: { type: "string" } },
+        project: { type: "string" },
+        includeProjects: { type: "array", items: { type: "string" } },
+        weights: { type: "object" },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "memory_capture",
+    description: "Low-friction durable write path for decisions, preferences, verified setup facts, and root-cause lessons.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string" },
+        namespace: { type: "string" },
+        source: { type: "string" },
+        sourceType: { type: "string" },
+        capturedFrom: { type: "string" },
+        confidence: { type: "number" },
+        force: { type: "boolean" },
+        project: { type: "string" },
+        metadata: { type: "object" },
+      },
+      required: ["content"],
+    },
+  },
   {
     name: "memory_search",
     description:
@@ -405,6 +444,43 @@ export function buildRemoteMcpServer(
     const includeProjects = optStrArray(args.includeProjects);
     try {
       switch (req.params.name) {
+        case "memory_context": {
+          const w = (args.weights ?? {}) as { keyword?: unknown; vector?: unknown; graph?: unknown };
+          const weights =
+            typeof w.keyword === "number" || typeof w.vector === "number" || typeof w.graph === "number"
+              ? {
+                  ...(typeof w.keyword === "number" ? { keyword: w.keyword } : {}),
+                  ...(typeof w.vector === "number" ? { vector: w.vector } : {}),
+                  ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
+                }
+              : undefined;
+          const body = {
+            message: asStr(args.message, "message"),
+            k: optNum(args.k),
+            namespace: optStr(args.namespace),
+            includeNamespaces: optStrArray(args.includeNamespaces),
+            project,
+            includeProjects,
+            weights,
+          } as unknown as Parameters<typeof client.context>[0];
+          const r = await client.context(body);
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "memory_capture": {
+          const body = {
+            content: asStr(args.content, "content"),
+            namespace: optStr(args.namespace),
+            source: optStr(args.source),
+            sourceType: optStr(args.sourceType),
+            capturedFrom: optStr(args.capturedFrom),
+            confidence: optNum(args.confidence),
+            force: optBool(args.force),
+            project,
+            metadata: args.metadata && typeof args.metadata === "object" ? args.metadata : undefined,
+          } as unknown as Parameters<typeof client.capture>[0];
+          const r = await client.capture(body);
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
         case "memory_search": {
           const w = (args.weights ?? {}) as {
             keyword?: unknown;

@@ -11,6 +11,8 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 
 import {
+  ContextBody,
+  CaptureBody,
   DecayBody,
   ForgetBody,
   NeighborsBody,
@@ -43,6 +45,73 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
       const result = await ctx.engine.search(req.userId, body, req.bearerToken);
       reply.send(result);
+    },
+  );
+
+  r.post(
+    "/v1/context",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Get first-pass memory context for a user message",
+        body: ContextBody,
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      const body = req.body;
+      if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
+      const k = body.k ?? 8;
+      const relevant = await ctx.engine.search(req.userId, {
+        query: body.message,
+        k,
+        namespace: body.namespace,
+        includeNamespaces: body.includeNamespaces,
+        project: body.project,
+        includeProjects: body.includeProjects,
+        weights: body.weights,
+      }, req.bearerToken);
+      const recent = await ctx.engine.recent(req.userId, {
+        k: Math.min(k, 10),
+        namespace: body.namespace,
+        includeNamespaces: body.includeNamespaces,
+        project: body.project,
+        includeProjects: body.includeProjects,
+      });
+      reply.send({
+        relevant,
+        recent,
+        guidance: "Use this context before answering. If relevant is empty, proceed but avoid asking the user to repeat context until targeted memory_search also misses.",
+      });
+    },
+  );
+
+  r.post(
+    "/v1/capture",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Capture a durable memory fact with provenance defaults",
+        body: CaptureBody,
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      const body = req.body;
+      if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
+      const result = await ctx.engine.remember(req.userId, {
+        content: body.content,
+        namespace: body.namespace,
+        source: body.source ?? "memory_capture",
+        agentName: body.agentName,
+        project: body.project,
+        metadata: body.metadata,
+        sourceType: body.sourceType ?? "chat",
+        capturedFrom: body.capturedFrom ?? "memory_capture",
+        confidence: body.confidence,
+        force: body.force,
+      }, req.bearerToken);
+      reply.code(201).send({ saved: result.id ? 1 : 0, results: [result] });
     },
   );
 

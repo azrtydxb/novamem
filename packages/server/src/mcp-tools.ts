@@ -22,12 +22,14 @@
 import { z } from "zod";
 
 import {
+  CaptureBody,
   ForgetBody,
   NeighborsBody,
   ProjectRefRule,
   RecentBody,
   RememberBody,
   SearchBody,
+  ContextBody,
   UpdateMemoryBody,
 } from "./routes/schemas.js";
 
@@ -74,6 +76,64 @@ export interface ToolDefinition {
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
+  {
+    name: "memory_context",
+    description:
+      "Mandatory first-pass grounding tool. CALL THIS before answering any substantive user request. Returns relevant hybrid search results plus recent memory in one response so agents stop ignoring memory unless explicitly told.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "The user's current message or task." },
+        k: { type: "number", description: "Top-K relevant/recent entries to return." },
+        namespace: { type: "string" },
+        includeNamespaces: { type: "array", items: { type: "string" } },
+        project: { type: "string", description: "Project id or human name." },
+        includeProjects: { type: "array", items: { type: "string" } },
+        weights: {
+          type: "object",
+          properties: {
+            keyword: { type: "number" },
+            vector: { type: "number" },
+            graph: { type: "number" },
+          },
+        },
+      },
+      required: ["message"],
+    },
+    annotations: {
+      title: "Get memory context",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "memory_capture",
+    description:
+      "Low-friction durable write path. CALL THIS after meaningful work to save durable outcomes, decisions, changed preferences, verified setup facts, and root-cause lessons. Do not save secrets or transient task chatter.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string" },
+        namespace: { type: "string" },
+        source: { type: "string" },
+        sourceType: { type: "string" },
+        capturedFrom: { type: "string" },
+        confidence: { type: "number", description: "0..1, default 1.0" },
+        force: { type: "boolean" },
+        project: { type: "string", description: "Optional project (sub-brain) to scope to." },
+        metadata: { type: "object" },
+      },
+      required: ["content"],
+    },
+    annotations: {
+      title: "Capture durable memory",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
   {
     name: "memory_search",
     description:
@@ -440,6 +500,8 @@ const Empty = z.object({}).strict();
 export const TodayBody = RecentBody;
 
 export const TOOL_INPUT_SCHEMAS = {
+  memory_context: ContextBody,
+  memory_capture: CaptureBody,
   memory_search: SearchBody,
   memory_remember: RememberBody,
   memory_today: TodayBody,

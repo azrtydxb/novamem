@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
+import { NOVAMEM_INSTRUCTIONS } from "./mcp-tools.js";
 import { buildMcpServer } from "./mcp.js";
 import { asWarm, makeEngine } from "./test-fakes.js";
 
@@ -34,6 +35,13 @@ async function callTool(
 }
 
 describe("mcp: tools/list", () => {
+  it("instructions contain the mandatory memory protocol", () => {
+    expect(NOVAMEM_INSTRUCTIONS).toContain("Mandatory memory protocol");
+    expect(NOVAMEM_INSTRUCTIONS).toContain("Before answering any substantive user request");
+    expect(NOVAMEM_INSTRUCTIONS).toContain("memory_context");
+    expect(NOVAMEM_INSTRUCTIONS).toContain("memory_capture");
+  });
+
   it("advertises the full memory_* tool surface", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");
@@ -41,6 +49,8 @@ describe("mcp: tools/list", () => {
     const names = r.tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        "memory_context",
+        "memory_capture",
         "memory_search",
         "memory_remember",
         "memory_update",
@@ -95,6 +105,33 @@ describe("mcp: tool dispatch", () => {
     const payload = JSON.parse(r.content[0]!.text);
     expect(payload.results.length).toBeGreaterThan(0);
     expect(payload.results[0].content).toContain("coffee");
+  });
+
+  it("memory_context returns relevant and recent grounding in one call", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    await callTool(server, "memory_remember", { content: "Pascal prefers XML tool parsers", force: true });
+    const r = (await callTool(server, "memory_context", {
+      message: "Set up the model with xml parser",
+      k: 5,
+    })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+    expect(payload.relevant.results[0].content).toContain("XML tool parsers");
+    expect(payload.recent.results.length).toBeGreaterThan(0);
+    expect(payload.guidance).toContain("Use this context before answering");
+  });
+
+  it("memory_capture stores a durable fact with provenance defaults", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_capture", {
+      content: "Pascal wants NovaMem agents to use memory proactively, not only when told.",
+      namespace: "memory",
+    })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+    expect(payload.saved).toBe(1);
+    expect(warm.rows.get(payload.results[0].id)!.source).toBe("memory_capture");
+    expect(warm.rows.get(payload.results[0].id)!.namespace).toBe("memory");
   });
 
   it("memory_today uses a real 24h since cutoff (not search '*')", async () => {

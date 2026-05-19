@@ -21,6 +21,18 @@ flowchart LR
 
 A user-global entry is invisible to anyone else, period. A project entry is visible to every member of that project — that's the whole point of sharing.
 
+
+## Mandatory agent protocol
+
+NovaMem works best when agents use it without waiting to be told. Integrations should instruct the model to:
+
+1. Call `memory_context` before any substantive user request.
+2. Call targeted `memory_search` before asking the user to repeat context.
+3. Call `memory_capture` after meaningful work to save durable outcomes.
+4. Use `memory_update` rather than duplicate writes when a fact changed.
+
+`memory_context` is the low-friction first call: it returns relevant hybrid search results and recent memories in one response. `memory_capture` is the low-friction write call: it stores one self-contained durable fact with provenance defaults.
+
 ## Searching (`memory_search`)
 
 Hybrid search runs **keyword (FTS)** + **vector (cosine)** + **graph (neighbour)** in parallel and fuses the three with weighted scoring:

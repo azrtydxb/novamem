@@ -102,6 +102,37 @@ export const SearchBody = z.object({
     .optional(),
 });
 
+export const ContextBody = z.object({
+  /** The user's current message / task. Used as the relevance query. */
+  message: z.string().min(1).max(8 * 1024),
+  k: z.number().int().positive().max(50).optional(),
+  namespace: z.string().max(128).optional(),
+  project: ProjectRefRule.optional().nullable(),
+  includeProjects: z.array(ProjectRefRule).max(16).optional(),
+  includeNamespaces: z.array(NamespaceRule).max(16).optional(),
+  weights: z
+    .object({
+      keyword: z.number().optional(),
+      vector: z.number().optional(),
+      graph: z.number().optional(),
+    })
+    .optional(),
+});
+
+export const CaptureBody = z.object({
+  /** One self-contained durable fact to store. */
+  content: z.string().min(1).max(MAX_CONTENT_BYTES),
+  namespace: z.string().max(128).optional(),
+  source: z.string().max(128).optional(),
+  agentName: z.string().max(128).optional().nullable(),
+  project: ProjectRefRule.optional().nullable(),
+  metadata: MetadataRule.optional(),
+  sourceType: z.string().max(64).optional(),
+  capturedFrom: z.string().max(256).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  force: z.boolean().optional(),
+});
+
 export const RememberBody = z.object({
   content: z.string().min(1).max(MAX_CONTENT_BYTES),
   namespace: z.string().max(128).optional(),

@@ -1,6 +1,6 @@
 ---
 name: novamem
-description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 15 MCP tools — hybrid search, time-windowed recall, graph traversal, store/update/forget with worthiness gate and provenance, and project (sub-brain) lifecycle including share/activate.
+description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 17 MCP tools — hybrid search, time-windowed recall, graph traversal, store/update/forget with worthiness gate and provenance, and project (sub-brain) lifecycle including share/activate.
 license: Apache-2.0
 compatibility: Requires a reachable novamem MCP server (default http://localhost:7778) and a user bearer token (nm_…). See https://github.com/azrtydxb/novamem.
 metadata:
@@ -15,11 +15,24 @@ You have a persistent memory system through the `novamem` MCP server. It exposes
 
 The server ships these same rules to compliant clients via the MCP `instructions` field on `initialize`; this skill is the equivalent for clients that don't honour `instructions`.
 
+
+## Mandatory memory protocol
+
+NovaMem is not an optional lookup tool. Use it by default:
+
+1. **Before answering any substantive user request**, call `memory_context` with the user's current message. Substantive means technical work, planning, troubleshooting, recommendations, personal preferences, project work, or anything where prior context may change the answer. Skip only greetings/filler or when the user explicitly says not to use memory.
+2. **Before asking the user to repeat context**, call `memory_context` or targeted `memory_search` first.
+3. **After meaningful work**, call `memory_capture` for durable outcomes: decisions, changed preferences, verified setup facts, bug root causes, recurring constraints, or architecture invariants. Do not save secrets or transient task chatter.
+4. **When a fact changed**, search first and use `memory_update`; do not create a duplicate with `memory_capture`/`memory_remember`.
+
+Use `memory_search` for deeper targeted recall after `memory_context`; use `memory_today`/`memory_recent` for temporal recall; use `memory_neighbors` after finding a seed memory.
+
 ## Tool map
 
-15 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
+17 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
 
 **Read / recall** — see [references/search.md](references/search.md):
+- `memory_context` — first-pass grounding; relevant + recent context in one call
 - `memory_search` — hybrid relevance (keyword + vector + graph fusion)
 - `memory_recent` — newest-first feed, optional `since` cutoff
 - `memory_today` — sugar for `recent` with a 24h window
@@ -27,6 +40,7 @@ The server ships these same rules to compliant clients via the MCP `instructions
 - `memory_stats` — per-namespace + per-tier counts
 
 **Write / mutate** — see [references/remember.md](references/remember.md):
+- `memory_capture` — low-friction durable write path after meaningful work
 - `memory_remember` — store a new entry (subject to the worthiness gate)
 - `memory_update` — rewrite an entry in place; preserves id + hits + edges
 - `memory_forget` — hard delete across warm + cold + graph
