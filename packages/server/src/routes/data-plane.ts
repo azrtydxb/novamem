@@ -148,7 +148,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         confidence: body.confidence,
         force: body.force,
       }, req.bearerToken);
-      reply.code(201).send({ saved: result.id ? 1 : 0, results: [result] });
+      reply.code(201).send(result);
     },
   );
 

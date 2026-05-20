@@ -63,6 +63,54 @@ async function userSession(
   return { authorization: `Bearer ${sess.token}` };
 }
 
+describe("data-plane: capture/session-recap route shapes", () => {
+  it("/v1/capture returns the single capture result, not a recap envelope", async () => {
+    const { app, warm } = makeApp();
+    try {
+      const headers = await userSession(warm, "user");
+      const r = await app.inject({
+        method: "POST",
+        url: "/v1/capture",
+        headers,
+        payload: {
+          content: "Pascal prefers production-ready work with docs and live smoke tests.",
+          namespace: "user",
+          force: true,
+        },
+      });
+      expect(r.statusCode).toBe(201);
+      const body = r.json();
+      expect(body.id).toBeTruthy();
+      expect(body.saved).toBeUndefined();
+      expect(body.results).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  }, 10_000);
+
+  it("/v1/session-recap returns the batch recap envelope", async () => {
+    const { app, warm } = makeApp();
+    try {
+      const headers = await userSession(warm, "user");
+      const r = await app.inject({
+        method: "POST",
+        url: "/v1/session-recap",
+        headers,
+        payload: {
+          decisions: ["Decision: route shape tests prevent capture and recap envelopes from regressing."],
+          force: true,
+        },
+      });
+      expect(r.statusCode).toBe(201);
+      const body = r.json();
+      expect(body.saved).toBe(1);
+      expect(body.results?.[0]?.id).toBeTruthy();
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe("data-plane: admin-only gates (issue #45)", () => {
   it("/v1/dream-cycle returns 403 for non-admin users", async () => {
     const { app, warm } = makeApp();
