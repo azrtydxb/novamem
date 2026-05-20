@@ -22,7 +22,7 @@ NovaMem is not an optional lookup tool. Use it by default:
 
 1. **Before answering any substantive user request**, call `memory_context` with the user's current message. Substantive means technical work, planning, troubleshooting, recommendations, personal preferences, project work, or anything where prior context may change the answer. Skip only greetings/filler or when the user explicitly says not to use memory.
 2. **Before asking the user to repeat context**, call `memory_context` or targeted `memory_search` first.
-3. **After meaningful work**, call `memory_capture` for durable outcomes: decisions, changed preferences, verified setup facts, bug root causes, recurring constraints, or architecture invariants. Do not save secrets or transient task chatter.
+3. **After meaningful work**, call `memory_capture` for durable outcomes: decisions, changed preferences, verified setup facts, bug root causes, recurring constraints, or architecture invariants. Do not save secrets or transient task chatter. Use sensitivity labels (`public`, `internal`, `private`, `sensitive`) for privacy-sensitive facts; recall hides `sensitive` entries unless `maxSensitivity: "sensitive"` is explicitly requested.
 4. **When a fact changed**, prefer `memory_capture` unless you already know the exact old entry id. Capture searches active nearby memories, updates near-duplicates in place, and supersedes contradictory older facts. Use `memory_update` only for manual id-targeted rewrites.
 
 Use `memory_search` for deeper targeted recall after `memory_context`; use `memory_today`/`memory_recent` for temporal recall; use `memory_neighbors` after finding a seed memory.

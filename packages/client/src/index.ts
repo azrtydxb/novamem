@@ -16,6 +16,8 @@ export interface NovamemClientOptions {
   fetch?: typeof fetch;
 }
 
+export type SensitivityLevel = "public" | "internal" | "private" | "sensitive";
+
 export interface SearchRequest {
   query: string;
   k?: number;
@@ -24,6 +26,9 @@ export interface SearchRequest {
   /** Project (sub-brain) to scope to. Omit for user-wide entries. */
   project?: string | null;
   weights?: { keyword?: number; vector?: number; graph?: number };
+  includeProjects?: string[];
+  includeNamespaces?: string[];
+  maxSensitivity?: SensitivityLevel;
 }
 
 export interface SearchResult {
@@ -54,6 +59,7 @@ export interface ContextRequest {
   includeProjects?: string[];
   includeNamespaces?: string[];
   weights?: { keyword?: number; vector?: number; graph?: number };
+  maxSensitivity?: SensitivityLevel;
 }
 
 export interface ContextPack {
@@ -85,6 +91,7 @@ export interface RememberRequest {
   agentName?: string | null;
   project?: string | null;
   metadata?: Record<string, unknown>;
+  sensitivity?: SensitivityLevel;
   sourceType?: string;
   capturedFrom?: string;
   confidence?: number;
@@ -113,6 +120,7 @@ export interface SessionRecapRequest {
   force?: boolean;
   project?: string | null;
   metadata?: Record<string, unknown>;
+  sensitivity?: SensitivityLevel;
 }
 
 export interface RememberResponse {

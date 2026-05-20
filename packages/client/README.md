@@ -106,3 +106,8 @@ For non-browser callers that prefer a username + password flow over minting a `n
 - Errors throw with `Error("novamem <status>: <body>")` — handle as you would any fetch error.
 
 See the main repo for the full API + dashboard documentation.
+
+
+### Sensitivity levels
+
+Write calls accept `sensitivity: "public" | "internal" | "private" | "sensitive"`; recall calls accept `maxSensitivity`. Recall defaults to `private`, excluding `sensitive` entries unless explicitly requested.

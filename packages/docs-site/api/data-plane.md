@@ -17,7 +17,8 @@ Low-friction first-pass grounding for the current user message. Intended as the 
   "includeNamespaces": ["..."],
   "k": 10,
   "project": "id or name",
-  "includeProjects": ["..."]
+  "includeProjects": ["..."],
+  "maxSensitivity": "public|internal|private|sensitive"
 }
 ```
 
@@ -36,9 +37,12 @@ Hybrid retrieval. Always runs keyword + vector + graph in parallel, fuses with w
   "project": "id or name",
   "includeProjects": ["active-project union"],
   "weights": { "keyword": 0.3, "vector": 0.6, "graph": 0.1 },
-  "agentName": "filter results to entries authored by this agent"
+  "agentName": "filter results to entries authored by this agent",
+  "maxSensitivity": "public|internal|private|sensitive"
 }
 ```
+
+`maxSensitivity` defaults to `private`, which returns `public`, `internal`, and `private` entries while excluding `sensitive` entries unless explicitly requested.
 
 Returns `{ results: SearchResult[], degraded: boolean }`. Each result has `id, score, content, tier, namespace, project, source, metadata, signals`.
 
@@ -57,6 +61,7 @@ Preferred agent-facing durable write after meaningful work. Same input shape as 
   "agentName": "agent identifier",
   "project": "id or name",
   "metadata": {},
+  "sensitivity": "public|internal|private|sensitive",
   "force": false
 }
 ```
@@ -76,6 +81,7 @@ Captured entries are also annotated with typed metadata when possible:
 - `memoryType`: `user_preference`, `setup_fact`, `project_convention`, `decision`, `bug_root_cause`, `deployment_state`, `safety_constraint`, or `general`.
 - `worthiness`: v2 scoring object with `durable`, `reuseLikelihood`, `userRelevance`, `confidence`, and `overall`.
 - `retention`: memory-type policy such as `long_lived`, `medium`, `current_only`, plus `baseEffectiveDays` and `supersedeAggressively`.
+- `sensitivity`: privacy classification. Explicit `sensitivity` wins; otherwise NovaMem infers `sensitive` for obvious token/secret/password/API-key content and defaults to `private`.
 
 ## `POST /v1/session-recap`
 
@@ -112,6 +118,7 @@ Raw write of a new entry. Worthiness gate + exact SHA dedup applied. For normal 
   "agentName": "agent identifier",
   "project": "id or name",
   "metadata": {},
+  "sensitivity": "public|internal|private|sensitive",
   "force": false
 }
 ```
@@ -129,7 +136,8 @@ Newest-first feed.
   "k": 20,
   "since": "ISO-8601 lower bound",
   "project": "...",
-  "includeProjects": ["..."]
+  "includeProjects": ["..."],
+  "maxSensitivity": "public|internal|private|sensitive"
 }
 ```
 
@@ -148,7 +156,9 @@ Graph traversal from a seed entry id.
 }
 ```
 
-`depth` is allowlisted to `{1, 2, 3}`. Returns `{ results: SearchResult[], degraded: boolean }`. Path-product aggregation along multi-hop walks.
+`depth` is allowlisted to `{1, 2, 3}`. `maxSensitivity` defaults to `private`, which returns `public`, `internal`, and `private` entries while excluding `sensitive` entries unless explicitly requested.
+
+Returns `{ results: SearchResult[], degraded: boolean }`. Path-product aggregation along multi-hop walks.
 
 ## `POST /v1/forget`
 

@@ -79,6 +79,7 @@ export function buildMcpServer(
               project: scope.project,
               includeProjects: scope.includeProjects,
               weights: args.weights,
+              maxSensitivity: args.maxSensitivity,
             }),
             engine.recent(userId, {
               k: Math.min(k, 10),
@@ -86,6 +87,7 @@ export function buildMcpServer(
               includeNamespaces: args.includeNamespaces,
               project: scope.project,
               includeProjects: scope.includeProjects,
+              maxSensitivity: args.maxSensitivity,
             }),
           ]);
           const contextPack = engine.buildContextPack(relevant.results, recent.results);
@@ -117,6 +119,7 @@ export function buildMcpServer(
             capturedFrom: args.capturedFrom ?? "memory_capture",
             confidence: args.confidence,
             force: args.force,
+            sensitivity: args.sensitivity,
             project: scope.project,
           });
           return { content: [{ type: "text", text: JSON.stringify({ saved: r.id ? 1 : 0, results: [r] }) }] };
@@ -149,6 +152,7 @@ export function buildMcpServer(
                 capturedFrom: args.capturedFrom ?? "memory_session_recap",
                 confidence: args.confidence,
                 force: args.force,
+                sensitivity: args.sensitivity,
                 project: scope.project,
               });
               results.push(r);
@@ -181,6 +185,7 @@ export function buildMcpServer(
             project: scope.project,
             includeProjects: scope.includeProjects,
             weights: args.weights,
+            maxSensitivity: args.maxSensitivity,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
@@ -198,6 +203,7 @@ export function buildMcpServer(
             capturedFrom: args.capturedFrom,
             confidence: args.confidence,
             force: args.force,
+            sensitivity: args.sensitivity,
             project: scope.project,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -217,6 +223,7 @@ export function buildMcpServer(
             since,
             project: scope.project,
             includeProjects: scope.includeProjects,
+            maxSensitivity: args.maxSensitivity,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
@@ -234,6 +241,7 @@ export function buildMcpServer(
             since: args.since,
             project: scope.project,
             includeProjects: scope.includeProjects,
+            maxSensitivity: args.maxSensitivity,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
@@ -250,6 +258,7 @@ export function buildMcpServer(
             k: args.k,
             project: scope.project,
             includeProjects: scope.includeProjects,
+            maxSensitivity: args.maxSensitivity,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
@@ -277,6 +286,7 @@ export function buildMcpServer(
             sourceType: args.sourceType,
             capturedFrom: args.capturedFrom,
             confidence: args.confidence,
+            sensitivity: args.sensitivity,
             project: scope.project,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };

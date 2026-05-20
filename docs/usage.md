@@ -62,6 +62,14 @@ By default a search runs in one `namespace` (default `"default"`) and one `proje
 
 Or set an [active project](#active-project-sub-brains) once and `memory_*` defaults to it.
 
+## Sensitivity / privacy levels
+
+Every memory can carry `metadata.sensitivity` via the top-level `sensitivity` field: `public`, `internal`, `private`, or `sensitive`. If omitted, NovaMem infers `sensitive` for obvious token/secret/password/API-key content and otherwise defaults to `private`.
+
+Recall tools (`memory_search`, `memory_context`, `memory_recent`, `memory_today`, and `memory_neighbors`) default `maxSensitivity` to `private`, so `sensitive` entries are hidden unless the caller explicitly asks for `maxSensitivity: "sensitive"`. Use this only when the task genuinely requires highly sensitive material.
+
+`memory_update` can change an entry's classification without changing content by passing `sensitivity`.
+
 ## Capturing (`memory_capture`)
 
 `memory_capture` is the preferred agent-facing write path after meaningful work. It applies the same worthiness gate and exact-duplicate SHA fast-path as `memory_remember`, then does a scoped retrieval check before inserting:

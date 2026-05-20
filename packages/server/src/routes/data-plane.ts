@@ -106,6 +106,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         project: body.project,
         includeProjects: body.includeProjects,
         weights: body.weights,
+        maxSensitivity: body.maxSensitivity,
       }, req.bearerToken);
       const recent = await ctx.engine.recent(req.userId, {
         k: Math.min(k, 10),
@@ -113,6 +114,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         includeNamespaces: body.includeNamespaces,
         project: body.project,
         includeProjects: body.includeProjects,
+        maxSensitivity: body.maxSensitivity,
       });
       reply.send({
         relevant,
@@ -147,6 +149,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         capturedFrom: body.capturedFrom ?? "memory_capture",
         confidence: body.confidence,
         force: body.force,
+        sensitivity: body.sensitivity,
       }, req.bearerToken);
       reply.code(201).send(result);
     },
@@ -188,6 +191,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
             capturedFrom: body.capturedFrom ?? "memory_session_recap",
             confidence: body.confidence,
             force: body.force,
+            sensitivity: body.sensitivity,
           }, req.bearerToken);
           results.push(r);
         }

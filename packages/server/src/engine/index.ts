@@ -19,6 +19,7 @@ import type {
   ContextPack,
   RememberRequest,
   SearchRequest,
+  SensitivityLevel,
   SearchResult,
 } from "../types.js";
 import {
@@ -75,6 +76,39 @@ export function tokenJaccard(a: string, b: string): number {
 
 const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
 const CAPTURE_CANDIDATE_K = 5;
+
+const SENSITIVITY_ORDER: Record<SensitivityLevel, number> = { public: 0, internal: 1, private: 2, sensitive: 3 };
+const DEFAULT_MAX_SENSITIVITY: SensitivityLevel = "private";
+
+function normalizeSensitivity(value: unknown): SensitivityLevel | undefined {
+  return ["public", "internal", "private", "sensitive"].includes(String(value))
+    ? (String(value) as SensitivityLevel)
+    : undefined;
+}
+
+function inferSensitivity(content: string, metadata?: Record<string, unknown>, explicit?: SensitivityLevel): SensitivityLevel {
+  const fromExplicit = normalizeSensitivity(explicit);
+  if (fromExplicit) return fromExplicit;
+  const fromMetadata = normalizeSensitivity(metadata?.sensitivity);
+  if (fromMetadata) return fromMetadata;
+  if (/\b(api[_ -]?key|token|secret|password|private[_ -]?key|bearer|sk-[a-z0-9_-]{8,})\b/i.test(content)) return "sensitive";
+  return "private";
+}
+
+function withSensitivityMetadata(req: RememberRequest): RememberRequest {
+  const sensitivity = inferSensitivity(req.content, req.metadata, req.sensitivity);
+  return { ...req, metadata: { ...(req.metadata ?? {}), sensitivity } };
+}
+
+function resultSensitivity(metadata: Record<string, unknown> | null | undefined): SensitivityLevel {
+  return normalizeSensitivity(metadata?.sensitivity) ?? "private";
+}
+
+function isSensitivityVisible(metadata: Record<string, unknown> | null | undefined, maxSensitivity?: SensitivityLevel): boolean {
+  const max = normalizeSensitivity(maxSensitivity) ?? DEFAULT_MAX_SENSITIVITY;
+  return SENSITIVITY_ORDER[resultSensitivity(metadata)] <= SENSITIVITY_ORDER[max];
+}
+
 
 function metadataStatus(metadata: Record<string, unknown> | null | undefined): string {
   const status = metadata?.lifecycleStatus;
@@ -168,8 +202,10 @@ export function retentionPolicyFor(type: MemoryType): Record<string, unknown> {
 
 function captureMetadata(req: RememberRequest, action: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   const type = inferMemoryType(req.content, req.namespace, req.metadata);
+  const sensitivity = inferSensitivity(req.content, req.metadata, req.sensitivity);
   return mergeCaptureMetadata(undefined, req.metadata, {
     memoryType: type,
+    sensitivity,
     worthiness: scoreWorthiness(req.content, type, req.confidence ?? 1),
     retention: retentionPolicyFor(type),
     captureAction: action,
@@ -334,6 +370,7 @@ export class MemoryEngine {
       const reason = this.shouldReject(req.content);
       if (reason) return { id: null, rejected: reason };
     }
+    req = withSensitivityMetadata(req);
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
     const contentHash = sha256Hex(req.content.trim());
@@ -352,7 +389,7 @@ export class MemoryEngine {
       namespace,
       source: req.source ?? "manual",
       agentName: req.agentName ?? null,
-      metadata: req.metadata,
+      metadata: req.sensitivity ? { ...(req.metadata ?? {}), sensitivity: req.sensitivity } : req.metadata,
       sourceType: req.sourceType ?? null,
       capturedFrom: req.capturedFrom ?? null,
       confidence: req.confidence,
@@ -391,6 +428,7 @@ export class MemoryEngine {
     updated?: boolean;
     superseded?: string[];
   }> {
+    req = withSensitivityMetadata(req);
     if (!req.force) {
       const reason = this.shouldReject(req.content);
       if (reason) return { id: null, rejected: reason };
@@ -499,9 +537,13 @@ export class MemoryEngine {
       capturedFrom?: string;
       confidence?: number;
       project?: string | null;
+      sensitivity?: SensitivityLevel;
     },
   ): Promise<{ updated: boolean; embeddingChanged: boolean }> {
     const projectId = req.project ?? null;
+    const updateMetadata = req.sensitivity
+      ? { ...(req.metadata ?? {}), sensitivity: req.sensitivity }
+      : req.metadata;
     const newHash = req.content ? sha256Hex(req.content.trim()) : undefined;
     const ok = await this.warm.updateEntry({
       userId,
@@ -509,7 +551,7 @@ export class MemoryEngine {
       projectId,
       content: req.content,
       namespace: req.namespace,
-      metadata: req.metadata,
+      metadata: updateMetadata,
       sourceType: req.sourceType,
       capturedFrom: req.capturedFrom,
       confidence: req.confidence,
@@ -719,6 +761,7 @@ export class MemoryEngine {
       const e = entries[i];
       if (!e) continue;
       if (isInactiveMemory(e.metadata as Record<string, unknown> | null | undefined)) continue;
+      if (!isSensitivityVisible(e.metadata as Record<string, unknown> | null | undefined, req.maxSensitivity)) continue;
       idsToBump.push(f.id);
 
       // Cold→warm promotion: capture stats *before* bumpHits so the
@@ -850,6 +893,7 @@ export class MemoryEngine {
       project?: string | null;
       includeProjects?: string[];
       includeNamespaces?: string[];
+      maxSensitivity?: SensitivityLevel;
     },
   ): Promise<{ results: SearchResult[] }> {
     // See engine.search for the reasoning behind the no-arg fanout.
@@ -884,6 +928,7 @@ export class MemoryEngine {
     });
     const results: SearchResult[] = rows
       .filter((r) => !isInactiveMemory((r.metadata ?? {}) as Record<string, unknown>))
+      .filter((r) => isSensitivityVisible((r.metadata ?? {}) as Record<string, unknown>, args.maxSensitivity))
       .map((r) => ({
         id: r.id,
         score: 1.0,
@@ -910,6 +955,7 @@ export class MemoryEngine {
        *  graph store — Memory nodes aren't namespaced; entry resolution
        *  picks up the entry's actual namespace from Postgres. */
       includeNamespaces?: string[];
+      maxSensitivity?: SensitivityLevel;
     },
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
     const depth = args.depth ?? 1;
@@ -949,6 +995,7 @@ export class MemoryEngine {
         ? (await this.warm.getEntries(userId, [h.id], { includeProjects }))[0]
         : await this.warm.getEntry(userId, h.id, { projectId });
       if (!e) continue;
+      if (!isSensitivityVisible(e.metadata as Record<string, unknown> | null | undefined, args.maxSensitivity)) continue;
       results.push({
         id: h.id,
         score: h.score,

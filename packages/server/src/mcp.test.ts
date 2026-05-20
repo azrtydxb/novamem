@@ -98,6 +98,60 @@ describe("mcp: tool dispatch", () => {
     expect(warm.rows.has(payload.id)).toBe(true);
   });
 
+
+  it("memory_capture labels sensitive content and hides it from default search/context", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const stored = (await callTool(server, "memory_capture", {
+      content: "Production API token is sk-live-secret-123456",
+      namespace: "security",
+      force: true,
+    })) as { content: Array<{ text: string }> };
+    const storedPayload = JSON.parse(stored.content[0]!.text);
+    expect(storedPayload.results[0].id).toBeTruthy();
+
+    const hidden = (await callTool(server, "memory_search", { query: "sk-live-secret-123456", includeNamespaces: ["security"] })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(JSON.parse(hidden.content[0]!.text).results).toHaveLength(0);
+
+    const visible = (await callTool(server, "memory_search", {
+      query: "sk-live-secret-123456",
+      includeNamespaces: ["security"],
+      maxSensitivity: "sensitive",
+    })) as { content: Array<{ text: string }> };
+    const visiblePayload = JSON.parse(visible.content[0]!.text);
+    expect(visiblePayload.results[0].metadata.sensitivity).toBe("sensitive");
+
+    const ctx = (await callTool(server, "memory_context", { message: "token", includeNamespaces: ["security"], k: 5 })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(JSON.parse(ctx.content[0]!.text).contextPack.all).toHaveLength(0);
+  });
+
+  it("memory_update can change sensitivity and default search respects the new level", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_remember", {
+      content: "Private family travel detail",
+      namespace: "family",
+      sensitivity: "private",
+      force: true,
+    })) as { content: Array<{ text: string }> };
+    const id = JSON.parse(r.content[0]!.text).id;
+
+    await callTool(server, "memory_update", { id, sensitivity: "sensitive" });
+
+    const hidden = (await callTool(server, "memory_search", { query: "family travel", includeNamespaces: ["family"] })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(JSON.parse(hidden.content[0]!.text).results).toHaveLength(0);
+    const visible = (await callTool(server, "memory_search", { query: "family travel", includeNamespaces: ["family"], maxSensitivity: "sensitive" })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(JSON.parse(visible.content[0]!.text).results[0].metadata.sensitivity).toBe("sensitive");
+  });
+
   it("memory_search finds the just-stored entry", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");

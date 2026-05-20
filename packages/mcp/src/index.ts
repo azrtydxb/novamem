@@ -144,6 +144,7 @@ const TOOL_DEFINITIONS = [
         k: { type: "number" },
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
+        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
         project: { type: "string" },
         includeProjects: { type: "array", items: { type: "string" } },
         weights: { type: "object" },
@@ -166,6 +167,7 @@ const TOOL_DEFINITIONS = [
         force: { type: "boolean" },
         project: { type: "string" },
         metadata: { type: "object" },
+        sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
       },
       required: ["content"],
     },
@@ -191,6 +193,7 @@ const TOOL_DEFINITIONS = [
         force: { type: "boolean" },
         project: { type: "string" },
         metadata: { type: "object" },
+        sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
       },
     },
   },
@@ -222,6 +225,7 @@ const TOOL_DEFINITIONS = [
         k: { type: "number" },
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
+        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
         project: {
           type: "string",
           description: "Project id or name. Omit for user-wide entries.",
@@ -265,6 +269,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
+        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
         k: { type: "number" },
         project: { type: "string" },
         includeProjects: { type: "array", items: { type: "string" } },
@@ -280,6 +285,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
+        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
         k: { type: "number" },
         since: { type: "string" },
         project: { type: "string" },
@@ -525,6 +531,7 @@ export function buildRemoteMcpServer(
             project,
             includeProjects,
             weights,
+            maxSensitivity: optStr(args.maxSensitivity),
           } as unknown as Parameters<typeof client.context>[0];
           const r = await client.context(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -540,6 +547,7 @@ export function buildRemoteMcpServer(
             force: optBool(args.force),
             project,
             metadata: args.metadata && typeof args.metadata === "object" ? args.metadata : undefined,
+            sensitivity: optStr(args.sensitivity),
           } as unknown as Parameters<typeof client.capture>[0];
           const r = await client.capture(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -567,6 +575,7 @@ export function buildRemoteMcpServer(
                 force: optBool(args.force),
                 project,
                 metadata: { ...((args.metadata && typeof args.metadata === "object") ? args.metadata : {}), memoryType: group.memoryType, recap: true },
+                sensitivity: optStr(args.sensitivity),
               } as unknown as Parameters<typeof client.capture>[0];
               const r = await client.capture(body);
               results.push(...((r as { results?: unknown[] }).results ?? [r]));
@@ -612,6 +621,7 @@ export function buildRemoteMcpServer(
             project,
             includeProjects,
             weights,
+            maxSensitivity: optStr(args.maxSensitivity),
           } as unknown as Parameters<typeof client.search>[0];
           const r = await client.search(searchBody);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -628,6 +638,7 @@ export function buildRemoteMcpServer(
             confidence: optNum(args.confidence),
             force: optBool(args.force),
             project,
+            sensitivity: optStr(args.sensitivity),
           } as unknown as Parameters<typeof client.remember>[0];
           const r = await client.remember(rememberBody);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -641,6 +652,7 @@ export function buildRemoteMcpServer(
             since,
             project,
             includeProjects,
+            maxSensitivity: optStr(args.maxSensitivity),
           } as unknown as Parameters<typeof client.recent>[0];
           const r = await client.recent(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -653,6 +665,7 @@ export function buildRemoteMcpServer(
             since: optStr(args.since),
             project,
             includeProjects,
+            maxSensitivity: optStr(args.maxSensitivity),
           } as unknown as Parameters<typeof client.recent>[0];
           const r = await client.recent(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -664,6 +677,7 @@ export function buildRemoteMcpServer(
             k: optNum(args.k),
             project,
             includeProjects,
+            maxSensitivity: optStr(args.maxSensitivity),
           } as unknown as Parameters<typeof client.neighbors>[0];
           const r = await client.neighbors(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -683,6 +697,7 @@ export function buildRemoteMcpServer(
           if (typeof args.sourceType === "string") body.sourceType = args.sourceType;
           if (typeof args.capturedFrom === "string") body.capturedFrom = args.capturedFrom;
           if (typeof args.confidence === "number") body.confidence = args.confidence;
+          if (typeof args.sensitivity === "string") body.sensitivity = args.sensitivity;
           if (project !== undefined) body.project = project;
           const r = await rawUpdate(baseUrl, token, id, body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };

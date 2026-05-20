@@ -3,6 +3,8 @@
  * the HTTP API, MCP tools, and the @azrtydxb/novamem TypeScript client.
  */
 
+export type SensitivityLevel = "public" | "internal" | "private" | "sensitive";
+
 export type MemoryType =
   | "user_preference"
   | "setup_fact"
@@ -67,6 +69,8 @@ export interface SearchRequest {
   includeNamespaces?: string[];
   /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour. */
   weights?: { keyword?: number; vector?: number; graph?: number };
+  /** Maximum sensitivity returned. Defaults to private, excluding sensitive entries unless explicitly requested. */
+  maxSensitivity?: SensitivityLevel;
 }
 
 export interface SearchResult {
@@ -108,6 +112,8 @@ export interface RememberRequest {
   /** Bypass the worthiness filter. Use sparingly — when the agent or
    *  user explicitly asserted the entry should be saved. */
   force?: boolean;
+  /** Privacy classification. Also stored in metadata.sensitivity. Defaults to inferred content sensitivity, then private. */
+  sensitivity?: SensitivityLevel;
 }
 
 export interface DecayRequest {

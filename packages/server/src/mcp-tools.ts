@@ -88,6 +88,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         k: { type: "number", description: "Top-K relevant/recent entries to return." },
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
+        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"], description: "Maximum sensitivity to return; defaults to private, excluding sensitive." },
         project: { type: "string", description: "Project id or human name." },
         includeProjects: { type: "array", items: { type: "string" } },
         weights: {
@@ -124,6 +125,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         force: { type: "boolean" },
         project: { type: "string", description: "Optional project (sub-brain) to scope to." },
         metadata: { type: "object" },
+        sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
       },
       required: ["content"],
     },
@@ -158,6 +160,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         force: { type: "boolean" },
         project: { type: "string", description: "Optional project (sub-brain) to scope to." },
         metadata: { type: "object" },
+        sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
       },
     },
     annotations: {
@@ -288,6 +291,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: {
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
+        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
         k: { type: "number" },
         project: { type: "string", description: "Project id or name." },
         includeProjects: { type: "array", items: { type: "string" } },
@@ -382,6 +386,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         content: { type: "string" },
         namespace: { type: "string" },
         metadata: { type: "object" },
+        sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
         sourceType: { type: "string" },
         capturedFrom: { type: "string" },
         confidence: { type: "number", description: "0..1" },

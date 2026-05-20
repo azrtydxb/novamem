@@ -116,6 +116,14 @@ These fields are metadata only; they do not create a new table or migration. `me
 Use `memory_session_recap` at the end of meaningful work to save concise durable facts without storing the transcript. Prefer the typed arrays: `decisions`, `setupFacts`, `rootCauses`, `preferences`, `projectConventions`, and `safetyConstraints`.
 
 
+## Sensitivity / privacy levels
+
+Writes accept top-level `sensitivity`: `public`, `internal`, `private`, or `sensitive`. The value is stored as `metadata.sensitivity`. If omitted, NovaMem infers `sensitive` for obvious tokens, secrets, passwords, API keys, and bearer-like strings; otherwise it defaults to `private`.
+
+Recall defaults to `maxSensitivity: "private"`, hiding `sensitive` memories from `memory_search`, `memory_context`, `memory_recent`, `memory_today`, and `memory_neighbors` unless the caller explicitly opts in with `maxSensitivity: "sensitive"`. Use that opt-in sparingly and never store raw secrets unless the user explicitly requires it.
+
+`memory_update` can reclassify an entry by passing `sensitivity` without changing `content`.
+
 ## Hygiene and evaluation tools
 
 Use `memory_hygiene` when debugging memory quality or preparing curation. It reports a `summary` count block plus low-value entries, stale current-state facts, duplicate clusters, contradiction candidates, and orphan candidates. It is read-only.

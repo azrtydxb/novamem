@@ -62,6 +62,7 @@ export const UsernameRule = z
 /** Namespace shelf names. Same charset as project ids — we accept
  *  reasonably-shaped strings; the value is opaque to the engine. */
 const NamespaceRule = z.string().min(1).max(128);
+export const SensitivityRule = z.enum(["public", "internal", "private", "sensitive"]);
 
 /** Hard caps on caller-supplied metadata bags (issue #23):
  *  - keys must be ≤64 chars (rejects pathological long keys that would
@@ -96,6 +97,7 @@ export const SessionRecapBody = z.object({
   force: z.boolean().optional(),
   project: ProjectRefRule.optional().nullable(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  sensitivity: SensitivityRule.optional(),
 }).strict();
 
 export const SearchBody = z.object({
@@ -119,6 +121,7 @@ export const SearchBody = z.object({
       graph: z.number().optional(),
     })
     .optional(),
+  maxSensitivity: SensitivityRule.optional(),
 });
 
 export const ContextBody = z.object({
@@ -136,6 +139,7 @@ export const ContextBody = z.object({
       graph: z.number().optional(),
     })
     .optional(),
+  maxSensitivity: SensitivityRule.optional(),
 });
 
 export const HygieneBody = z.object({
@@ -154,6 +158,7 @@ export const CaptureBody = z.object({
   agentName: z.string().max(128).optional().nullable(),
   project: ProjectRefRule.optional().nullable(),
   metadata: MetadataRule.optional(),
+  sensitivity: SensitivityRule.optional(),
   sourceType: z.string().max(64).optional(),
   capturedFrom: z.string().max(256).optional(),
   confidence: z.number().min(0).max(1).optional(),
@@ -167,6 +172,7 @@ export const RememberBody = z.object({
   agentName: z.string().max(128).optional().nullable(),
   project: ProjectRefRule.optional().nullable(),
   metadata: MetadataRule.optional(),
+  sensitivity: SensitivityRule.optional(),
   // Provenance fields. Open-string vocab; recommended values documented
   // in the MCP instructions block.
   sourceType: z.string().max(64).optional(),
@@ -180,6 +186,7 @@ export const UpdateMemoryBody = z.object({
   content: z.string().min(1).max(MAX_CONTENT_BYTES).optional(),
   namespace: z.string().max(128).optional(),
   metadata: MetadataRule.optional(),
+  sensitivity: SensitivityRule.optional(),
   sourceType: z.string().max(64).optional(),
   capturedFrom: z.string().max(256).optional(),
   confidence: z.number().min(0).max(1).optional(),
@@ -202,6 +209,7 @@ export const RecentBody = z.object({
   project: ProjectRefRule.optional().nullable(),
   includeProjects: z.array(ProjectRefRule).max(16).optional(),
   includeNamespaces: z.array(NamespaceRule).max(16).optional(),
+  maxSensitivity: SensitivityRule.optional(),
 });
 
 export const NeighborsBody = z.object({
@@ -211,6 +219,7 @@ export const NeighborsBody = z.object({
   project: ProjectRefRule.optional().nullable(),
   includeProjects: z.array(ProjectRefRule).max(16).optional(),
   includeNamespaces: z.array(NamespaceRule).max(16).optional(),
+  maxSensitivity: SensitivityRule.optional(),
 });
 
 export const ForgetBody = z.object({
