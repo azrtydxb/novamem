@@ -25,7 +25,7 @@ Email the maintainers privately rather than opening a public issue. We aim to ac
 1. `getEntry(userId, id, {projectId})` returns the row **only** if (a) the row is project-scoped and `row.project_id === projectId`, or (b) the row is user-wide and `row.user_id === userId`. There is no third path.
 2. Cold collections are named `novamem_<userId>_<namespace>` for user-wide entries and `novamem_p_<projectId>_<namespace>` for project entries. User ids cannot start with `p_` or be exactly `p` — the create-user Zod schema enforces this. **Never relax that regex without also changing the cold-store collection naming scheme.**
 3. Removing a project member must also revoke their project-related access. `WarmStore.removeProjectMember` deletes the membership row in a single transaction.
-4. `/v1/me/{search,recent,neighbors,remember,forget,memories/:id}` enforce project membership via `checkProjectAccess`. `/v1/me/forget` additionally re-fetches the entry's real scope and re-checks membership before deleting (defence in depth against `project: null` laundering).
+4. Data-plane routes (`/v1/search`, `/v1/recent`, `/v1/neighbors`, `/v1/remember`, `/v1/capture`, `/v1/forget`, `PUT /v1/memories/:id`) enforce project membership via `checkProjectAccess`. Forget/update paths re-fetch the entry's real scope and re-check membership before mutating (defence in depth against `project: null` laundering).
 5. The Better Auth passthrough refuses operations that would leave zero admins: pre-handler intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` (when the new role is non-admin) and returns `400 LAST_ADMIN_PROTECTED` if the target is the only admin.
 6. Audit-log every admin action. Read it at `GET /v1/admin/audit-log`.
 

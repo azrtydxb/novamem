@@ -1,8 +1,7 @@
 /**
  * Zod request-body schemas for the HTTP layer. Centralised here so:
  *  - tests can import them to assert structural shape
- *  - the OpenAPI generator can be derived from them in the future
- *    (currently the OpenAPI doc is hand-rolled in openapi.ts)
+ *  - @fastify/swagger derives the live OpenAPI document from them
  *  - the MCP shim can use them to validate tool args
  *
  * All schemas use `.strict()` where appropriate — extra fields are

@@ -130,7 +130,7 @@ Two coexisting credential types resolve to the same `req.dashUser` shape:
 
 The auth hook in `http.ts` runs on every request: it asks Better Auth for a session via `auth.api.getSession({ headers })`. If that hits, `req.dashUser` is populated. If not, and the route is `/v1/auth/*` or `/v1/me/*` and an `nm_…` bearer is present, it resolves the bearer to its underlying user and synthesises a `dashUser` from Better Auth's `"user"` row. Data-plane routes (`/v1/search`, `/v1/remember`, …) accept either path; admin routes additionally require `role: admin`.
 
-A passthrough handler at `/api/auth/*` forwards Better Auth-owned routes to its WHATWG-style handler — but the forwarding is now an **explicit allowlist** of the sign-in, sign-out, sign-up, get-session, token, and JWKS paths novamem actually uses, plus a single wildcard for `/api/auth/admin/*` (the dashboard's user CRUD surface). Anything outside the allowlist returns 404 from the app instead of being blindly proxied. A pre-handler on the admin wildcard still intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` to refuse operations that would leave zero admins.
+A passthrough handler at `/api/auth/*` forwards only an **explicit allowlist** of Better Auth endpoints novamem uses (sign-in, sign-out, get-session, token/JWKS, password/session helpers, and audited admin-plugin endpoints). Public sign-up is intentionally not routed. Anything outside the allowlist returns 404. A pre-handler still intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` to refuse operations that would leave zero admins.
 
 ## Provenance
 
@@ -207,7 +207,7 @@ Single graph (`novamem`) with `Memory` nodes + `RELATES` edges. Node properties:
 
 ## Transports
 
-- **HTTP/JSON** — Fastify 5. Bodies validated with Zod. OpenAPI 3.0 doc hand-rolled in `packages/server/src/openapi.ts` and served via `@fastify/swagger-ui` at `/api-docs`.
+- **HTTP/JSON** — Fastify 5. Bodies validated with Zod. OpenAPI 3.0 is generated from the live Fastify route tree and route schemas via `@fastify/swagger`, served raw at `/openapi.json`, and rendered by `@fastify/swagger-ui` at `/api-docs`.
 - **MCP SSE (recommended)** — `GET /mcp/sse` opens an event stream; `POST /mcp/messages?sessionId=…` sends JSON-RPC. User identity is captured at handshake from the auth hook. Direct-SSE clients connect without a shim.
 - **MCP stdio (legacy shim)** — `packages/mcp/src/index.ts` is a thin stdio↔HTTP bridge for clients that don't speak remote MCP yet. The shim talks to the same `/v1/*` and `/api/auth/*` endpoints any other client uses.
 

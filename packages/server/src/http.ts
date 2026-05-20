@@ -712,6 +712,10 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         schema: {
           tags: ["liveness"],
           summary: "Liveness probe — boolean only (no infrastructure detail)",
+          response: {
+            200: z.object({ ok: z.boolean() }),
+            503: z.object({ ok: z.boolean() }),
+          },
         },
       },
       async (_req, reply) => {
@@ -728,6 +732,25 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
           tags: ["admin"],
           summary: "Admin-only dependency snapshot (warm/cold/graph status)",
           security: [{ SessionCookie: [] }],
+          response: {
+            200: z.object({
+              ok: z.boolean(),
+              deps: z.object({
+                warm: z.enum(["ok", "unreachable"]),
+                cold: z.enum(["ok", "unreachable"]),
+                graph: z.enum(["ok", "unreachable", "disabled"]),
+              }),
+            }),
+            503: z.object({
+              ok: z.boolean(),
+              deps: z.object({
+                warm: z.enum(["ok", "unreachable"]),
+                cold: z.enum(["ok", "unreachable"]),
+                graph: z.enum(["ok", "unreachable", "disabled"]),
+              }),
+            }),
+            401: z.object({ error: z.string() }),
+          },
         },
       },
       async (req, reply) => {

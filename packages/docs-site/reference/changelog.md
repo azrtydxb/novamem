@@ -106,7 +106,7 @@ Each ships with [Sigstore provenance](https://docs.npmjs.com/generating-provenan
 - **Tag-driven release workflow** (`.github/workflows/release.yml`) — push a `v*` tag and CI builds, tests, and publishes the three public packages with provenance via OIDC Trusted Publishers.
 - **Multi-arch Docker images** at `ghcr.io/azrtydxb/novamem:main` and `:sha-<short>` — built natively on amd64 and arm64 GitHub-hosted runners (no QEMU), Trivy-scanned (HIGH/CRITICAL with `--ignore-unfixed`) before push.
 - **Better Auth for the dashboard.** Email + password sign-in via `POST /api/auth/sign-in/email`. Sessions stored in Better Auth's `"user"` / `"session"` / `"account"` / `"verification"` / `"jwks"` tables. JWT issuance on demand at `/api/auth/token` with JWKS at `/api/auth/jwks`. Admin user CRUD via Better Auth's `/api/auth/admin/*`.
-- **`memory_update`** — rewrite an existing entry in place. Preserves id, hit count, graph edges, creation timestamp; refreshes FTS + cold vector when content changes; skips embedder for metadata-only updates. HTTP `PUT /v1/memories/:id` + cookie-auth mirror at `PUT /v1/me/memories/:id` + MCP tool.
+- **`memory_update`** — rewrite an existing entry in place. Preserves id, hit count, graph edges, creation timestamp; refreshes FTS + cold vector when content changes; skips embedder for metadata-only updates. HTTP `PUT /v1/memories/:id` + MCP tool.
 - **Worthiness gate** at write time — `engine.shouldReject` rejects content < 12 chars or matching the conversational-filler regex; `force: true` bypasses. Returns `{id: null, rejected: <reason>}`.
 - **Exact-duplicate fast-path** — `memory_entries.content_hash` (sha256 of trimmed content) lets `remember` short-circuit identical writes within the same `(user, project)` and return the existing id with `deduplicated: true`.
 - **Dream cycle** — daily compaction + manual `POST /v1/dream-cycle`. Two phases: dedup-merge at cosine ≥ 0.97 + token Jaccard ≥ 0.5 (sums hit counts, redirects edges, deletes the duplicate); edge promotion when two entries share ≥3 graph neighbours (`relation: co_inferred`).
@@ -157,7 +157,7 @@ Each ships with [Sigstore provenance](https://docs.npmjs.com/generating-provenan
 
 ### Security
 
-- **Project-membership guard on cookie-authed `/v1/me/*` mirrors** — refuses cross-project access; `/v1/me/forget` additionally re-fetches the entry's real scope before deleting (defence in depth against `project: null` laundering).
+- **Project-membership guard on cookie-authed `/v1/me/*` mirrors** — refuses cross-project access; data-plane forget/update paths re-fetch the entry's real scope before mutating (defence in depth against `project: null` laundering).
 - **User id `p_*` is forbidden** at create time — would have collided with the project-scoped collection prefix `novamem_p_<project>_*`.
 - **Removing a project member deletes the membership row** atomically.
 - **`getEntry` magic-string `"*"` bypass removed** — there is no out-of-band way to disable user + project access checks.

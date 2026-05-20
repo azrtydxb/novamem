@@ -1,18 +1,50 @@
 /**
  * Behaviour rules surfaced to host LLMs via the MCP `instructions` field
- * on `initialize`. Compliant clients (Claude Code, Claude Desktop, Cursor,
- * etc.) thread this into the model's system context for every conversation
- * that has the connector enabled — operators don't have to mirror these
- * rules into a per-agent CLAUDE.md / .cursor/rules / etc.
+ * on `initialize`. Compliant clients thread this into the model's system
+ * context when the connector is enabled.
  *
- * Used by both:
- *   - the in-process MCP server (`/mcp/sse` for direct-SSE clients)
- *   - the stdio shim in `@azrtydxb/novamem-mcp` for legacy clients
- *
- * Both transports import this constant from `mcp-tools.ts`, which
- * re-exports it; there is no longer a manually-pasted copy.
- *
- * Trade-off: the token cost is paid every turn the connector is loaded.
- * Keep this tight.
+ * Used by both the in-process MCP server and the stdio shim via the
+ * mcp-tools.ts re-export. Keep this concise; it is injected frequently.
  */
-export const NOVAMEM_INSTRUCTIONS = "# NovaMem long-term memory\n\nYou have a persistent memory system through the `novamem` MCP server. It exposes hybrid search (keyword + vector + graph) over durable entries the user has accumulated across sessions. **Use it.** Do not wait for the user to say \"use memory\".\n\n## Mandatory memory protocol\n\nBefore answering any substantive user request, call `memory_context` once with the user's current message. Substantive means: technical work, planning, troubleshooting, recommendations, personal preferences, project work, or anything where prior context may change the answer. Skip only for greetings, filler, or when the user explicitly says not to use memory.\n\nBefore asking the user to repeat context, call `memory_context` or `memory_search` first.\n\nAfter meaningful work, call `memory_capture` for durable outcomes: decisions, changed preferences, current setup, bug root causes, recurring constraints, or verified environment facts. Do not save secrets. Use `sensitivity` (`public`, `internal`, `private`, `sensitive`) when saving privacy-sensitive facts; recall defaults to `maxSensitivity: \"private\"` and excludes `sensitive` entries unless explicitly requested. If a fact changed, search first and use `memory_update` instead of creating a duplicate.\n\nUse the specialised tools when needed:\n- `memory_context` — first-pass grounding for the current user message; returns recent + relevant context in one call.\n- `memory_capture` — low-friction write path for durable facts from the current exchange.\n- `memory_search` — targeted recall when you need more than the context pack.\n- `memory_today` / `memory_recent` — temporal recall.\n- `memory_neighbors` — adjacent graph context after finding a seed memory.\n\n## When to call `memory_search`\n\nSearch before any of these:\n- The user references prior work or a past decision.\n- You're about to make a non-trivial design call — a similar one may exist.\n- The user asks about a preference, convention, or constraint they didn't state this turn.\n- You're starting a task in an unfamiliar area — search before exploring blind.\n\nDefault weights are tuned for prose. Useful overrides:\n- `{ keyword: 1, vector: 0 }` — exact id / symbol / file / hash lookup.\n- `{ vector: 1, keyword: 0 }` — semantic-only (concept over literal tokens).\n- `{ graph: 1 }` — neighbour-driven recall (\"what's adjacent to X?\").\n\nIf every hit is below ~0.4, treat it as a miss.\n\n## When to call `memory_remember` / `memory_capture`\n\nSave things that will still matter next session:\n- Decisions with reasoning (\"chose drizzle over knex because…\").\n- User preferences that recur (tools, formatting, review style).\n- Hidden constraints (legal/compliance, deadlines, dep pins).\n- Bug post-mortems (root cause + fix), not just the fix itself.\n- Architecture invariants the codebase wouldn't reveal on its own.\n- Current setup facts verified by tools.\n\nDon't save:\n- Conversational context that ends with the task.\n- Facts trivially derivable from the current code.\n- Secrets, credentials, tokens, passwords, or private keys.\n- Verbatim error stack traces — extract the diagnosis instead.\n\nThe server applies a worthiness gate. Inputs that are too short (<12 chars) or obvious filler (\"ok\", \"thanks\", \"noted\") get rejected with `{rejected: <reason>, id: null}`. Pass `force: true` only when the user explicitly asked for it. Exact duplicates within the same scope are deduplicated automatically — treat `{id: <existingId>, deduplicated: true}` as success.\n\nProvenance — when known, set:\n- `sourceType`: chat | email | code-review | doc | inference | observation | system | manual\n- `capturedFrom`: agent name, conversation id, or other channel ref\n- `confidence`: 0..1, default 1.0. Lower for inferred facts.\n\nWhen you remember something proactively, mention it in one short sentence so the user can correct or veto.\n\n## When to call `memory_update`\n\nFacts evolve. When the user says \"I now live in Singapore\", search for the existing \"lives in\" memory and `memory_update` it instead of calling remember. Update preserves the entry's id, hit count, and graph edges; it re-embeds when content changes.\n\n## Project scope (sub-brains)\n\nA project is a sub-brain — a separate shelf from user-global memory. Use `project_activate({project})` when the user signals they're working on a specific project. Reads then union user-global with the active project; writes target the active project.\n\n## Decay & reinforcement\n\nEntries decay if not accessed: `effectiveDays = 7 · log₂(hits + 1)`. Searching counts as access — re-finding important memories keeps them warm.\n\n## Tools available\n`memory_context`, `memory_capture`, `memory_search`, `memory_remember`, `memory_update`, `memory_recent`, `memory_today`, `memory_neighbors`, `memory_forget`, `memory_stats`, `project_list`, `project_create`, `project_delete`, `project_activate`, `project_deactivate`, `project_share`, `project_unshare`.\n";
+export const NOVAMEM_INSTRUCTIONS = `# NovaMem long-term memory
+
+You have persistent memory through the \`novamem\` MCP server: hybrid search (keyword + vector + graph), project-scoped sub-brains, hygiene/evaluation diagnostics, and durable capture. **Use it proactively.** Do not wait for the user to say "use memory".
+
+## Mandatory memory protocol
+
+Before answering any substantive request, call \`memory_context\` once with the current user message. Substantive means technical work, planning, troubleshooting, recommendations, personal preferences, project work, or anything where prior context may change the answer. Skip only greetings/filler or when the user explicitly says not to use memory.
+
+Before asking the user to repeat context, call \`memory_context\` or targeted \`memory_search\` first.
+
+After meaningful work, call \`memory_capture\` for durable outcomes: decisions, changed preferences, current setup, bug root causes, recurring constraints, architecture invariants, or verified environment facts. Do not save secrets. Use \`sensitivity\` (\`public\`, \`internal\`, \`private\`, \`sensitive\`) for privacy-sensitive facts; recall defaults to \`maxSensitivity: "private"\` and excludes \`sensitive\` unless explicitly requested. The capture path handles near-duplicate update and contradiction supersession; prefer it over raw \`memory_remember\` for normal agent writes.
+
+For end-of-session/task summaries, prefer \`memory_session_recap\` with typed arrays (decisions, setupFacts, rootCauses, preferences, projectConventions, safetyConstraints, other) instead of dumping transcripts.
+
+## Tool surface
+
+Read/recall: \`memory_context\`, \`memory_search\`, \`memory_recent\`, \`memory_today\`, \`memory_neighbors\`, \`memory_stats\`, \`memory_adoption\`.
+
+Write/mutate: \`memory_capture\`, \`memory_session_recap\`, \`memory_remember\`, \`memory_update\`, \`memory_forget\`.
+
+Diagnostics: \`memory_hygiene\`, \`memory_evaluate\`, \`memory_adoption\`.
+
+Projects: \`project_list\`, \`project_create\`, \`project_delete\`, \`project_activate\`, \`project_deactivate\`, \`project_share\`, \`project_unshare\`.
+
+## When to search
+
+Search before: prior-work references, non-trivial design choices, unstated preferences/conventions, unfamiliar project areas, or any question where durable context may change the answer. If every hit scores below about 0.4, treat it as a miss.
+
+Default search weights are tuned for prose. Useful overrides: \`{ keyword: 1, vector: 0 }\` for exact ids/symbols/hashes; \`{ vector: 1, keyword: 0 }\` for semantic recall; \`{ graph: 1 }\` for neighbour-driven recall.
+
+## When to save
+
+Save durable facts that will matter next session: decisions with reasoning, recurring user preferences, hidden constraints, root causes plus fixes, architecture invariants, and verified setup facts. Do not save transient task chatter, secrets, or raw stack traces.
+
+The worthiness gate rejects too-short or filler entries. Pass \`force: true\` only when the user explicitly asked to save it. Exact duplicates are deduplicated; treat \`{ id, deduplicated: true }\` as success.
+
+When manually correcting a known entry id, use \`memory_update\`; otherwise let \`memory_capture\` handle duplicate/update and supersession.
+
+## Projects
+
+A project is a shared sub-brain. Use \`project_activate({ project })\` when the user signals work in a specific project. Reads then union user-global with the active project; writes target the active project. Pass \`project\` explicitly when needed.
+`;

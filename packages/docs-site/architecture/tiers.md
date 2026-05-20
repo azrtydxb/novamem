@@ -27,7 +27,7 @@ flowchart LR
 
 **Job**: semantic recall over older / less-frequently-touched entries.
 
-- Storage: one Qdrant collection per `(tenant × project × namespace)` triple. Naming: `novamem_<tenantId>_<namespace>` for tenant-wide, `novamem_p_<projectId>_<namespace>` for project entries.
+- Storage: one Qdrant collection per `(scope × namespace)` pair. Naming: `novamem_u_<userId>_<namespace>` for user-global entries and `novamem_p_<projectId>_<namespace>` for project entries. Older unprefixed `novamem_<userId>_<namespace>` collections are read as a compatibility fallback only.
 - Vector dim: `NOVAMEM_COLD_VECTOR_SIZE` (default 384, matching the local `all-MiniLM-L6-v2` embedder). Must match `NOVAMEM_EMBEDDINGS_DIM`.
 - Reactive promotion: a cold entry whose accumulated lifespan now exceeds its idle time is moved back to warm on the same call that hit it. Without this, useful entries would slowly disappear forever.
 

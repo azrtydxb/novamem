@@ -31,17 +31,16 @@ Machine-readable: [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/
 
 ## Per-user (cookie-auth) variants
 
-The dashboard SPA uses `/v1/me/*` mirrors instead of the bearer-only routes — same shapes, but auth is the HttpOnly cookie session:
+The dashboard/session-scoped `/v1/me/*` routes are now self-service control-plane routes, not data-plane mirrors. They cover:
 
-- `POST /v1/me/search`
-- `POST /v1/me/remember`
-- `POST /v1/me/recent`
-- `POST /v1/me/neighbors`
-- `POST /v1/me/forget`
 - `GET  /v1/me/today`
 - `GET  /v1/me/onboarding`
-- `GET  /v1/me/projects` (+ POST/DELETE/members)
-- `GET  /v1/me/tokens` (+ POST/revoke)
+- `GET  /v1/me/metrics` and `/v1/me/metrics/history`
+- `GET  /v1/me/projects` (+ create/delete/members)
+- `GET  /v1/me/active-project` (+ set/clear)
+- `GET  /v1/me/tokens` (+ mint/revoke)
+
+The data plane itself (`/v1/search`, `/v1/remember`, `/v1/capture`, `/v1/recent`, `/v1/neighbors`, `/v1/forget`, `PUT /v1/memories/{id}`) accepts both `nm_…` user bearers and valid Better Auth session credentials.
 
 ## Health
 

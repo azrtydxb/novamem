@@ -62,7 +62,7 @@ curl -X PUT http://qdrant:6333/collections/novamem_acme_default/snapshots/upload
   -F snapshot=@snap.tgz
 ```
 
-Snapshot every collection (one per `tenant × project × namespace`). If your tenant count is large, automate via the [Qdrant snapshot API](https://qdrant.tech/documentation/concepts/snapshots/).
+Snapshot every collection (one per user/project scope × namespace). If your tenant count is large, automate via the [Qdrant snapshot API](https://qdrant.tech/documentation/concepts/snapshots/).
 
 ## FalkorDB / Redis
 

@@ -445,10 +445,10 @@ describe("http: user mode + admin routes", () => {
       payload: { id: aId },
       headers: { authorization: `Bearer ${tokenB}` },
     });
-    // Defence-in-depth getEntryScope recheck (promoted from /v1/me/forget
-    // so the protection is universal): bob's bearer + alice's user-global
-    // entry → 403 "not in your user namespace" instead of the engine's
-    // silent {deleted: false} miss.
+    // Defence-in-depth getEntryScope recheck is now on the unified data-plane
+    // forget route, so the protection is universal: bob's bearer + alice's
+    // user-global entry → 403 "not in your user namespace" instead of the
+    // engine's silent {deleted: false} miss.
     expect(bForget.statusCode).toBe(403);
     const aRecent = await app.inject({
       method: "POST",
@@ -956,9 +956,8 @@ describe("http: P0 regression tests", () => {
 
   // /v1/forget can't be tricked into deleting a project-scoped entry
   // by passing project: null. The handler looks up the actual entry's
-  // project_id and re-checks membership. (Was previously only enforced
-  // on /v1/me/forget; promoted to the unified /v1/forget so the
-  // protection is universal.)
+  // project_id and re-checks membership on the unified data-plane route,
+  // so the protection is universal.
   it("/v1/forget rechecks the entry's real project", async () => {
     const { app, warm } = makeApp({ authMode: "user" });
     const aliceHelper = await userAuth(warm, "alice");

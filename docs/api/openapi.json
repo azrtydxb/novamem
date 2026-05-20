@@ -2,19 +2,13 @@
   "openapi": "3.0.3",
   "info": {
     "title": "novamem",
-    "version": "0.1.0",
+    "version": "1.1.7",
     "description": "Tiered memory service with hybrid search (keyword + vector + graph), per-user isolation, and project-scoped sub-brains.\n\n**Auth**: every authenticated route accepts either an `nm_…` user bearer (created from the dashboard's API Tokens page) or a Better Auth session cookie/bearer (set by `POST /api/auth/sign-in/email`). Both flow through the same auth hook and resolve to the same user. Better Auth's own routes are mounted at `/api/auth/*` — see the Better Auth documentation for their shapes.",
     "license": {
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     }
   },
-  "servers": [
-    {
-      "url": "/",
-      "description": "this server"
-    }
-  ],
   "components": {
     "securitySchemes": {
       "UserBearer": {
@@ -30,594 +24,63 @@
         "description": "Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax. Browsers attach it automatically."
       }
     },
-    "schemas": {
-      "SearchRequest": {
-        "type": "object",
-        "required": [
-          "query"
+    "schemas": {}
+  },
+  "paths": {
+    "/v1/auth/rotate-token": {
+      "post": {
+        "summary": "Self-rotate the caller's `nm_…` bearer (user mode only)",
+        "tags": [
+          "auth"
         ],
-        "properties": {
-          "query": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 8192
-          },
-          "k": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "namespace": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "agentName": {
-            "type": "string",
-            "maxLength": 128,
-            "nullable": true
-          },
-          "project": {
-            "type": "string",
-            "nullable": true,
-            "description": "Project id (ULID) or human name. Omit to use the active project, falling back to user-wide entries."
-          },
-          "includeProjects": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 16,
-            "description": "Active-project mode: union user-wide with the listed projects. Each entry may be an id or human name."
-          },
-          "includeNamespaces": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 16,
-            "description": "Cross-namespace search: union the result across these namespace shelves."
-          },
-          "weights": {
-            "type": "object",
-            "properties": {
-              "keyword": {
-                "type": "number"
-              },
-              "vector": {
-                "type": "number"
-              },
-              "graph": {
-                "type": "number"
-              }
-            }
+        "security": [
+          {
+            "UserBearer": []
           }
-        },
-        "example": {
-          "query": "coffee preference",
-          "k": 5,
-          "project": "Phoenix"
-        }
-      },
-      "SearchResult": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "score": {
-            "type": "number"
-          },
-          "content": {
-            "type": "string"
-          },
-          "tier": {
-            "type": "string",
-            "enum": [
-              "warm",
-              "cold"
-            ]
-          },
-          "namespace": {
-            "type": "string"
-          },
-          "project": {
-            "type": "string",
-            "nullable": true
-          },
-          "source": {
-            "type": "string"
-          },
-          "sourceType": {
-            "type": "string",
-            "nullable": true
-          },
-          "capturedFrom": {
-            "type": "string",
-            "nullable": true
-          },
-          "confidence": {
-            "type": "number"
-          },
-          "metadata": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "signals": {
-            "type": "object",
-            "properties": {
-              "keyword": {
-                "type": "number"
-              },
-              "vector": {
-                "type": "number"
-              },
-              "graph": {
-                "type": "number"
-              }
-            }
-          }
-        }
-      },
-      "SearchResponse": {
-        "type": "object",
-        "properties": {
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SearchResult"
-            }
-          },
-          "degraded": {
-            "type": "boolean",
-            "description": "True when the graph leg failed; results returned without graph signal."
-          }
-        }
-      },
-      "RememberRequest": {
-        "type": "object",
-        "required": [
-          "content"
         ],
-        "properties": {
-          "content": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 262144
-          },
-          "namespace": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "source": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "agentName": {
-            "type": "string",
-            "maxLength": 128,
-            "nullable": true
-          },
-          "project": {
-            "type": "string",
-            "nullable": true,
-            "description": "Project id or human name."
-          },
-          "metadata": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "sourceType": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "Open-string vocab: chat / email / code-review / doc / inference / observation / system / manual."
-          },
-          "capturedFrom": {
-            "type": "string",
-            "maxLength": 256
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "force": {
-            "type": "boolean",
-            "description": "Bypass the worthiness gate. Default false."
-          }
-        },
-        "example": {
-          "content": "User profile: Pascal Watteel lives in Singapore.",
-          "sourceType": "chat",
-          "capturedFrom": "claude-desktop",
-          "confidence": 0.95
-        }
-      },
-      "RememberResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "nullable": true,
-            "description": "ULID of the new entry, or null when rejected by the worthiness gate."
-          },
-          "rejected": {
-            "type": "string",
-            "description": "When set, explains why the gate refused the write."
-          },
-          "deduplicated": {
-            "type": "boolean",
-            "description": "True when an exact duplicate already existed; the response id is the existing entry's."
-          }
-        }
-      },
-      "UpdateMemoryRequest": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 262144,
-            "description": "Omit to update only metadata-side fields without re-embedding."
-          },
-          "namespace": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "metadata": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "sourceType": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "capturedFrom": {
-            "type": "string",
-            "maxLength": 256
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "project": {
-            "type": "string",
-            "nullable": true,
-            "description": "Scope check; must match the entry's project."
-          }
-        }
-      },
-      "UpdateMemoryResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "updated": {
-            "type": "boolean"
-          },
-          "embeddingChanged": {
-            "type": "boolean"
-          }
-        }
-      },
-      "RecentRequest": {
-        "type": "object",
-        "properties": {
-          "namespace": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "includeNamespaces": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 16
-          },
-          "k": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 200
-          },
-          "since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "project": {
-            "type": "string",
-            "nullable": true
-          },
-          "includeProjects": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 16
-          }
-        }
-      },
-      "NeighborsRequest": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "depth": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 3
-          },
-          "k": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
-          },
-          "project": {
-            "type": "string",
-            "nullable": true
-          },
-          "includeProjects": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 16
-          },
-          "includeNamespaces": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 16
-          }
-        }
-      },
-      "ForgetRequest": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "project": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "ForgetResponse": {
-        "type": "object",
-        "properties": {
-          "deleted": {
-            "type": "boolean"
-          },
-          "coldDeleteOk": {
-            "type": "boolean"
-          }
-        }
-      },
-      "DecayRequest": {
-        "type": "object",
-        "properties": {
-          "effectiveDays": {
-            "type": "number"
-          }
-        }
-      },
-      "DecayResponse": {
-        "type": "object",
-        "properties": {
-          "demoted": {
-            "type": "integer"
-          },
-          "promoted": {
-            "type": "integer"
-          }
-        }
-      },
-      "DreamCycleResponse": {
-        "type": "object",
-        "properties": {
-          "walked": {
-            "type": "integer"
-          },
-          "merged": {
-            "type": "integer"
-          },
-          "edgesPromoted": {
-            "type": "integer"
-          },
-          "durationMs": {
-            "type": "integer"
-          }
-        }
-      },
-      "Project": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "ULID, server-assigned."
-          },
-          "name": {
-            "type": "string"
-          },
-          "ownerUserId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "CreateProjectRequest": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          }
-        }
-      },
-      "AddMemberRequest": {
-        "type": "object",
-        "required": [
-          "username"
-        ],
-        "properties": {
-          "username": {
-            "type": "string",
-            "description": "Email or display name of the user to invite."
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "owner",
-              "member"
-            ]
-          }
-        }
-      },
-      "ActiveProjectRequest": {
-        "type": "object",
-        "required": [
-          "project"
-        ],
-        "properties": {
-          "project": {
-            "type": "string",
-            "description": "Project id or human name."
-          }
-        }
-      },
-      "ActiveProjectResponse": {
-        "type": "object",
-        "properties": {
-          "active": {
-            "type": "object",
-            "nullable": true,
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      },
-      "MintTokenRequest": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string",
-            "maxLength": 128
-          }
-        }
-      },
-      "MintTokenResponse": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "description": "Plaintext bearer (`nm_…`) — shown once. Server stores only the sha256 hash."
-          },
-          "userId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "warning": {
-            "type": "string"
-          }
-        }
-      },
-      "Health": {
-        "type": "object",
-        "description": "Public liveness probe shape. Boolean only — no infrastructure detail. For the dep-by-dep snapshot see `HealthDeep` returned by `/v1/admin/health/deep`.",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "ok"
-        ]
-      },
-      "HealthDeep": {
-        "type": "object",
-        "description": "Admin-only: per-dependency status snapshot.",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "deps": {
-            "type": "object",
-            "properties": {
-              "warm": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "unreachable"
-                ]
-              },
-              "cold": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "unreachable"
-                ]
-              },
-              "graph": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "unreachable",
-                  "disabled"
-                ]
-              }
-            }
-          }
-        },
-        "required": [
-          "ok",
-          "deps"
-        ]
-      },
-      "Error": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
-    }
-  },
-  "paths": {
-    "/v1/search": {
+    },
+    "/v1/adoption": {
       "post": {
+        "summary": "Client adoption and refresh diagnostics for MCP/tooling integrations",
         "tags": [
           "memory"
         ],
-        "summary": "Hybrid search across stored memories",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "client": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "observedTools": {
+                    "maxItems": 128,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "observedInstructionsHash": {
+                    "type": "string",
+                    "pattern": "^[a-fA-F0-9]{64}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "security": [
           {
             "UserBearer": []
@@ -626,109 +89,598 @@
             "SessionCookie": []
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/hygiene": {
+      "post": {
+        "summary": "Read-only memory hygiene report",
+        "tags": [
+          "memory"
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SearchRequest"
+                "type": "object",
+                "properties": {
+                  "k": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 100
+                  }
+                },
+                "additionalProperties": false
               }
             }
           }
         },
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
-                }
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/evaluate": {
+      "post": {
+        "summary": "Run built-in memory quality evaluation scenarios",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "suite": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "additionalProperties": false
               }
             }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
           },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "post": {
+        "summary": "Hybrid search (keyword + vector + graph) over the caller's memories",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "k": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 100
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "agentName": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "includeProjects": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "includeNamespaces": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "weights": {
+                    "type": "object",
+                    "properties": {
+                      "keyword": {
+                        "type": "number"
+                      },
+                      "vector": {
+                        "type": "number"
+                      },
+                      "graph": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "maxSensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  }
+                },
+                "required": [
+                  "query"
+                ]
               }
             }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
           },
-          "403": {
-            "description": "Not a member of the requested project",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/context": {
+      "post": {
+        "summary": "Get first-pass memory context for a user message",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "k": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 50
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "includeProjects": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "includeNamespaces": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "weights": {
+                    "type": "object",
+                    "properties": {
+                      "keyword": {
+                        "type": "number"
+                      },
+                      "vector": {
+                        "type": "number"
+                      },
+                      "graph": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "maxSensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  }
+                },
+                "required": [
+                  "message"
+                ]
               }
             }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
           },
-          "404": {
-            "description": "No such project",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/capture": {
+      "post": {
+        "summary": "Capture a durable memory fact with provenance defaults",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 262144
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "source": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "agentName": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "sensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "capturedFrom": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "force": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "content"
+                ]
               }
             }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/session-recap": {
+      "post": {
+        "summary": "Ingest a concise session recap as typed durable memories",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decisions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12,
+                      "maxLength": 4000
+                    }
+                  },
+                  "setupFacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12,
+                      "maxLength": 4000
+                    }
+                  },
+                  "rootCauses": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12,
+                      "maxLength": 4000
+                    }
+                  },
+                  "preferences": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12,
+                      "maxLength": 4000
+                    }
+                  },
+                  "projectConventions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12,
+                      "maxLength": 4000
+                    }
+                  },
+                  "safetyConstraints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12,
+                      "maxLength": 4000
+                    }
+                  },
+                  "other": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12,
+                      "maxLength": 4000
+                    }
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "capturedFrom": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "agentName": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "sensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/remember": {
       "post": {
-        "tags": [
-          "memory"
-        ],
         "summary": "Store a new memory entry",
-        "description": "Subject to the worthiness gate (rejects content < 12 chars or matching the conversational-filler regex unless `force: true`). Exact duplicates within the same scope return the existing id with `deduplicated: true`.",
-        "security": [
-          {
-            "UserBearer": []
-          },
-          {
-            "SessionCookie": []
-          }
+        "tags": [
+          "memory"
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RememberRequest"
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 262144
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "source": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "agentName": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "sensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "capturedFrom": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "force": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "content"
+                ]
               }
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "Either the new entry id, a dedup hit, or a worthiness-gate rejection.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RememberResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        }
-      }
-    },
-    "/v1/memories/{id}": {
-      "put": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "Rewrite an existing memory in place",
-        "description": "Preserves id, hit count, graph edges, and creation timestamp. Re-embeds the cold vector when `content` changes; skips the embedder when only metadata moves.",
         "security": [
           {
             "UserBearer": []
@@ -737,188 +689,137 @@
             "SessionCookie": []
           }
         ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateMemoryRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "Updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateMemoryResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such memory in the caller's scope"
-          }
-        }
-      }
-    },
-    "/v1/recent": {
-      "post": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "Newest entries, optionally filtered by namespace + since",
-        "security": [
-          {
-            "UserBearer": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecentRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/neighbors": {
-      "post": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "Graph-neighbour traversal from a seed memory id",
-        "security": [
-          {
-            "UserBearer": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NeighborsRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/forget": {
-      "post": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "Delete a memory entry across warm + FTS + cold + graph",
-        "security": [
-          {
-            "UserBearer": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ForgetRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ForgetResponse"
-                }
-              }
-            }
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/decay": {
       "post": {
+        "summary": "Trigger a decay sweep (admin only)",
         "tags": [
           "lifecycle"
         ],
-        "summary": "Run the demotion pass on demand",
-        "security": [
-          {
-            "UserBearer": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DecayRequest"
+                "type": "object",
+                "properties": {
+                  "effectiveDays": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  }
+                }
               }
             }
           }
         },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DecayResponse"
-                }
-              }
-            }
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/dream-cycle": {
       "post": {
+        "summary": "Trigger the dedup-merge + edge-promotion pass (admin only)",
         "tags": [
           "lifecycle"
         ],
-        "summary": "Run dedup-merge + edge-promotion compaction now",
-        "description": "The same logic runs daily on a timer. Manual trigger is useful after a bulk import or for testing. Cross-user — operates on whatever rows exist.",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/memories/{id}": {
+      "put": {
+        "summary": "Update a memory entry's content / metadata / namespace",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 262144
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "sensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "capturedFrom": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
         "security": [
           {
             "UserBearer": []
@@ -929,24 +830,95 @@
         ],
         "responses": {
           "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DreamCycleResponse"
-                }
-              }
-            }
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/reap-orphans": {
       "post": {
+        "summary": "Trigger the cold-orphan reaper (admin only)",
         "tags": [
           "lifecycle"
         ],
-        "summary": "Manually retry queued cold-store deletes",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/recent": {
+      "post": {
+        "summary": "List recent memories for the caller's scope",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "namespace": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "k": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 200
+                  },
+                  "since": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "includeProjects": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "includeNamespaces": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "maxSensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "security": [
           {
             "UserBearer": []
@@ -957,17 +929,150 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/neighbors": {
+      "post": {
+        "summary": "Graph-walk neighbours of a seed memory",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "depth": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 3
+                  },
+                  "k": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 50
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "includeProjects": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "includeNamespaces": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "maxSensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "private",
+                      "sensitive"
+                    ]
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/forget": {
+      "post": {
+        "summary": "Delete a memory entry by id",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/stats": {
       "get": {
+        "summary": "Per-user counts across warm/cold/graph",
         "tags": [
           "lifecycle"
         ],
-        "summary": "Per-namespace counts, last decay timestamp",
         "security": [
           {
             "UserBearer": []
@@ -978,415 +1083,17 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/auth/rotate-token": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Rotate the caller's nm_… bearer atomically",
-        "description": "Authed by the current bearer (sent as `Authorization: Bearer <current>`). Returns a new plaintext (shown once) and revokes the old. Only available in `user` auth mode.",
-        "security": [
-          {
-            "UserBearer": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "New bearer minted; old one revoked."
-          },
-          "401": {
-            "description": "Unauthorized — current bearer invalid or missing."
-          }
-        }
-      }
-    },
-    "/v1/me/active-project": {
-      "get": {
-        "tags": [
-          "self-service"
-        ],
-        "summary": "Read the caller's active project pointer",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActiveProjectResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "self-service"
-        ],
-        "summary": "Set the caller's active project",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ActiveProjectRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "403": {
-            "description": "Not a member of the requested project"
-          },
-          "404": {
-            "description": "No such project"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "self-service"
-        ],
-        "summary": "Clear the caller's active project",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Cleared"
-          }
-        }
-      }
-    },
-    "/v1/me/projects": {
-      "get": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "List projects the caller is a member of",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Create a project; caller becomes owner",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateProjectRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Project"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/me/projects/{id}": {
-      "delete": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Delete a project (owner only). Purges every memory in it.",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          },
-          "403": {
-            "description": "Caller is not the owner"
-          },
-          "404": {
-            "description": "No such project"
-          }
-        }
-      }
-    },
-    "/v1/me/projects/{id}/members": {
-      "get": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "List members of a project the caller can access",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Add a member by username (owner only)",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddMemberRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Added"
-          },
-          "403": {
-            "description": "Not the owner"
-          }
-        }
-      }
-    },
-    "/v1/me/projects/{id}/members/{userId}": {
-      "delete": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Remove a member. Owner removes anyone; member can leave themselves.",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Removed"
-          }
-        }
-      }
-    },
-    "/v1/me/tokens": {
-      "get": {
-        "tags": [
-          "tokens"
-        ],
-        "summary": "List the caller's nm_… bearers",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "tokens"
-        ],
-        "summary": "Mint a new nm_… bearer for the caller",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MintTokenRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MintTokenResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/me/tokens/{hash}": {
-      "delete": {
-        "tags": [
-          "tokens"
-        ],
-        "summary": "Hard-delete a bearer by sha256 hash",
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "UserBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/me/metrics": {
       "get": {
+        "summary": "Per-caller throughput + lifetime counters (admins get the global view)",
         "tags": [
           "metrics"
         ],
-        "summary": "Operational metrics scoped to the caller",
         "security": [
           {
             "SessionCookie": []
@@ -1397,17 +1104,29 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/me/metrics/history": {
       "get": {
+        "summary": "Rolling 1-48h sample history of queries + remembers",
         "tags": [
           "metrics"
         ],
-        "summary": "Persistent throughput history (1-min buckets)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 48
+            },
+            "in": "query",
+            "name": "hours",
+            "required": false
+          }
+        ],
         "security": [
           {
             "SessionCookie": []
@@ -1416,31 +1135,507 @@
             "UserBearer": []
           }
         ],
-        "parameters": [
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/tokens": {
+      "get": {
+        "summary": "List the caller's API tokens",
+        "tags": [
+          "tokens"
+        ],
+        "security": [
           {
-            "name": "hours",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 48,
-              "default": 24
-            }
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Mint a new `nm_…` API token for the caller",
+        "tags": [
+          "tokens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/tokens/{hash}": {
+      "delete": {
+        "summary": "Hard-delete a token by its sha256 hash",
+        "tags": [
+          "tokens"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "in": "path",
+            "name": "hash",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/projects": {
+      "get": {
+        "summary": "List projects the caller owns or is a member of",
+        "tags": [
+          "projects"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a project (sub-brain)",
+        "tags": [
+          "projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/projects/{id}": {
+      "delete": {
+        "summary": "Delete a project (owner only)",
+        "tags": [
+          "projects"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/projects/{id}/members": {
+      "get": {
+        "summary": "List members of a project (member-only)",
+        "tags": [
+          "projects"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Invite a user (by exact email) to a project (owner only)",
+        "tags": [
+          "projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "owner",
+                      "member"
+                    ]
+                  }
+                },
+                "required": [
+                  "username"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/projects/{id}/members/{userId}": {
+      "delete": {
+        "summary": "Remove a member from a project (owner can remove anyone; members can leave)",
+        "tags": [
+          "projects"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "userId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/active-project": {
+      "get": {
+        "summary": "Get the caller's active project (or null)",
+        "tags": [
+          "self-service"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the caller's active project",
+        "tags": [
+          "self-service"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "project"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear the caller's active project",
+        "tags": [
+          "self-service"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/today": {
+      "get": {
+        "summary": "Lightweight cross-table activity feed for the user dashboard",
+        "tags": [
+          "self-service"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/me/onboarding": {
+      "get": {
+        "summary": "Derived onboarding state for the welcome wizard",
+        "tags": [
+          "self-service"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/admin/tokens/revoke": {
+      "post": {
+        "summary": "Revoke a user bearer by plaintext token",
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/admin/audit-log": {
       "get": {
+        "summary": "Tail the audit log",
         "tags": [
           "admin"
         ],
-        "summary": "All admin actions, newest first",
+        "parameters": [
+          {
+            "schema": {
+              "default": 200,
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "maximum": 500
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
         "security": [
           {
             "SessionCookie": []
@@ -1448,20 +1643,17 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
-          },
-          "401": {
-            "description": "Unauthorized — requires role=admin"
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/admin/metrics": {
       "get": {
+        "summary": "Global metrics snapshot (JSON)",
         "tags": [
           "admin"
         ],
-        "summary": "Global operational metrics snapshot (in-process; resets on restart)",
         "security": [
           {
             "SessionCookie": []
@@ -1469,17 +1661,17 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "Default Response"
           }
         }
       }
     },
     "/v1/admin/metrics/prom": {
       "get": {
+        "summary": "Same metrics in Prometheus exposition format",
         "tags": [
           "admin"
         ],
-        "summary": "Same as /v1/admin/metrics in Prometheus exposition format",
         "security": [
           {
             "SessionCookie": []
@@ -1487,40 +1679,131 @@
         ],
         "responses": {
           "200": {
-            "description": "text/plain; version=0.0.4"
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/mcp/sse": {
+      "get": {
+        "summary": "Legacy MCP SSE transport (2024-11-05) — open the event stream",
+        "tags": [
+          "mcp"
+        ],
+        "description": "Opens the long-lived SSE event stream for the legacy two-endpoint MCP transport. Clients then POST JSON-RPC requests to `/mcp/messages?sessionId=<id>`. New integrations should prefer `/mcp` (Streamable HTTP).",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/mcp/messages": {
+      "post": {
+        "summary": "Legacy MCP SSE transport — submit a JSON-RPC request",
+        "tags": [
+          "mcp"
+        ],
+        "description": "Submit a JSON-RPC request on a session opened via `/mcp/sse`. The JSON-RPC response is delivered on the SSE channel, not in this response body.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "summary": "MCP Streamable HTTP transport (2025-03-26+)",
+        "tags": [
+          "mcp"
+        ],
+        "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "get": {
+        "summary": "MCP Streamable HTTP transport (2025-03-26+)",
+        "tags": [
+          "mcp"
+        ],
+        "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "MCP Streamable HTTP transport (2025-03-26+)",
+        "tags": [
+          "mcp"
+        ],
+        "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
     },
     "/health": {
       "get": {
+        "summary": "Liveness probe — boolean only (no infrastructure detail)",
         "tags": [
           "liveness"
         ],
-        "summary": "Liveness probe — boolean only (no infrastructure detail)",
         "responses": {
           "200": {
-            "description": "Up",
+            "description": "Default Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Health"
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
           "503": {
-            "description": "A dependency is unreachable"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
     },
     "/v1/admin/health/deep": {
       "get": {
+        "summary": "Admin-only dependency snapshot (warm/cold/graph status)",
         "tags": [
           "admin"
         ],
-        "summary": "Admin-only dependency snapshot (warm/cold/graph status)",
         "security": [
           {
             "SessionCookie": []
@@ -1528,22 +1811,140 @@
         ],
         "responses": {
           "200": {
-            "description": "Up",
+            "description": "Default Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthDeep"
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "deps": {
+                      "type": "object",
+                      "properties": {
+                        "warm": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable"
+                          ]
+                        },
+                        "cold": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable"
+                          ]
+                        },
+                        "graph": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable",
+                            "disabled"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "warm",
+                        "cold",
+                        "graph"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "deps"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
           "503": {
-            "description": "A dependency is unreachable"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "deps": {
+                      "type": "object",
+                      "properties": {
+                        "warm": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable"
+                          ]
+                        },
+                        "cold": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable"
+                          ]
+                        },
+                        "graph": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "unreachable",
+                            "disabled"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "warm",
+                        "cold",
+                        "graph"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "deps"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
     }
   },
+  "servers": [
+    {
+      "url": "/",
+      "description": "this server"
+    }
+  ],
   "tags": [
     {
       "name": "memory",
@@ -1576,6 +1977,10 @@
     {
       "name": "admin",
       "description": "Admin-only endpoints (role=admin)"
+    },
+    {
+      "name": "mcp",
+      "description": "Model Context Protocol transports (Streamable HTTP + legacy SSE)"
     },
     {
       "name": "liveness",

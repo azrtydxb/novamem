@@ -19,7 +19,7 @@ Each dashboard user owns their user-global memory. Data-plane requests authentic
 
 ## Projects
 
-Projects are shareable sub-brains. Owners create, delete, share, and unshare projects through `/v1/projects/*` or the `/v1/me/projects/*` dashboard mirrors. Memory requests can pass `project` by id or name to read/write a project the caller can access.
+Projects are shareable sub-brains. Owners create, delete, share, and unshare projects through `/v1/me/projects/*` (or the equivalent MCP project tools). Memory requests can pass `project` by id or name to read/write a project the caller can access.
 
 ## API tokens
 

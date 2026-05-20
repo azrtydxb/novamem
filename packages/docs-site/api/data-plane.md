@@ -185,13 +185,12 @@ Hard delete.
 
 Cascades: warm row + FTS shadow + cold vector + graph node + edges. Returns `{ deleted, coldDeleteOk }`. Idempotent — second call returns `{deleted: false}`.
 
-## `POST /v1/update`
+## `PUT /v1/memories/{id}`
 
-In-place rewrite. Preserves id, hits, edges, creation date. Re-embeds content if `content` is provided.
+In-place rewrite. The id is supplied in the URL path. Preserves id, hits, edges, creation date. Re-embeds content if `content` is provided.
 
 ```json
 {
-  "id": "ULID, required",
   "content": "new content (optional — omit to update only metadata)",
   "namespace": "...",
   "metadata": {},

@@ -25,8 +25,8 @@ import { NovamemClient } from "../src/index.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const openapiPath = resolve(here, "../../../docs/api/openapi.json");
 const openapi = JSON.parse(readFileSync(openapiPath, "utf8")) as {
-  paths: Record<string, Record<string, unknown>>;
-  components: { schemas: Record<string, { properties?: Record<string, unknown>; required?: string[] }> };
+  paths: Record<string, Record<string, any>>;
+  components?: { schemas?: Record<string, { properties?: Record<string, unknown>; required?: string[] }> };
 };
 
 interface CapturedCall {
@@ -84,7 +84,7 @@ describe("client contract: wire path + method match openapi.json", () => {
   });
 
   it("health() response shape is { ok } only — no deps (#50)", () => {
-    const schema = openapi.components.schemas.Health;
+    const schema = openapi.paths["/health"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema;
     expect(schema).toBeDefined();
     expect(Object.keys(schema.properties ?? {})).toEqual(["ok"]);
     expect(schema.required).toEqual(["ok"]);

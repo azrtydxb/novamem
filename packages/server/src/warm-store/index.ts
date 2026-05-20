@@ -1097,8 +1097,8 @@ export class WarmStore {
    *  The previous magic-string `"*"` bypass was removed; there is no
    *  way for an external caller to disable both checks. */
   /** Return the entry's `user_id` and `project_id` by id alone — no
-   *  scope filter. Used by /v1/me/forget to recheck the actual project
-   *  membership before deletion (the regular `getEntry` filters by the
+   *  scope filter. Used by forget/update paths to recheck the actual project
+   *  membership before mutation (the regular `getEntry` filters by the
    *  caller-supplied scope, which an attacker can game by passing null). */
   async getEntryScope(id: string): Promise<{ userId: string; projectId: string | null } | undefined> {
     const [row] = await this.db

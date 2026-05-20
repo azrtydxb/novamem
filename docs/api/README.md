@@ -1,6 +1,6 @@
 # API reference
 
-The HTTP API is fully described by an **OpenAPI 3.0 spec**. The spec is **hand-rolled** in [`packages/server/src/openapi.ts`](../../packages/server/src/openapi.ts) (not derived from the route Zod schemas) and emitted as a static artefact next to this file:
+The HTTP API is fully described by an **OpenAPI 3.0 spec**. The live spec is generated dynamically from Fastify route schemas (`schema` + Zod via `fastify-type-provider-zod`) and exposed by the server at `/openapi.json`. A static copy is committed next to this file for offline/reference use:
 
 - [`openapi.json`](openapi.json) — committed, regenerated via `pnpm docs:api`
 
@@ -15,13 +15,13 @@ The dashboard sidebar links straight to it.
 
 ## Regenerating the static spec
 
-`openapi.json` is the generated artefact; the spec source is the hand-rolled `openapiSpec()` in `packages/server/src/openapi.ts`. To refresh `openapi.json` after editing the spec source or adding routes:
+`openapi.json` is the generated artefact. To refresh it after editing route schemas or adding routes:
 
 ```bash
 pnpm docs:api
 ```
 
-Behind the scenes that builds `@azrtydxb/novamem-server` and runs `packages/server/scripts/gen-openapi.mjs`, which imports `openapiSpec()` from `packages/server/src/openapi.ts` and writes JSON to `docs/api/openapi.json`.
+Behind the scenes that builds `@azrtydxb/novamem-server`, starts the Fastify app in-process, reads `app.swagger()`, and writes JSON to `docs/api/openapi.json`.
 
 ## Surface at a glance
 
@@ -63,7 +63,7 @@ For TypeScript, the [`@azrtydxb/novamem`](../../packages/client) package is alre
 
 ## MCP vs HTTP
 
-Every MCP tool maps to an HTTP route — they're the same engine behind the scenes. Reach for HTTP when:
+Most MCP tools map to the same engine operations as HTTP routes. Project lifecycle, adoption, hygiene, and evaluation diagnostics also have HTTP or dashboard-adjacent surfaces where applicable. Reach for HTTP when:
 
 - You're scripting against the server from a non-MCP runtime (CI job, cron, custom CLI)
 - You need streaming (`/mcp/sse` is the only streaming transport — HTTP is request/response)
