@@ -99,9 +99,11 @@ export const SessionRecapBody = z.object({
   sensitivity: SensitivityRule.optional(),
 }).strict();
 
+export const MAX_SEARCH_K = 200;
+
 export const SearchBody = z.object({
   query: z.string().min(1).max(8 * 1024),
-  k: z.number().int().positive().max(100).optional(),
+  k: z.number().int().positive().max(MAX_SEARCH_K).optional(),
   namespace: z.string().max(128).optional(),
   agentName: z.string().max(128).optional().nullable(),
   project: ProjectRefRule.optional().nullable(),

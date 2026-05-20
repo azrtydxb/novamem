@@ -276,6 +276,16 @@ describe("http: /v1/search", () => {
     });
     expect(r.statusCode).toBe(200);
   });
+
+  it("accepts k=200 so external benchmarks can report top_200", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/search",
+      payload: { query: "benchmark comparable recall", k: 200 },
+    });
+    expect(r.statusCode).toBe(200);
+  });
 });
 
 describe("http: /v1/recent + /v1/forget", () => {

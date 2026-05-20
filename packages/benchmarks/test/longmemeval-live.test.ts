@@ -9,9 +9,12 @@ import {
 import { createLocalVllmClient } from "../src/local-vllm.js";
 
 describe("LongMemEval live runner helpers", () => {
-  it("rejects NovaMem top-k cutoffs above the current /v1/search limit", () => {
+  it("accepts top_200 once NovaMem search is configured for benchmark comparability", () => {
+    expect(normalizeLongMemEvalCutoffs([10, 20, 50, 200])).toEqual([10, 20, 50, 200]);
+  });
+
+  it("still rejects cutoffs above the configured NovaMem search limit", () => {
     expect(() => normalizeLongMemEvalCutoffs([10, 20, 50, 200], 100)).toThrow(/top_200.*k <= 100/);
-    expect(normalizeLongMemEvalCutoffs([10, 20, 50], 100)).toEqual([10, 20, 50]);
   });
 
   it("chunks sessions into small user/assistant pairs for direct remember ingestion", () => {

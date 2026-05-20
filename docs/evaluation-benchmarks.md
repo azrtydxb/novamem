@@ -131,7 +131,7 @@ For NovaMem-vs-public LongMemEval comparisons:
 
 - Use the local OpenAI-compatible vLLM endpoint explicitly: `http://192.168.10.246:8888/v1` with model `qwen3.6-35b`.
 - Record that answerer and judge are `qwen3.6-35b`; do not label those scores as GPT-5/Gemini judged.
-- Current NovaMem `/v1/search` validates `k <= 100`, so `top_200` is unavailable unless the API limit or retrieval path is changed first.
+- Current NovaMem `/v1/search` accepts `k <= 200`, matching LongMemEval/Mem0 `top_200` reporting.
 - Full whole-session `/v1/remember` can fail on very large LongMemEval sessions. Use chunked user/assistant-pair ingestion for direct benchmark storage.
 - Do not over-truncate retrieved LongMemEval memories. The known first question's answer (`Business Administration`) appears late enough in the retrieved session that small per-memory truncation gives a false failure.
 - `capture` mode exercises the agent-facing extraction path but is much slower; use it for smaller correctness pilots before a full run.

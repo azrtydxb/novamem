@@ -16,7 +16,7 @@ export interface LongMemEvalMemoryResult {
   created_at?: string;
 }
 
-export function normalizeLongMemEvalCutoffs(cutoffs: number[], maxNovaMemK = 100): number[] {
+export function normalizeLongMemEvalCutoffs(cutoffs: number[], maxNovaMemK = 200): number[] {
   const unique = [...new Set(cutoffs)].sort((a, b) => a - b);
   const tooLarge = unique.filter((k) => k > maxNovaMemK);
   if (tooLarge.length > 0) {

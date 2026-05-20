@@ -56,7 +56,7 @@ Do not compare tiny-fixture Recall@5 smoke numbers with public leaderboards. To 
 
 - Local vLLM endpoint: `http://192.168.10.246:8888/v1`, model `qwen3.6-35b`.
 - Label answerer/judge as `qwen3.6-35b`; do not present those as GPT-5/Gemini judged scores.
-- NovaMem `/v1/search` currently enforces `k <= 100`; do not report `top_200` until the API limit or retrieval path is changed.
+- NovaMem `/v1/search` accepts `k <= 200`, matching LongMemEval/Mem0 `top_200` reporting.
 - Use chunked user/assistant-pair ingestion for direct LongMemEval benchmark storage; whole-session `/v1/remember` can fail on large sessions.
 - Keep enough retrieved-memory text for answer generation; aggressive truncation caused a false failure on the first LongMemEval question.
 
