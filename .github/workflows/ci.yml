@@ -26,8 +26,8 @@ env:
 
 jobs:
   # ── Native test matrix ────────────────────────────────────────────────
-  # One job per architecture, each on a native GitHub-hosted runner — no
-  # QEMU, no cross-compile. fail-fast:false so an arm64 failure doesn't
+  # One job per architecture, each on a native runner — amd64 on GitHub-hosted,
+  # arm64 on the KW ARC runner. No QEMU, no cross-compile. fail-fast:false so an arm64 failure doesn't
   # cancel amd64 (and vice versa); each shows as its own status check.
   test:
     name: test (${{ matrix.arch }})
@@ -39,7 +39,7 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: arc-azrtydxb
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -112,8 +112,8 @@ jobs:
           retention-days: 14
 
   # ── Docker image (native per arch) ────────────────────────────────────
-  # Each arch builds on its own native runner — no buildx --platform with
-  # QEMU. Trivy gates the build before it gets pushed; only main-branch
+  # Each arch builds on its own native runner — amd64 on GitHub-hosted,
+  # arm64 on KW ARC. No buildx --platform with QEMU. Trivy gates the build before it gets pushed; only main-branch
   # pushes (not PRs) end up in ghcr.io. fail-fast:false so the two arches
   # fail independently. needs:[test] gates on a green test run.
   docker:
@@ -127,7 +127,7 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: arc-azrtydxb
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6

@@ -57,8 +57,44 @@ Do not compare tiny-fixture Recall@5 smoke numbers with public leaderboards. To 
 - Local vLLM endpoint: `http://192.168.10.246:8888/v1`, model `qwen3.6-35b`.
 - Label answerer/judge as `qwen3.6-35b`; do not present those as GPT-5/Gemini judged scores.
 - NovaMem `/v1/search` accepts `k <= 200`, matching LongMemEval/Mem0 `top_200` reporting.
-- Use chunked user/assistant-pair ingestion for direct LongMemEval benchmark storage; whole-session `/v1/remember` can fail on large sessions.
-- Keep enough retrieved-memory text for answer generation; aggressive truncation caused a false failure on the first LongMemEval question.
+- Use chunked `/v1/remember` user/assistant-pair ingestion for direct LongMemEval benchmark storage. This is NovaMem's closest equivalent to Mem0 `add()` for this benchmark shape.
+- Do **not** use `/v1/capture` for public-comparable LongMemEval runs. Capture performs semantic read-before-write dedupe/supersession logic on every chunk, which Mem0's benchmark runner does not do at the harness layer.
+
+### Mem0-style concurrent LongMemEval runner
+
+Use `packages/benchmarks/scripts/novamem_longmemeval_comparable_runner.py` for public-shape LongMemEval runs against live NovaMem.
+
+It supports:
+
+- `--max-workers N` for question-level concurrency. Start with 5; Mem0 defaults to 10.
+- isolated per-question namespaces inside a disposable project.
+- per-question checkpoints under `<out-dir>/questions/`.
+- `--predict-only` for ingest + search only.
+- `--evaluate-only` for answerer/judge from saved retrieval checkpoints only.
+- `--rejudge` to regenerate judged cutoff results.
+
+Example:
+
+```bash
+DATA=/home/piwi/.cache/huggingface/hub/datasets--xiaowu0162--longmemeval-cleaned/snapshots/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json
+OUT=/tmp/novamem_lme_full_$(date +%Y%m%d%H%M%S)
+
+python3 -u packages/benchmarks/scripts/novamem_longmemeval_comparable_runner.py \
+  --dataset "$DATA" \
+  --out-dir "$OUT" \
+  --limit 500 \
+  --cutoffs 10,20,50,200 \
+  --max-workers 5 \
+  --predict-only
+
+python3 -u packages/benchmarks/scripts/novamem_longmemeval_comparable_runner.py \
+  --dataset "$DATA" \
+  --out-dir "$OUT" \
+  --limit 500 \
+  --cutoffs 10,20,50,200 \
+  --max-workers 5 \
+  --evaluate-only
+```
 
 ## External adapters
 

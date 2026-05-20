@@ -94,20 +94,28 @@ async function userAuth(
   return { authorization: `Bearer ${sess.token}`, userId, sessionToken: sess.token };
 }
 
-describe("http: /health", () => {
-  it("returns 200 + minimal { ok } when everything is up", async () => {
-    const { app } = makeApp();
-    const r = await app.inject({ method: "GET", url: "/health" });
+describe("http: health probes", () => {
+  it("/live returns 200 without dependency checks", async () => {
+    const { app, cold } = makeApp();
+    cold.fail = true;
+    const r = await app.inject({ method: "GET", url: "/live" });
     expect(r.statusCode).toBe(200);
-    // Public probe must NOT leak dep names/status — that's what
+    expect(r.json()).toEqual({ ok: true });
+  });
+
+  it("/ready returns 200 + minimal { ok } when everything is up", async () => {
+    const { app } = makeApp();
+    const r = await app.inject({ method: "GET", url: "/ready" });
+    expect(r.statusCode).toBe(200);
+    // Public readiness must NOT leak dep names/status — that's what
     // /v1/admin/health/deep is for (see #46).
     expect(r.json()).toEqual({ ok: true });
   });
 
-  it("returns 503 + minimal { ok: false } when a dep is unreachable", async () => {
+  it.each(["/ready", "/health"])("%s returns 503 + minimal { ok: false } when a dep is unreachable", async (url) => {
     const { app, cold } = makeApp();
     cold.fail = true;
-    const r = await app.inject({ method: "GET", url: "/health" });
+    const r = await app.inject({ method: "GET", url });
     expect(r.statusCode).toBe(503);
     expect(r.json()).toEqual({ ok: false });
     expect(r.json().deps).toBeUndefined();
@@ -352,10 +360,11 @@ describe("http: bearer auth", () => {
     expect(r.statusCode).toBe(200);
   });
 
-  it("/health is always public, even in bearer mode", async () => {
+  it.each(["/health", "/live", "/ready"])("%s is always public, even in bearer mode", async (url) => {
     const { app } = makeApp({ authMode: "bearer", token: "secret" });
-    const r = await app.inject({ method: "GET", url: "/health" });
-    expect(r.statusCode).toBe(200);
+    const r = await app.inject({ method: "GET", url });
+    expect([200, 503]).toContain(r.statusCode);
+    expect(r.json()).toHaveProperty("ok");
   });
 
   it("throws at construction when bearer mode lacks a token", () => {

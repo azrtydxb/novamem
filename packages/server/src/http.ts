@@ -392,7 +392,7 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     max: opts.rateLimitPerMinute ?? 600,
     timeWindow: "1 minute",
     skipOnError: true,
-    allowList: (req) => req.url === "/health",
+    allowList: (req) => req.url === "/health" || req.url === "/live" || req.url === "/ready",
   });
 
   // ─── Per-account auth-attempt limiter ───────────────────────────────
@@ -458,6 +458,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   app.addHook("onRequest", async (req, reply) => {
     if (
       req.url === "/health" ||
+      req.url === "/live" ||
+      req.url === "/ready" ||
       req.url === "/favicon.ico" ||
       req.url === "/openapi.json" ||
       req.url === "/api-docs" ||
@@ -701,28 +703,47 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
     registerMcpSse(instance, ctx);
     registerMcpStreamable(instance, ctx);
 
-    // Public liveness/readiness probe. Exposes only `{ ok }` so an
-    // unauthenticated caller cannot fingerprint the dep stack (Postgres,
-    // Qdrant, FalkorDB) or read connection error details (#46). K8s probes
-    // only need the boolean. Operators who want the per-dep snapshot
-    // should hit /v1/admin/health/deep with a session-admin bearer.
+    // Public probes. /live is process-only liveness and must not touch
+    // dependencies; otherwise a slow Qdrant/Postgres/FalkorDB can cause
+    // Kubernetes to restart a healthy API process during load. /ready and
+    // the backwards-compatible /health route perform dependency readiness
+    // checks but expose only `{ ok }`. Operators who want the per-dep
+    // snapshot should hit /v1/admin/health/deep with a session-admin bearer.
     instance.get(
-      "/health",
+      "/live",
       {
         schema: {
           tags: ["liveness"],
-          summary: "Liveness probe — boolean only (no infrastructure detail)",
-          response: {
-            200: z.object({ ok: z.boolean() }),
-            503: z.object({ ok: z.boolean() }),
-          },
+          summary: "Liveness probe — process only, no dependency checks",
+          response: { 200: z.object({ ok: z.boolean() }) },
         },
       },
       async (_req, reply) => {
-        const h = await opts.engine.health();
-        reply.code(h.ok ? 200 : 503).send({ ok: h.ok });
+        reply.code(200).send({ ok: true });
       },
     );
+
+    const readinessHandler = async (_req: unknown, reply: FastifyReply) => {
+      const h = await opts.engine.health();
+      reply.code(h.ok ? 200 : 503).send({ ok: h.ok });
+    };
+
+    for (const path of ["/ready", "/health"] as const) {
+      instance.get(
+        path,
+        {
+          schema: {
+            tags: ["readiness"],
+            summary: "Readiness probe — dependency checks, boolean only",
+            response: {
+              200: z.object({ ok: z.boolean() }),
+              503: z.object({ ok: z.boolean() }),
+            },
+          },
+        },
+        readinessHandler,
+      );
+    }
 
     // Admin-gated deep health: full per-dependency snapshot.
     instance.get(

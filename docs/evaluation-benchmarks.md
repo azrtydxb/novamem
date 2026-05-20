@@ -132,9 +132,44 @@ For NovaMem-vs-public LongMemEval comparisons:
 - Use the local OpenAI-compatible vLLM endpoint explicitly: `http://192.168.10.246:8888/v1` with model `qwen3.6-35b`.
 - Record that answerer and judge are `qwen3.6-35b`; do not label those scores as GPT-5/Gemini judged.
 - Current NovaMem `/v1/search` accepts `k <= 200`, matching LongMemEval/Mem0 `top_200` reporting.
-- Full whole-session `/v1/remember` can fail on very large LongMemEval sessions. Use chunked user/assistant-pair ingestion for direct benchmark storage.
-- Do not over-truncate retrieved LongMemEval memories. The known first question's answer (`Business Administration`) appears late enough in the retrieved session that small per-memory truncation gives a false failure.
-- `capture` mode exercises the agent-facing extraction path but is much slower; use it for smaller correctness pilots before a full run.
+- Use chunked `/v1/remember` user/assistant-pair ingestion for direct LongMemEval benchmark storage. This is NovaMem's closest equivalent to Mem0 `add()` for this benchmark shape.
+- Do **not** use `/v1/capture` for public-comparable LongMemEval runs. Capture performs semantic read-before-write dedupe/supersession logic on every chunk, which Mem0's benchmark runner does not do at the harness layer.
+
+### Mem0-style concurrent LongMemEval runner
+
+The external Python runner at `packages/benchmarks/scripts/novamem_longmemeval_comparable_runner.py` mirrors the Mem0 `memory-benchmarks` execution shape more closely than the first serial pilot:
+
+- `--max-workers N` runs questions concurrently. Start at `--max-workers 5`; Mem0 defaults to 10, but NovaMem/vLLM capacity should be increased only after a successful pilot.
+- Each question uses an isolated namespace in a disposable benchmark project, avoiding leakage between questions while keeping cleanup simple.
+- Per-question checkpoints are written under `<out-dir>/questions/<question_id>.json`, so interrupted runs can resume and partial work survives crashes.
+- `--predict-only` performs ingest + `/v1/search` only and stores retrieved `top_k` memories in the checkpoint.
+- `--evaluate-only` performs answerer/judge evaluation from those checkpoints only; it does not call NovaMem.
+- `--rejudge` forces answerer/judge regeneration when checkpointed cutoff results already exist.
+
+Example split run:
+
+```bash
+DATA=/home/piwi/.cache/huggingface/hub/datasets--xiaowu0162--longmemeval-cleaned/snapshots/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json
+OUT=/tmp/novamem_lme_full_$(date +%Y%m%d%H%M%S)
+
+python3 -u packages/benchmarks/scripts/novamem_longmemeval_comparable_runner.py \
+  --dataset "$DATA" \
+  --out-dir "$OUT" \
+  --limit 500 \
+  --cutoffs 10,20,50,200 \
+  --max-workers 5 \
+  --predict-only
+
+python3 -u packages/benchmarks/scripts/novamem_longmemeval_comparable_runner.py \
+  --dataset "$DATA" \
+  --out-dir "$OUT" \
+  --limit 500 \
+  --cutoffs 10,20,50,200 \
+  --max-workers 5 \
+  --evaluate-only
+```
+
+If a run crashes before cleanup, read `<out-dir>/state.json` and delete the recorded disposable project via `DELETE /v1/me/projects/<project>`.
 
 ## External benchmark adapters
 
