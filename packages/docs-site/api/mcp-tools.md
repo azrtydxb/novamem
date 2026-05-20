@@ -4,7 +4,7 @@ title: MCP tools
 
 # MCP tools
 
-novamem advertises 20 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for the three transports the server exposes (Streamable HTTP, legacy SSE, and the stdio-shim bridge).
+novamem advertises 21 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for the three transports the server exposes (Streamable HTTP, legacy SSE, and the stdio-shim bridge).
 
 ## Memory tools
 
@@ -16,6 +16,7 @@ novamem advertises 20 tools via the Model Context Protocol. The same shapes live
 | `memory_session_recap` | Batch ingest curated end-of-session recap items as typed durable memories. |
 | `memory_hygiene` | Read-only curation report: low-value, stale, duplicate, contradiction, and orphan candidates. |
 | `memory_evaluate` | Built-in memory-quality evaluation scenarios. |
+| `memory_adoption` | Read-only client adoption report: current tool surface, instructions hash, feature flags, diagnostics, and refresh guidance. |
 | `memory_remember` | Raw write of a new entry. Worthiness gate + exact SHA dedup applied. |
 | `memory_recent` | Newest-first feed. Optional `since` window. |
 | `memory_today` | Convenience wrapper around `recent` with a 24 h `since`. |

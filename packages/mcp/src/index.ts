@@ -214,6 +214,19 @@ const TOOL_DEFINITIONS = [
       properties: { suite: { type: "string" } },
     },
   },
+
+  {
+    name: "memory_adoption",
+    description: "Read-only client adoption report with current tool surface, instructions hash, feature flags, diagnostics, and refresh guidance.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        client: { type: "string" },
+        observedTools: { type: "array", items: { type: "string" } },
+        observedInstructionsHash: { type: "string" },
+      },
+    },
+  },
   {
     name: "memory_search",
     description:
@@ -593,6 +606,17 @@ export function buildRemoteMcpServer(
           const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
           const token = opts.token ?? process.env.NOVAMEM_TOKEN;
           const r = await rawPost(baseUrl, token, "/v1/evaluate", { suite: optStr(args.suite) });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+
+        case "memory_adoption": {
+          const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
+          const token = opts.token ?? process.env.NOVAMEM_TOKEN;
+          const r = await rawPost(baseUrl, token, "/v1/adoption", {
+            client: optStr(args.client),
+            observedTools: optStrArray(args.observedTools),
+            observedInstructionsHash: optStr(args.observedInstructionsHash),
+          });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "memory_search": {

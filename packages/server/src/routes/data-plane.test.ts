@@ -111,6 +111,24 @@ describe("data-plane: capture/session-recap route shapes", () => {
   });
 });
 
+
+  it("/v1/adoption returns client refresh guidance and current tool manifest", async () => {
+    const { app, warm } = makeApp();
+    try {
+      const headers = await userSession(warm, "user");
+      const r = await app.inject({ method: "POST", url: "/v1/adoption", headers, payload: { client: "hermes" } });
+      expect(r.statusCode).toBe(200);
+      const body = r.json();
+      expect(body.server.name).toBe("novamem");
+      expect(body.mcp.toolCount).toBeGreaterThanOrEqual(21);
+      expect(body.mcp.tools).toContain("memory_adoption");
+      expect(body.refresh.hermes.commands).toContain("/reload-mcp");
+      expect(body.diagnostics.some((d: { check: string }) => d.check === "tool_surface")).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
 describe("data-plane: admin-only gates (issue #45)", () => {
   it("/v1/dream-cycle returns 403 for non-admin users", async () => {
     const { app, warm } = makeApp();

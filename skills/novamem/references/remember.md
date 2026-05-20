@@ -129,3 +129,5 @@ Recall defaults to `maxSensitivity: "private"`, hiding `sensitive` memories from
 Use `memory_hygiene` when debugging memory quality or preparing curation. It reports a `summary` count block plus low-value entries, stale current-state facts, duplicate clusters, contradiction candidates, and orphan candidates. It is read-only.
 
 Use `memory_evaluate` to run the built-in quality harness. It returns top-level `passed`, a `summary`, detailed `cases`, and a `checks` alias for callers that expect check-oriented wording. The core suite checks supersession, context-pack grouping, junk rejection, hygiene availability, and retention policy wiring.
+
+Use `memory_adoption` when a client may not have picked up the latest MCP tools or instructions. It returns the current tool count/names, instructions hash, feature flags, and client-specific refresh guidance. For Hermes, run `/reload-mcp`, `/reload-skills`, then `/reset` or start a fresh session.

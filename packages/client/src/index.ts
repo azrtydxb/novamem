@@ -127,6 +127,22 @@ export interface RememberResponse {
   id: string;
 }
 
+export interface AdoptionRequest {
+  client?: string;
+  observedTools?: string[];
+  observedInstructionsHash?: string;
+}
+
+export interface AdoptionResponse {
+  server: { name: string; adoptionSchema: number };
+  mcp: { toolCount: number; tools: string[]; instructionsHash: string; instructionsPreview: string; listChanged: boolean };
+  requiredTools: string[];
+  features: Record<string, boolean>;
+  refresh: Record<string, { commands: string[]; requiresNewSession: boolean; note: string }>;
+  requestedClient: string;
+  diagnostics: Array<{ check: string; ok: boolean; action: string; [key: string]: unknown }>;
+}
+
 export interface HygieneResponse {
   lowValue: unknown[];
   stale: unknown[];
@@ -256,6 +272,10 @@ export class NovamemClient {
 
   async evaluate(req: { suite?: string } = {}): Promise<EvaluateResponse> {
     return this.request<EvaluateResponse>("/v1/evaluate", { method: "POST", body: req });
+  }
+
+  async adoption(req: AdoptionRequest = {}): Promise<AdoptionResponse> {
+    return this.request<AdoptionResponse>("/v1/adoption", { method: "POST", body: req });
   }
 
   async capture(req: RememberRequest): Promise<CaptureResponse> {

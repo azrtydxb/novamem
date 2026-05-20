@@ -111,3 +111,8 @@ See the main repo for the full API + dashboard documentation.
 ### Sensitivity levels
 
 Write calls accept `sensitivity: "public" | "internal" | "private" | "sensitive"`; recall calls accept `maxSensitivity`. Recall defaults to `private`, excluding `sensitive` entries unless explicitly requested.
+
+
+### Client adoption / refresh diagnostics
+
+Use `client.adoption({ client: "hermes", observedTools })` to compare a caller's observed MCP tool list against the server's current manifest. The response includes `mcp.toolCount`, `mcp.tools`, `mcp.instructionsHash`, feature flags, diagnostics, and client-specific refresh commands.

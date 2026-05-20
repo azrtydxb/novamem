@@ -103,6 +103,21 @@ Read-only memory hygiene report for curation and debugging. The response include
 
 Run built-in memory quality checks. The response includes `passed`, `summary`, `cases`, and a compatibility `checks` alias. The core suite verifies that newer facts supersede older facts, context packs group typed memories, junk captures are rejected, hygiene reports are available, and retention policies are wired.
 
+
+## `POST /v1/adoption`
+
+Read-only client adoption and refresh report. Use this when an MCP/agent client may be using stale tools or stale instructions after a server, shim, or skill update.
+
+```json
+{
+  "client": "hermes",
+  "observedTools": ["memory_context", "memory_capture"],
+  "observedInstructionsHash": "optional sha256"
+}
+```
+
+Returns the current server-side MCP tool manifest, tool count, required adoption tools, MCP instructions hash, feature flags, client-specific refresh commands, and diagnostics. For Hermes, the refresh sequence is `/reload-mcp`, `/reload-skills`, then `/reset` or a fresh session.
+
 ## `POST /v1/remember`
 
 Raw write of a new entry. Worthiness gate + exact SHA dedup applied. For normal agent saves, prefer `/v1/capture`, which also handles semantic near-duplicates and contradiction supersession.

@@ -142,6 +142,13 @@ export const ContextBody = z.object({
   maxSensitivity: SensitivityRule.optional(),
 });
 
+
+export const AdoptionBody = z.object({
+  client: z.string().max(64).optional(),
+  observedTools: z.array(z.string().min(1).max(128)).max(128).optional(),
+  observedInstructionsHash: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+}).strict();
+
 export const HygieneBody = z.object({
   k: z.number().int().positive().max(100).optional(),
 }).strict();

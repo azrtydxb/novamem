@@ -22,6 +22,7 @@
 import { z } from "zod";
 
 import {
+  AdoptionBody,
   CaptureBody,
   ForgetBody,
   NeighborsBody,
@@ -191,6 +192,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: { suite: { type: "string", description: "Evaluation suite name; default core." } },
     },
     annotations: { title: "Evaluate memory quality", readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  },
+
+  {
+    name: "memory_adoption",
+    description:
+      "Read-only client adoption report. Use this to verify the current MCP tool surface, instructions hash, supported feature flags, and exact refresh/reload guidance when an agent client may be using stale tools or stale instructions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        client: { type: "string", description: "Client name, e.g. hermes, claude-code, claude-desktop, codex, cursor." },
+        observedTools: { type: "array", items: { type: "string" }, description: "Optional tools/list names observed by the caller for stale-surface diagnostics." },
+        observedInstructionsHash: { type: "string", description: "Optional sha256 hash of the instructions observed by the caller." },
+      },
+    },
+    annotations: { title: "Client adoption report", readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "memory_search",
@@ -565,6 +581,7 @@ export const TOOL_INPUT_SCHEMAS = {
   memory_session_recap: SessionRecapBody,
   memory_hygiene: z.object({ k: z.number().optional() }).strict(),
   memory_evaluate: z.object({ suite: z.string().optional() }).strict(),
+  memory_adoption: AdoptionBody.optional().default({}),
   memory_search: SearchBody,
   memory_remember: RememberBody,
   memory_today: TodayBody,

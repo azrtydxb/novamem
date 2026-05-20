@@ -1,6 +1,6 @@
 ---
 name: novamem
-description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 20 MCP tools — hybrid search, time-windowed recall, graph traversal, store/update/forget with worthiness gate and provenance, and project (sub-brain) lifecycle including share/activate.
+description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 21 MCP tools — hybrid search, time-windowed recall, graph traversal, store/update/forget with worthiness gate and provenance, and project (sub-brain) lifecycle including share/activate.
 license: Apache-2.0
 compatibility: Requires a reachable novamem MCP server (default http://localhost:7778) and a user bearer token (nm_…). See https://github.com/azrtydxb/novamem.
 metadata:
@@ -29,7 +29,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 
 ## Tool map
 
-17 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
+21 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
 
 **Read / recall** — see [references/search.md](references/search.md):
 - `memory_context` — first-pass grounding; relevant + recent context in one call
@@ -40,6 +40,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 - `memory_stats` — per-namespace + per-tier counts
 - `memory_hygiene` — read-only curation report: low-value, stale, duplicate, contradiction, and orphan candidates
 - `memory_evaluate` — built-in quality scenarios for supersession, context packs, junk rejection, hygiene, and retention
+- `memory_adoption` — client adoption/refresh diagnostics: current tool surface, instructions hash, feature flags, and reload guidance
 
 **Write / mutate** — see [references/remember.md](references/remember.md):
 - `memory_capture` — low-friction durable write path after meaningful work; handles typed metadata, worthiness scoring, semantic duplicate/update, and contradiction supersession

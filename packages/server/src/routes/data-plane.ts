@@ -11,6 +11,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 
 import {
+  AdoptionBody,
   ContextBody,
   CaptureBody,
   DecayBody,
@@ -29,10 +30,28 @@ import {
   checkProjectAccess,
   type RouteContext,
 } from "./context.js";
+import { buildAdoptionReport } from "../adoption.js";
 
 export function register(app: FastifyInstance, ctx: RouteContext): void {
   const r = app.withTypeProvider<ZodTypeProvider>();
 
+
+
+  r.post(
+    "/v1/adoption",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Client adoption and refresh diagnostics for MCP/tooling integrations",
+        body: AdoptionBody.optional(),
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      const body = req.body ?? {};
+      reply.send(buildAdoptionReport(body));
+    },
+  );
 
   r.post(
     "/v1/hygiene",

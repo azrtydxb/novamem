@@ -23,6 +23,7 @@ import {
   parseToolArgs,
   resolveScope,
 } from "./mcp-tools.js";
+import { buildAdoptionReport } from "./adoption.js";
 
 export interface McpContext {
   /** Memory-owner id — the user the caller's bearer maps to. */
@@ -168,6 +169,12 @@ export function buildMcpServer(
         case "memory_evaluate": {
           const args = parseToolArgs("memory_evaluate", rawArgs);
           const r = await engine.evaluateMemoryQuality(userId, { suite: args.suite });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+
+        case "memory_adoption": {
+          const args = parseToolArgs("memory_adoption", rawArgs);
+          const r = buildAdoptionReport(args);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "memory_search": {

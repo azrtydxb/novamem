@@ -54,6 +54,7 @@ describe("mcp: tools/list", () => {
         "memory_session_recap",
         "memory_hygiene",
         "memory_evaluate",
+        "memory_adoption",
         "memory_search",
         "memory_remember",
         "memory_update",
@@ -150,6 +151,23 @@ describe("mcp: tool dispatch", () => {
       content: Array<{ text: string }>;
     };
     expect(JSON.parse(visible.content[0]!.text).results[0].metadata.sensitivity).toBe("sensitive");
+  });
+
+
+  it("memory_adoption reports the advertised tool surface and refresh guidance", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_adoption", { client: "hermes" })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+
+    expect(payload.server).toMatchObject({ name: "novamem" });
+    expect(payload.mcp.toolCount).toBeGreaterThanOrEqual(21);
+    expect(payload.mcp.tools).toContain("memory_adoption");
+    expect(payload.mcp.instructionsHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(payload.requiredTools).toEqual(expect.arrayContaining(["memory_context", "memory_capture", "memory_adoption"]));
+    expect(payload.refresh.hermes.commands).toEqual(expect.arrayContaining(["/reload-mcp", "/reload-skills", "/reset"]));
+    expect(payload.refresh.hermes.requiresNewSession).toBe(true);
+    expect(payload.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ check: "tool_surface" })]));
   });
 
   it("memory_search finds the just-stored entry", async () => {

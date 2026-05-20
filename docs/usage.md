@@ -226,3 +226,8 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 | `401` | Bearer missing / revoked | Don't retry; surface to the user |
 | `403 not a member` | Project exists but caller can't reach it | Distinct from `404`; the project name is right but you don't have access |
 | `404 no such project` | Project name/id doesn't resolve | Caller should `project_list` to see what's available |
+
+
+## Client adoption / refresh
+
+Call `memory_adoption` or `POST /v1/adoption` when a host may be using stale MCP tools or stale instructions. It reports the current tool surface, instructions hash, feature flags, diagnostics, and refresh commands. For Hermes, use `/reload-mcp`, `/reload-skills`, then `/reset` or a fresh session.

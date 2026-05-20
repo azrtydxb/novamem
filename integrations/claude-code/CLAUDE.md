@@ -114,7 +114,7 @@ warm.
 
 ## Available MCP tools
 
-`memory_context`, `memory_search`, `memory_capture`, `memory_remember`,
+`memory_context`, `memory_search`, `memory_adoption`, `memory_capture`, `memory_remember`,
 `memory_update`, `memory_recent`, `memory_today`, `memory_neighbors`,
 `memory_forget`, `memory_stats`, `project_list`, `project_create`,
 `project_delete`, `project_activate`, `project_deactivate`,
