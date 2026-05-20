@@ -105,7 +105,7 @@ export function buildMcpServer(
             project: args.project ?? undefined,
             unionWithActive: false,
           });
-          const r = await engine.remember(userId, {
+          const r = await engine.capture(userId, {
             content: args.content,
             namespace: args.namespace,
             source: args.source ?? "memory_capture",

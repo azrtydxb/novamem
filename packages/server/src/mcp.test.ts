@@ -134,6 +134,84 @@ describe("mcp: tool dispatch", () => {
     expect(warm.rows.get(payload.results[0].id)!.namespace).toBe("memory");
   });
 
+  it("memory_capture updates a semantic duplicate instead of inserting another row", async () => {
+    const { engine, warm, embedder } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const original = "Pascal prefers concise technical answers.";
+    const duplicate = "Pascal likes concise technical answers.";
+    embedder.table.set(original, [1, 0, 0, 0]);
+    embedder.table.set(duplicate, [1, 0, 0, 0]);
+
+    const first = (await callTool(server, "memory_capture", {
+      content: original,
+      namespace: "user",
+    })) as { content: Array<{ text: string }> };
+    const firstPayload = JSON.parse(first.content[0]!.text);
+
+    const second = (await callTool(server, "memory_capture", {
+      content: duplicate,
+      namespace: "user",
+    })) as { content: Array<{ text: string }> };
+    const secondPayload = JSON.parse(second.content[0]!.text);
+
+    expect(warm.rows.size).toBe(1);
+    expect(secondPayload.results[0].id).toBe(firstPayload.results[0].id);
+    expect(secondPayload.results[0].updated).toBe(true);
+    expect(warm.rows.get(firstPayload.results[0].id)!.content).toBe(duplicate);
+    expect(warm.rows.get(firstPayload.results[0].id)!.metadata).toMatchObject({
+      lifecycleStatus: "active",
+      captureAction: "updated",
+    });
+  });
+
+  it("memory_capture supersedes a contradictory older fact and hides it from context", async () => {
+    const { engine, warm, embedder } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const oldFact = "DGX Spark vLLM DFlash speculative tokens: 15.";
+    const newFact = "DGX Spark vLLM DFlash speculative tokens: 6.";
+    embedder.table.set(oldFact, [0, 1, 0, 0]);
+    embedder.table.set(newFact, [0, 1, 0, 0]);
+
+    const first = (await callTool(server, "memory_capture", {
+      content: oldFact,
+      namespace: "current-setup",
+    })) as { content: Array<{ text: string }> };
+    const oldId = JSON.parse(first.content[0]!.text).results[0].id;
+
+    const second = (await callTool(server, "memory_capture", {
+      content: newFact,
+      namespace: "current-setup",
+    })) as { content: Array<{ text: string }> };
+    const newPayload = JSON.parse(second.content[0]!.text);
+    const newId = newPayload.results[0].id;
+
+    expect(warm.rows.size).toBe(2);
+    expect(newId).not.toBe(oldId);
+    expect(newPayload.results[0].superseded).toEqual([oldId]);
+    expect(warm.rows.get(oldId)!.metadata).toMatchObject({
+      lifecycleStatus: "superseded",
+      supersededBy: newId,
+      supersededReason: "contradiction",
+    });
+    expect(warm.rows.get(newId)!.metadata).toMatchObject({
+      lifecycleStatus: "active",
+      supersedes: [oldId],
+    });
+
+    const ctx = (await callTool(server, "memory_context", {
+      message: "What DFlash speculative token count is current?",
+      namespace: "current-setup",
+      k: 5,
+    })) as { content: Array<{ text: string }> };
+    const contextPayload = JSON.parse(ctx.content[0]!.text);
+    const returnedIds = [
+      ...contextPayload.relevant.results.map((r: { id: string }) => r.id),
+      ...contextPayload.recent.results.map((r: { id: string }) => r.id),
+    ];
+    expect(returnedIds).toContain(newId);
+    expect(returnedIds).not.toContain(oldId);
+  });
+
   it("memory_today uses a real 24h since cutoff (not search '*')", async () => {
     const { engine, warm } = makeEngine();
     const server = buildMcpServer(engine, "public");

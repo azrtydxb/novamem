@@ -71,6 +71,52 @@ export function tokenJaccard(a: string, b: string): number {
   return intersect / union;
 }
 
+const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
+const CAPTURE_CANDIDATE_K = 5;
+
+function metadataStatus(metadata: Record<string, unknown> | null | undefined): string {
+  const status = metadata?.lifecycleStatus;
+  return typeof status === "string" ? status : "active";
+}
+
+function isInactiveMemory(metadata: Record<string, unknown> | null | undefined): boolean {
+  return ["superseded", "deprecated"].includes(metadataStatus(metadata));
+}
+
+function extractComparableScalars(content: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of content.matchAll(/\b\d+(?:\.\d+)?\b/g)) out.add(`num:${m[0]}`);
+  for (const m of content.matchAll(/\bv?\d+(?:\.\d+){1,}\b/gi)) out.add(`ver:${m[0].toLowerCase()}`);
+  return out;
+}
+
+function hasExplicitNegation(content: string): boolean {
+  return /\b(no|not|never|disabled|inactive|false|off|without|stopped|removed|deprecated)\b/i.test(content);
+}
+
+function looksContradictory(oldContent: string, newContent: string): boolean {
+  const oldScalars = extractComparableScalars(oldContent);
+  const newScalars = extractComparableScalars(newContent);
+  if (oldScalars.size > 0 && newScalars.size > 0) {
+    const overlap = [...oldScalars].some((v) => newScalars.has(v));
+    if (!overlap) return true;
+  }
+  return hasExplicitNegation(oldContent) !== hasExplicitNegation(newContent);
+}
+
+function mergeCaptureMetadata(
+  base: Record<string, unknown> | null | undefined,
+  patch: Record<string, unknown> | undefined,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...(base ?? {}),
+    ...(patch ?? {}),
+    lifecycleStatus: "active",
+    ...extra,
+  };
+}
+
 /** Minimal logger surface — structurally compatible with Pino /
  *  Fastify's logger. Object-first: `(obj, msg)` is the idiomatic Pino
  *  call shape; the bare-string overload is kept for the small handful
@@ -268,6 +314,109 @@ export class MemoryEngine {
     }
     this.metrics?.recordRemember(userId, token);
     return { id };
+  }
+
+  /** Capture is the agent-facing write path. Unlike raw remember(), it first
+   *  looks for semantically-close active memories in the same scope. A near
+   *  duplicate is updated in-place; a close contradiction is stored as the
+   *  new active fact while the older fact is marked superseded. */
+  async capture(
+    userId: string,
+    req: RememberRequest,
+    token?: TokenIdentity,
+  ): Promise<{
+    id: string | null;
+    rejected?: string;
+    deduplicated?: boolean;
+    updated?: boolean;
+    superseded?: string[];
+  }> {
+    if (!req.force) {
+      const reason = this.shouldReject(req.content);
+      if (reason) return { id: null, rejected: reason };
+    }
+
+    const namespace = req.namespace ?? "default";
+    const projectId = req.project ?? null;
+    const contentHash = sha256Hex(req.content.trim());
+    const exact = await this.warm.findByContentHash(userId, projectId, contentHash);
+    if (exact) {
+      await this.warm.bumpHits(exact);
+      this.metrics?.recordRemember(userId, token);
+      return { id: exact, deduplicated: true };
+    }
+
+    const [embedding] = await this.embedder.embed(req.content);
+    if (embedding) {
+      const nearby = await this.cold.search({
+        userId,
+        projectId,
+        namespace,
+        embedding,
+        k: CAPTURE_CANDIDATE_K,
+      });
+      const candidateIds = nearby
+        .filter((h) => h.score >= SEMANTIC_DUPLICATE_THRESHOLD)
+        .map((h) => h.id);
+      const candidates = candidateIds.length > 0
+        ? await this.warm.getEntries(userId, candidateIds, { projectId })
+        : [];
+      const candidate = candidates.find((e) => e && !isInactiveMemory(e.metadata as Record<string, unknown> | null | undefined));
+      if (candidate) {
+        if (looksContradictory(candidate.content, req.content)) {
+          const supersededIds = [candidate.id];
+          const newMetadata = mergeCaptureMetadata(req.metadata, undefined, {
+            captureAction: "superseded",
+            supersedes: supersededIds,
+            supersededAt: new Date().toISOString(),
+          });
+          const created = await this.remember(userId, {
+            ...req,
+            namespace,
+            metadata: newMetadata,
+            force: true,
+          }, token);
+          if (created.id) {
+            await this.update(userId, candidate.id, {
+              project: projectId,
+              metadata: {
+                ...(candidate.metadata ?? {}),
+                lifecycleStatus: "superseded",
+                supersededBy: created.id,
+                supersededReason: "contradiction",
+                supersededAt: new Date().toISOString(),
+              },
+            });
+            return { id: created.id, superseded: supersededIds };
+          }
+          return created;
+        }
+
+        const mergedMetadata = mergeCaptureMetadata(candidate.metadata as Record<string, unknown> | null | undefined, req.metadata, {
+          captureAction: "updated",
+          updatedByCaptureAt: new Date().toISOString(),
+        });
+        const updated = await this.update(userId, candidate.id, {
+          content: req.content,
+          namespace,
+          metadata: mergedMetadata,
+          sourceType: req.sourceType ?? "chat",
+          capturedFrom: req.capturedFrom ?? "memory_capture",
+          confidence: req.confidence,
+          project: projectId,
+        });
+        if (updated.updated) {
+          this.metrics?.recordRemember(userId, token);
+          return { id: candidate.id, deduplicated: true, updated: true };
+        }
+      }
+    }
+
+    return this.remember(userId, {
+      ...req,
+      namespace,
+      metadata: mergeCaptureMetadata(undefined, req.metadata, { captureAction: "inserted" }),
+    }, token);
   }
 
   /** Update an existing entry in place. Preserves `created_at`,
@@ -507,6 +656,7 @@ export class MemoryEngine {
       const f = fused[i]!;
       const e = entries[i];
       if (!e) continue;
+      if (isInactiveMemory(e.metadata as Record<string, unknown> | null | undefined)) continue;
       idsToBump.push(f.id);
 
       // Cold→warm promotion: capture stats *before* bumpHits so the
@@ -669,16 +819,18 @@ export class MemoryEngine {
       includeProjects,
       since: args.since ? new Date(args.since) : null,
     });
-    const results: SearchResult[] = rows.map((r) => ({
-      id: r.id,
-      score: 1.0,
-      content: r.content,
-      tier: r.cold ? ("cold" as const) : ("warm" as const),
-      namespace: r.namespace,
-      project: r.projectId,
-      source: r.source,
-      metadata: (r.metadata ?? {}) as Record<string, unknown>,
-    }));
+    const results: SearchResult[] = rows
+      .filter((r) => !isInactiveMemory((r.metadata ?? {}) as Record<string, unknown>))
+      .map((r) => ({
+        id: r.id,
+        score: 1.0,
+        content: r.content,
+        tier: r.cold ? ("cold" as const) : ("warm" as const),
+        namespace: r.namespace,
+        project: r.projectId,
+        source: r.source,
+        metadata: (r.metadata ?? {}) as Record<string, unknown>,
+      }));
     return { results };
   }
 

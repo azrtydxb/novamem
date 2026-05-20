@@ -99,7 +99,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     async (req, reply) => {
       const body = req.body;
       if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
-      const result = await ctx.engine.remember(req.userId, {
+      const result = await ctx.engine.capture(req.userId, {
         content: body.content,
         namespace: body.namespace,
         source: body.source ?? "memory_capture",
