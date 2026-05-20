@@ -11,7 +11,7 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 - [ ] `NOVAMEM_COOKIE_SECRET` is `openssl rand -hex 32`. Never the placeholder. Rotating invalidates every session.
 - [ ] `POSTGRES_PASSWORD` is `openssl rand -base64 24`. Stored via Kubernetes Secret / `.env` (mode 0600) — never in git.
 - [ ] `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` is set ONLY for first boot. Comment it out / unset after the first user is created.
-- [ ] No tenant tokens (`nm_…`) committed to repos / shared via plaintext channels.
+- [ ] No user API tokens (`nm_…`) committed to repos / shared via plaintext channels.
 
 ## Network
 
@@ -22,9 +22,9 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 
 ## Auth
 
-- [ ] `NOVAMEM_AUTH_MODE` is `user` or `tenant`, never `none` in production.
+- [ ] `NOVAMEM_AUTH_MODE` is `user` or `bearer`, never `none` in production.
 - [ ] Bootstrap admin password changed via the dashboard's account page after first sign-in.
-- [ ] Tenant tokens scoped to a project where possible (one per service / agent host).
+- [ ] Use one user API token per service / agent host so metrics and revocation are precise.
 - [ ] Token rotation policy: revoke + remint quarterly, or whenever a host is decommissioned / employee leaves.
 
 ## Datastores
@@ -48,7 +48,7 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 
 ## Audit
 
-- [ ] [`admin_audit_log`](/ops/audit-log) reviewed periodically — every admin action is recorded.
+- [ ] [`admin_audit_log`](/ops/audit-log) reviewed periodically — NovaMem-owned admin actions are recorded; corroborate Better Auth plugin actions with auth/session logs.
 - [ ] User table reviewed quarterly — disable accounts of departed teammates.
 
 ## Headers
@@ -73,8 +73,7 @@ Don't run `:main` in production. Pin to a release tag (`v1.1.4`) or short sha (`
 | Threat | Mitigation |
 |---|---|
 | Bearer token leaked | Revoke from dashboard. Short labels per host help isolate the blast radius. |
-| Cross-tenant data access | Tenant boundary enforced at every route. Token resolution returns the bound tenant. Cross-tenant share is impossible by design. |
-| Cross-user data access (within tenant) | User-global memory is private; access only via project membership. Project membership is explicit. |
-| Cookie session theft | Sessions are HttpOnly + Secure. Rotate `NOVAMEM_COOKIE_SECRET` to mass-invalidate. |
+| Cross-user data access | User boundary enforced at every route. Project membership is explicit. |
+| | Cookie session theft | Sessions are HttpOnly + Secure. Rotate `NOVAMEM_COOKIE_SECRET` to mass-invalidate. |
 | Replay attacks | Better Auth sessions are server-resolved per request — no JWT replay window. |
 | Prompt injection via memory entries | Memory content is opaque to novamem. Defence is upstream (in your agent). |

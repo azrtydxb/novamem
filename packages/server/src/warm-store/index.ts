@@ -991,6 +991,39 @@ export class WarmStore {
     return true;
   }
 
+
+  /** Rows visible to the production hygiene report. This is intentionally a
+   *  typed store method rather than the engine reaching into FakeWarmStore's
+   *  in-memory `rows` map; production uses Postgres and must exercise the
+   *  same contract. */
+  async listHygieneEntries(
+    userId: string,
+    opts: { k?: number } = {},
+  ): Promise<Array<{
+    id: string;
+    userId: string;
+    projectId: string | null;
+    content: string;
+    namespace: string;
+    metadata: Record<string, unknown> | null;
+  }>> {
+    const rows = await this.db
+      .select({
+        id: schema.memoryEntries.id,
+        userId: schema.memoryEntries.userId,
+        projectId: schema.memoryEntries.projectId,
+        content: schema.memoryEntries.content,
+        namespace: schema.memoryEntries.namespace,
+        metadata: schema.memoryEntries.metadata,
+        updatedAt: schema.memoryEntries.updatedAt,
+      })
+      .from(schema.memoryEntries)
+      .where(eq(schema.memoryEntries.userId, userId))
+      .orderBy(desc(schema.memoryEntries.updatedAt))
+      .limit(opts.k ?? 400);
+    return rows.map((r) => ({ ...r, metadata: (r.metadata ?? null) as Record<string, unknown> | null }));
+  }
+
   /** Full-text keyword search via Postgres tsvector. Optional `agentName`
    *  scopes the result to one agent's entries (matches `IS NULL` if `null`
    *  is passed explicitly; omit the field for "any agent"). */

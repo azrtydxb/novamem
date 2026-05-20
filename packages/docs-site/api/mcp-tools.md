@@ -33,7 +33,7 @@ novamem advertises 21 tools via the Model Context Protocol. The same shapes live
 | `project_list` | List projects the caller belongs to. |
 | `project_activate` | Set active project for subsequent calls (server-side state). |
 | `project_deactivate` | Clear active project. |
-| `project_share` | Add a member by username. |
+| `project_share` | Add a member by exact invitee email. |
 | `project_unshare` | Remove a member. |
 | `project_delete` | Owner-only cascade delete. |
 

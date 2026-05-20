@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
         - name: falkordb
-          image: falkordb/falkordb:latest
+          image: falkordb/falkordb:v4.18.3
           ports:
             - { containerPort: 6379, name: redis }
           volumeMounts:

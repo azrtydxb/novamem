@@ -489,3 +489,72 @@ describe("engine: user isolation", () => {
     expect(sB.totalWarm).toBe(1);
   });
 });
+
+
+describe("engine.hygieneReport / evaluateMemoryQuality integrity", () => {
+  it("uses real store-facing hygiene methods instead of fake-only rows/vectors fields", async () => {
+    const rows = [
+      {
+        id: "01HYGIENE000000000000000001",
+        userId: "public",
+        projectId: null,
+        content: "tiny",
+        namespace: "default",
+        metadata: { worthiness: { overall: 0.1 } },
+      },
+      {
+        id: "01HYGIENE000000000000000002",
+        userId: "public",
+        projectId: null,
+        content: "Pascal lives in Dubai",
+        namespace: "default",
+        metadata: {},
+      },
+    ];
+    const warm = {
+      listHygieneEntries: vi.fn(async () => rows),
+      ping: vi.fn(async () => true),
+    };
+    const cold = {
+      existingIds: vi.fn(async () => new Set([rows[1]!.id])),
+      ping: vi.fn(async () => true),
+    };
+    const engine = new MemoryEngine({
+      warm: warm as unknown as FakeWarmStore,
+      cold: cold as unknown as FakeColdStore,
+      graph: null,
+      embedder: new FakeEmbedder(),
+    });
+
+    const report = await engine.hygieneReport("public", { k: 10 });
+
+    expect(warm.listHygieneEntries).toHaveBeenCalledWith("public", { k: 200 });
+    expect(cold.existingIds).toHaveBeenCalledWith([
+      { id: rows[0]!.id, userId: "public", projectId: null, namespace: "default" },
+      { id: rows[1]!.id, userId: "public", projectId: null, namespace: "default" },
+    ]);
+    expect((report.summary as { scanned: number }).scanned).toBe(2);
+    expect(report.lowValue).toEqual([{ id: rows[0]!.id, content: "tiny", reason: "low_worthiness" }]);
+    expect(report.orphanCandidates).toEqual([{ id: rows[0]!.id, reason: "warm_without_cold_vector" }]);
+  });
+
+  it("evaluates live hygiene behaviour instead of hardcoding every quality case as passed", async () => {
+    const b = bench();
+    const spy = vi.spyOn(b.engine, "hygieneReport").mockResolvedValue({
+      summary: { scanned: 0, lowValue: 0, stale: 0, duplicateClusters: 0, contradictionCandidates: 0, orphanCandidates: 0 },
+      lowValue: [],
+      stale: [],
+      duplicateClusters: [],
+      contradictionCandidates: [],
+      orphanCandidates: [],
+    });
+
+    const result = await b.engine.evaluateMemoryQuality("public");
+    const cases = result.cases as Array<{ name: string; passed: boolean }>;
+    const hygiene = cases.find((c) => c.name === "hygiene report exposes review candidates");
+
+    expect(spy).toHaveBeenCalledWith("public", { k: 5 });
+    expect(hygiene?.passed).toBe(false);
+    expect(result.passed).toBe(false);
+  });
+});

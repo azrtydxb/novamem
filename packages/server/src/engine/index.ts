@@ -1475,8 +1475,8 @@ export class MemoryEngine {
 
   async hygieneReport(userId: string, opts: { k?: number } = {}): Promise<Record<string, unknown>> {
     const k = opts.k ?? 20;
-    const rows = [...((this.warm as unknown as { rows?: Map<string, any> }).rows?.values() ?? [])]
-      .filter((r) => r.userId === userId)
+    const scanLimit = Math.max(k * 20, 100);
+    const rows = (await this.warm.listHygieneEntries(userId, { k: scanLimit }))
       .filter((r) => !isInactiveMemory((r.metadata ?? {}) as Record<string, unknown>));
     const lowValue = rows
       .filter((r) => Number((r.metadata?.worthiness as any)?.overall ?? 1) < 0.35 || r.content.trim().length < 20)
@@ -1493,7 +1493,12 @@ export class MemoryEngine {
         if (looksContradictory(a.content, b.content)) contradictionCandidates.push({ ids: [a.id, b.id], reason: "comparable_scalar_conflict" });
       }
     }
-    const coldIds = new Set([...((this.cold as unknown as { vectors?: Map<string, unknown> }).vectors?.keys() ?? [])]);
+    const coldIds = await this.cold.existingIds(rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      projectId: r.projectId ?? null,
+      namespace: r.namespace,
+    })));
     const orphanCandidates = rows
       .filter((r) => !coldIds.has(r.id))
       .slice(0, k)
@@ -1517,11 +1522,30 @@ export class MemoryEngine {
   }
 
   async evaluateMemoryQuality(userId: string, opts: { suite?: string } = {}): Promise<Record<string, unknown>> {
+    const contextPack = this.buildContextPack([
+      { id: "pref", content: "pref", score: 1, tier: "warm", namespace: "user", project: null, source: "eval", metadata: { memoryType: "user_preference" } },
+      { id: "decision", content: "decision", score: 1, tier: "warm", namespace: "decisions", project: null, source: "eval", metadata: { memoryType: "decision" } },
+      { id: "setup", content: "setup", score: 1, tier: "warm", namespace: "setup", project: null, source: "eval", metadata: { memoryType: "setup_fact" } },
+    ], []);
+    const hygiene = await this.hygieneReport(userId, { k: 5 });
+    const summary = hygiene.summary as Record<string, number> | undefined;
+    const hygieneCandidateCount =
+      Number(summary?.lowValue ?? 0) +
+      Number(summary?.stale ?? 0) +
+      Number(summary?.duplicateClusters ?? 0) +
+      Number(summary?.contradictionCandidates ?? 0) +
+      Number(summary?.orphanCandidates ?? 0);
     const cases = [
-      { name: "newer fact supersedes older fact", passed: true },
-      { name: "context pack groups typed memories", passed: true },
+      {
+        name: "newer fact supersedes older fact",
+        passed: looksContradictory("Pascal lives in Dubai", "Pascal lives in Belgium"),
+      },
+      {
+        name: "context pack groups typed memories",
+        passed: contextPack.userPreferences.length === 1 && contextPack.decisions.length === 1 && contextPack.currentSetup.length === 1,
+      },
       { name: "junk capture is rejected", passed: Boolean(this.shouldReject("ok")) },
-      { name: "hygiene report exposes review candidates", passed: true },
+      { name: "hygiene report exposes review candidates", passed: hygieneCandidateCount > 0 },
       { name: "memory-type retention policies are available", passed: retentionPolicyFor("deployment_state").policy === "current_only" },
     ];
     const passed = cases.filter((c) => c.passed).length;
@@ -1531,6 +1555,7 @@ export class MemoryEngine {
       summary: { total: cases.length, passed, failed: cases.length - passed },
       cases,
       checks: cases,
+      hygiene,
     };
   }
 

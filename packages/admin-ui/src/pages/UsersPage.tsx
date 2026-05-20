@@ -55,7 +55,7 @@ export function UsersPage() {
       <PageHeader
         kicker="Dashboard auth · username + password"
         title="Users"
-        subtitle="Manage dashboard logins. Admins see everything; each user has their own memory namespace."
+        subtitle="Manage dashboard logins and roles. Memory access remains scoped to each user and shared projects."
         actions={
           <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
             <RefreshCw className="h-3.5 w-3.5" /> Refresh

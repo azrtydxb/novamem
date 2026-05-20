@@ -62,7 +62,7 @@ For nodes with ≥ 3 shared neighbours, add a direct edge between them. Strength
 Operator endpoint:
 
 ```bash
-curl -X POST https://novamem.example.com/v1/admin/decay/run \
+curl -X POST https://novamem.example.com/v1/decay \
   -H "Authorization: Bearer ns_..."
 ```
 

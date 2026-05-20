@@ -18,14 +18,14 @@ You can try every endpoint there with a real bearer token.
 
 ## OpenAPI spec
 
-Machine-readable: [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json) on GitHub, or `/api-docs/openapi.json` on a live server.
+Machine-readable: [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json) on GitHub, or `/openapi.json` on a live server.
 
 ## Routes by purpose
 
 | Section | Routes | Auth |
 |---|---|---|
 | **[Authentication](/api/auth)** | `/api/auth/*`, `POST /v1/me/tokens` | mixed |
-| **[Data plane](/api/data-plane)** | `/v1/search`, `/v1/remember`, `/v1/recent`, `/v1/neighbors`, `/v1/forget`, `/v1/update` | tenant bearer |
+| **[Data plane](/api/data-plane)** | `/v1/search`, `/v1/remember`, `/v1/capture`, `/v1/recent`, `/v1/neighbors`, `/v1/forget`, `PUT /v1/memories/{id}` | user API token |
 | **[Admin & users](/api/admin)** | `/v1/admin/*`, `/api/auth/admin/*` | session admin |
 | **[MCP tools](/api/mcp-tools)** | `/mcp/sse`, `/mcp/messages` | tenant bearer |
 
@@ -51,7 +51,7 @@ Always public, no auth:
 curl https://novamem.example.com/health
 ```
 
-Returns the connectivity status of every dependency (Postgres, Qdrant, FalkorDB, embedder) so a load balancer or monitoring system can drive readiness from one endpoint.
+Returns `{ "ok": true }` for public liveness. Dependency detail lives behind the admin deep-health and metrics routes.
 
 ## Versioning
 

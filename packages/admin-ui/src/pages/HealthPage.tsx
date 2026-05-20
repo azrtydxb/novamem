@@ -5,7 +5,6 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
 import { Pill } from "../components/Pill";
-import { Sparkline } from "../components/Sparkline";
 
 const POLL_MS = 5_000;
 
@@ -23,10 +22,9 @@ const DEPS: Dep[] = [
 ];
 
 /** Health page — Grid 2-col grid of dependency cards. Each card has a
- *  status dot with halo, a sparkline of recent latency, and a pill in
- *  the matching tone. We don't have a real per-dep latency series in
- *  the API yet, so the sparkline is a small synthetic 24-point line
- *  scaled by the dep's healthiness — visual rhythm beats a flat zero. */
+ *  status dot with halo and a pill in the matching tone. We intentionally
+ *  do not render latency/trend charts until the API exposes real per-dep
+ *  series; decorative fake telemetry misleads operators. */
 export function HealthPage() {
   const { data, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ["health"],
@@ -83,13 +81,6 @@ function DepCard({
   const ok = status === "ok";
   const disabled = status === "disabled";
   const tone: "graph" | "warn" | "neutral" = ok ? "graph" : disabled ? "neutral" : "warn";
-  // Synthetic latency-shape sparkline. Real per-dep series would land on
-  // /v1/admin/metrics; until then we emit a low-amplitude wave so the
-  // card has visual rhythm rather than a flat baseline.
-  const trend = Array.from({ length: 24 }, (_, i) => {
-    const base = ok ? 0.3 : disabled ? 0.05 : 0.7;
-    return base + Math.sin(i / 3 + dep.key.length) * (ok ? 0.12 : 0.18);
-  });
   const colorVar =
     tone === "graph"
       ? "var(--color-graph)"
@@ -104,7 +95,7 @@ function DepCard({
       : "shadow-[0_0_0_3px_var(--color-subtle)]";
 
   return (
-    <Card className="grid items-center gap-3.5 p-[18px]" style={{ gridTemplateColumns: "1fr auto auto" }}>
+    <Card className="grid items-center gap-3.5 p-[18px]" style={{ gridTemplateColumns: "1fr auto" }}>
       <div>
         <div className="flex items-center gap-2">
           <span className={`h-2 w-2 rounded-full ${haloClass}`} style={{ background: colorVar }} />
@@ -113,7 +104,6 @@ function DepCard({
         </div>
         <div className="mt-1.5 font-mono text-[11px] text-dim">{dep.host}</div>
       </div>
-      <Sparkline data={trend} color={colorVar} width={84} height={28} />
       <div className="text-right">
         <div className="text-lg font-semibold tabular-nums" style={{ color: colorVar }}>
           {status ?? "—"}

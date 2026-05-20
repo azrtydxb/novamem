@@ -16,6 +16,7 @@ const ROOT = resolve(new URL("..", import.meta.url).pathname);
 // trailer sweep walks the whole tree (excluding noise dirs, see below).
 const DOC_TARGETS = [
   "docs",
+  "packages/docs-site",
   "skills",
   "README.md",
   "CLAUDE.md",
@@ -182,7 +183,34 @@ function checkLifecycleAdminOnly(file, lines) {
   }
 }
 
-// 5. No leftover `Co-Authored-By: Claude` trailers anywhere (excl. noise).
+
+// 5. Public docs must not advertise retired tenant-admin APIs or stale token routes.
+function checkNoStaleTenantAdminDocs(file, lines) {
+  const stale = [
+    [/\/v1\/admin\/tenants\b/, "retired tenant admin endpoint documented"],
+    [/\/v1\/admin\/decay\/(run|config)\b/, "retired admin decay endpoint documented"],
+    [/tenant_tokens|resolveTenantToken|Tenant tokens/i, "stale tenant-token model documented"],
+    [/\/v1\/me\/tokens\/<hash>\/revoke|\/v1\/me\/tokens\/\{hash\}\/revoke/, "stale token revoke route documented"],
+    [/\/api-docs\/openapi\.json/, "raw OpenAPI URL is `/openapi.json`, not `/api-docs/openapi.json`"],
+  ];
+  for (let i = 0; i < lines.length; i++) {
+    for (const [re, msg] of stale) {
+      if (re.test(lines[i])) fail(file, i + 1, msg);
+    }
+  }
+}
+
+// 6. Deployment templates must not make unsafe placeholders look applyable.
+function checkDeployFootguns(file, lines) {
+  if (file === "deploy/k8s/kustomization.yaml" && lines.some((l) => /^\s*-\s*secrets\.yaml\s*$/.test(l))) {
+    fail(file, null, "default kustomization must not apply placeholder secrets.yaml");
+  }
+  if (file === "deploy/k8s/falkordb.yaml" && lines.some((l) => /image:\s*falkordb\/falkordb:(latest|edge)\b/.test(l))) {
+    fail(file, null, "FalkorDB image must be pinned, not latest/edge");
+  }
+}
+
+// 7. No leftover `Co-Authored-By: Claude` trailers anywhere (excl. noise).
 //    Match only actual trailer-shaped lines: optional leading whitespace
 //    or markdown list/quote markers, then the literal trailer at the
 //    start. Prose that mentions the trailer in backticks/quotes (e.g. the
@@ -221,6 +249,7 @@ async function main() {
     checkDeepHealthPath(file, lines);
     checkProjectShareWording(file, lines);
     checkLifecycleAdminOnly(file, lines);
+    checkNoStaleTenantAdminDocs(file, lines);
     checkNoReviewMarkers(file, lines);
   }
 
@@ -233,6 +262,7 @@ async function main() {
     if (file === relative(ROOT, new URL(import.meta.url).pathname)) continue;
     if (file.endsWith("scripts/doc-smoke.mjs")) continue;
     const lines = await readLines(file);
+    checkDeployFootguns(file, lines);
     checkNoCoAuthoredByClaude(file, lines);
   }
 

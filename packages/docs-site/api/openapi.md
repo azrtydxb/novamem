@@ -14,13 +14,13 @@ Every running deployment exposes Swagger UI at:
 GET  /api-docs
 ```
 
-Try requests with a real bearer token. The "Authorize" button accepts both `nm_…` (tenant) and `ns_…` (session) bearers.
+Try requests with a real bearer token. The "Authorize" button accepts both `nm_…` (user API token) and `ns_…` (session) bearers.
 
 ## Machine-readable
 
 | Source | URL |
 |---|---|
-| Live (any deployment) | `/api-docs/openapi.json` |
+| Live (any deployment) | `/openapi.json` |
 | Static (this repo) | [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json) |
 
 ## Generate clients
@@ -30,15 +30,15 @@ The TypeScript client at [`@azrtydxb/novamem`](https://www.npmjs.com/package/@az
 ```bash
 # Python (openapi-python-client)
 openapi-python-client generate \
-  --url https://novamem.example.com/api-docs/openapi.json
+  --url https://novamem.example.com/openapi.json
 
 # Go (oapi-codegen)
 oapi-codegen -package nova \
-  https://novamem.example.com/api-docs/openapi.json > nova.go
+  https://novamem.example.com/openapi.json > nova.go
 
 # OpenAPI Generator (any language)
 openapi-generator-cli generate \
-  -i https://novamem.example.com/api-docs/openapi.json \
+  -i https://novamem.example.com/openapi.json \
   -g rust -o ./novamem-rs
 ```
 

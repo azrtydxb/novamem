@@ -246,6 +246,22 @@ export class FakeWarmStore {
     return id;
   }
 
+
+  async listHygieneEntries(userId: string, opts: { k?: number } = {}) {
+    return [...this.rows.values()]
+      .filter((r) => r.userId === userId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, opts.k ?? 400)
+      .map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        projectId: r.projectId,
+        content: r.content,
+        namespace: r.namespace,
+        metadata: r.metadata,
+      }));
+  }
+
   async ftsSearch(args: {
     userId: string;
     projectId?: string | null;
@@ -903,6 +919,11 @@ export class FakeColdStore {
       .map((v) => ({ id: v.id, score: cosine(v.embedding, args.embedding), payload: v.payload }))
       .sort((a, b) => b.score - a.score)
       .slice(0, args.k);
+  }
+
+
+  async existingIds(entries: Array<{ id: string }>): Promise<Set<string>> {
+    return new Set(entries.filter((e) => this.vectors.has(e.id)).map((e) => e.id));
   }
 
   async delete(

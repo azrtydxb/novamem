@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: novamem
 resources:
   - namespace.yaml
-  - secrets.yaml
   - postgres.yaml
   - qdrant.yaml
   - falkordb.yaml

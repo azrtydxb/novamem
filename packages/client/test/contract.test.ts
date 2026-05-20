@@ -136,6 +136,28 @@ describe("client contract: wire path + method match openapi.json", () => {
     expect(specHas("/v1/neighbors", "post")).toBe(true);
   });
 
+
+
+  it("update() — PUT /v1/memories/:id", async () => {
+    const { client, calls } = makeClient({ ok: true });
+    await client.update("01HABC", { content: "rewritten", namespace: "decisions" });
+    expect(calls[0].method).toBe("PUT");
+    expect(calls[0].url).toBe("https://novamem.test/v1/memories/01HABC");
+    expect(calls[0].body).toEqual({ content: "rewritten", namespace: "decisions" });
+    expect(specHas("/v1/memories/{id}", "put")).toBe(true);
+  });
+
+  it("recent/today/neighbors pass through current cross-scope and sensitivity fields", async () => {
+    const { client, calls } = makeClient({ results: [], degraded: false });
+    await client.recent({ includeNamespaces: ["user", "decisions"], includeProjects: ["p1"], maxSensitivity: "sensitive" });
+    await client.today({ includeNamespaces: ["setup"], includeProjects: ["p2"], maxSensitivity: "internal" });
+    await client.neighbors({ id: "01HABC", includeProjects: ["p3"] });
+    expect(calls[0].body).toEqual({ includeNamespaces: ["user", "decisions"], includeProjects: ["p1"], maxSensitivity: "sensitive" });
+    expect(calls[1].body).toMatchObject({ includeNamespaces: ["setup"], includeProjects: ["p2"], maxSensitivity: "internal" });
+    expect(calls[1].body).toHaveProperty("since");
+    expect(calls[2].body).toEqual({ id: "01HABC", includeProjects: ["p3"] });
+  });
+
   it("stats() — GET /v1/stats", async () => {
     const { client, calls } = makeClient({
       byNamespace: {}, totalWarm: 0, totalCold: 0, lastDecayAt: null, uptimeMs: 1,

@@ -164,6 +164,35 @@ export class ColdStore {
     });
   }
 
+
+  /** Return which requested warm entry ids still have a vector in Qdrant.
+   *  Used by the hygiene report to detect warm rows whose cold vector is
+   *  missing. Groups by collection to avoid one Qdrant request per entry. */
+  async existingIds(entries: Array<{ id: string; userId: string; projectId: string | null; namespace: string }>): Promise<Set<string>> {
+    const out = new Set<string>();
+    const groups = new Map<string, Array<{ id: string; userId: string; projectId: string | null; namespace: string }>>();
+    for (const e of entries) {
+      const collection = await this.resolveReadCollection(e.userId, e.namespace, e.projectId);
+      if (!collection) continue;
+      const group = groups.get(collection) ?? [];
+      group.push(e);
+      groups.set(collection, group);
+    }
+    for (const [collection, group] of groups) {
+      const points = await this.client.retrieve(collection, {
+        ids: group.map((e) => ulidToUuid(e.id)),
+        with_payload: true,
+        with_vector: false,
+      });
+      for (const p of points) {
+        const payload = (p.payload ?? {}) as Record<string, unknown>;
+        const entryId = typeof payload.entryId === "string" ? payload.entryId : null;
+        if (entryId) out.add(entryId);
+      }
+    }
+    return out;
+  }
+
   async delete(
     userId: string,
     namespace: string,

@@ -36,7 +36,7 @@ Issue cleanup release. 18 GH issues from the post-v1.0.0 audit triaged and close
 ### Changed
 
 - **Default Node version for releases** — `release.yml` runs on Node 24 (ships npm 11.x) so Trusted Publishers OIDC handles publish auth, not just Sigstore signing. (#80, #81)
-- **`/v1/decay` admin-only** — was reachable by any authenticated bearer holder (could trigger global decay scans). Now matches `/v1/dream-cycle` and `/v1/reap-orphans`. (#55)
+- **Lifecycle scan routes admin-only** — decay was reachable by any authenticated bearer holder (could trigger global scans). It now matches the other lifecycle maintenance routes. (#55)
 - **Better Auth admin passthrough** — wildcard `/api/auth/admin/*` replaced with an explicit allowlist of 13 admin endpoints pinned to BA `^1.6.9`. Future BA admin endpoints don't auto-expose. (#58)
 - **Public BA sign-up dropped** — `POST /api/auth/sign-up/email` is no longer routed; the bootstrap admin flow uses `ba.api.signUpEmail` in-process. (#56)
 - **Vite/esbuild moderate audit findings cleared** — pnpm overrides force `vite ≥ 6.4.2` and `esbuild ≥ 0.25.0`. `pnpm audit --audit-level moderate` returns clean. (#59)
@@ -152,7 +152,7 @@ Each ships with [Sigstore provenance](https://docs.npmjs.com/generating-provenan
 - `LoginThrottle`, CSRF cookie helpers, `hashPassword`/`verifyPassword`, `gcExpiredSessions` — the entire legacy `auth.ts` module.
 - `novamem-login` CLI binary — use the dashboard to mint a `nm_…` bearer and pass it to MCP clients directly.
 - `NOVAMEM_ADMIN_TOKEN`.
-- `/v1/admin/tenants/*` routes (multi-tenant predecessor of `/v1/admin/users`).
+- `/v1/admin legacy tenant-management routes` routes (multi-tenant predecessor of `/v1/admin/users`).
 - Per-bearer project scoping. Tokens have no `project_id` field; access flows from the owning user.
 
 ### Security

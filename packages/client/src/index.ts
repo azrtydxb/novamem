@@ -127,6 +127,17 @@ export interface RememberResponse {
   id: string;
 }
 
+export interface UpdateRequest {
+  content?: string;
+  namespace?: string;
+  metadata?: Record<string, unknown>;
+  sourceType?: string;
+  capturedFrom?: string;
+  confidence?: number;
+  project?: string | null;
+  sensitivity?: SensitivityLevel;
+}
+
 export interface AdoptionRequest {
   client?: string;
   observedTools?: string[];
@@ -290,16 +301,19 @@ export class NovamemClient {
     return this.request<RememberResponse>("/v1/remember", { method: "POST", body: req });
   }
 
-  async today(opts: { namespace?: string; k?: number; project?: string | null } = {}): Promise<SearchResponse> {
+  async today(opts: { namespace?: string; includeNamespaces?: string[]; maxSensitivity?: SensitivityLevel; k?: number; project?: string | null; includeProjects?: string[] } = {}): Promise<SearchResponse> {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     return this.recent({ ...opts, since });
   }
 
   async recent(opts: {
     namespace?: string;
+    includeNamespaces?: string[];
+    maxSensitivity?: SensitivityLevel;
     k?: number;
     since?: string;
     project?: string | null;
+    includeProjects?: string[];
   } = {}): Promise<SearchResponse> {
     return this.request<SearchResponse>("/v1/recent", { method: "POST", body: opts });
   }
@@ -309,8 +323,16 @@ export class NovamemClient {
     depth?: number;
     k?: number;
     project?: string | null;
+    includeProjects?: string[];
   }): Promise<SearchResponse> {
     return this.request<SearchResponse>("/v1/neighbors", { method: "POST", body: opts });
+  }
+
+  async update(id: string, req: UpdateRequest): Promise<{ updated: boolean }> {
+    return this.request<{ updated: boolean }>(`/v1/memories/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: req,
+    });
   }
 
   async forget(id: string, opts: { project?: string | null } = {}): Promise<{ deleted: boolean }> {

@@ -14,7 +14,7 @@ Visible only to admins. Lists every dashboard user and lets you manage them. Bac
 | **Set role** | Toggle `admin` ↔ `user`. Effective on the user's next request — existing sessions are not invalidated. |
 | **Reset password** | Sets a new password and signs the user out everywhere (revokes all sessions). |
 | **Ban / unban** | Marks the user as banned; they can't sign in. Existing memory is preserved; un-ban restores access. |
-| **Delete user** | Hard delete. Cascades: removes the user, their sessions, their tenant tokens, their project memberships. Their private memory entries go with them. **Irreversible.** |
+| **Delete user** | Hard delete. Cascades: removes the user, their sessions, their user API tokens, their project memberships. Their private memory entries go with them. **Irreversible.** |
 
 ## Roles
 
@@ -28,7 +28,7 @@ Visible only to admins. Lists every dashboard user and lets you manage them. Bac
 
 ## Audit trail
 
-Every action on this page emits an audit-log row attributing the change to the calling admin. Users see their own role / password changes in their **Today** feed; admins see everything in [Audit log](/ops/audit-log).
+NovaMem-owned admin operations are written to `admin_audit_log`; Better Auth admin-plugin passthrough events should be corroborated with Better Auth/session logs.
 
 ## When the page is empty (and shouldn't be)
 

@@ -124,10 +124,9 @@ Entries decay if not accessed: \`effectiveDays = 7 · log₂(hits + 1)\`.
 Searching counts as access — re-finding important memories keeps them warm.
 
 ## Tools available
-\`memory_context\`, \`memory_capture\`, \`memory_search\`, \`memory_remember\`, \`memory_update\`,
-\`memory_recent\`, \`memory_today\`, \`memory_neighbors\`,
-\`memory_forget\`, \`memory_stats\`, \`project_list\`,
-\`project_create\`, \`project_delete\`, \`project_activate\`,
+\`memory_context\`, \`memory_capture\`, \`memory_session_recap\`, \`memory_hygiene\`, \`memory_evaluate\`, \`memory_adoption\`,
+\`memory_search\`, \`memory_remember\`, \`memory_update\`, \`memory_recent\`, \`memory_today\`, \`memory_neighbors\`,
+\`memory_forget\`, \`memory_stats\`, \`project_list\`, \`project_create\`, \`project_delete\`, \`project_activate\`,
 \`project_deactivate\`, \`project_share\`, \`project_unshare\`.
 `;
 
@@ -424,6 +423,29 @@ const TOOL_DEFINITIONS = [
   },
 ] as const;
 
+type ToolAnnotations = {
+  title: string;
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+};
+
+function annotationsFor(name: string): ToolAnnotations {
+  if (["memory_context", "memory_hygiene", "memory_evaluate", "memory_adoption", "memory_search", "memory_today", "memory_recent", "memory_neighbors", "memory_stats", "project_list"].includes(name)) {
+    return { title: name, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  }
+  if (["memory_forget", "project_delete", "project_unshare"].includes(name)) {
+    return { title: name, readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
+  }
+  return { title: name, readOnlyHint: false, destructiveHint: false, idempotentHint: ["memory_update", "project_activate", "project_deactivate", "project_share"].includes(name), openWorldHint: false };
+}
+
+const TOOL_DEFINITIONS_WITH_ANNOTATIONS = TOOL_DEFINITIONS.map((t) => ({
+  ...t,
+  annotations: annotationsFor(t.name),
+}));
+
 /** Lightweight shape-validators for tool args. The shim deliberately
  *  doesn't pull in zod — most validation can fall back to the server,
  *  which is the real authority. We just narrow the obvious required
@@ -452,58 +474,11 @@ function optProject(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
-/** PUT /v1/memories/:id is on the server but not yet on `NovamemClient`.
- *  Issue the raw request directly. Auth follows the env conventions used
- *  by `bin.ts` so this stays a self-contained shim concern. */
-async function rawPost(
-  baseUrl: string,
-  token: string | undefined,
-  path: string,
-  body: Record<string, unknown>,
-): Promise<unknown> {
-  const url = new URL(path, baseUrl).toString();
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${path} failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
-  }
-  return res.json();
-}
-
-async function rawUpdate(
-  baseUrl: string,
-  token: string | undefined,
-  id: string,
-  body: Record<string, unknown>,
-): Promise<unknown> {
-  const url = new URL(`/v1/memories/${encodeURIComponent(id)}`, baseUrl).toString();
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`memory_update failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
-  }
-  return res.json();
-}
 
 export interface RemoteMcpServerOptions {
-  /** Base URL the host configured via NOVAMEM_BASE_URL. Used for the
-   *  raw `memory_update` PUT (the client doesn't expose `update` yet). */
+  /** Base URL the host configured via NOVAMEM_BASE_URL. */
   baseUrl?: string;
-  /** Bearer token from NOVAMEM_TOKEN. Forwarded to memory_update. */
+  /** Bearer token from NOVAMEM_TOKEN. */
   token?: string;
 }
 
@@ -517,7 +492,7 @@ export function buildRemoteMcpServer(
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DEFINITIONS as unknown as typeof TOOL_DEFINITIONS,
+    tools: TOOL_DEFINITIONS_WITH_ANNOTATIONS as unknown as typeof TOOL_DEFINITIONS,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -597,22 +572,16 @@ export function buildRemoteMcpServer(
           return { content: [{ type: "text", text: JSON.stringify({ saved: results.filter((r: any) => r?.id).length, results }) }] };
         }
         case "memory_hygiene": {
-          const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
-          const token = opts.token ?? process.env.NOVAMEM_TOKEN;
-          const r = await rawPost(baseUrl, token, "/v1/hygiene", { k: optNum(args.k) });
+          const r = await client.hygiene({ k: optNum(args.k) });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "memory_evaluate": {
-          const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
-          const token = opts.token ?? process.env.NOVAMEM_TOKEN;
-          const r = await rawPost(baseUrl, token, "/v1/evaluate", { suite: optStr(args.suite) });
+          const r = await client.evaluate({ suite: optStr(args.suite) });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
 
         case "memory_adoption": {
-          const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
-          const token = opts.token ?? process.env.NOVAMEM_TOKEN;
-          const r = await rawPost(baseUrl, token, "/v1/adoption", {
+          const r = await client.adoption({
             client: optStr(args.client),
             observedTools: optStrArray(args.observedTools),
             observedInstructionsHash: optStr(args.observedInstructionsHash),
@@ -712,8 +681,6 @@ export function buildRemoteMcpServer(
         }
         case "memory_update": {
           const id = asStr(args.id, "id");
-          const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
-          const token = opts.token ?? process.env.NOVAMEM_TOKEN;
           const body: Record<string, unknown> = {};
           if (typeof args.content === "string") body.content = args.content;
           if (typeof args.namespace === "string") body.namespace = args.namespace;
@@ -723,7 +690,7 @@ export function buildRemoteMcpServer(
           if (typeof args.confidence === "number") body.confidence = args.confidence;
           if (typeof args.sensitivity === "string") body.sensitivity = args.sensitivity;
           if (project !== undefined) body.project = project;
-          const r = await rawUpdate(baseUrl, token, id, body);
+          const r = await client.update(id, body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "memory_stats": {
