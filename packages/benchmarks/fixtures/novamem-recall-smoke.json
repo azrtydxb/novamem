@@ -1,0 +1,69 @@
+{
+  "name": "novamem-recall-smoke",
+  "kind": "novamem-specific",
+  "version": "1",
+  "description": "Small CI-safe fixture covering long-term chat memory, retrieval, supersession avoidance, and needle recall.",
+  "source": {
+    "name": "NovaMem synthetic smoke",
+    "notes": "Synthetic fixture inspired by LongMemEval, LoCoMo, BEIR/RAG, and RULER/NIAH benchmark families; not a replacement for their full datasets."
+  },
+  "memories": [
+    {
+      "id": "pref-reefmat-current",
+      "text": "Pascal's RS750 reef tank currently uses a ReefMat 1200 fleece roller and the ReefMat is running low.",
+      "metadata": { "benchmarkFamily": "long-term-memory", "memoryType": "setup_fact" }
+    },
+    {
+      "id": "pref-reefmat-old",
+      "text": "Pascal's RS750 reef tank uses filter socks instead of a fleece roller.",
+      "supersededBy": "pref-reefmat-current",
+      "metadata": { "benchmarkFamily": "novamem-specific", "memoryType": "superseded_fact" }
+    },
+    {
+      "id": "project-port",
+      "text": "NovaMem production endpoint listens on port 7778 and exposes /health plus /openapi.json.",
+      "metadata": { "benchmarkFamily": "beir-rag", "memoryType": "setup_fact" }
+    },
+    {
+      "id": "needle-timezone",
+      "text": "Needle: Pascal's preferred timezone for scheduling is Asia/Dubai (UTC+4).",
+      "metadata": { "benchmarkFamily": "long-context", "memoryType": "preference" }
+    },
+    {
+      "id": "adoption-rule",
+      "text": "NovaMem agents should call memory_context before substantive work and memory_capture after durable outcomes.",
+      "metadata": { "benchmarkFamily": "agent-adoption", "memoryType": "safety_constraint" }
+    }
+  ],
+  "queries": [
+    {
+      "queryId": "q-reefmat",
+      "text": "What fleece roller does Pascal's RS750 use?",
+      "expectedAnswer": "ReefMat 1200",
+      "relevantMemoryIds": ["pref-reefmat-current"],
+      "forbiddenMemoryIds": ["pref-reefmat-old"],
+      "category": "long-term-chat-memory"
+    },
+    {
+      "queryId": "q-port",
+      "text": "Which endpoint and port expose NovaMem health and OpenAPI?",
+      "expectedAnswer": "port 7778",
+      "relevantMemoryIds": ["project-port"],
+      "category": "beir-rag-retrieval"
+    },
+    {
+      "queryId": "q-timezone",
+      "text": "What timezone should scheduled tasks use for Pascal?",
+      "expectedAnswer": "Asia/Dubai",
+      "relevantMemoryIds": ["needle-timezone"],
+      "category": "needle-retrieval"
+    },
+    {
+      "queryId": "q-adoption",
+      "text": "Which two NovaMem calls should agents use around substantive work?",
+      "expectedAnswer": "memory_context and memory_capture",
+      "relevantMemoryIds": ["adoption-rule"],
+      "category": "agent-adoption"
+    }
+  ]
+}

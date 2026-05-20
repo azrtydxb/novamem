@@ -6,6 +6,7 @@ Tiered long-term memory for AI agents — keyword + vector + graph hybrid search
 
 - [Getting started](getting-started.md) — pick an install path, mint a token, store your first memory
 - [Usage](usage.md) — search, remember, projects, the worthiness gate, decay
+- [Memory recall benchmarks](evaluation-benchmarks.md) — LongMemEval/LoCoMo/BEIR/RAG/RULER-style benchmark adapters and live NovaMem runner
 - [Architecture](architecture.md) — system shape, data tiering, ownership model, mermaid diagrams
 
 ## Install

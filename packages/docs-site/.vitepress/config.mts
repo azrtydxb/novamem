@@ -127,6 +127,7 @@ export default withMermaid(defineConfig({
           { text: "Local development", link: "/contribute/dev-setup" },
           { text: "Project layout", link: "/contribute/layout" },
           { text: "Testing", link: "/contribute/testing" },
+          { text: "Memory recall benchmarks", link: "/evaluation-benchmarks" },
           { text: "Release flow", link: "/contribute/releases" },
           { text: "Filing bugs", link: "/contribute/bugs" },
         ],

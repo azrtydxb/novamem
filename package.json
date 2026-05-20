@@ -14,6 +14,7 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
+    "bench:smoke": "pnpm --filter @azrtydxb/novamem-benchmarks build && node packages/benchmarks/dist/cli.js --fixture packages/benchmarks/fixtures/novamem-recall-smoke.json",
     "docs:api": "pnpm --filter @azrtydxb/novamem-server build && pnpm --filter @azrtydxb/novamem-server docs:api",
     "docs:smoke": "node scripts/doc-smoke.mjs",
     "release:preflight": "node scripts/release-preflight.mjs",

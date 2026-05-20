@@ -1,0 +1,25 @@
+{
+  "name": "@azrtydxb/novamem-benchmarks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Benchmark adapters and metrics for NovaMem recall evaluation",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "novamem-bench": "dist/cli.js",
+    "novamem-bench-live": "dist/live-cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2"
+  }
+}
