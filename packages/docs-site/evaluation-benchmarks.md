@@ -27,12 +27,19 @@ node packages/benchmarks/dist/live-cli.js \
   --base-url http://localhost:7778 \
   --fixture packages/benchmarks/fixtures/novamem-recall-smoke.json \
   --create-project \
-  --cleanup
+  --cleanup \
+  --format comparable \
+  --project-name novamem-live \
+  --top-k-cutoffs 10,20,50,200
 ```
 
 The live runner creates a temporary project when `--create-project` is set, stores fixture memories with `[bench:<fixture-id>]` markers, searches with `/v1/search`, maps NovaMem ids back to fixture ids, reports metrics, and deletes the temporary project when `--cleanup` is set. Existing-project runs use a unique benchmark namespace by default; if `--cleanup` is set without `--create-project`, the runner deletes only the memories it seeded.
 
 ## Metrics
+
+Use `--format comparable` for public comparisons with Mem0 memory-benchmarks or LongMemEval result dumps. The comparable report emits `metrics_by_cutoff.top_10/top_20/top_50/top_200.overall.accuracy`, per-question-type accuracy, metadata for answerer/judge/provider, and per-question evaluations.
+
+The default/internal report keeps diagnostics:
 
 - Recall@K
 - Precision@K
@@ -43,7 +50,7 @@ The live runner creates a temporary project when `--create-project` is set, stor
 - forbidden-hit rate for stale/superseded memories
 - average/p95/max latency
 
-For production, prioritise Recall@5, MRR@5, forbidden-hit rate, and p95 latency. The built-in answer metrics are retrieval-grounding checks, not a full generative RAG judge; add a generator/evaluator layer if you want faithfulness or citation scoring.
+Do not compare tiny-fixture Recall@5 smoke numbers with public leaderboards. To know how good NovaMem is, run the same dataset and compare the comparable accuracy percentages at the same top-k cutoffs with answerer and judge models recorded.
 
 ## External adapters
 

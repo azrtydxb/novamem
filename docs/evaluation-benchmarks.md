@@ -28,6 +28,16 @@ node packages/benchmarks/dist/cli.js \
   --fixture packages/benchmarks/fixtures/novamem-recall-smoke.json
 ```
 
+To emit a LongMemEval/Mem0-compatible aggregate report, use:
+
+```bash
+node packages/benchmarks/dist/cli.js \
+  --fixture packages/benchmarks/fixtures/novamem-recall-smoke.json \
+  --format comparable \
+  --project-name novamem-smoke \
+  --top-k-cutoffs 10,20,50,200
+```
+
 The offline runner is CI-safe: it does not call a NovaMem server and is intended to validate fixture shape, metrics, and report generation.
 
 ## Live NovaMem benchmark
@@ -41,7 +51,12 @@ node packages/benchmarks/dist/live-cli.js \
   --base-url http://localhost:7778 \
   --fixture packages/benchmarks/fixtures/novamem-recall-smoke.json \
   --create-project \
-  --cleanup
+  --cleanup \
+  --format comparable \
+  --project-name novamem-live \
+  --answerer-model novamem-search-answer \
+  --judge-model exact-match-token-f1 \
+  --top-k-cutoffs 10,20,50,200
 ```
 
 The live runner:
@@ -90,23 +105,25 @@ Supported `kind` values:
 
 ## Metrics
 
-The report includes:
+There are two metric layers:
 
-- `retrieval.byK[*].recall` — fraction of relevant memories retrieved within K.
-- `retrieval.byK[*].precision` — fraction of top-K results that are relevant.
-- `retrieval.byK[*].mrr` — mean reciprocal rank of first relevant hit.
-- `retrieval.byK[*].ndcg` — ranking quality with binary relevance.
-- `answer.exactMatch` — normalized exact match against expected answers.
-- `answer.tokenF1` — token overlap F1.
-- `safety.forbiddenHitRateAtK` — how often superseded/forbidden memories appear in top-K.
-- `latency` — average, p95, and max retrieval latency.
+1. **Comparable headline report** (`--format comparable`) — use this when comparing NovaMem with Mem0 memory-benchmarks, LongMemEval result dumps, or similar public scorecards. It emits:
+   - `metadata.benchmark`, `project_name`, `answerer_model`, `judge_model`, `provider`, `top_k`, and `top_k_cutoffs`.
+   - `metrics_by_cutoff.top_10/top_20/top_50/top_200.overall.accuracy` as a percentage.
+   - `metrics_by_cutoff.*.by_question_type` for LongMemEval categories such as `knowledge-update`, `multi-session`, `single-session-user`, `single-session-assistant`, `single-session-preference`, and `temporal-reasoning`.
+   - `evaluations[]` with per-question answer, score, correctness, retrieval ranks, relevant hits, and forbidden/stale hits.
 
-For NovaMem production readiness, the most important numbers are usually:
+2. **Internal diagnostics** — retained under `diagnostics` in comparable reports and as the default report format:
+   - `retrieval.byK[*].recall` — fraction of relevant memories retrieved within K.
+   - `retrieval.byK[*].precision` — fraction of top-K results that are relevant.
+   - `retrieval.byK[*].mrr` — mean reciprocal rank of first relevant hit.
+   - `retrieval.byK[*].ndcg` — ranking quality with binary relevance.
+   - `answer.exactMatch` — normalized exact match against expected answers.
+   - `answer.tokenF1` — token overlap F1.
+   - `safety.forbiddenHitRateAtK` — how often superseded/forbidden memories appear in top-K.
+   - `latency` — average, p95, and max retrieval latency.
 
-1. `Recall@5` for whether the right memory is available to the agent;
-2. `MRR@5` for whether it appears high enough to be used;
-3. `forbiddenHitRateAtK` for stale/superseded-memory leakage;
-4. p95 latency for interactive usability.
+Do not compare tiny-fixture `Recall@5` smoke-test numbers with public LongMemEval/Mem0 leaderboards. Public comparisons require running the same dataset and reporting the comparable `accuracy` percentages at the same top-k cutoffs, with the answerer and judge models recorded.
 
 ## External benchmark adapters
 

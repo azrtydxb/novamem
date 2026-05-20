@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { runBenchmark } from "./runner.js";
 import { benchmarkFixtureSchema } from "./schema.js";
+import { toComparableMemoryBenchmarkReport } from "./comparable-report.js";
 import type { BenchmarkFixture, BenchmarkQuery, RetrievedMemory, Retriever } from "./types.js";
 
 interface LiveOptions {
@@ -94,7 +95,7 @@ export function makeNovaMemRetriever(opts: LiveOptions & { project: string; idMa
   };
 }
 
-export async function runLiveNovaMemBenchmark(fixture: BenchmarkFixture, opts: LiveOptions) {
+export async function runLiveNovaMemBenchmark(fixture: BenchmarkFixture, opts: LiveOptions, kValues?: number[]) {
   const projectState = await createBenchmarkProject(fixture, opts);
   const liveOpts = { ...opts, project: projectState.project };
   let idMap = new Map<string, string>();
@@ -102,7 +103,7 @@ export async function runLiveNovaMemBenchmark(fixture: BenchmarkFixture, opts: L
   try {
     const seeded = await seedFixtureIntoNovaMem(fixture, liveOpts);
     idMap = seeded.idMap;
-    const report = await runBenchmark(fixture, makeNovaMemRetriever({ ...liveOpts, idMap }));
+    const report = await runBenchmark(fixture, makeNovaMemRetriever({ ...liveOpts, idMap }), { kValues });
     return { ...report, live: { project: projectState.project, cleanup: opts.cleanup, cleanupFailures } };
   } finally {
     if (opts.cleanup) {
@@ -127,12 +128,17 @@ function arg(argv: string[], name: string): string | undefined {
   return i === -1 ? undefined : argv[i + 1];
 }
 
+function parseCutoffs(value?: string): number[] {
+  return value ? value.split(",").map((v) => Number.parseInt(v.trim(), 10)).filter(Number.isFinite) : [10, 20, 50, 200];
+}
+
 export async function liveCliMain(argv = process.argv) {
   const fixturePath = arg(argv, "--fixture") ?? arg(argv, "-f");
   const baseUrl = arg(argv, "--base-url") ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
   const token = arg(argv, "--token") ?? process.env.NOVAMEM_TOKEN;
-  if (!fixturePath || !token) throw new Error("Usage: novamem-bench-live --fixture <fixture.json> --token <token> [--base-url URL] [--create-project] [--cleanup]");
+  if (!fixturePath || !token) throw new Error("Usage: novamem-bench-live --fixture <fixture.json> --token <token> [--base-url URL] [--create-project] [--cleanup] [--format internal|comparable]");
   const fixture = benchmarkFixtureSchema.parse(JSON.parse(readFileSync(resolve(fixturePath), "utf8"))) as BenchmarkFixture;
+  const topKCutoffs = parseCutoffs(arg(argv, "--top-k-cutoffs"));
   const report = await runLiveNovaMemBenchmark(fixture, {
     baseUrl,
     token,
@@ -140,8 +146,19 @@ export async function liveCliMain(argv = process.argv) {
     createProject: argv.includes("--create-project"),
     cleanup: argv.includes("--cleanup"),
     namespace: arg(argv, "--namespace") ?? `benchmark-${Date.now()}`,
-  });
-  const output = JSON.stringify(report, null, 2);
+  }, topKCutoffs);
+  const format = arg(argv, "--format") ?? "internal";
+  const payload = format === "comparable"
+    ? toComparableMemoryBenchmarkReport(report, {
+      projectName: arg(argv, "--project-name") ?? fixture.name,
+      runId: arg(argv, "--run-id"),
+      answererModel: arg(argv, "--answerer-model") ?? "novamem-search-answer",
+      judgeModel: arg(argv, "--judge-model") ?? "exact-match-token-f1",
+      provider: arg(argv, "--provider") ?? "novamem-live",
+      topKCutoffs,
+    })
+    : report;
+  const output = JSON.stringify(payload, null, 2);
   const out = arg(argv, "--out") ?? arg(argv, "-o");
   if (out) writeFileSync(resolve(out), `${output}\n`);
   else console.log(output);
