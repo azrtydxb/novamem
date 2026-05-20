@@ -138,6 +138,14 @@ export const ContextBody = z.object({
     .optional(),
 });
 
+export const HygieneBody = z.object({
+  k: z.number().int().positive().max(100).optional(),
+}).strict();
+
+export const EvaluateBody = z.object({
+  suite: z.string().min(1).max(64).optional(),
+}).strict();
+
 export const CaptureBody = z.object({
   /** One self-contained durable fact to store. */
   content: z.string().min(1).max(MAX_CONTENT_BYTES),

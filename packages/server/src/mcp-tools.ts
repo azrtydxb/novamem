@@ -168,6 +168,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       openWorldHint: false,
     },
   },
+
+  {
+    name: "memory_hygiene",
+    description:
+      "Read-only hygiene report for memory curation: low-value entries, stale current-state candidates, duplicate clusters, contradiction candidates, and warm/cold orphan candidates.",
+    inputSchema: {
+      type: "object",
+      properties: { k: { type: "number", description: "Max candidates per section." } },
+    },
+    annotations: { title: "Memory hygiene report", readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "memory_evaluate",
+    description:
+      "Run built-in memory quality checks covering supersession, context packs, junk rejection, hygiene availability, and retention policy wiring.",
+    inputSchema: {
+      type: "object",
+      properties: { suite: { type: "string", description: "Evaluation suite name; default core." } },
+    },
+    annotations: { title: "Evaluate memory quality", readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  },
   {
     name: "memory_search",
     description:
@@ -537,6 +558,8 @@ export const TOOL_INPUT_SCHEMAS = {
   memory_context: ContextBody,
   memory_capture: CaptureBody,
   memory_session_recap: SessionRecapBody,
+  memory_hygiene: z.object({ k: z.number().optional() }).strict(),
+  memory_evaluate: z.object({ suite: z.string().optional() }).strict(),
   memory_search: SearchBody,
   memory_remember: RememberBody,
   memory_today: TodayBody,

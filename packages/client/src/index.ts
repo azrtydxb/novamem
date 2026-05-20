@@ -57,6 +57,8 @@ export interface ContextRequest {
 }
 
 export interface ContextPack {
+  userGlobal: SearchResult[];
+  projectScoped: SearchResult[];
   userPreferences: SearchResult[];
   currentSetup: SearchResult[];
   projectConventions: SearchResult[];
@@ -115,6 +117,20 @@ export interface SessionRecapRequest {
 
 export interface RememberResponse {
   id: string;
+}
+
+export interface HygieneResponse {
+  lowValue: unknown[];
+  stale: unknown[];
+  duplicateClusters: unknown[];
+  contradictionCandidates: unknown[];
+  orphanCandidates: unknown[];
+}
+
+export interface EvaluateResponse {
+  suite: string;
+  summary: { total: number; passed: number; failed: number };
+  cases: Array<{ name: string; passed: boolean }>;
 }
 
 export interface StatsResponse {
@@ -224,6 +240,14 @@ export class NovamemClient {
 
   async context(req: ContextRequest): Promise<ContextResponse> {
     return this.request<ContextResponse>("/v1/context", { method: "POST", body: req });
+  }
+
+  async hygiene(req: { k?: number } = {}): Promise<HygieneResponse> {
+    return this.request<HygieneResponse>("/v1/hygiene", { method: "POST", body: req });
+  }
+
+  async evaluate(req: { suite?: string } = {}): Promise<EvaluateResponse> {
+    return this.request<EvaluateResponse>("/v1/evaluate", { method: "POST", body: req });
   }
 
   async capture(req: RememberRequest): Promise<CaptureResponse> {

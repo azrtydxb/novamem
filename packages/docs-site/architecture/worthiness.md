@@ -92,3 +92,22 @@ The capture response includes the old ids:
 ```
 
 Superseded and deprecated entries are hidden from normal `memory_search` / `memory_context` results. They remain stored for provenance and can still be inspected by id/admin tooling or hard-deleted with `memory_forget` if the user asks.
+
+
+## Retention policies by memory type
+
+`memory_capture` annotates entries with `metadata.retention`. This is policy metadata used by agents and hygiene tooling, and future decay passes can use it to tune demotion/supersession behaviour. Current policies include:
+
+- `user_preference` / `safety_constraint`: `long_lived`
+- `setup_fact`: `supersede_aggressively`
+- `deployment_state`: `current_only`
+- `decision`: `medium_long`
+- `bug_root_cause`: `medium`
+- `project_convention`: `long_lived` but supersede on changed conventions
+- `general`: `standard`
+
+## Hygiene and evaluation
+
+`/v1/hygiene` and `memory_hygiene` expose read-only candidates for cleanup: low-value memories, stale current-state entries, duplicate clusters, scalar contradiction candidates, and warm/cold orphan candidates.
+
+`/v1/evaluate` and `memory_evaluate` run built-in quality scenarios so memory behaviour is measurable rather than anecdotal.

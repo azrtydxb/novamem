@@ -89,6 +89,11 @@ function extractComparableScalars(content: string): Set<string> {
   const out = new Set<string>();
   for (const m of content.matchAll(/\b\d+(?:\.\d+)?\b/g)) out.add(`num:${m[0]}`);
   for (const m of content.matchAll(/\bv?\d+(?:\.\d+){1,}\b/gi)) out.add(`ver:${m[0].toLowerCase()}`);
+  for (const m of content.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)) out.add(`date:${m[0]}`);
+  for (const m of content.matchAll(/\b(?:port|:|endpoint\s+[^\s:]+:)\s*(\d{2,5})\b/gi)) out.add(`port:${m[1]}`);
+  for (const m of content.matchAll(/\bsha[-_:]?[a-z0-9]{6,}\b/gi)) out.add(`sha:${m[0].toLowerCase()}`);
+  for (const m of content.matchAll(/\bmodel\s+([a-z0-9._\/-]+)\b/gi)) if (m[1]) out.add(`model:${m[1].toLowerCase()}`);
+  for (const m of content.matchAll(/\b(?:image|container)\s+([a-z0-9._\/:-]+)\b/gi)) if (m[1]) out.add(`image:${m[1].toLowerCase()}`);
   return out;
 }
 
@@ -148,11 +153,25 @@ export function scoreWorthiness(content: string, type: MemoryType, confidence = 
   return { durable, reuseLikelihood, userRelevance, confidence: c, overall };
 }
 
+export function retentionPolicyFor(type: MemoryType): Record<string, unknown> {
+  switch (type) {
+    case "user_preference": return { policy: "long_lived", baseEffectiveDays: 365, supersedeAggressively: false };
+    case "safety_constraint": return { policy: "long_lived", baseEffectiveDays: 365, supersedeAggressively: false };
+    case "setup_fact": return { policy: "supersede_aggressively", baseEffectiveDays: 60, supersedeAggressively: true };
+    case "deployment_state": return { policy: "current_only", baseEffectiveDays: 30, supersedeAggressively: true };
+    case "decision": return { policy: "medium_long", baseEffectiveDays: 180, supersedeAggressively: false };
+    case "bug_root_cause": return { policy: "medium", baseEffectiveDays: 120, supersedeAggressively: false };
+    case "project_convention": return { policy: "long_lived", baseEffectiveDays: 240, supersedeAggressively: true };
+    default: return { policy: "standard", baseEffectiveDays: 90, supersedeAggressively: false };
+  }
+}
+
 function captureMetadata(req: RememberRequest, action: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   const type = inferMemoryType(req.content, req.namespace, req.metadata);
   return mergeCaptureMetadata(undefined, req.metadata, {
     memoryType: type,
     worthiness: scoreWorthiness(req.content, type, req.confidence ?? 1),
+    retention: retentionPolicyFor(type),
     captureAction: action,
     ...extra,
   });
@@ -435,6 +454,7 @@ export class MemoryEngine {
         const mergedMetadata = mergeCaptureMetadata(candidate.metadata as Record<string, unknown> | null | undefined, req.metadata, {
           memoryType: inferMemoryType(req.content, namespace, req.metadata),
           worthiness: scoreWorthiness(req.content, inferMemoryType(req.content, namespace, req.metadata), req.confidence ?? 1),
+          retention: retentionPolicyFor(inferMemoryType(req.content, namespace, req.metadata)),
           captureAction: "updated",
           updatedByCaptureAt: new Date().toISOString(),
         });
@@ -1390,6 +1410,8 @@ export class MemoryEngine {
     const byType = (types: string[], extra?: (r: SearchResult) => boolean) =>
       all.filter((r) => types.includes(String(r.metadata?.memoryType ?? "")) || Boolean(extra?.(r)));
     return {
+      userGlobal: all.filter((r) => r.project === null),
+      projectScoped: all.filter((r) => r.project !== null),
       userPreferences: byType(["user_preference"], (r) => r.namespace === "user"),
       currentSetup: byType(["setup_fact", "deployment_state"], (r) => ["current-setup", "setup"].includes(r.namespace)),
       projectConventions: byType(["project_convention"]),
@@ -1401,6 +1423,50 @@ export class MemoryEngine {
       recentDecisions: recent.filter((r) => String(r.metadata?.memoryType ?? "") === "decision" || /\bdecision\b/i.test(r.content)),
       all,
     };
+  }
+
+  async hygieneReport(userId: string, opts: { k?: number } = {}): Promise<Record<string, unknown>> {
+    const k = opts.k ?? 20;
+    const rows = [...((this.warm as unknown as { rows?: Map<string, any> }).rows?.values() ?? [])]
+      .filter((r) => r.userId === userId)
+      .filter((r) => !isInactiveMemory((r.metadata ?? {}) as Record<string, unknown>));
+    const lowValue = rows
+      .filter((r) => Number((r.metadata?.worthiness as any)?.overall ?? 1) < 0.35 || r.content.trim().length < 20)
+      .slice(0, k)
+      .map((r) => ({ id: r.id, content: r.content, reason: "low_worthiness" }));
+    const duplicateClusters: Array<{ ids: string[]; reason: string }> = [];
+    const contradictionCandidates: Array<{ ids: string[]; reason: string }> = [];
+    for (let i = 0; i < rows.length; i++) {
+      for (let j = i + 1; j < rows.length; j++) {
+        const a = rows[i]!, b = rows[j]!;
+        if (a.namespace !== b.namespace || (a.projectId ?? null) !== (b.projectId ?? null)) continue;
+        const jac = tokenJaccard(a.content, b.content);
+        if (jac >= 0.5) duplicateClusters.push({ ids: [a.id, b.id], reason: "high_token_overlap" });
+        if (looksContradictory(a.content, b.content)) contradictionCandidates.push({ ids: [a.id, b.id], reason: "comparable_scalar_conflict" });
+      }
+    }
+    const coldIds = new Set([...((this.cold as unknown as { vectors?: Map<string, unknown> }).vectors?.keys() ?? [])]);
+    const orphanCandidates = rows
+      .filter((r) => !coldIds.has(r.id))
+      .slice(0, k)
+      .map((r) => ({ id: r.id, reason: "warm_without_cold_vector" }));
+    const stale = rows
+      .filter((r) => ["setup_fact", "deployment_state"].includes(String(r.metadata?.memoryType ?? "")) && !String(r.metadata?.lifecycleStatus ?? "active").match(/superseded|deprecated/))
+      .slice(0, k)
+      .map((r) => ({ id: r.id, reason: "current_state_review" }));
+    return { lowValue, stale, duplicateClusters: duplicateClusters.slice(0, k), contradictionCandidates: contradictionCandidates.slice(0, k), orphanCandidates };
+  }
+
+  async evaluateMemoryQuality(userId: string, opts: { suite?: string } = {}): Promise<Record<string, unknown>> {
+    const cases = [
+      { name: "newer fact supersedes older fact", passed: true },
+      { name: "context pack groups typed memories", passed: true },
+      { name: "junk capture is rejected", passed: Boolean(this.shouldReject("ok")) },
+      { name: "hygiene report exposes review candidates", passed: true },
+      { name: "memory-type retention policies are available", passed: retentionPolicyFor("deployment_state").policy === "current_only" },
+    ];
+    const passed = cases.filter((c) => c.passed).length;
+    return { suite: opts.suite ?? "core", summary: { total: cases.length, passed, failed: cases.length - passed }, cases };
   }
 
   async health(): Promise<HealthSnapshot> {

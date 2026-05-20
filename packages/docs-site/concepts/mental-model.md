@@ -204,3 +204,8 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 | `401` | Bearer missing / revoked | Don't retry; surface to the user |
 | `403 not a member` | Project exists but caller can't reach it | Distinct from `404`; the project name is right but you don't have access |
 | `404 no such project` | Project name/id doesn't resolve | Caller should `project_list` to see what's available |
+
+
+## Context packs v2
+
+`memory_context` returns `contextPack` grouped both by memory type and by scope. `userGlobal` contains memories that apply across projects; `projectScoped` contains memories tied to a specific sub-brain. Agents should prefer project-scoped operational facts when the user is inside a project, while still applying user-global preferences and safety constraints.

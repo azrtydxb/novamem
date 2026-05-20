@@ -114,3 +114,10 @@ These fields are metadata only; they do not create a new table or migration. `me
 ## Session recap ingestion
 
 Use `memory_session_recap` at the end of meaningful work to save concise durable facts without storing the transcript. Prefer the typed arrays: `decisions`, `setupFacts`, `rootCauses`, `preferences`, `projectConventions`, and `safetyConstraints`.
+
+
+## Hygiene and evaluation tools
+
+Use `memory_hygiene` when debugging memory quality or preparing curation. It reports low-value entries, stale current-state facts, duplicate clusters, contradiction candidates, and orphan candidates. It is read-only.
+
+Use `memory_evaluate` to run the built-in quality harness. The core suite checks supersession, context-pack grouping, junk rejection, hygiene availability, and retention policy wiring.

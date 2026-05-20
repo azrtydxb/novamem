@@ -194,6 +194,23 @@ const TOOL_DEFINITIONS = [
       },
     },
   },
+
+  {
+    name: "memory_hygiene",
+    description: "Read-only hygiene report for memory curation candidates.",
+    inputSchema: {
+      type: "object",
+      properties: { k: { type: "number" } },
+    },
+  },
+  {
+    name: "memory_evaluate",
+    description: "Run built-in memory quality evaluation scenarios.",
+    inputSchema: {
+      type: "object",
+      properties: { suite: { type: "string" } },
+    },
+  },
   {
     name: "memory_search",
     description:
@@ -419,6 +436,28 @@ function optProject(v: unknown): string | undefined {
 /** PUT /v1/memories/:id is on the server but not yet on `NovamemClient`.
  *  Issue the raw request directly. Auth follows the env conventions used
  *  by `bin.ts` so this stays a self-contained shim concern. */
+async function rawPost(
+  baseUrl: string,
+  token: string | undefined,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const url = new URL(path, baseUrl).toString();
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${path} failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
+  }
+  return res.json();
+}
+
 async function rawUpdate(
   baseUrl: string,
   token: string | undefined,
@@ -534,6 +573,18 @@ export function buildRemoteMcpServer(
             }
           }
           return { content: [{ type: "text", text: JSON.stringify({ saved: results.filter((r: any) => r?.id).length, results }) }] };
+        }
+        case "memory_hygiene": {
+          const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
+          const token = opts.token ?? process.env.NOVAMEM_TOKEN;
+          const r = await rawPost(baseUrl, token, "/v1/hygiene", { k: optNum(args.k) });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "memory_evaluate": {
+          const baseUrl = opts.baseUrl ?? process.env.NOVAMEM_BASE_URL ?? "http://localhost:7778";
+          const token = opts.token ?? process.env.NOVAMEM_TOKEN;
+          const r = await rawPost(baseUrl, token, "/v1/evaluate", { suite: optStr(args.suite) });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "memory_search": {
           const w = (args.weights ?? {}) as {

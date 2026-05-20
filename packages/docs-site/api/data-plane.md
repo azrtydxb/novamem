@@ -4,11 +4,11 @@ title: Data plane
 
 # Data plane
 
-The ten core operations that AI agents call. Same endpoints whether you're on the bearer-token route (`/v1/*`) or the cookie-session mirror (`/v1/me/*`).
+The twelve core operations that AI agents call. Same endpoints whether you're on the bearer-token route (`/v1/*`) or the cookie-session mirror (`/v1/me/*`).
 
 ## `POST /v1/context`
 
-Low-friction first-pass grounding for the current user message. Intended as the first call before substantive agent work. It returns relevant hybrid search results, recent memories, and a structured `contextPack` grouped by memory type in one response.
+Low-friction first-pass grounding for the current user message. Intended as the first call before substantive agent work. It returns relevant hybrid search results, recent memories, and a structured `contextPack` grouped by memory type and scope (`userGlobal` vs `projectScoped`) in one response.
 
 ```json
 {
@@ -75,12 +75,27 @@ Captured entries are also annotated with typed metadata when possible:
 
 - `memoryType`: `user_preference`, `setup_fact`, `project_convention`, `decision`, `bug_root_cause`, `deployment_state`, `safety_constraint`, or `general`.
 - `worthiness`: v2 scoring object with `durable`, `reuseLikelihood`, `userRelevance`, `confidence`, and `overall`.
+- `retention`: memory-type policy such as `long_lived`, `medium`, `current_only`, plus `baseEffectiveDays` and `supersedeAggressively`.
 
 ## `POST /v1/session-recap`
 
 Batch ingest a curated end-of-session recap without dumping transcripts. The route accepts arrays such as `decisions`, `setupFacts`, `rootCauses`, `preferences`, `projectConventions`, `safetyConstraints`, and `other`, then stores each item through the same `capture` path with the appropriate `memoryType`.
 
 Use this for durable outcomes after meaningful work: final deployment state, root causes, user preferences, and decisions. Do not pass raw chat logs or secrets.
+
+## `POST /v1/hygiene`
+
+Read-only memory hygiene report for curation and debugging. Returns candidate lists for:
+
+- `lowValue` — low worthiness / too-short entries
+- `stale` — current-state facts worth review
+- `duplicateClusters` — high-overlap active memories
+- `contradictionCandidates` — comparable scalar conflicts not yet superseded
+- `orphanCandidates` — warm entries missing a cold/vector counterpart
+
+## `POST /v1/evaluate`
+
+Run built-in memory quality checks. The core suite verifies that newer facts supersede older facts, context packs group typed memories, junk captures are rejected, hygiene reports are available, and retention policies are wired.
 
 ## `POST /v1/remember`
 

@@ -22,6 +22,8 @@ export interface WorthinessScore {
 }
 
 export interface ContextPack {
+  userGlobal: SearchResult[];
+  projectScoped: SearchResult[];
   userPreferences: SearchResult[];
   currentSetup: SearchResult[];
   projectConventions: SearchResult[];

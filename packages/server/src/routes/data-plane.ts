@@ -14,7 +14,9 @@ import {
   ContextBody,
   CaptureBody,
   DecayBody,
+  EvaluateBody,
   ForgetBody,
+  HygieneBody,
   NeighborsBody,
   RecentBody,
   RememberBody,
@@ -30,6 +32,39 @@ import {
 
 export function register(app: FastifyInstance, ctx: RouteContext): void {
   const r = app.withTypeProvider<ZodTypeProvider>();
+
+
+  r.post(
+    "/v1/hygiene",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Read-only memory hygiene report",
+        body: HygieneBody.optional(),
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      const body = req.body ?? {};
+      reply.send(await ctx.engine.hygieneReport(req.userId, { k: body.k }));
+    },
+  );
+
+  r.post(
+    "/v1/evaluate",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Run built-in memory quality evaluation scenarios",
+        body: EvaluateBody.optional(),
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      const body = req.body ?? {};
+      reply.send(await ctx.engine.evaluateMemoryQuality(req.userId, { suite: body.suite }));
+    },
+  );
 
   r.post(
     "/v1/search",

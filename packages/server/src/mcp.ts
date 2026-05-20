@@ -156,6 +156,16 @@ export function buildMcpServer(
           }
           return { content: [{ type: "text", text: JSON.stringify({ saved: results.filter((r) => r.id).length, results }) }] };
         }
+        case "memory_hygiene": {
+          const args = parseToolArgs("memory_hygiene", rawArgs);
+          const r = await engine.hygieneReport(userId, { k: args.k });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "memory_evaluate": {
+          const args = parseToolArgs("memory_evaluate", rawArgs);
+          const r = await engine.evaluateMemoryQuality(userId, { suite: args.suite });
+          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
         case "memory_search": {
           const args = parseToolArgs("memory_search", rawArgs);
           const scope = await resolveScope(warm, userId, {

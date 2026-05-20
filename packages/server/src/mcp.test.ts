@@ -52,6 +52,8 @@ describe("mcp: tools/list", () => {
         "memory_context",
         "memory_capture",
         "memory_session_recap",
+        "memory_hygiene",
+        "memory_evaluate",
         "memory_search",
         "memory_remember",
         "memory_update",
@@ -193,6 +195,102 @@ describe("mcp: tool dispatch", () => {
     expect(payload.saved).toBe(4);
     const types = payload.results.map((x: { id: string }) => warm.rows.get(x.id)!.metadata!.memoryType).sort();
     expect(types).toEqual(["bug_root_cause", "decision", "setup_fact", "user_preference"].sort());
+  });
+
+
+
+  it("memory_capture supersedes structured version, date, port, and model changes", async () => {
+    const { engine, warm, embedder } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const oldFact = "NovaMem production uses image ghcr.io/azrtydxb/novamem:sha-old123 on port 7778 with model alpha since 2026-05-19.";
+    const newFact = "NovaMem production uses image ghcr.io/azrtydxb/novamem:sha-new456 on port 7779 with model beta since 2026-05-20.";
+    embedder.table.set(oldFact, [0.3, 0.3, 0.3, 0.3]);
+    embedder.table.set(newFact, [0.3, 0.3, 0.3, 0.3]);
+
+    const first = (await callTool(server, "memory_capture", { content: oldFact, namespace: "current-setup" })) as { content: Array<{ text: string }> };
+    const oldId = JSON.parse(first.content[0]!.text).results[0].id;
+    const second = (await callTool(server, "memory_capture", { content: newFact, namespace: "current-setup" })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(second.content[0]!.text);
+
+    expect(payload.results[0].superseded).toContain(oldId);
+    expect(warm.rows.get(oldId)!.metadata).toMatchObject({ lifecycleStatus: "superseded", supersededReason: "contradiction" });
+  });
+
+  it("memory_context separates user-global and project-scoped context pack entries", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    await callTool(server, "memory_capture", { content: "Pascal prefers concise status updates.", namespace: "user" });
+    await callTool(server, "memory_capture", { content: "Project convention: NovaMem uses Drizzle migrations.", namespace: "project-conventions", project: "project-a" });
+
+    const r = (await callTool(server, "memory_context", {
+      message: "Work on NovaMem with concise status",
+      includeProjects: ["project-a"],
+      includeNamespaces: ["user", "project-conventions"],
+      k: 8,
+    })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+
+    expect(payload.contextPack.userGlobal.some((m: { content: string }) => m.content.includes("concise"))).toBe(true);
+    expect(payload.contextPack.projectScoped.some((m: { content: string }) => m.content.includes("Drizzle"))).toBe(true);
+    expect(payload.contextPack.projectConventions.some((m: { content: string }) => m.content.includes("Drizzle"))).toBe(true);
+  });
+
+  it("memory_capture stores retention policy by memory type", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_capture", {
+      content: "Current deployment state: NovaMem image sha-example runs on 192.168.10.248.",
+      namespace: "current-setup",
+    })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+    const metadata = warm.rows.get(payload.results[0].id)!.metadata!;
+
+    expect(metadata).toMatchObject({
+      memoryType: "deployment_state",
+      retention: { policy: "current_only", supersedeAggressively: true },
+    });
+  });
+
+  it("memory_hygiene reports low value, stale, duplicate, contradiction, and orphan candidates", async () => {
+    const { engine, warm, embedder } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const a = "Pascal prefers concise answers for status updates.";
+    const b = "Pascal likes concise answers for status updates.";
+    const c = "NovaMem deployment uses port 7778.";
+    const d = "NovaMem deployment uses port 7779.";
+    embedder.table.set(a, [1, 0, 0, 0]);
+    embedder.table.set(b, [1, 0, 0, 0]);
+    embedder.table.set(c, [0, 1, 0, 0]);
+    embedder.table.set(d, [0, 1, 0, 0]);
+    await callTool(server, "memory_remember", { content: "ok-ish but forced", namespace: "memory", force: true, metadata: { worthiness: { overall: 0.2 } } });
+    await callTool(server, "memory_remember", { content: a, namespace: "user", force: true });
+    await callTool(server, "memory_remember", { content: b, namespace: "user", force: true });
+    await callTool(server, "memory_remember", { content: c, namespace: "current-setup", force: true });
+    await callTool(server, "memory_remember", { content: d, namespace: "current-setup", force: true });
+    warm.rows.set("warm-only-orphan", { ...warm.rows.values().next().value, id: "warm-only-orphan", content: "Warm only orphan candidate", namespace: "memory", metadata: {} });
+
+    const r = (await callTool(server, "memory_hygiene", { k: 10 })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+
+    expect(payload.lowValue.length).toBeGreaterThan(0);
+    expect(payload.duplicateClusters.length).toBeGreaterThan(0);
+    expect(payload.contradictionCandidates.length).toBeGreaterThan(0);
+    expect(payload.orphanCandidates.some((x: { id: string }) => x.id === "warm-only-orphan")).toBe(true);
+  });
+
+  it("memory_evaluate runs built-in quality scenarios", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_evaluate", { suite: "core" })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+
+    expect(payload.summary.total).toBeGreaterThan(0);
+    expect(payload.summary.passed).toBe(payload.summary.total);
+    expect(payload.cases.map((c: { name: string }) => c.name)).toEqual(expect.arrayContaining([
+      "newer fact supersedes older fact",
+      "context pack groups typed memories",
+      "junk capture is rejected",
+    ]));
   });
 
   it("memory_capture stores a durable fact with provenance defaults", async () => {

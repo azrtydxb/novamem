@@ -31,7 +31,7 @@ npx @azrtydxb/novamem-mcp
 
 Memory operations (every tool accepts an optional `project` — id or human name):
 
-- `memory_search` / `memory_remember` / `memory_update` / `memory_recent` / `memory_today` / `memory_neighbors` / `memory_forget` / `memory_stats`
+- `memory_context` / `memory_capture` / `memory_session_recap` / `memory_hygiene` / `memory_evaluate` / `memory_search` / `memory_remember` / `memory_update` / `memory_recent` / `memory_today` / `memory_neighbors` / `memory_forget` / `memory_stats`
 - `memory_remember` accepts `sourceType`, `capturedFrom`, `confidence`, and `force` (bypass the worthiness gate)
 - `memory_update` rewrites an existing entry in place; preserves id + hits + edges; re-embeds when content changes
 
