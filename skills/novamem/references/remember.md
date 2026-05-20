@@ -118,6 +118,6 @@ Use `memory_session_recap` at the end of meaningful work to save concise durable
 
 ## Hygiene and evaluation tools
 
-Use `memory_hygiene` when debugging memory quality or preparing curation. It reports low-value entries, stale current-state facts, duplicate clusters, contradiction candidates, and orphan candidates. It is read-only.
+Use `memory_hygiene` when debugging memory quality or preparing curation. It reports a `summary` count block plus low-value entries, stale current-state facts, duplicate clusters, contradiction candidates, and orphan candidates. It is read-only.
 
-Use `memory_evaluate` to run the built-in quality harness. The core suite checks supersession, context-pack grouping, junk rejection, hygiene availability, and retention policy wiring.
+Use `memory_evaluate` to run the built-in quality harness. It returns top-level `passed`, a `summary`, detailed `cases`, and a `checks` alias for callers that expect check-oriented wording. The core suite checks supersession, context-pack grouping, junk rejection, hygiene availability, and retention policy wiring.

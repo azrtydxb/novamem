@@ -32,9 +32,9 @@ export class FakeWarmStore {
   rows = new Map<string, FakeWarmRow>();
   relations: Array<{ userId: string; projectId: string | null; fromId: string; toId: string; relation: string; strength: number }> = [];
   tokens = new Map<string, { userId: string; label: string | null; projectId: string | null; revoked: boolean }>();
-  users = new Map<string, { id: string; username: string; passwordHash: string; role: string; createdAt: Date; lastLoginAt: Date | null }>([
+  users = new Map<string, { id: string; username: string; passwordHash: string; role: string; userId: string | null; createdAt: Date; lastLoginAt: Date | null }>([
     // Synthetic public user — exists for `none`/`bearer` auth modes.
-    ["public", { id: "public", username: "public", passwordHash: "unused", role: "user", createdAt: new Date(), lastLoginAt: null }],
+    ["public", { id: "public", username: "public", passwordHash: "unused", role: "user", userId: null, createdAt: new Date(), lastLoginAt: null }],
   ]);
   sessions = new Map<string, { userId: string; expiresAt: Date }>();
   projects = new Map<string, { id: string; name: string; ownerUserId: string; createdAt: Date }>();
@@ -807,7 +807,6 @@ export class FakeWarmStore {
       return {
         userId,
         username: u?.username ?? "(deleted)",
-        userId: u?.userId ?? null,
         role: v.role,
         joinedAt: v.joinedAt,
       };

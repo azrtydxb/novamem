@@ -267,11 +267,17 @@ describe("mcp: tool dispatch", () => {
     await callTool(server, "memory_remember", { content: b, namespace: "user", force: true });
     await callTool(server, "memory_remember", { content: c, namespace: "current-setup", force: true });
     await callTool(server, "memory_remember", { content: d, namespace: "current-setup", force: true });
-    warm.rows.set("warm-only-orphan", { ...warm.rows.values().next().value, id: "warm-only-orphan", content: "Warm only orphan candidate", namespace: "memory", metadata: {} });
+    const baseRow = warm.rows.values().next().value!;
+    warm.rows.set("warm-only-orphan", { ...baseRow, id: "warm-only-orphan", content: "Warm only orphan candidate", namespace: "memory", metadata: {} });
 
     const r = (await callTool(server, "memory_hygiene", { k: 10 })) as { content: Array<{ text: string }> };
     const payload = JSON.parse(r.content[0]!.text);
 
+    expect(payload.summary.scanned).toBeGreaterThan(0);
+    expect(payload.summary.lowValue).toBeGreaterThan(0);
+    expect(payload.summary.duplicateClusters).toBeGreaterThan(0);
+    expect(payload.summary.contradictionCandidates).toBeGreaterThan(0);
+    expect(payload.summary.orphanCandidates).toBeGreaterThan(0);
     expect(payload.lowValue.length).toBeGreaterThan(0);
     expect(payload.duplicateClusters.length).toBeGreaterThan(0);
     expect(payload.contradictionCandidates.length).toBeGreaterThan(0);
@@ -284,6 +290,8 @@ describe("mcp: tool dispatch", () => {
     const r = (await callTool(server, "memory_evaluate", { suite: "core" })) as { content: Array<{ text: string }> };
     const payload = JSON.parse(r.content[0]!.text);
 
+    expect(payload.passed).toBe(true);
+    expect(payload.checks).toEqual(payload.cases);
     expect(payload.summary.total).toBeGreaterThan(0);
     expect(payload.summary.passed).toBe(payload.summary.total);
     expect(payload.cases.map((c: { name: string }) => c.name)).toEqual(expect.arrayContaining([

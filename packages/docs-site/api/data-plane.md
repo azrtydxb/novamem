@@ -85,7 +85,7 @@ Use this for durable outcomes after meaningful work: final deployment state, roo
 
 ## `POST /v1/hygiene`
 
-Read-only memory hygiene report for curation and debugging. Returns candidate lists for:
+Read-only memory hygiene report for curation and debugging. The response includes a `summary` count block plus candidate lists for:
 
 - `lowValue` — low worthiness / too-short entries
 - `stale` — current-state facts worth review
@@ -95,7 +95,7 @@ Read-only memory hygiene report for curation and debugging. Returns candidate li
 
 ## `POST /v1/evaluate`
 
-Run built-in memory quality checks. The core suite verifies that newer facts supersede older facts, context packs group typed memories, junk captures are rejected, hygiene reports are available, and retention policies are wired.
+Run built-in memory quality checks. The response includes `passed`, `summary`, `cases`, and a compatibility `checks` alias. The core suite verifies that newer facts supersede older facts, context packs group typed memories, junk captures are rejected, hygiene reports are available, and retention policies are wired.
 
 ## `POST /v1/remember`
 

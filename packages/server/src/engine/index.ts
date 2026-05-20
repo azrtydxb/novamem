@@ -1455,7 +1455,18 @@ export class MemoryEngine {
       .filter((r) => ["setup_fact", "deployment_state"].includes(String(r.metadata?.memoryType ?? "")) && !String(r.metadata?.lifecycleStatus ?? "active").match(/superseded|deprecated/))
       .slice(0, k)
       .map((r) => ({ id: r.id, reason: "current_state_review" }));
-    return { lowValue, stale, duplicateClusters: duplicateClusters.slice(0, k), contradictionCandidates: contradictionCandidates.slice(0, k), orphanCandidates };
+    const report = { lowValue, stale, duplicateClusters: duplicateClusters.slice(0, k), contradictionCandidates: contradictionCandidates.slice(0, k), orphanCandidates };
+    return {
+      summary: {
+        scanned: rows.length,
+        lowValue: report.lowValue.length,
+        stale: report.stale.length,
+        duplicateClusters: report.duplicateClusters.length,
+        contradictionCandidates: report.contradictionCandidates.length,
+        orphanCandidates: report.orphanCandidates.length,
+      },
+      ...report,
+    };
   }
 
   async evaluateMemoryQuality(userId: string, opts: { suite?: string } = {}): Promise<Record<string, unknown>> {
@@ -1467,7 +1478,13 @@ export class MemoryEngine {
       { name: "memory-type retention policies are available", passed: retentionPolicyFor("deployment_state").policy === "current_only" },
     ];
     const passed = cases.filter((c) => c.passed).length;
-    return { suite: opts.suite ?? "core", summary: { total: cases.length, passed, failed: cases.length - passed }, cases };
+    return {
+      suite: opts.suite ?? "core",
+      passed: passed === cases.length,
+      summary: { total: cases.length, passed, failed: cases.length - passed },
+      cases,
+      checks: cases,
+    };
   }
 
   async health(): Promise<HealthSnapshot> {
