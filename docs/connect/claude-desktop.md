@@ -46,7 +46,7 @@ Claude should list `memory_search`, `memory_remember`, etc. Then:
 
 > Remember that my preferred timezone is UTC.
 
-It should call `memory_remember` and confirm.
+It should call `memory_context` first for grounding, then `memory_capture` after you provide a durable fact to save.
 
 ## Troubleshooting
 

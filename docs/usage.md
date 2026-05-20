@@ -231,3 +231,15 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 ## Client adoption / refresh
 
 Call `memory_adoption` or `POST /v1/adoption` when a host may be using stale MCP tools or stale instructions. It reports the current tool surface, instructions hash, feature flags, diagnostics, and refresh commands. For Hermes, use `/reload-mcp`, `/reload-skills`, then `/reset` or a fresh session.
+
+
+## Scheduled jobs and subagents
+
+Non-chat agents must follow the same adoption boundary as chat agents:
+
+1. At job/task start, call `memory_context` with the job prompt or delegated task description.
+2. For durable outcomes, call `memory_capture` with `sourceType`, `capturedFrom`, confidence, sensitivity, and project scope where known.
+3. For batch work, call `memory_session_recap` with a concise session summary so NovaMem can extract only durable facts.
+4. Do not rely on a skill-only install for real memory use: the host must also have an MCP or HTTP tool path that can actually call NovaMem.
+
+MCP instructions can strongly direct host behaviour, but NovaMem cannot force an LLM client to call tools unless that client exposes tool-call telemetry. Use `memory_adoption` with observed tools and instructions hash to detect stale or incomplete clients.

@@ -247,9 +247,14 @@ export class FakeWarmStore {
   }
 
 
+  private canSeeMemory(userId: string, r: MemoryRow): boolean {
+    if (r.projectId === null) return r.userId === userId;
+    return this.projectMembers.get(r.projectId)?.has(userId) ?? false;
+  }
+
   async listHygieneEntries(userId: string, opts: { k?: number } = {}) {
     return [...this.rows.values()]
-      .filter((r) => r.userId === userId)
+      .filter((r) => this.canSeeMemory(userId, r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, opts.k ?? 400)
       .map((r) => ({
@@ -456,7 +461,7 @@ export class FakeWarmStore {
     const rows: Array<{ namespace: string; cold: boolean; count: string }> = [];
     const groups = new Map<string, number>();
     for (const r of this.rows.values()) {
-      if (r.userId !== userId) continue;
+      if (!this.canSeeMemory(userId, r)) continue;
       const key = `${r.namespace}::${r.cold}`;
       groups.set(key, (groups.get(key) ?? 0) + 1);
     }
@@ -497,15 +502,34 @@ export class FakeWarmStore {
     };
   }
 
-  async listRecentActivity(_userId: string, _limit?: number) {
-    // Tests don't exercise the activity feed — return empty so the
-    // /v1/me/today route resolves without a real Postgres query plan.
-    return [] as Array<{
-      kind: "remember" | "token" | "project" | "audit";
-      at: string;
-      text: string;
-      project: string | null;
-    }>;
+  async listRecentActivity(userId: string, limit = 50) {
+    const remembers = [...this.rows.values()]
+      .filter((r) => this.canSeeMemory(userId, r))
+      .map((r) => ({
+        kind: "remember" as const,
+        at: r.createdAt.toISOString(),
+        text: r.content.slice(0, 160),
+        project: r.projectId,
+      }));
+    const tokens = [...this.tokens.entries()]
+      .filter(([, t]) => t.userId === userId && !t.revoked)
+      .map(([, t]) => ({
+        kind: "token" as const,
+        at: new Date().toISOString(),
+        text: `Minted token: ${t.label ?? "(no label)"}`,
+        project: null,
+      }));
+    const joins = [...this.projectMembers.entries()]
+      .filter(([, members]) => members.has(userId))
+      .map(([projectId, members]) => ({
+        kind: "project" as const,
+        at: members.get(userId)!.joinedAt.toISOString(),
+        text: `Joined project: ${projectId}`,
+        project: projectId,
+      }));
+    return [...remembers, ...tokens, ...joins]
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, Math.max(1, Math.min(200, limit)));
   }
 
   async listTokensCreatedByUser(userId: string) {

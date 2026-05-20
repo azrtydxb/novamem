@@ -816,6 +816,64 @@ describe("http: P0 regression tests", () => {
     expect(denied.statusCode).toBe(403);
   });
 
+  it("removed project member cannot see former project content through hygiene, today, stats, or active project", async () => {
+    const { app, warm, bobSession, carolSession } = await setupBobInAcme();
+    const bobAuth = { authorization: `Bearer ${bobSession}` };
+    const carolAuth = { authorization: `Bearer ${carolSession}` };
+
+    const created = await app.inject({
+      method: "POST", url: "/v1/me/projects",
+      payload: { name: "Sensitive Shared" }, headers: bobAuth,
+    });
+    const sharedId = created.json().id as string;
+    await app.inject({
+      method: "POST", url: `/v1/me/projects/${sharedId}/members`,
+      payload: { username: "carol" }, headers: bobAuth,
+    });
+    let carolUserId = "";
+    for (const u of warm.users.values()) if (u.username === "carol") carolUserId = u.id;
+    await warm.insertEntry({
+      userId: carolUserId,
+      projectId: sharedId,
+      content: "tiny secret",
+      namespace: "former-project",
+      source: "test",
+    });
+
+    const setActive = await app.inject({
+      method: "PUT", url: "/v1/me/active-project",
+      payload: { project: sharedId }, headers: carolAuth,
+    });
+    expect(setActive.statusCode).toBe(200);
+
+    const beforeHygiene = await app.inject({ method: "POST", url: "/v1/hygiene", payload: { k: 10 }, headers: carolAuth });
+    expect(JSON.stringify(beforeHygiene.json())).toContain("tiny secret");
+    const beforeStats = await app.inject({ method: "GET", url: "/v1/stats", headers: carolAuth });
+    expect(JSON.stringify(beforeStats.json())).toContain("former-project");
+    const beforeToday = await app.inject({ method: "GET", url: "/v1/me/today", headers: carolAuth });
+    expect(JSON.stringify(beforeToday.json())).toContain("tiny secret");
+
+    const remove = await app.inject({
+      method: "DELETE", url: `/v1/me/projects/${sharedId}/members/${carolUserId}`,
+      headers: bobAuth,
+    });
+    expect(remove.statusCode).toBe(200);
+
+    const afterHygiene = await app.inject({ method: "POST", url: "/v1/hygiene", payload: { k: 10 }, headers: carolAuth });
+    expect(afterHygiene.statusCode).toBe(200);
+    expect(JSON.stringify(afterHygiene.json())).not.toContain("tiny secret");
+    const afterStats = await app.inject({ method: "GET", url: "/v1/stats", headers: carolAuth });
+    expect(afterStats.statusCode).toBe(200);
+    expect(JSON.stringify(afterStats.json())).not.toContain("former-project");
+    const afterToday = await app.inject({ method: "GET", url: "/v1/me/today", headers: carolAuth });
+    expect(afterToday.statusCode).toBe(200);
+    expect(JSON.stringify(afterToday.json())).not.toContain("tiny secret");
+    const active = await app.inject({ method: "GET", url: "/v1/me/active-project", headers: carolAuth });
+    expect(active.statusCode).toBe(200);
+    expect(active.json()).toEqual({ active: null });
+  });
+
+
   // The login-throttle concern was about /v1/auth/login. Better Auth
   // owns throttling now via its own rate-limit + secondaryStorage
   // hooks; we no longer ship a hand-rolled per-username throttle.

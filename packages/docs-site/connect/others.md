@@ -52,7 +52,7 @@ For hosts that only speak stdio MCP, the [@azrtydxb/novamem-mcp](https://www.npm
 }
 ```
 
-Same tool surface (15 tools — `memory_*` + `project_*`).
+Same current NovaMem MCP tool surface (`memory_*` + `project_*`).
 
 ## Agent Skills add-on
 
@@ -69,7 +69,7 @@ skills/novamem/
 ├── SKILL.md                 # name, description, when-to-use rules
 └── references/
     ├── search.md            # memory_search / recent / today / neighbors / stats
-    ├── remember.md          # memory_remember / update / forget + worthiness gate
+    ├── remember.md          # memory_capture / remember / update / forget + worthiness gate
     └── projects.md          # all 7 project_* tools
 ```
 

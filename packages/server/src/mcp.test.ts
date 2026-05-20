@@ -171,6 +171,29 @@ describe("mcp: tool dispatch", () => {
     expect(payload.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ check: "tool_surface" })]));
   });
 
+  it("memory_adoption marks missing observed tools and instructions as unknown or stale", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+
+    const unknown = (await callTool(server, "memory_adoption", { client: "generic" })) as { content: Array<{ text: string }> };
+    const unknownPayload = JSON.parse(unknown.content[0]!.text);
+    expect(unknownPayload.diagnostics.find((d: { check: string }) => d.check === "tool_surface")).toMatchObject({ ok: false, status: "unknown" });
+    expect(unknownPayload.diagnostics.find((d: { check: string }) => d.check === "instructions_hash")).toMatchObject({ ok: false, status: "unknown" });
+
+    const stale = (await callTool(server, "memory_adoption", {
+      observedTools: ["memory_search", "memory_remember"],
+      observedInstructionsHash: "0".repeat(64),
+    })) as { content: Array<{ text: string }> };
+    const stalePayload = JSON.parse(stale.content[0]!.text);
+    const toolDiag = stalePayload.diagnostics.find((d: { check: string }) => d.check === "tool_surface");
+    expect(toolDiag.status).toBe("stale");
+    expect(toolDiag.missingRequiredTools).toEqual(expect.arrayContaining(["memory_context", "memory_capture"]));
+    expect(stalePayload.features.proactiveContext).toBe(false);
+    expect(stalePayload.features.durableCapture).toBe(false);
+    expect(stalePayload.diagnostics.find((d: { check: string }) => d.check === "instructions_hash")).toMatchObject({ ok: false, status: "stale" });
+  });
+
+
   it("memory_search finds the just-stored entry", async () => {
     const { engine } = makeEngine();
     const server = buildMcpServer(engine, "public");

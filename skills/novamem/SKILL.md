@@ -72,9 +72,9 @@ Default weights are tuned for prose. Useful overrides:
 
 If every hit is below ~0.4, treat it as a miss.
 
-## When to call `memory_remember`
+## When to call `memory_capture`
 
-Save things that will still matter next session:
+Use `memory_capture` for things that will still matter next session. Use raw `memory_remember` only for explicit direct inserts or compatibility commands:
 
 - Decisions with reasoning ("chose drizzle over knex because…")
 - User preferences that recur (tools, formatting, review style)

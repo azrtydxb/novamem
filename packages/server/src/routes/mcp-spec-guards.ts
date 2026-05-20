@@ -9,7 +9,7 @@
  *
  *   1. Origin validation — Transports § "Security Warning" #1:
  *      "Servers MUST validate the Origin header on all incoming
- *      connections to prevent DNS rebinding attacks." Same-origin and
+ *      connections to prevent DNS rebinding attacks." Explicitly
  *      operator-allowlisted origins pass; missing Origin (non-browser
  *      clients) passes too.
  *
@@ -34,27 +34,15 @@ const SUPPORTED_PROTOCOL_VERSIONS = new Set([
 
 export interface SpecGuardOptions {
   /** Allowed Origin values for browser-originated requests. Non-empty
-   *  list = strict allowlist. Same-origin requests (Origin matches the
-   *  request's Host) are always allowed regardless. */
+   *  list = strict allowlist. Missing Origin still passes for non-browser
+   *  clients. Do not compare Origin to the request Host here: Host can be
+   *  attacker-controlled in DNS rebinding scenarios, so only configured
+   *  trusted origins or explicit wildcard may pass. */
   allowedOrigins: readonly string[];
 }
 
-/** Best-effort same-origin check. The reverse-proxy may have rewritten
- *  the host so we can't cryptographically prove same-origin, but the
- *  Origin header the browser sends is for the user-facing URL — that's
- *  what matters for DNS-rebinding defence. */
-function isSameOrigin(origin: string, hostHeader: string | undefined): boolean {
-  if (!hostHeader) return false;
-  try {
-    const u = new URL(origin);
-    return u.host === hostHeader;
-  } catch {
-    return false;
-  }
-}
-
 /** Check the request's Origin header. Returns null when the request
- *  passes (no Origin / same-origin / allowlisted). Returns an error
+ *  passes (no Origin / allowlisted). Returns an error
  *  reason when it should be rejected. */
 export function checkOrigin(
   req: FastifyRequest,
@@ -64,7 +52,6 @@ export function checkOrigin(
   if (!origin || typeof origin !== "string") return null;
   // Wildcard allowlist — operator opted in to "anything goes."
   if (opts.allowedOrigins.includes("*")) return null;
-  if (isSameOrigin(origin, req.headers.host)) return null;
   if (opts.allowedOrigins.includes(origin)) return null;
   return `origin '${origin}' not in allowlist`;
 }

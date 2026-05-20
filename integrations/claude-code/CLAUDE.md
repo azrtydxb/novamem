@@ -44,9 +44,9 @@ Default weights are tuned for prose. Useful overrides:
 
 If every hit is below ~0.4, treat it as a miss.
 
-## When to call `memory_remember`
+## When to call `memory_capture`
 
-Save things that will still matter next session:
+Use `memory_capture` for things that will still matter next session. Use raw `memory_remember` only when the user explicitly asks for a direct insert or a command requires that lower-level primitive:
 
 - Decisions with reasoning ("chose drizzle over knex because…").
 - User preferences that recur (tools, formatting, review style).
@@ -81,7 +81,7 @@ sentence ("Saved that as a memory.") so the user can correct or veto.
 
 Facts evolve. When the user says "I now live in Singapore", search for
 the existing "lives in" memory and `memory_update` it instead of
-calling remember. If you do not know the id, use `memory_capture`; it will update near-duplicates or supersede contradictions automatically. Update preserves the entry's id, hit count, and graph edges; it
+calling `memory_capture`. If you do not know the id, use `memory_capture`; it will update near-duplicates or supersede contradictions automatically. Update preserves the entry's id, hit count, and graph edges; it
 re-embeds when content changes. Skip the embedder by omitting `content`
 if you only need to bump metadata or confidence.
 
@@ -114,8 +114,9 @@ warm.
 
 ## Available MCP tools
 
-`memory_context`, `memory_search`, `memory_adoption`, `memory_capture`, `memory_remember`,
-`memory_update`, `memory_recent`, `memory_today`, `memory_neighbors`,
-`memory_forget`, `memory_stats`, `project_list`, `project_create`,
+`memory_context`, `memory_capture`, `memory_session_recap`, `memory_adoption`,
+`memory_search`, `memory_remember`, `memory_update`, `memory_recent`,
+`memory_today`, `memory_neighbors`, `memory_forget`, `memory_stats`,
+`memory_hygiene`, `memory_evaluate`, `project_list`, `project_create`,
 `project_delete`, `project_activate`, `project_deactivate`,
 `project_share`, `project_unshare`.

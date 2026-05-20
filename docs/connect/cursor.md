@@ -28,7 +28,7 @@ The rest of this page is the manual path.
 }
 ```
 
-Open Cursor's settings → MCP and you should see `novamem` connected with 15 tools listed.
+Open Cursor's settings → MCP and you should see `novamem` connected with the current NovaMem MCP tools listed, including `memory_context`, `memory_capture`, and `memory_adoption`.
 
 ## Stdio shim
 
@@ -55,7 +55,7 @@ Open the Composer / Agent and ask:
 
 > Remember that this project uses Tailwind v4 (CSS-native config, not tailwind.config.js).
 
-Cursor should call `memory_remember`. Then in a fresh session:
+Cursor should call `memory_context` first, then `memory_capture` for a durable fact. In a fresh session:
 
 > What styling system does this project use?
 

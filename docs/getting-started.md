@@ -74,7 +74,7 @@ Ask your AI tool:
 
 > Remember that I prefer pnpm over npm.
 
-It should call `memory_remember`. Then start a fresh session and ask:
+It should call `memory_context` first, then `memory_capture` after you give it a durable fact. Start a fresh session and ask:
 
 > What package manager do I prefer?
 

@@ -58,11 +58,11 @@ In a Claude Code session:
 /mcp
 ```
 
-You should see `novamem` listed with 15 tools (`memory_*` + `project_*`). Then ask:
+You should see `novamem` listed with the current NovaMem MCP tools (`memory_*` + `project_*`), including `memory_context`, `memory_capture`, and `memory_adoption`. Then verify the proactive protocol:
 
-> Remember that I prefer pnpm over npm.
+> I prefer pnpm over npm. What should you remember from this?
 
-Claude should call `memory_remember` and confirm.
+Claude should call `memory_context` before answering, then `memory_capture` to save the durable preference.
 
 ## Troubleshooting
 

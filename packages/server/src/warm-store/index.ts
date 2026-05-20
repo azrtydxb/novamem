@@ -298,7 +298,7 @@ export class WarmStore {
         project: schema.memoryEntries.projectId,
       })
       .from(schema.memoryEntries)
-      .where(eq(schema.memoryEntries.userId, userId));
+      .where(this.visibleMemoryWhere(userId));
     const tokens = this.db
       .select({
         kind: sql<"remember" | "token" | "project" | "audit">`'token'::text`,
@@ -996,6 +996,17 @@ export class WarmStore {
    *  typed store method rather than the engine reaching into FakeWarmStore's
    *  in-memory `rows` map; production uses Postgres and must exercise the
    *  same contract. */
+  private visibleMemoryWhere(userId: string) {
+    return or(
+      and(eq(schema.memoryEntries.userId, userId), isNull(schema.memoryEntries.projectId)),
+      sql`EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.project_id = ${schema.memoryEntries.projectId}
+          AND pm.user_id = ${userId}
+      )`,
+    );
+  }
+
   async listHygieneEntries(
     userId: string,
     opts: { k?: number } = {},
@@ -1018,7 +1029,7 @@ export class WarmStore {
         updatedAt: schema.memoryEntries.updatedAt,
       })
       .from(schema.memoryEntries)
-      .where(eq(schema.memoryEntries.userId, userId))
+      .where(this.visibleMemoryWhere(userId))
       .orderBy(desc(schema.memoryEntries.updatedAt))
       .limit(opts.k ?? 400);
     return rows.map((r) => ({ ...r, metadata: (r.metadata ?? null) as Record<string, unknown> | null }));
@@ -1361,7 +1372,7 @@ export class WarmStore {
         count: count(),
       })
       .from(schema.memoryEntries)
-      .where(eq(schema.memoryEntries.userId, userId))
+      .where(this.visibleMemoryWhere(userId))
       .groupBy(schema.memoryEntries.namespace, schema.memoryEntries.cold);
     const [last] = await this.db
       .select({ finishedAt: schema.decayRuns.finishedAt })

@@ -71,7 +71,7 @@ Open a session in the project and ask:
 
 > Remember that this repo uses pnpm workspaces.
 
-Kilo should call `memory_remember`. Then `/recall pnpm` to check it round-trips.
+Kilo should call `memory_context` first, then `memory_capture` for a durable fact. Then `/recall pnpm` to check it round-trips.
 
 ## Troubleshooting
 

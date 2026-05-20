@@ -17,9 +17,9 @@ describe("checkOrigin", () => {
     expect(checkOrigin(fakeReq({}), { allowedOrigins: [] })).toBeNull();
   });
 
-  it("passes when Origin matches the request Host (same-origin)", () => {
-    const r = fakeReq({ origin: "https://novamem.example.com", host: "novamem.example.com" });
-    expect(checkOrigin(r, { allowedOrigins: [] })).toBeNull();
+  it("rejects host-matched Origin unless the origin is explicitly allowlisted", () => {
+    const r = fakeReq({ origin: "https://evil.example", host: "evil.example" });
+    expect(checkOrigin(r, { allowedOrigins: [] })).toMatch(/evil\.example/);
   });
 
   it("passes when Origin is in the allowlist", () => {

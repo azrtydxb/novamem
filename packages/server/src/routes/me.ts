@@ -362,6 +362,11 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         await ctx.warm.setActiveProject(u.id, null);
         return reply.send({ active: null });
       }
+      const membership = await ctx.warm.getProjectMembership(projectId, u.id);
+      if (!membership) {
+        await ctx.warm.setActiveProject(u.id, null);
+        return reply.send({ active: null });
+      }
       reply.send({ active: { id: p.id, name: p.name } });
     },
   );
