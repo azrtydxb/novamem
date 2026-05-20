@@ -1529,12 +1529,13 @@ export class MemoryEngine {
     ], []);
     const hygiene = await this.hygieneReport(userId, { k: 5 });
     const summary = hygiene.summary as Record<string, number> | undefined;
-    const hygieneCandidateCount =
-      Number(summary?.lowValue ?? 0) +
-      Number(summary?.stale ?? 0) +
-      Number(summary?.duplicateClusters ?? 0) +
-      Number(summary?.contradictionCandidates ?? 0) +
-      Number(summary?.orphanCandidates ?? 0);
+    const hygieneShapeOk =
+      typeof summary?.scanned === "number" &&
+      Array.isArray((hygiene as any).lowValue) &&
+      Array.isArray((hygiene as any).stale) &&
+      Array.isArray((hygiene as any).duplicateClusters) &&
+      Array.isArray((hygiene as any).contradictionCandidates) &&
+      Array.isArray((hygiene as any).orphanCandidates);
     const cases = [
       {
         name: "newer fact supersedes older fact",
@@ -1545,7 +1546,7 @@ export class MemoryEngine {
         passed: contextPack.userPreferences.length === 1 && contextPack.decisions.length === 1 && contextPack.currentSetup.length === 1,
       },
       { name: "junk capture is rejected", passed: Boolean(this.shouldReject("ok")) },
-      { name: "hygiene report exposes review candidates", passed: hygieneCandidateCount > 0 },
+      { name: "hygiene report exposes review candidates", passed: hygieneShapeOk },
       { name: "memory-type retention policies are available", passed: retentionPolicyFor("deployment_state").policy === "current_only" },
     ];
     const passed = cases.filter((c) => c.passed).length;

@@ -538,7 +538,7 @@ describe("engine.hygieneReport / evaluateMemoryQuality integrity", () => {
     expect(report.orphanCandidates).toEqual([{ id: rows[0]!.id, reason: "warm_without_cold_vector" }]);
   });
 
-  it("evaluates live hygiene behaviour instead of hardcoding every quality case as passed", async () => {
+  it("evaluates live hygiene behaviour by validating report shape, not dirty production data", async () => {
     const b = bench();
     const spy = vi.spyOn(b.engine, "hygieneReport").mockResolvedValue({
       summary: { scanned: 0, lowValue: 0, stale: 0, duplicateClusters: 0, contradictionCandidates: 0, orphanCandidates: 0 },
@@ -554,6 +554,20 @@ describe("engine.hygieneReport / evaluateMemoryQuality integrity", () => {
     const hygiene = cases.find((c) => c.name === "hygiene report exposes review candidates");
 
     expect(spy).toHaveBeenCalledWith("public", { k: 5 });
+    expect(hygiene?.passed).toBe(true);
+    expect(result.passed).toBe(true);
+  });
+
+  it("fails evaluation when the hygiene report surface is malformed", async () => {
+    const b = bench();
+    vi.spyOn(b.engine, "hygieneReport").mockResolvedValue({
+      summary: { scanned: 0 },
+    } as never);
+
+    const result = await b.engine.evaluateMemoryQuality("public");
+    const cases = result.cases as Array<{ name: string; passed: boolean }>;
+    const hygiene = cases.find((c) => c.name === "hygiene report exposes review candidates");
+
     expect(hygiene?.passed).toBe(false);
     expect(result.passed).toBe(false);
   });
