@@ -4,7 +4,24 @@ title: Data plane
 
 # Data plane
 
-The seven core operations that AI agents call. Same endpoints whether you're on the bearer-token route (`/v1/*`) or the cookie-session mirror (`/v1/me/*`).
+The nine core operations that AI agents call. Same endpoints whether you're on the bearer-token route (`/v1/*`) or the cookie-session mirror (`/v1/me/*`).
+
+## `POST /v1/context`
+
+Low-friction first-pass grounding for the current user message. Intended as the first call before substantive agent work. It returns relevant hybrid search results plus recent memories in one response.
+
+```json
+{
+  "message": "user request or task summary",
+  "namespace": "default",
+  "includeNamespaces": ["..."],
+  "k": 10,
+  "project": "id or name",
+  "includeProjects": ["..."]
+}
+```
+
+Returns `{ relevant, recent }` with the same result shape used by search/recent.
 
 ## `POST /v1/search`
 
@@ -25,9 +42,38 @@ Hybrid retrieval. Always runs keyword + vector + graph in parallel, fuses with w
 
 Returns `{ results: SearchResult[], degraded: boolean }`. Each result has `id, score, content, tier, namespace, project, source, metadata, signals`.
 
+## `POST /v1/capture`
+
+Preferred agent-facing durable write after meaningful work. Same input shape as `remember`, but with semantic duplicate/update and contradiction supersession before insert.
+
+```json
+{
+  "content": "required, self-contained durable fact",
+  "namespace": "default",
+  "source": "agent name or origin",
+  "sourceType": "doc|chat|email|code-review|inference|observation|system|manual",
+  "capturedFrom": "conversation / run / channel ref",
+  "confidence": 1.0,
+  "agentName": "agent identifier",
+  "project": "id or name",
+  "metadata": {},
+  "force": false
+}
+```
+
+Responses:
+
+- `{ id }` — inserted a fresh fact.
+- `{ id, deduplicated: true }` — exact duplicate, existing entry reinforced.
+- `{ id, deduplicated: true, updated: true }` — near-duplicate/refinement, existing active entry updated in place.
+- `{ id, superseded: ["01..."] }` — new fact inserted and older contradictory active entries marked superseded.
+- `{ id: null, rejected: "<reason>" }` — worthiness gate rejected the content.
+
+Superseded entries are marked in metadata and hidden from normal search/context results; they are not hard-deleted.
+
 ## `POST /v1/remember`
 
-Write a new entry. Worthiness gate + SHA dedup applied.
+Raw write of a new entry. Worthiness gate + exact SHA dedup applied. For normal agent saves, prefer `/v1/capture`, which also handles semantic near-duplicates and contradiction supersession.
 
 ```json
 {
@@ -44,7 +90,7 @@ Write a new entry. Worthiness gate + SHA dedup applied.
 }
 ```
 
-Response: `{ id }` on success, `{ id: null, rejected: "<reason>" }` on gate failure, `{ id, deduplicated: true }` on dup.
+Response: `{ id }` on success, `{ id: null, rejected: "<reason>" }` on gate failure, `{ id, deduplicated: true }` on exact duplicate.
 
 ## `POST /v1/recent`
 

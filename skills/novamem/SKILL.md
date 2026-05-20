@@ -23,7 +23,7 @@ NovaMem is not an optional lookup tool. Use it by default:
 1. **Before answering any substantive user request**, call `memory_context` with the user's current message. Substantive means technical work, planning, troubleshooting, recommendations, personal preferences, project work, or anything where prior context may change the answer. Skip only greetings/filler or when the user explicitly says not to use memory.
 2. **Before asking the user to repeat context**, call `memory_context` or targeted `memory_search` first.
 3. **After meaningful work**, call `memory_capture` for durable outcomes: decisions, changed preferences, verified setup facts, bug root causes, recurring constraints, or architecture invariants. Do not save secrets or transient task chatter.
-4. **When a fact changed**, search first and use `memory_update`; do not create a duplicate with `memory_capture`/`memory_remember`.
+4. **When a fact changed**, prefer `memory_capture` unless you already know the exact old entry id. Capture searches active nearby memories, updates near-duplicates in place, and supersedes contradictory older facts. Use `memory_update` only for manual id-targeted rewrites.
 
 Use `memory_search` for deeper targeted recall after `memory_context`; use `memory_today`/`memory_recent` for temporal recall; use `memory_neighbors` after finding a seed memory.
 
@@ -40,7 +40,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 - `memory_stats` — per-namespace + per-tier counts
 
 **Write / mutate** — see [references/remember.md](references/remember.md):
-- `memory_capture` — low-friction durable write path after meaningful work
+- `memory_capture` — low-friction durable write path after meaningful work; handles semantic duplicate/update and contradiction supersession
 - `memory_remember` — store a new entry (subject to the worthiness gate)
 - `memory_update` — rewrite an entry in place; preserves id + hits + edges
 - `memory_forget` — hard delete across warm + cold + graph
@@ -84,13 +84,13 @@ Don't save:
 - Anything the user said is private/secret
 - Verbatim error stack traces — extract the diagnosis instead
 
-The server applies a **worthiness gate**. Inputs shorter than 12 chars or matching the conversational-filler regex (`ok`, `thanks`, `noted`, …) are rejected with `{ rejected: <reason>, id: null }`. Pass `force: true` to bypass when the user explicitly asked for it. **Exact duplicates** within the same scope are deduplicated automatically — the response is `{ id: <existingId>, deduplicated: true }`; treat that as success.
+The server applies a **worthiness gate**. Inputs shorter than 12 chars or matching the conversational-filler regex (`ok`, `thanks`, `noted`, …) are rejected with `{ rejected: <reason>, id: null }`. Pass `force: true` to bypass when the user explicitly asked for it. Exact duplicates within the same scope return `{ id: <existingId>, deduplicated: true }`; near-duplicate captures return `{ id, deduplicated: true, updated: true }`; contradictory captures return `{ id: <newId>, superseded: [<oldId>] }` and hide the old fact from normal recall. Treat all three as successful saves.
 
 When you remember something proactively, mention it in one short sentence ("Saved that as a memory.") so the user can correct or veto.
 
 ## When to call `memory_update`
 
-Facts evolve. When the user says "I now live in Singapore", search for the existing "lives in" memory and call `memory_update` instead of `remember` (which would leave the old fact alongside the new one). Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
+Facts evolve. If you know the exact old entry id, call `memory_update`; otherwise use `memory_capture`, which searches active nearby memories and either updates or supersedes for you. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
 
 ## Provenance fields
 

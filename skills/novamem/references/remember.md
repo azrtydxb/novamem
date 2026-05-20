@@ -1,8 +1,21 @@
-# Write / mutate — memory_remember · memory_update · memory_forget
+# Write / mutate — memory_capture · memory_remember · memory_update · memory_forget
 
-Three MCP tools for writing. All are subject to user + project access checks; `remember` is also subject to the worthiness gate and exact-duplicate fast-path.
+Four MCP tools for writing. All are subject to user + project access checks. Prefer `memory_capture` for normal agent-facing durable writes: it applies the worthiness gate, exact-duplicate fast-path, semantic duplicate/update, and contradiction supersession. Use `memory_remember` only when you explicitly want raw insertion semantics plus exact dedup.
 
-## memory_remember — store a new entry
+## memory_capture — preferred agent-facing write
+
+Use after meaningful work to save one self-contained durable fact. Inputs match `memory_remember` (`content`, `namespace`, `source`, `project`, `sourceType`, `capturedFrom`, `confidence`, `force`, and optional metadata where supported by the transport).
+
+Behaviour before inserting:
+
+- Exact duplicate: returns `{ id, deduplicated: true }` and reinforces the existing entry.
+- Near-duplicate/refinement: updates the existing active entry in place and returns `{ id, deduplicated: true, updated: true }`.
+- Contradiction: inserts the new fact, marks older contradictory entries as `lifecycleStatus: "superseded"` with `supersededBy` and `supersededReason: "contradiction"`, and returns `{ id, superseded: [<oldId>, ...] }`.
+- Fresh fact: inserts normally and returns `{ id }`.
+
+Superseded/deprecated entries are hidden from normal `memory_context`/`memory_search` results. They are not hard-deleted; use `memory_forget` only when the user explicitly wants deletion.
+
+## memory_remember — raw store a new entry
 
 Inputs:
 - `content` (required, string) — the memory text. Self-contained: assume the reader has no conversation context.
@@ -43,9 +56,9 @@ Entries are sha256-hashed by trimmed content. If you call `remember` with conten
 - One fact per entry — split lists into multiple `remember` calls
 - Mention the save in one short sentence ("Saved that as a memory.") so the user can correct or veto
 
-## memory_update — rewrite in place
+## memory_update — manual rewrite in place
 
-When a fact changes (user moved cities, decision reversed, library swapped), call `memory_update` instead of `forget` + `remember`. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes.
+When you already know the exact entry id for a changed fact, call `memory_update` instead of `forget` + `remember`. For ordinary agent captures where you do not know the old id, use `memory_capture`; it performs the retrieval/update/supersession step for you. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes.
 
 Inputs:
 - `id` (required, string) — entry ULID
@@ -61,6 +74,8 @@ Workflow when overriding an old fact:
 1. `memory_search` for the old phrasing to find the entry id
 2. `memory_update({ id, content: <new phrasing>, confidence: 1.0 })`
 3. Mention the change in one sentence
+
+If you are merely saving the new durable outcome of a task, skip the manual search and call `memory_capture` instead.
 
 ## memory_forget — hard delete
 
@@ -79,7 +94,9 @@ The server enforces the project-scope boundary: if the entry belongs to a projec
 ## Errors
 
 - `{ rejected: <reason>, id: null }` from `remember` — worthiness gate; surface and ask before retrying with `force: true`
-- `{ id: <existing>, deduplicated: true }` from `remember` — success, not an error
+- `{ id: <existing>, deduplicated: true }` from `remember`/`capture` — success, not an error
+- `{ id: <existing>, deduplicated: true, updated: true }` from `capture` — success; near-duplicate/refinement updated the existing active entry
+- `{ id: <new>, superseded: [<old>] }` from `capture` — success; older contradictory active facts are now superseded and hidden from normal recall
 - `401` — bearer missing or revoked
 - `403 not a member` — you tried to write to a project you can't reach
 - `404 no such entry` from `update` / `forget` — id doesn't exist (or already deleted)

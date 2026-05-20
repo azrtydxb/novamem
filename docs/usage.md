@@ -29,9 +29,9 @@ NovaMem works best when agents use it without waiting to be told. Integrations s
 1. Call `memory_context` before any substantive user request.
 2. Call targeted `memory_search` before asking the user to repeat context.
 3. Call `memory_capture` after meaningful work to save durable outcomes.
-4. Use `memory_update` rather than duplicate writes when a fact changed.
+4. Let `memory_capture` handle ordinary changed facts: it searches nearby active memories, updates near-duplicates in place, and supersedes contradictory older facts. Use `memory_update` when you already know the exact entry id to rewrite.
 
-`memory_context` is the low-friction first call: it returns relevant hybrid search results and recent memories in one response. `memory_capture` is the low-friction write call: it stores one self-contained durable fact with provenance defaults.
+`memory_context` is the low-friction first call: it returns relevant hybrid search results and recent memories in one response. `memory_capture` is the low-friction write call: it stores one self-contained durable fact with provenance defaults, semantic duplicate/update handling, and contradiction supersession.
 
 ## Searching (`memory_search`)
 
@@ -62,6 +62,16 @@ By default a search runs in one `namespace` (default `"default"`) and one `proje
 
 Or set an [active project](#active-project-sub-brains) once and `memory_*` defaults to it.
 
+## Capturing (`memory_capture`)
+
+`memory_capture` is the preferred agent-facing write path after meaningful work. It applies the same worthiness gate and exact-duplicate SHA fast-path as `memory_remember`, then does a scoped retrieval check before inserting:
+
+- **Near-duplicate / refinement** — if an active memory in the same `(user, project, namespace)` scope is semantically close and not contradictory, the existing entry is updated in place. Response shape: `{ id, deduplicated: true, updated: true }`.
+- **Contradiction / supersession** — if the new durable fact contradicts active nearby memories, NovaMem inserts the new entry and marks the older entries with `metadata.lifecycleStatus = "superseded"`, `supersededBy = <newId>`, and `supersededReason = "contradiction"`. Response shape: `{ id, superseded: [<oldId>, ...] }`.
+- **Fresh fact** — if no close active memory matches, a normal new entry is inserted.
+
+Superseded/deprecated entries are hidden from normal search/context results so agents see the current fact, not both versions. They are not hard-deleted; provenance remains available by id/admin inspection.
+
 ## Remembering (`memory_remember`)
 
 Save things that will still matter next session:
@@ -90,7 +100,7 @@ A rejected request returns `{ id: null, rejected: <reason> }` with HTTP 200 — 
 
 ### The exact-duplicate fast-path
 
-Every entry stores a sha256 of its trimmed content. If you `remember` something already present in the same `(user, project)` scope, the response is `{ id: <existingId>, deduplicated: true }` — the existing row's hit count is bumped and its decay clock is refreshed. **Treat this as success.**
+Every entry stores a sha256 of its normalised content. If you `remember` something already present in the same `(user, project, namespace)` scope, the response is `{ id: <existingId>, deduplicated: true }` — the existing row's hit count is bumped and its decay clock is refreshed. **Treat this as success.**
 
 This runs even when `force: true`, so a duplicate of yourself just returns the existing id.
 
@@ -202,6 +212,8 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 |---|---|---|
 | `{ id: null, rejected: <reason> }` | Worthiness gate | Surface the reason; retry with `force: true` only if the user asked |
 | `{ id: <existing>, deduplicated: true }` | Exact-duplicate fast-path | Success — the existing entry was reinforced |
+| `{ id: <existing>, deduplicated: true, updated: true }` | `memory_capture` near-duplicate/refinement | Success — the existing active entry was rewritten in place |
+| `{ id: <new>, superseded: [<old>] }` | `memory_capture` contradiction | Success — the old active fact was marked superseded and hidden from normal recall |
 | `degraded: true` on `search`/`neighbors` | Graph store offline | Mention to the user; warm + cold paths still work |
 | `401` | Bearer missing / revoked | Don't retry; surface to the user |
 | `403 not a member` | Project exists but caller can't reach it | Distinct from `404`; the project name is right but you don't have access |

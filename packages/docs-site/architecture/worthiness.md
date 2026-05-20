@@ -1,10 +1,10 @@
 ---
-title: Worthiness gate + dedup
+title: Worthiness, dedup, and supersession
 ---
 
-# Worthiness gate + dedup
+# Worthiness, dedup, and supersession
 
-`memory_remember` is the only write path that doesn't pass through a per-user retrieval check. Two filters run before the entry hits Postgres: a **worthiness gate** (rejects junk) and a **SHA-256 dedup** (collapses duplicates).
+`memory_remember` is the raw write path: it applies a **worthiness gate** and **SHA-256 exact dedup** before inserting. `memory_capture` is the preferred agent-facing path: it applies the same filters, then runs a scoped retrieval check to update near-duplicates in place or supersede contradictory older facts.
 
 ## Worthiness gate
 
@@ -59,4 +59,36 @@ Dedup is per `(user, project, namespace)` — the same content under different n
 
 ## Source
 
-[`packages/server/src/engine/index.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/engine/index.ts) — `shouldReject()` and the dedup branch in `remember()`.
+[`packages/server/src/engine/index.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/engine/index.ts) — `shouldReject()`, exact dedup in `remember()`, and capture duplicate/supersession handling.
+
+
+## Semantic duplicate/update (`memory_capture`)
+
+After the worthiness gate and exact hash check, `memory_capture` searches active memories in the same `(user, project, namespace)` scope. If a nearby active memory is semantically close and not contradictory, NovaMem rewrites that entry in place instead of inserting another row. The response is:
+
+```json
+{ "id": "01KQW8EKAJYNTVSGA283SF2ZGQ", "deduplicated": true, "updated": true }
+```
+
+Use this for normal agent saves after meaningful work; it prevents gradual accumulation of paraphrased setup facts.
+
+## Contradiction supersession (`memory_capture`)
+
+If the new captured fact contradicts nearby active memories, NovaMem inserts the new fact and marks the older entries as superseded in metadata:
+
+```json
+{
+  "lifecycleStatus": "superseded",
+  "supersededBy": "01NEW...",
+  "supersededReason": "contradiction",
+  "supersededAt": "2026-05-20T05:53:00.000Z"
+}
+```
+
+The capture response includes the old ids:
+
+```json
+{ "id": "01NEW...", "superseded": ["01OLD..."] }
+```
+
+Superseded and deprecated entries are hidden from normal `memory_search` / `memory_context` results. They remain stored for provenance and can still be inspected by id/admin tooling or hard-deleted with `memory_forget` if the user asks.

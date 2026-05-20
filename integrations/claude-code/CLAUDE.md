@@ -23,7 +23,7 @@ NovaMem is not an optional lookup tool. Use it by default:
 1. **Before answering any substantive user request**, call `memory_context` with the user's current message. Substantive means technical work, planning, troubleshooting, recommendations, personal preferences, project work, or anything where prior context may change the answer. Skip only greetings/filler or when the user explicitly says not to use memory.
 2. **Before asking the user to repeat context**, call `memory_context` or targeted `memory_search` first.
 3. **After meaningful work**, call `memory_capture` for durable outcomes: decisions, changed preferences, verified setup facts, bug root causes, recurring constraints, or architecture invariants. Do not save secrets or transient task chatter.
-4. **When a fact changed**, search first and use `memory_update`; do not create a duplicate with `memory_capture`/`memory_remember`.
+4. **When a fact changed**, prefer `memory_capture` unless you already know the exact old entry id. Capture searches active nearby memories, updates near-duplicates in place, and supersedes contradictory older facts. Use `memory_update` only for manual id-targeted rewrites.
 
 Use `memory_search` for deeper targeted recall after `memory_context`; use `memory_today`/`memory_recent` for temporal recall; use `memory_neighbors` after finding a seed memory.
 
@@ -81,8 +81,7 @@ sentence ("Saved that as a memory.") so the user can correct or veto.
 
 Facts evolve. When the user says "I now live in Singapore", search for
 the existing "lives in" memory and `memory_update` it instead of
-calling remember (which would leave the old fact alongside the new
-one). Update preserves the entry's id, hit count, and graph edges; it
+calling remember. If you do not know the id, use `memory_capture`; it will update near-duplicates or supersede contradictions automatically. Update preserves the entry's id, hit count, and graph edges; it
 re-embeds when content changes. Skip the embedder by omitting `content`
 if you only need to bump metadata or confidence.
 
@@ -115,7 +114,8 @@ warm.
 
 ## Available MCP tools
 
-`memory_search`, `memory_remember`, `memory_update`, `memory_recent`,
-`memory_today`, `memory_neighbors`, `memory_forget`, `memory_stats`,
-`project_list`, `project_create`, `project_delete`, `project_activate`,
-`project_deactivate`, `project_share`, `project_unshare`.
+`memory_context`, `memory_search`, `memory_capture`, `memory_remember`,
+`memory_update`, `memory_recent`, `memory_today`, `memory_neighbors`,
+`memory_forget`, `memory_stats`, `project_list`, `project_create`,
+`project_delete`, `project_activate`, `project_deactivate`,
+`project_share`, `project_unshare`.

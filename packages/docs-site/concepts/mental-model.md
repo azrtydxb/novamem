@@ -50,6 +50,16 @@ By default a search runs in one `namespace` (default `"default"`) and one `proje
 
 Or set an [active project](#active-project-sub-brains) once and `memory_*` defaults to it.
 
+## Capturing (`memory_capture`)
+
+`memory_capture` is the preferred agent-facing write path after meaningful work. It applies the worthiness gate and exact-duplicate SHA fast-path, then checks nearby active memories before inserting:
+
+- **Near-duplicate / refinement** — update the existing entry in place and return `{ id, deduplicated: true, updated: true }`.
+- **Contradiction / supersession** — insert the new entry, mark older contradictory entries as `metadata.lifecycleStatus = "superseded"`, and return `{ id, superseded: [<oldId>, ...] }`.
+- **Fresh fact** — insert normally.
+
+Superseded/deprecated entries are hidden from normal search/context results so agents see the current fact.
+
 ## Remembering (`memory_remember`)
 
 Save things that will still matter next session:
@@ -78,7 +88,7 @@ A rejected request returns `{ id: null, rejected: <reason> }` with HTTP 200 — 
 
 ### The exact-duplicate fast-path
 
-Every entry stores a sha256 of its trimmed content. If you `remember` something already present in the same `(user, project)` scope, the response is `{ id: <existingId>, deduplicated: true }` — the existing row's hit count is bumped and its decay clock is refreshed. **Treat this as success.**
+Every entry stores a sha256 of its normalised content. If you `remember` something already present in the same `(user, project, namespace)` scope, the response is `{ id: <existingId>, deduplicated: true }` — the existing row's hit count is bumped and its decay clock is refreshed. **Treat this as success.**
 
 This runs even when `force: true`, so a duplicate of yourself just returns the existing id.
 

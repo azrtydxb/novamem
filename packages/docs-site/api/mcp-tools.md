@@ -4,19 +4,21 @@ title: MCP tools
 
 # MCP tools
 
-novamem advertises 14 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for the three transports the server exposes (Streamable HTTP, legacy SSE, and the stdio-shim bridge).
+novamem advertises 17 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for the three transports the server exposes (Streamable HTTP, legacy SSE, and the stdio-shim bridge).
 
 ## Memory tools
 
 | Tool | Purpose |
 |---|---|
+| `memory_context` | Low-friction first-pass grounding for the current user message; combines relevant search + recent context. |
 | `memory_search` | Hybrid retrieval. See [data plane](/api/data-plane#post-v1-search) for full args. |
-| `memory_remember` | Write a new entry. Worthiness gate + dedup applied. |
+| `memory_capture` | Preferred agent-facing durable write. Applies provenance defaults, worthiness gate, semantic duplicate/update, and contradiction supersession. |
+| `memory_remember` | Raw write of a new entry. Worthiness gate + exact SHA dedup applied. |
 | `memory_recent` | Newest-first feed. Optional `since` window. |
 | `memory_today` | Convenience wrapper around `recent` with a 24 h `since`. |
 | `memory_neighbors` | Graph traversal from a seed id. Depth 1–3. |
 | `memory_forget` | Hard delete by id. Idempotent. |
-| `memory_update` | In-place rewrite; preserves id + edges + hits. |
+| `memory_update` | Manual in-place rewrite when you already know the entry id; preserves id + edges + hits. |
 | `memory_stats` | Per-caller byNamespace counts + totals. |
 
 ## Project tools
