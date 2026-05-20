@@ -98,8 +98,9 @@ function looksContradictory(oldContent: string, newContent: string): boolean {
   const oldScalars = extractComparableScalars(oldContent);
   const newScalars = extractComparableScalars(newContent);
   if (oldScalars.size > 0 && newScalars.size > 0) {
-    const overlap = [...oldScalars].some((v) => newScalars.has(v));
-    if (!overlap) return true;
+    const oldOnly = [...oldScalars].some((v) => !newScalars.has(v));
+    const newOnly = [...newScalars].some((v) => !oldScalars.has(v));
+    if (oldOnly && newOnly) return true;
   }
   return hasExplicitNegation(oldContent) !== hasExplicitNegation(newContent);
 }

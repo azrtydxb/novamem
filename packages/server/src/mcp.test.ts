@@ -167,8 +167,8 @@ describe("mcp: tool dispatch", () => {
   it("memory_capture supersedes a contradictory older fact and hides it from context", async () => {
     const { engine, warm, embedder } = makeEngine();
     const server = buildMcpServer(engine, "public");
-    const oldFact = "DGX Spark vLLM DFlash speculative tokens: 15.";
-    const newFact = "DGX Spark vLLM DFlash speculative tokens: 6.";
+    const oldFact = "DGX Spark run 2026 vLLM DFlash speculative tokens: 15.";
+    const newFact = "DGX Spark run 2026 vLLM DFlash speculative tokens: 6.";
     embedder.table.set(oldFact, [0, 1, 0, 0]);
     embedder.table.set(newFact, [0, 1, 0, 0]);
 
