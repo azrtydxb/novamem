@@ -48,7 +48,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --reporter=append-only
       # Build before typecheck so workspace packages that consume each
       # other's `dist/` (e.g. packages/mcp imports @azrtydxb/novamem types)
       # see compiled .d.ts files.
@@ -93,7 +93,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --reporter=append-only
       - run: pnpm -r build
       - name: pnpm pack (client + mcp + init)
         run: |
