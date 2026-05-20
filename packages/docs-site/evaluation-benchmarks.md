@@ -52,6 +52,14 @@ The default/internal report keeps diagnostics:
 
 Do not compare tiny-fixture Recall@5 smoke numbers with public leaderboards. To know how good NovaMem is, run the same dataset and compare the comparable accuracy percentages at the same top-k cutoffs with answerer and judge models recorded.
 
+## LongMemEval live comparison guardrails
+
+- Local vLLM endpoint: `http://192.168.10.246:8888/v1`, model `qwen3.6-35b`.
+- Label answerer/judge as `qwen3.6-35b`; do not present those as GPT-5/Gemini judged scores.
+- NovaMem `/v1/search` currently enforces `k <= 100`; do not report `top_200` until the API limit or retrieval path is changed.
+- Use chunked user/assistant-pair ingestion for direct LongMemEval benchmark storage; whole-session `/v1/remember` can fail on large sessions.
+- Keep enough retrieved-memory text for answer generation; aggressive truncation caused a false failure on the first LongMemEval question.
+
 ## External adapters
 
 Use `packages/benchmarks/src/adapters.ts` to transform upstream datasets:
