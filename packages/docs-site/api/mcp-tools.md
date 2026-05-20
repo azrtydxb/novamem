@@ -4,7 +4,7 @@ title: MCP tools
 
 # MCP tools
 
-novamem advertises 17 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for the three transports the server exposes (Streamable HTTP, legacy SSE, and the stdio-shim bridge).
+novamem advertises 18 tools via the Model Context Protocol. The same shapes live in [`packages/server/src/mcp-tools.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/mcp-tools.ts) — single source of truth for the three transports the server exposes (Streamable HTTP, legacy SSE, and the stdio-shim bridge).
 
 ## Memory tools
 
@@ -12,7 +12,8 @@ novamem advertises 17 tools via the Model Context Protocol. The same shapes live
 |---|---|
 | `memory_context` | Low-friction first-pass grounding for the current user message; combines relevant search + recent context. |
 | `memory_search` | Hybrid retrieval. See [data plane](/api/data-plane#post-v1-search) for full args. |
-| `memory_capture` | Preferred agent-facing durable write. Applies provenance defaults, worthiness gate, semantic duplicate/update, and contradiction supersession. |
+| `memory_capture` | Preferred agent-facing durable write. Applies provenance defaults, typed `memoryType`, worthiness scoring, semantic duplicate/update, and contradiction supersession. |
+| `memory_session_recap` | Batch ingest curated end-of-session recap items as typed durable memories. |
 | `memory_remember` | Raw write of a new entry. Worthiness gate + exact SHA dedup applied. |
 | `memory_recent` | Newest-first feed. Optional `since` window. |
 | `memory_today` | Convenience wrapper around `recent` with a 24 h `since`. |

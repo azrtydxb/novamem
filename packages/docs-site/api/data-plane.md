@@ -4,11 +4,11 @@ title: Data plane
 
 # Data plane
 
-The nine core operations that AI agents call. Same endpoints whether you're on the bearer-token route (`/v1/*`) or the cookie-session mirror (`/v1/me/*`).
+The ten core operations that AI agents call. Same endpoints whether you're on the bearer-token route (`/v1/*`) or the cookie-session mirror (`/v1/me/*`).
 
 ## `POST /v1/context`
 
-Low-friction first-pass grounding for the current user message. Intended as the first call before substantive agent work. It returns relevant hybrid search results plus recent memories in one response.
+Low-friction first-pass grounding for the current user message. Intended as the first call before substantive agent work. It returns relevant hybrid search results, recent memories, and a structured `contextPack` grouped by memory type in one response.
 
 ```json
 {
@@ -70,6 +70,17 @@ Responses:
 - `{ id: null, rejected: "<reason>" }` — worthiness gate rejected the content.
 
 Superseded entries are marked in metadata and hidden from normal search/context results; they are not hard-deleted.
+
+Captured entries are also annotated with typed metadata when possible:
+
+- `memoryType`: `user_preference`, `setup_fact`, `project_convention`, `decision`, `bug_root_cause`, `deployment_state`, `safety_constraint`, or `general`.
+- `worthiness`: v2 scoring object with `durable`, `reuseLikelihood`, `userRelevance`, `confidence`, and `overall`.
+
+## `POST /v1/session-recap`
+
+Batch ingest a curated end-of-session recap without dumping transcripts. The route accepts arrays such as `decisions`, `setupFacts`, `rootCauses`, `preferences`, `projectConventions`, `safetyConstraints`, and `other`, then stores each item through the same `capture` path with the appropriate `memoryType`.
+
+Use this for durable outcomes after meaningful work: final deployment state, root causes, user preferences, and decisions. Do not pass raw chat logs or secrets.
 
 ## `POST /v1/remember`
 

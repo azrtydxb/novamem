@@ -19,6 +19,7 @@ import {
   RecentBody,
   RememberBody,
   SearchBody,
+  SessionRecapBody,
   UpdateMemoryBody,
 } from "./schemas.js";
 import {
@@ -81,7 +82,8 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       reply.send({
         relevant,
         recent,
-        guidance: "Use this context before answering. If relevant is empty, proceed but avoid asking the user to repeat context until targeted memory_search also misses.",
+        contextPack: ctx.engine.buildContextPack(relevant.results, recent.results),
+        guidance: "Use this context before answering. Prefer contextPack sections over loose hits. If relevant is empty, proceed but avoid asking the user to repeat context until targeted memory_search also misses.",
       });
     },
   );
@@ -112,6 +114,50 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         force: body.force,
       }, req.bearerToken);
       reply.code(201).send({ saved: result.id ? 1 : 0, results: [result] });
+    },
+  );
+
+  r.post(
+    "/v1/session-recap",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Ingest a concise session recap as typed durable memories",
+        body: SessionRecapBody,
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      const body = req.body;
+      if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
+      const groups: Array<{ items?: string[]; namespace: string; memoryType: string }> = [
+        { items: body.decisions, namespace: "decisions", memoryType: "decision" },
+        { items: body.setupFacts, namespace: "current-setup", memoryType: "setup_fact" },
+        { items: body.rootCauses, namespace: "root-causes", memoryType: "bug_root_cause" },
+        { items: body.preferences, namespace: "user", memoryType: "user_preference" },
+        { items: body.projectConventions, namespace: "project-conventions", memoryType: "project_convention" },
+        { items: body.safetyConstraints, namespace: "safety", memoryType: "safety_constraint" },
+        { items: body.other, namespace: body.namespace ?? "memory", memoryType: "general" },
+      ];
+      const results = [];
+      for (const group of groups) {
+        for (const content of group.items ?? []) {
+          const r = await ctx.engine.capture(req.userId, {
+            content,
+            namespace: body.namespace ?? group.namespace,
+            source: body.source ?? "memory_session_recap",
+            agentName: body.agentName,
+            project: body.project,
+            metadata: { ...(body.metadata ?? {}), memoryType: group.memoryType, recap: true },
+            sourceType: body.sourceType ?? "summary",
+            capturedFrom: body.capturedFrom ?? "memory_session_recap",
+            confidence: body.confidence,
+            force: body.force,
+          }, req.bearerToken);
+          results.push(r);
+        }
+      }
+      reply.code(201).send({ saved: results.filter((r) => r.id).length, results });
     },
   );
 

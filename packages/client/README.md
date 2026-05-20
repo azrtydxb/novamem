@@ -52,6 +52,8 @@ await memory.updateMemory(oldId, {
 | Method | Description |
 |---|---|
 | `search(req)` | Hybrid keyword + vector + graph search |
+| `capture(req)` | Agent-facing durable write with typed metadata, worthiness scoring, semantic dedupe/update, and supersession |
+| `sessionRecap(req)` | Batch ingest curated end-of-session recap items |
 | `remember(req)` | Store a new entry; subject to the worthiness gate (pass `force: true` to bypass) |
 | `updateMemory(id, req)` | Rewrite an entry in place; preserves id + hits + edges |
 | `recent(opts)` | Newest entries by namespace |

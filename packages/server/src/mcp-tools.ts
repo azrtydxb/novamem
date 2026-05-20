@@ -30,6 +30,7 @@ import {
   RememberBody,
   SearchBody,
   ContextBody,
+  SessionRecapBody,
   UpdateMemoryBody,
 } from "./routes/schemas.js";
 
@@ -128,6 +129,39 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     annotations: {
       title: "Capture durable memory",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+
+  {
+    name: "memory_session_recap",
+    description:
+      "Ingest a concise end-of-session recap as durable typed memories. Use this after meaningful sessions to save decisions, setup facts, root causes, preferences, project conventions, and safety constraints without dumping transcripts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        decisions: { type: "array", items: { type: "string" } },
+        setupFacts: { type: "array", items: { type: "string" } },
+        rootCauses: { type: "array", items: { type: "string" } },
+        preferences: { type: "array", items: { type: "string" } },
+        projectConventions: { type: "array", items: { type: "string" } },
+        safetyConstraints: { type: "array", items: { type: "string" } },
+        other: { type: "array", items: { type: "string" } },
+        namespace: { type: "string" },
+        source: { type: "string" },
+        sourceType: { type: "string" },
+        capturedFrom: { type: "string" },
+        confidence: { type: "number", description: "0..1, default 1.0" },
+        force: { type: "boolean" },
+        project: { type: "string", description: "Optional project (sub-brain) to scope to." },
+        metadata: { type: "object" },
+      },
+    },
+    annotations: {
+      title: "Ingest session recap",
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: true,
@@ -502,6 +536,7 @@ export const TodayBody = RecentBody;
 export const TOOL_INPUT_SCHEMAS = {
   memory_context: ContextBody,
   memory_capture: CaptureBody,
+  memory_session_recap: SessionRecapBody,
   memory_search: SearchBody,
   memory_remember: RememberBody,
   memory_today: TodayBody,

@@ -79,6 +79,25 @@ const MetadataRule = z
     message: "metadata too large (8KB max)",
   });
 
+export const SessionRecapBody = z.object({
+  decisions: z.array(z.string().min(12).max(4000)).optional(),
+  setupFacts: z.array(z.string().min(12).max(4000)).optional(),
+  rootCauses: z.array(z.string().min(12).max(4000)).optional(),
+  preferences: z.array(z.string().min(12).max(4000)).optional(),
+  projectConventions: z.array(z.string().min(12).max(4000)).optional(),
+  safetyConstraints: z.array(z.string().min(12).max(4000)).optional(),
+  other: z.array(z.string().min(12).max(4000)).optional(),
+  namespace: z.string().min(1).max(128).optional(),
+  source: z.string().min(1).max(256).optional(),
+  sourceType: z.string().min(1).max(64).optional(),
+  capturedFrom: z.string().min(1).max(256).optional(),
+  agentName: z.string().max(128).optional().nullable(),
+  confidence: z.number().min(0).max(1).optional(),
+  force: z.boolean().optional(),
+  project: ProjectRefRule.optional().nullable(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}).strict();
+
 export const SearchBody = z.object({
   query: z.string().min(1).max(8 * 1024),
   k: z.number().int().positive().max(100).optional(),

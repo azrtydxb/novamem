@@ -51,6 +51,7 @@ describe("mcp: tools/list", () => {
       [
         "memory_context",
         "memory_capture",
+        "memory_session_recap",
         "memory_search",
         "memory_remember",
         "memory_update",
@@ -119,6 +120,79 @@ describe("mcp: tool dispatch", () => {
     expect(payload.relevant.results[0].content).toContain("XML tool parsers");
     expect(payload.recent.results.length).toBeGreaterThan(0);
     expect(payload.guidance).toContain("Use this context before answering");
+  });
+
+  it("memory_context returns a structured context pack grouped by memory type", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    await callTool(server, "memory_capture", {
+      content: "Pascal prefers concise technical answers.",
+      namespace: "user",
+    });
+    await callTool(server, "memory_capture", {
+      content: "NovaMem production deployment runs on 192.168.10.248.",
+      namespace: "current-setup",
+    });
+    await callTool(server, "memory_capture", {
+      content: "Decision: use Drizzle over Knex for compile-time checked SQL.",
+      namespace: "decisions",
+    });
+
+    const r = (await callTool(server, "memory_context", {
+      message: "Work on NovaMem deployment with concise status updates",
+      includeNamespaces: ["user", "current-setup", "decisions"],
+      k: 8,
+    })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+
+    expect(payload.contextPack).toMatchObject({
+      userPreferences: expect.any(Array),
+      currentSetup: expect.any(Array),
+      decisions: expect.any(Array),
+      pitfalls: expect.any(Array),
+    });
+    expect(payload.contextPack.userPreferences.some((m: { content: string }) => m.content.includes("concise"))).toBe(true);
+    expect(payload.contextPack.currentSetup.some((m: { content: string }) => m.content.includes("192.168.10.248"))).toBe(true);
+    expect(payload.contextPack.decisions.some((m: { content: string }) => m.content.includes("Drizzle"))).toBe(true);
+  });
+
+  it("memory_capture annotates memory type and worthiness score", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_capture", {
+      content: "Pascal prefers concise technical answers.",
+      namespace: "user",
+    })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+    const entry = warm.rows.get(payload.results[0].id)!;
+
+    expect(entry.metadata).toMatchObject({
+      memoryType: "user_preference",
+      worthiness: {
+        durable: expect.any(Number),
+        reuseLikelihood: expect.any(Number),
+        userRelevance: expect.any(Number),
+        overall: expect.any(Number),
+      },
+    });
+    expect((entry.metadata!.worthiness as { overall: number }).overall).toBeGreaterThan(0.5);
+  });
+
+  it("memory_session_recap ingests durable typed recap items", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callTool(server, "memory_session_recap", {
+      decisions: ["Decision: choose Drizzle over Knex for compile-time checked SQL."],
+      setupFacts: ["NovaMem production deployment runs on 192.168.10.248."],
+      rootCauses: ["Root cause: CI failed because fast-uri was vulnerable through a transitive dependency."],
+      preferences: ["Pascal prefers concise technical status updates."],
+      capturedFrom: "test-session",
+    })) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(r.content[0]!.text);
+
+    expect(payload.saved).toBe(4);
+    const types = payload.results.map((x: { id: string }) => warm.rows.get(x.id)!.metadata!.memoryType).sort();
+    expect(types).toEqual(["bug_root_cause", "decision", "setup_fact", "user_preference"].sort());
   });
 
   it("memory_capture stores a durable fact with provenance defaults", async () => {

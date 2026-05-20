@@ -171,6 +171,30 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "memory_session_recap",
+    description: "Ingest a concise end-of-session recap as durable typed memories.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        decisions: { type: "array", items: { type: "string" } },
+        setupFacts: { type: "array", items: { type: "string" } },
+        rootCauses: { type: "array", items: { type: "string" } },
+        preferences: { type: "array", items: { type: "string" } },
+        projectConventions: { type: "array", items: { type: "string" } },
+        safetyConstraints: { type: "array", items: { type: "string" } },
+        other: { type: "array", items: { type: "string" } },
+        namespace: { type: "string" },
+        source: { type: "string" },
+        sourceType: { type: "string" },
+        capturedFrom: { type: "string" },
+        confidence: { type: "number" },
+        force: { type: "boolean" },
+        project: { type: "string" },
+        metadata: { type: "object" },
+      },
+    },
+  },
+  {
     name: "memory_search",
     description:
       "Hybrid search across stored memories (remote novamem). Always runs keyword (FTS) + vector (cosine) + graph (neighbours) in parallel and fuses with weighted scoring. Default weights: keyword 0.3, vector 0.6, graph 0.1. Override `weights` only when you have a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap. Pass `project` to scope to a sub-brain you have access to (or omit to search user-wide entries).",
@@ -480,6 +504,36 @@ export function buildRemoteMcpServer(
           } as unknown as Parameters<typeof client.capture>[0];
           const r = await client.capture(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
+        }
+        case "memory_session_recap": {
+          const groups = [
+            { items: optStrArray(args.decisions), namespace: "decisions", memoryType: "decision" },
+            { items: optStrArray(args.setupFacts), namespace: "current-setup", memoryType: "setup_fact" },
+            { items: optStrArray(args.rootCauses), namespace: "root-causes", memoryType: "bug_root_cause" },
+            { items: optStrArray(args.preferences), namespace: "user", memoryType: "user_preference" },
+            { items: optStrArray(args.projectConventions), namespace: "project-conventions", memoryType: "project_convention" },
+            { items: optStrArray(args.safetyConstraints), namespace: "safety", memoryType: "safety_constraint" },
+            { items: optStrArray(args.other), namespace: optStr(args.namespace) ?? "memory", memoryType: "general" },
+          ];
+          const results = [];
+          for (const group of groups) {
+            for (const content of group.items ?? []) {
+              const body = {
+                content,
+                namespace: optStr(args.namespace) ?? group.namespace,
+                source: optStr(args.source) ?? "memory_session_recap",
+                sourceType: optStr(args.sourceType) ?? "summary",
+                capturedFrom: optStr(args.capturedFrom) ?? "memory_session_recap",
+                confidence: optNum(args.confidence),
+                force: optBool(args.force),
+                project,
+                metadata: { ...((args.metadata && typeof args.metadata === "object") ? args.metadata : {}), memoryType: group.memoryType, recap: true },
+              } as unknown as Parameters<typeof client.capture>[0];
+              const r = await client.capture(body);
+              results.push(...((r as { results?: unknown[] }).results ?? [r]));
+            }
+          }
+          return { content: [{ type: "text", text: JSON.stringify({ saved: results.filter((r: any) => r?.id).length, results }) }] };
         }
         case "memory_search": {
           const w = (args.weights ?? {}) as {

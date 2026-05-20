@@ -3,6 +3,37 @@
  * the HTTP API, MCP tools, and the @azrtydxb/novamem TypeScript client.
  */
 
+export type MemoryType =
+  | "user_preference"
+  | "setup_fact"
+  | "project_convention"
+  | "decision"
+  | "bug_root_cause"
+  | "deployment_state"
+  | "safety_constraint"
+  | "general";
+
+export interface WorthinessScore {
+  durable: number;
+  reuseLikelihood: number;
+  userRelevance: number;
+  confidence: number;
+  overall: number;
+}
+
+export interface ContextPack {
+  userPreferences: SearchResult[];
+  currentSetup: SearchResult[];
+  projectConventions: SearchResult[];
+  decisions: SearchResult[];
+  bugRootCauses: SearchResult[];
+  deploymentState: SearchResult[];
+  safetyConstraints: SearchResult[];
+  pitfalls: SearchResult[];
+  recentDecisions: SearchResult[];
+  all: SearchResult[];
+}
+
 export interface MemoryEntry {
   id: string;
   content: string;

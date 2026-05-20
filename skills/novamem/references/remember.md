@@ -100,3 +100,17 @@ The server enforces the project-scope boundary: if the entry belongs to a projec
 - `401` — bearer missing or revoked
 - `403 not a member` — you tried to write to a project you can't reach
 - `404 no such entry` from `update` / `forget` — id doesn't exist (or already deleted)
+
+
+## Typed memory metadata
+
+`memory_capture` and `memory_session_recap` annotate stored entries with:
+
+- `memoryType`: `user_preference`, `setup_fact`, `project_convention`, `decision`, `bug_root_cause`, `deployment_state`, `safety_constraint`, or `general`.
+- `worthiness`: `{ durable, reuseLikelihood, userRelevance, confidence, overall }`.
+
+These fields are metadata only; they do not create a new table or migration. `memory_context` uses them to build `contextPack` sections for agents.
+
+## Session recap ingestion
+
+Use `memory_session_recap` at the end of meaningful work to save concise durable facts without storing the transcript. Prefer the typed arrays: `decisions`, `setupFacts`, `rootCauses`, `preferences`, `projectConventions`, and `safetyConstraints`.

@@ -1,6 +1,6 @@
 ---
 name: novamem
-description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 17 MCP tools — hybrid search, time-windowed recall, graph traversal, store/update/forget with worthiness gate and provenance, and project (sub-brain) lifecycle including share/activate.
+description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 18 MCP tools — hybrid search, time-windowed recall, graph traversal, store/update/forget with worthiness gate and provenance, and project (sub-brain) lifecycle including share/activate.
 license: Apache-2.0
 compatibility: Requires a reachable novamem MCP server (default http://localhost:7778) and a user bearer token (nm_…). See https://github.com/azrtydxb/novamem.
 metadata:
@@ -40,7 +40,8 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 - `memory_stats` — per-namespace + per-tier counts
 
 **Write / mutate** — see [references/remember.md](references/remember.md):
-- `memory_capture` — low-friction durable write path after meaningful work; handles semantic duplicate/update and contradiction supersession
+- `memory_capture` — low-friction durable write path after meaningful work; handles typed metadata, worthiness scoring, semantic duplicate/update, and contradiction supersession
+- `memory_session_recap` — batch ingest curated end-of-session recap items as typed durable memories
 - `memory_remember` — store a new entry (subject to the worthiness gate)
 - `memory_update` — rewrite an entry in place; preserves id + hits + edges
 - `memory_forget` — hard delete across warm + cold + graph
@@ -84,7 +85,7 @@ Don't save:
 - Anything the user said is private/secret
 - Verbatim error stack traces — extract the diagnosis instead
 
-The server applies a **worthiness gate**. Inputs shorter than 12 chars or matching the conversational-filler regex (`ok`, `thanks`, `noted`, …) are rejected with `{ rejected: <reason>, id: null }`. Pass `force: true` to bypass when the user explicitly asked for it. Exact duplicates within the same scope return `{ id: <existingId>, deduplicated: true }`; near-duplicate captures return `{ id, deduplicated: true, updated: true }`; contradictory captures return `{ id: <newId>, superseded: [<oldId>] }` and hide the old fact from normal recall. Treat all three as successful saves.
+The server applies a **worthiness gate**. Inputs shorter than 12 chars or matching the conversational-filler regex (`ok`, `thanks`, `noted`, …) are rejected with `{ rejected: <reason>, id: null }`. Pass `force: true` to bypass when the user explicitly asked for it. Captured entries are annotated with `memoryType` plus v2 `worthiness` scores. Exact duplicates within the same scope return `{ id: <existingId>, deduplicated: true }`; near-duplicate captures return `{ id, deduplicated: true, updated: true }`; contradictory captures return `{ id: <newId>, superseded: [<oldId>] }` and hide the old fact from normal recall. Treat all three as successful saves.
 
 When you remember something proactively, mention it in one short sentence ("Saved that as a memory.") so the user can correct or veto.
 

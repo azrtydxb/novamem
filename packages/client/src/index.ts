@@ -56,9 +56,23 @@ export interface ContextRequest {
   weights?: { keyword?: number; vector?: number; graph?: number };
 }
 
+export interface ContextPack {
+  userPreferences: SearchResult[];
+  currentSetup: SearchResult[];
+  projectConventions: SearchResult[];
+  decisions: SearchResult[];
+  bugRootCauses: SearchResult[];
+  deploymentState: SearchResult[];
+  safetyConstraints: SearchResult[];
+  pitfalls: SearchResult[];
+  recentDecisions: SearchResult[];
+  all: SearchResult[];
+}
+
 export interface ContextResponse {
   relevant: SearchResponse;
   recent: { results: SearchResult[] };
+  contextPack?: ContextPack;
   guidance: string;
 }
 
@@ -78,6 +92,25 @@ export interface RememberRequest {
 export interface CaptureResponse {
   saved: number;
   results: RememberResponse[];
+}
+
+export interface SessionRecapRequest {
+  decisions?: string[];
+  setupFacts?: string[];
+  rootCauses?: string[];
+  preferences?: string[];
+  projectConventions?: string[];
+  safetyConstraints?: string[];
+  other?: string[];
+  namespace?: string;
+  source?: string;
+  sourceType?: string;
+  capturedFrom?: string;
+  agentName?: string | null;
+  confidence?: number;
+  force?: boolean;
+  project?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RememberResponse {
@@ -195,6 +228,10 @@ export class NovamemClient {
 
   async capture(req: RememberRequest): Promise<CaptureResponse> {
     return this.request<CaptureResponse>("/v1/capture", { method: "POST", body: req });
+  }
+
+  async sessionRecap(req: SessionRecapRequest): Promise<CaptureResponse> {
+    return this.request<CaptureResponse>("/v1/session-recap", { method: "POST", body: req });
   }
 
   async remember(req: RememberRequest): Promise<RememberResponse> {

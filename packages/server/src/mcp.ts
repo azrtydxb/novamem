@@ -88,13 +88,15 @@ export function buildMcpServer(
               includeProjects: scope.includeProjects,
             }),
           ]);
+          const contextPack = engine.buildContextPack(relevant.results, recent.results);
           return {
             content: [{
               type: "text",
               text: JSON.stringify({
                 relevant,
                 recent,
-                guidance: "Use this context before answering. If relevant is empty, run targeted memory_search before asking the user to repeat context.",
+                contextPack,
+                guidance: "Use this context before answering. Prefer contextPack sections over loose hits. If relevant is empty, run targeted memory_search before asking the user to repeat context.",
               }),
             }],
           };
@@ -118,6 +120,41 @@ export function buildMcpServer(
             project: scope.project,
           });
           return { content: [{ type: "text", text: JSON.stringify({ saved: r.id ? 1 : 0, results: [r] }) }] };
+        }
+        case "memory_session_recap": {
+          const args = parseToolArgs("memory_session_recap", rawArgs);
+          const scope = await resolveScope(warm, userId, {
+            project: args.project ?? undefined,
+            unionWithActive: false,
+          });
+          const groups: Array<{ items?: string[]; namespace: string; memoryType: string }> = [
+            { items: args.decisions, namespace: "decisions", memoryType: "decision" },
+            { items: args.setupFacts, namespace: "current-setup", memoryType: "setup_fact" },
+            { items: args.rootCauses, namespace: "root-causes", memoryType: "bug_root_cause" },
+            { items: args.preferences, namespace: "user", memoryType: "user_preference" },
+            { items: args.projectConventions, namespace: "project-conventions", memoryType: "project_convention" },
+            { items: args.safetyConstraints, namespace: "safety", memoryType: "safety_constraint" },
+            { items: args.other, namespace: args.namespace ?? "memory", memoryType: "general" },
+          ];
+          const results = [];
+          for (const group of groups) {
+            for (const content of group.items ?? []) {
+              const r = await engine.capture(userId, {
+                content,
+                namespace: args.namespace ?? group.namespace,
+                source: args.source ?? "memory_session_recap",
+                agentName: args.agentName,
+                metadata: { ...(args.metadata ?? {}), memoryType: group.memoryType, recap: true },
+                sourceType: args.sourceType ?? "summary",
+                capturedFrom: args.capturedFrom ?? "memory_session_recap",
+                confidence: args.confidence,
+                force: args.force,
+                project: scope.project,
+              });
+              results.push(r);
+            }
+          }
+          return { content: [{ type: "text", text: JSON.stringify({ saved: results.filter((r) => r.id).length, results }) }] };
         }
         case "memory_search": {
           const args = parseToolArgs("memory_search", rawArgs);

@@ -15,6 +15,8 @@ import type { MetricsCollector, TokenIdentity } from "../admin/metrics.js";
 import type {
   HealthSnapshot,
   MemoryStats,
+  MemoryType,
+  ContextPack,
   RememberRequest,
   SearchRequest,
   SearchResult,
@@ -116,6 +118,44 @@ function mergeCaptureMetadata(
     lifecycleStatus: "active",
     ...extra,
   };
+}
+
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, Number(n.toFixed(3))));
+}
+
+export function inferMemoryType(content: string, namespace?: string, metadata?: Record<string, unknown>): MemoryType {
+  const explicit = metadata?.memoryType;
+  if (typeof explicit === "string") return explicit as MemoryType;
+  const hay = `${namespace ?? ""} ${content}`.toLowerCase();
+  if (/\b(prefer|prefers|likes|wants|communication style|response style)\b/.test(hay)) return "user_preference";
+  if (/\b(root cause|post-?mortem|failed because|bug|incident|regression)\b/.test(hay)) return "bug_root_cause";
+  if (/\b(decision|decided|chose|choose|selected|approved)\b/.test(hay)) return "decision";
+  if (/\b(deploy|deployment|rollout|image|container|k3s|docker|ghcr|endpoint|runs on|host|port)\b/.test(hay)) return "deployment_state";
+  if (/\b(setup|current setup|configured|configuration|model|server|service|endpoint|runs on|host|port|version)\b/.test(hay)) return "setup_fact";
+  if (/\b(convention|standard|pattern|workflow|project uses|codebase uses)\b/.test(hay)) return "project_convention";
+  if (/\b(safety|security|privacy|never|do not|don't|must not|credential|secret)\b/.test(hay)) return "safety_constraint";
+  return "general";
+}
+
+export function scoreWorthiness(content: string, type: MemoryType, confidence = 1): Record<string, number> {
+  const len = content.trim().length;
+  const durable = clamp01(len >= 80 ? 0.9 : len >= 40 ? 0.75 : 0.55);
+  const reuseLikelihood = clamp01(["user_preference", "setup_fact", "deployment_state", "project_convention", "safety_constraint"].includes(type) ? 0.85 : type === "decision" ? 0.75 : type === "bug_root_cause" ? 0.7 : 0.45);
+  const userRelevance = clamp01(/\b(pascal|user|wife|family|household|novamem|deployment|project)\b/i.test(content) ? 0.9 : 0.65);
+  const c = clamp01(confidence);
+  const overall = clamp01(durable * 0.3 + reuseLikelihood * 0.3 + userRelevance * 0.25 + c * 0.15);
+  return { durable, reuseLikelihood, userRelevance, confidence: c, overall };
+}
+
+function captureMetadata(req: RememberRequest, action: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const type = inferMemoryType(req.content, req.namespace, req.metadata);
+  return mergeCaptureMetadata(undefined, req.metadata, {
+    memoryType: type,
+    worthiness: scoreWorthiness(req.content, type, req.confidence ?? 1),
+    captureAction: action,
+    ...extra,
+  });
 }
 
 /** Minimal logger surface — structurally compatible with Pino /
@@ -366,8 +406,7 @@ export class MemoryEngine {
       if (candidate) {
         if (looksContradictory(candidate.content, req.content)) {
           const supersededIds = [candidate.id];
-          const newMetadata = mergeCaptureMetadata(req.metadata, undefined, {
-            captureAction: "superseded",
+          const newMetadata = captureMetadata(req, "superseded", {
             supersedes: supersededIds,
             supersededAt: new Date().toISOString(),
           });
@@ -394,6 +433,8 @@ export class MemoryEngine {
         }
 
         const mergedMetadata = mergeCaptureMetadata(candidate.metadata as Record<string, unknown> | null | undefined, req.metadata, {
+          memoryType: inferMemoryType(req.content, namespace, req.metadata),
+          worthiness: scoreWorthiness(req.content, inferMemoryType(req.content, namespace, req.metadata), req.confidence ?? 1),
           captureAction: "updated",
           updatedByCaptureAt: new Date().toISOString(),
         });
@@ -416,7 +457,7 @@ export class MemoryEngine {
     return this.remember(userId, {
       ...req,
       namespace,
-      metadata: mergeCaptureMetadata(undefined, req.metadata, { captureAction: "inserted" }),
+      metadata: captureMetadata({ ...req, namespace }, "inserted"),
     }, token);
   }
 
@@ -1339,6 +1380,26 @@ export class MemoryEngine {
       totalCold,
       lastDecayAt: s.lastDecayAt ? s.lastDecayAt.toISOString() : null,
       uptimeMs: Date.now() - this.startedAt,
+    };
+  }
+
+  buildContextPack(relevant: SearchResult[], recent: SearchResult[]): ContextPack {
+    const byId = new Map<string, SearchResult>();
+    for (const item of [...relevant, ...recent]) byId.set(item.id, item);
+    const all = [...byId.values()];
+    const byType = (types: string[], extra?: (r: SearchResult) => boolean) =>
+      all.filter((r) => types.includes(String(r.metadata?.memoryType ?? "")) || Boolean(extra?.(r)));
+    return {
+      userPreferences: byType(["user_preference"], (r) => r.namespace === "user"),
+      currentSetup: byType(["setup_fact", "deployment_state"], (r) => ["current-setup", "setup"].includes(r.namespace)),
+      projectConventions: byType(["project_convention"]),
+      decisions: byType(["decision"], (r) => r.namespace === "decisions"),
+      bugRootCauses: byType(["bug_root_cause"]),
+      deploymentState: byType(["deployment_state"]),
+      safetyConstraints: byType(["safety_constraint"]),
+      pitfalls: all.filter((r) => /pitfall|warning|avoid|do not|don't|must not|gotcha/i.test(r.content)),
+      recentDecisions: recent.filter((r) => String(r.metadata?.memoryType ?? "") === "decision" || /\bdecision\b/i.test(r.content)),
+      all,
     };
   }
 
