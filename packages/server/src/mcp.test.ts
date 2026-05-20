@@ -37,9 +37,10 @@ async function callTool(
 describe("mcp: tools/list", () => {
   it("instructions contain the mandatory memory protocol", () => {
     expect(NOVAMEM_INSTRUCTIONS).toContain("Mandatory memory protocol");
-    expect(NOVAMEM_INSTRUCTIONS).toContain("Before answering any substantive user request");
-    expect(NOVAMEM_INSTRUCTIONS).toContain("memory_context");
+    expect(NOVAMEM_INSTRUCTIONS).toContain("Before answering any substantive request");
+    expect(NOVAMEM_INSTRUCTIONS).toContain("call `memory_context` once");
     expect(NOVAMEM_INSTRUCTIONS).toContain("memory_capture");
+    expect(NOVAMEM_INSTRUCTIONS).toContain("memory_session_recap");
   });
 
   it("advertises the full memory_* tool surface", async () => {
