@@ -264,6 +264,6 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - No OpenTelemetry exporter (Prometheus exposition is at `/v1/admin/metrics/prom`).
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
-- The OpenAPI spec is hand-rolled (`packages/server/src/openapi.ts`), not derived from the route Zod schemas. Route additions need to be reflected manually; CI doesn't catch the drift.
+- The OpenAPI spec is generated from the Fastify route tree and route Zod schemas via `@fastify/swagger`; `/openapi.json` should be smoke-checked after adding routes.
 
 See [../CHANGELOG.md](../CHANGELOG.md) for behaviour shifts and [../SECURITY.md](../SECURITY.md) for the production hardening checklist.

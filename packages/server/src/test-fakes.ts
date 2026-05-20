@@ -71,8 +71,10 @@ export class FakeWarmStore {
         for (const r of this.rows.values()) {
           if (r.cold) continue;
           const idleDays = (now - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24);
+          const retention = (r.metadata as { retention?: { baseEffectiveDays?: number } } | undefined)?.retention;
+          const rowBaseDays = typeof retention?.baseEffectiveDays === "number" ? retention.baseEffectiveDays : baseDays;
           // lifespan = baseDays * log2(hits + 1); demote when idle > lifespan.
-          const lifespan = baseDays * Math.log2(Math.max(r.hits, 0) + 1);
+          const lifespan = rowBaseDays * Math.log2(Math.max(r.hits, 0) + 1);
           if (idleDays > lifespan) {
             r.cold = true;
             rows.push({ id: r.id });

@@ -807,14 +807,15 @@ export class MemoryEngine {
       `WITH candidates AS (
          SELECT e.id,
                 COALESCE(a.hits, 0) AS hits,
-                EXTRACT(EPOCH FROM (now() - COALESCE(a.last_accessed, e.created_at))) / 86400.0 AS idle_days
+                EXTRACT(EPOCH FROM (now() - COALESCE(a.last_accessed, e.created_at))) / 86400.0 AS idle_days,
+                COALESCE(NULLIF(e.metadata->'retention'->>'baseEffectiveDays', '')::double precision, $1::double precision) AS base_days
            FROM memory_entries e
            LEFT JOIN memory_access a ON a.entry_id = e.id
           WHERE e.cold = false
        ),
        to_demote AS (
          SELECT id FROM candidates
-          WHERE idle_days > ${lifespanSql}
+          WHERE idle_days > (base_days * log(2.0, GREATEST(hits, 0) + 1))
        )
        UPDATE memory_entries
           SET cold = true, updated_at = now()

@@ -264,6 +264,34 @@ describe("engine.decay", () => {
     expect(r.demoted).toBe(0);
     expect(b.warm.rows.get(popular.id)!.cold).toBe(false);
   });
+
+  it("uses retention policy metadata as the decay base by memory type", async () => {
+    const b = bench();
+    const pref = await b.engine.remember("public", {
+      content: "Pascal prefers concise summaries.",
+      force: true,
+      metadata: { memoryType: "user_preference", retention: { policy: "long_lived", baseEffectiveDays: 365 } },
+    });
+    const deployment = await b.engine.remember("public", {
+      content: "Deployment image sha-test is current.",
+      force: true,
+      metadata: { memoryType: "deployment_state", retention: { policy: "current_only", baseEffectiveDays: 30 } },
+    });
+
+    const prefRow = b.warm.rows.get(pref.id)!;
+    const deploymentRow = b.warm.rows.get(deployment.id)!;
+    expect((prefRow.metadata.retention as { baseEffectiveDays?: number }).baseEffectiveDays).toBe(365);
+    expect((deploymentRow.metadata.retention as { baseEffectiveDays?: number }).baseEffectiveDays).toBe(30);
+    prefRow.hits = 1;
+    deploymentRow.hits = 1;
+    prefRow.lastAccessed = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    deploymentRow.lastAccessed = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+
+    const r = await b.engine.decay();
+    expect(r.demoted).toBe(1);
+    expect(b.warm.rows.get(pref.id)!.cold).toBe(false);
+    expect(b.warm.rows.get(deployment.id)!.cold).toBe(true);
+  });
 });
 
 describe("engine.search: cold→warm promotion", () => {

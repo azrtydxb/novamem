@@ -96,7 +96,7 @@ Superseded and deprecated entries are hidden from normal `memory_search` / `memo
 
 ## Retention policies by memory type
 
-`memory_capture` annotates entries with `metadata.retention`. This is policy metadata used by agents and hygiene tooling, and future decay passes can use it to tune demotion/supersession behaviour. Current policies include:
+`memory_capture` annotates entries with `metadata.retention`. The decay pass uses `retention.baseEffectiveDays` as the per-entry decay base, so long-lived preferences resist demotion while current-only deployment state ages out more quickly. Hygiene/evaluation tooling also surfaces this metadata. Current policies include:
 
 - `user_preference` / `safety_constraint`: `long_lived`
 - `setup_fact`: `supersede_aggressively`
