@@ -1,4 +1,4 @@
-FROM node:25-bookworm-slim AS base
+FROM node:26-bookworm-slim AS base
 # node:25-bookworm-slim no longer ships corepack (it was unbundled
 # starting with Node 25). Install it from npm before activating pnpm.
 # `--force` because the base image has yarn shims at /usr/local/bin/yarnpkg
@@ -41,7 +41,7 @@ RUN pnpm -r \
 # in the runtime stage). Versions chosen from Trivy's fixed-version field.
 RUN node -e "const p=require('./packages/server/package.json');delete p.devDependencies;delete p.scripts;p.overrides={protobufjs:'>=7.5.5',picomatch:'>=4.0.4',underscore:'>=1.13.8'};require('fs').writeFileSync('/tmp/runtime-package.json',JSON.stringify(p,null,2));"
 
-FROM node:25-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 
 # Keep the runtime image patched even when the upstream Node image lags
 # behind Debian security updates. Trivy gates HIGH/CRITICAL OS CVEs in CI.
