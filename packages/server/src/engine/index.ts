@@ -1538,7 +1538,7 @@ export class MemoryEngine {
     const cases = [
       {
         name: "newer fact supersedes older fact",
-        passed: looksContradictory("Pascal lives in Dubai", "Pascal lives in Belgium"),
+        passed: looksContradictory("NovaMem deployment uses port 7778", "NovaMem deployment uses port 7779"),
       },
       {
         name: "context pack groups typed memories",

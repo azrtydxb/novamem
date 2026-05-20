@@ -342,7 +342,8 @@ describe("mcp: tool dispatch", () => {
     const baseRow = warm.rows.values().next().value!;
     warm.rows.set("warm-only-orphan", { ...baseRow, id: "warm-only-orphan", content: "Warm only orphan candidate", namespace: "memory", metadata: {} });
 
-    const r = (await callTool(server, "memory_hygiene", { k: 10 })) as { content: Array<{ text: string }> };
+    const r = (await callTool(server, "memory_hygiene", { k: 10 })) as { content: Array<{ text: string }>; isError?: boolean };
+    if (r.isError) throw new Error(r.content[0]!.text);
     const payload = JSON.parse(r.content[0]!.text);
 
     expect(payload.summary.scanned).toBeGreaterThan(0);
@@ -358,6 +359,12 @@ describe("mcp: tool dispatch", () => {
 
   it("memory_evaluate runs built-in quality scenarios", async () => {
     const { engine } = makeEngine();
+    await engine.remember("public", {
+      content: "low value eval seed",
+      namespace: "memory",
+      force: true,
+      metadata: { worthiness: { overall: 0.2 } },
+    });
     const server = buildMcpServer(engine, "public");
     const r = (await callTool(server, "memory_evaluate", { suite: "core" })) as { content: Array<{ text: string }> };
     const payload = JSON.parse(r.content[0]!.text);

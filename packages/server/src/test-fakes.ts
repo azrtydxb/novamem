@@ -250,7 +250,7 @@ export class FakeWarmStore {
   async listHygieneEntries(userId: string, opts: { k?: number } = {}) {
     return [...this.rows.values()]
       .filter((r) => r.userId === userId)
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, opts.k ?? 400)
       .map((r) => ({
         id: r.id,
