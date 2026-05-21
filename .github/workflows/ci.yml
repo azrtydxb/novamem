@@ -26,11 +26,9 @@ env:
 
 jobs:
   # ── Native test matrix ────────────────────────────────────────────────
-  # CI tests run once on GitHub-hosted amd64. ARM64 validation happens in
-  # the Docker build job below on KW ARC, where the native ARM64 image is
-  # built without QEMU/cross-compile. The ARC runner pod is intentionally
-  # not used for the full monorepo pnpm test install because it can starve
-  # the runner and disconnect it before tests begin.
+  # CI tests run once on the amd64 ARC scale set (novanas). ARM64
+  # validation happens in the Docker build job below on KW ARC, where the
+  # native ARM64 image is built without QEMU/cross-compile.
   test:
     name: test (${{ matrix.arch }})
     timeout-minutes: 15
@@ -39,7 +37,7 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: arc-azrtydxb-amd64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -112,7 +110,7 @@ jobs:
           retention-days: 14
 
   # ── Docker image (native per arch) ────────────────────────────────────
-  # Each arch builds on its own native runner — amd64 on GitHub-hosted,
+  # Each arch builds on its own native runner — amd64 on novanas ARC,
   # arm64 on KW ARC. No buildx --platform with QEMU. Trivy gates the build before it gets pushed; only main-branch
   # pushes (not PRs) end up in ghcr.io. fail-fast:false so the two arches
   # fail independently. needs:[test] gates on a green test run.
@@ -125,7 +123,7 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: arc-azrtydxb-amd64-publish
           - arch: arm64
             runner: arc-azrtydxb-publish
     runs-on: ${{ matrix.runner }}
