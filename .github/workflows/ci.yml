@@ -145,9 +145,12 @@ jobs:
           REF="${GITHUB_REF#refs/tags/}"
           echo "v=${REF}"        >> "$GITHUB_OUTPUT"   # vX.Y.Z
           echo "bare=${REF#v}"   >> "$GITHUB_OUTPUT"   # X.Y.Z
-      # Per-arch cache scope so the two arches don't fight for the same
-      # gha cache slot — each gets its own slice keyed by `${arch}`.
-      - name: Build runtime image (native ${{ matrix.arch }})
+      # PRs build + scan locally without publishing. Push/tag events build
+      # and publish exactly once, then scan the pushed arch image. This avoids
+      # the previous duplicate ARM64 BuildKit run that could exceed the ARC
+      # job window after a successful native build.
+      - name: Build runtime image for PR scan (native ${{ matrix.arch }})
+        if: github.event_name != 'push' || (github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -156,16 +159,14 @@ jobs:
           tags: novamem:ci-${{ matrix.arch }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-      - name: Trivy scan (HIGH+CRITICAL, fail on findings)
+      - name: Trivy scan local PR image (HIGH+CRITICAL, fail on findings)
+        if: github.event_name != 'push' || (github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: novamem:ci-${{ matrix.arch }}
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
-      # Push only on main-branch pushes — PRs (incl. forks) build + scan
-      # but never publish. Arch-suffixed tags here; the `manifest` job
-      # below stitches them into a multi-arch index.
       - name: Login to ghcr.io
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: docker/login-action@v3
@@ -173,26 +174,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Push only on main-branch pushes OR vX.Y.Z tag pushes — PRs
-      # build + scan but never publish. Arch-suffixed tags here; the
-      # `manifest` job below stitches them into multi-arch indexes.
-      #
-      # Tag set:
-      #   :sha-<short>-<arch>          — always pushed
-      #   :main-<arch>                 — main-branch pushes only
-      #   :v<X.Y.Z>-<arch>             — tag pushes only (e.g. v1.1.6)
-      #   :<X.Y.Z>-<arch>              — tag pushes only (e.g. 1.1.6)
-      #
-      # `tags:` is newline-separated; empty lines are ignored, so
-      # interpolating a falsy value just drops the line.
-      #
-      # Re-runs build-push-action with push:true so buildx handles
-      # attestation manifests correctly. The gha cache from the build
-      # step is fully populated; this call hits cache and just pushes.
-      # `docker tag` + `docker push` on the locally-loaded image trips
-      # an "unknown blob" error because the loaded variant strips the
-      # attestation manifests the registry expects.
-      - name: Push per-arch image to GHCR
+      - name: Build and push per-arch image to GHCR
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: docker/build-push-action@v7
         with:
@@ -205,6 +187,14 @@ jobs:
             ${{ steps.semver.outputs.bare && format('{0}:{1}-{2}', env.REGISTRY_IMAGE, steps.semver.outputs.bare, matrix.arch) || '' }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Trivy scan pushed image (HIGH+CRITICAL, fail on findings)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
 
   # ── Multi-arch manifest ───────────────────────────────────────────────
   # Stitches the two per-arch GHCR images into single multi-arch indexes.
