@@ -76,6 +76,7 @@ export class GraphStore {
     try {
       this.db = await FalkorDB.connect({ url: this.url });
       this.graph = this.db.selectGraph(this.graphName);
+      await this.ensureSchema();
       this.connected = true;
       return true;
     } catch (err) {
@@ -88,6 +89,47 @@ export class GraphStore {
       );
       this.connected = false;
       return false;
+    }
+  }
+
+  /** Create the indexes that `MERGE (n:Memory {id, user, project})` needs
+   *  to avoid a label scan over every Memory node. Without these the
+   *  benchmark hot path (`addEdgesBatch`) shows `Node By Label Scan` in
+   *  `GRAPH.EXPLAIN` and burns ~380ms p50 per write at ~100k nodes.
+   *
+   *  Idempotent: FalkorDB returns "already indexed" / "index already
+   *  exists" on duplicate creates which we deliberately swallow so the
+   *  call is safe to make on every connect. Anything else is logged
+   *  but does not fail the connect — degraded perf is acceptable;
+   *  refusing to start because of a transient index race is not.
+   *
+   *  We index three single properties (id, user, project) rather than a
+   *  composite. FalkorDB picks one based on selectivity; `id` will be
+   *  near-unique so MERGE narrows to ~1 candidate in O(log N), and the
+   *  remaining `user`/`project` predicates are evaluated as a property
+   *  filter on the tiny candidate set. */
+  private async ensureSchema(): Promise<void> {
+    if (!this.graph) return;
+    const stmts = [
+      "CREATE INDEX FOR (n:Memory) ON (n.id)",
+      "CREATE INDEX FOR (n:Memory) ON (n.user)",
+      "CREATE INDEX FOR (n:Memory) ON (n.project)",
+    ];
+    for (const stmt of stmts) {
+      try {
+        await this.graph.query(stmt);
+      } catch (err) {
+        const msg = (err as Error).message ?? "";
+        // FalkorDB returns one of these on a duplicate index create. They
+        // are the *expected* outcome whenever the graph already exists
+        // (i.e. on every restart after the first), so logging them as
+        // warnings would generate noise on every pod start.
+        if (/already\s+(indexed|exists)/i.test(msg)) continue;
+        this.logger.warn(
+          { stmt, err: msg },
+          "graph-store ensureSchema: index create failed",
+        );
+      }
     }
   }
 
