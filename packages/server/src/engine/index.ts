@@ -646,14 +646,19 @@ export class MemoryEngine {
           );
         }
       }
-      // Warm relations are still per-row (UPSERT semantics differ; volume small).
+      // Warm relations are per-row in SQL but issued in parallel so the
+      // span name "addRelation.batch" actually corresponds to one
+      // synchronous round of pool-concurrent INSERTs instead of N
+      // sequential round-trips. Each call hits a different
+      // (from,to,relation) row so the ON CONFLICT DO UPDATE upsert
+      // semantics are independent — no need for a transaction.
       await traceAsync("WarmStore.addRelation.batch", {
         "novamem.neighbour_count": neighbours.length,
-      }, async () => {
-        for (const n of neighbours) {
-          await this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId);
-        }
-      });
+      }, () => Promise.all(
+        neighbours.map((n) =>
+          this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId),
+        ),
+      ));
     } catch (err) {
       this.logger.warn(
         { entryId: id, err: (err as Error).message },
