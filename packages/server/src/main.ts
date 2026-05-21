@@ -12,9 +12,11 @@ import { buildHttpServer } from "./http.js";
 import { loadConfig } from "./config.js";
 import { MetricsCollector } from "./admin/metrics.js";
 import { buildAuth } from "./auth-betterauth.js";
+import { initTracing, shutdownTracing } from "./tracing.js";
 
 async function main() {
   const cfg = loadConfig();
+  await initTracing();
 
   if (cfg.auth.mode === "none") {
     // Hard guard: auth=none is a dev convenience. Binding it to a
@@ -311,6 +313,7 @@ async function main() {
     await app.close();
     if (graph) await graph.close();
     await warm.close();
+    await shutdownTracing();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

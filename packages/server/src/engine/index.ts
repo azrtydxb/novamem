@@ -28,6 +28,7 @@ import {
   EFFECTIVE_LIFESPAN_SQL,
   fuse,
 } from "./hybrid-search.js";
+import { traceAsync } from "../tracing.js";
 
 /** Stable hash of normalized content. Used by the worthiness gate to
  *  detect exact duplicates within a (user, project) scope. */
@@ -365,52 +366,76 @@ export class MemoryEngine {
     req: RememberRequest,
     token?: TokenIdentity,
   ): Promise<{ id: string | null; rejected?: string; deduplicated?: boolean }> {
-    // ── Worthiness gate (hard rules + dedup) ────────────────────────
-    if (!req.force) {
-      const reason = this.shouldReject(req.content);
-      if (reason) return { id: null, rejected: reason };
-    }
-    req = withSensitivityMetadata(req);
-    const namespace = req.namespace ?? "default";
-    const projectId = req.project ?? null;
-    const contentHash = sha256Hex(req.content.trim());
-    // Exact-duplicate fast-path: same user, same project, same hash → return
-    // the existing id and bump hits instead of inserting a second row.
-    const existing = await this.warm.findByContentHash(userId, projectId, contentHash);
-    if (existing) {
-      await this.warm.bumpHits(existing);
-      this.metrics?.recordRemember(userId, token);
-      return { id: existing, deduplicated: true };
-    }
-    const id = await this.warm.insertEntry({
-      userId,
-      projectId,
-      content: req.content,
-      namespace,
-      source: req.source ?? "manual",
-      agentName: req.agentName ?? null,
-      metadata: req.sensitivity ? { ...(req.metadata ?? {}), sensitivity: req.sensitivity } : req.metadata,
-      sourceType: req.sourceType ?? null,
-      capturedFrom: req.capturedFrom ?? null,
-      confidence: req.confidence,
-      contentHash,
-    });
-    const [embedding] = await this.embedder.embed(req.content);
-    if (embedding) {
-      await this.cold.upsert({
-        userId,
-        projectId,
-        id,
-        namespace,
-        embedding,
-        payload: { source: req.source ?? "manual", agentName: req.agentName ?? null },
-      });
-      if (this.graphLinkFanout > 0) {
-        await this.linkVectorNeighbors(userId, projectId, id, namespace, embedding);
+    return traceAsync("MemoryEngine.remember", {
+      "novamem.namespace": req.namespace ?? "default",
+      "novamem.project": req.project ?? "",
+      "novamem.content_chars": req.content.length,
+      "novamem.force": Boolean(req.force),
+    }, async (span) => {
+      // ── Worthiness gate (hard rules + dedup) ────────────────────────
+      if (!req.force) {
+        const reason = this.shouldReject(req.content);
+        if (reason) {
+          span.setAttribute("novamem.rejected", reason);
+          return { id: null, rejected: reason };
+        }
       }
-    }
-    this.metrics?.recordRemember(userId, token);
-    return { id };
+      req = withSensitivityMetadata(req);
+      const namespace = req.namespace ?? "default";
+      const projectId = req.project ?? null;
+      const contentHash = sha256Hex(req.content.trim());
+      // Exact-duplicate fast-path: same user, same project, same hash → return
+      // the existing id and bump hits instead of inserting a second row.
+      const existing = await traceAsync("WarmStore.findByContentHash", { "novamem.namespace": namespace }, () =>
+        this.warm.findByContentHash(userId, projectId, contentHash),
+      );
+      if (existing) {
+        span.setAttribute("novamem.deduplicated", true);
+        await traceAsync("WarmStore.bumpHits", { "novamem.entry_id": existing }, () => this.warm.bumpHits(existing));
+        this.metrics?.recordRemember(userId, token);
+        return { id: existing, deduplicated: true };
+      }
+      const id = await traceAsync("WarmStore.insertEntry", { "novamem.namespace": namespace }, () =>
+        this.warm.insertEntry({
+          userId,
+          projectId,
+          content: req.content,
+          namespace,
+          source: req.source ?? "manual",
+          agentName: req.agentName ?? null,
+          metadata: req.sensitivity ? { ...(req.metadata ?? {}), sensitivity: req.sensitivity } : req.metadata,
+          sourceType: req.sourceType ?? null,
+          capturedFrom: req.capturedFrom ?? null,
+          confidence: req.confidence,
+          contentHash,
+        }),
+      );
+      span.setAttribute("novamem.entry_id", id);
+      const [embedding] = await traceAsync("Embedder.embed.remember", {
+        "novamem.content_chars": req.content.length,
+      }, () => this.embedder.embed(req.content));
+      span.setAttribute("novamem.embedding_present", Boolean(embedding));
+      if (embedding) {
+        await traceAsync("ColdStore.upsert", { "novamem.namespace": namespace, "novamem.embedding_dim": embedding.length }, () =>
+          this.cold.upsert({
+            userId,
+            projectId,
+            id,
+            namespace,
+            embedding,
+            payload: { source: req.source ?? "manual", agentName: req.agentName ?? null },
+          }),
+        );
+        if (this.graphLinkFanout > 0) {
+          await traceAsync("MemoryEngine.linkVectorNeighbors", {
+            "novamem.namespace": namespace,
+            "novamem.graph_link_fanout": this.graphLinkFanout,
+          }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding));
+        }
+      }
+      this.metrics?.recordRemember(userId, token);
+      return { id };
+    });
   }
 
   /** Capture is the agent-facing write path. Unlike raw remember(), it first
@@ -592,23 +617,28 @@ export class MemoryEngine {
     embedding: number[],
   ): Promise<void> {
     try {
-      const hits = await this.cold.search({
+      const hits = await traceAsync("ColdStore.search.linkVectorNeighbors", {
+        "novamem.namespace": namespace,
+        "novamem.k": this.graphLinkFanout + 1,
+      }, () => this.cold.search({
         userId,
         projectId,
         namespace,
         embedding,
         k: this.graphLinkFanout + 1,
-      });
+      }));
       const neighbours = hits.filter((h) => h.id !== id).slice(0, this.graphLinkFanout);
       // One batched Cypher round-trip instead of fanout-many.
       if (neighbours.length > 0 && this.graph?.isConnected()) {
         try {
-          await this.graph.addEdgesBatch(
+          await traceAsync("GraphStore.addEdgesBatch", {
+            "novamem.neighbour_count": neighbours.length,
+          }, () => this.graph!.addEdgesBatch(
             userId,
             id,
             neighbours.map((n) => ({ to: n.id, relation: "co_occurs", strength: n.score })),
             projectId,
-          );
+          ));
         } catch (err) {
           this.logger.warn(
             { entryId: id, err: (err as Error).message },
@@ -617,9 +647,13 @@ export class MemoryEngine {
         }
       }
       // Warm relations are still per-row (UPSERT semantics differ; volume small).
-      for (const n of neighbours) {
-        await this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId);
-      }
+      await traceAsync("WarmStore.addRelation.batch", {
+        "novamem.neighbour_count": neighbours.length,
+      }, async () => {
+        for (const n of neighbours) {
+          await this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId);
+        }
+      });
     } catch (err) {
       this.logger.warn(
         { entryId: id, err: (err as Error).message },
@@ -633,6 +667,13 @@ export class MemoryEngine {
     req: SearchRequest,
     token?: TokenIdentity,
   ): Promise<{ results: SearchResult[]; degraded: boolean }> {
+    return traceAsync("MemoryEngine.search", {
+      "novamem.namespace": req.namespace ?? "",
+      "novamem.include_namespaces": req.includeNamespaces?.length ?? 0,
+      "novamem.include_projects": req.includeProjects?.length ?? 0,
+      "novamem.k": req.k ?? 10,
+      "novamem.query_chars": req.query.length,
+    }, async (span) => {
     const k = req.k ?? 10;
     const weights = { ...DEFAULT_WEIGHTS, ...(req.weights ?? {}) };
 
@@ -661,7 +702,9 @@ export class MemoryEngine {
         ? [req.namespace]
         : await this.resolveDefaultNamespaces(userId, scopes);
 
-    const [embedding] = await this.embedder.embed(req.query);
+    const [embedding] = await traceAsync("Embedder.embed.search", {
+      "novamem.query_chars": req.query.length,
+    }, () => this.embedder.embed(req.query));
     // FTS supports multi-namespace via `namespace = ANY(...)` in one query
     // per scope, so we fan out only across scopes (not namespaces).
     // Cold-store needs one search per (scope × namespace) collection.
@@ -673,7 +716,10 @@ export class MemoryEngine {
     let degraded = false;
     const keywordsPromise = Promise.all(
       scopes.map((projectId) =>
-        this.warm.ftsSearch({
+        traceAsync("WarmStore.ftsSearch", {
+          "novamem.namespace_count": namespaces.length,
+          "novamem.k": k * 3,
+        }, () => this.warm.ftsSearch({
           userId,
           projectId,
           query: req.query,
@@ -681,7 +727,7 @@ export class MemoryEngine {
           namespaces: namespaces.length > 1 ? namespaces : undefined,
           k: k * 3,
           agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
-        }),
+        })),
       ),
     ).catch((err) => {
       degraded = true;
@@ -692,7 +738,10 @@ export class MemoryEngine {
       ? Promise.all(
           scopes.flatMap((projectId) =>
             namespaces.map((namespace) =>
-              this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 }),
+              traceAsync("ColdStore.search", {
+                "novamem.namespace": namespace,
+                "novamem.k": k * 3,
+              }, () => this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 })),
             ),
           ),
         ).catch((err) => {
@@ -823,7 +872,10 @@ export class MemoryEngine {
         token,
       );
     }
+    span.setAttribute("novamem.result_count", results.length);
+    span.setAttribute("novamem.degraded", degraded);
     return { results, degraded };
+    });
   }
 
   async decay(opts: { effectiveDaysOverride?: number } = {}): Promise<{ demoted: number; promoted: number }> {
