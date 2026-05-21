@@ -23,6 +23,26 @@ function isCollectionAlreadyExistsError(err: unknown): boolean {
   return message.includes("collection") && message.includes("already exists");
 }
 
+function errorText(err: unknown): string {
+  const maybe = err as { message?: unknown; data?: { status?: { error?: unknown } } };
+  return [maybe.message, maybe.data?.status?.error]
+    .filter((v): v is string => typeof v === "string")
+    .join("\n")
+    .toLowerCase();
+}
+
+function isRetryableQdrantUpsertError(err: unknown): boolean {
+  const maybe = err as { status?: unknown; statusCode?: unknown };
+  const status = maybe.status ?? maybe.statusCode;
+  if (status !== 500 && status !== "500") return false;
+  const text = errorText(err);
+  return text.includes("failed to apply operation") && text.includes("please retry");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface ColdStoreConfig {
   url: string;
   /** Embedding vector dimensionality. Configurable for swappable embedders. */
@@ -131,20 +151,26 @@ export class ColdStore {
   }): Promise<void> {
     const projectId = args.projectId ?? null;
     await this.ensureCollection(args.userId, args.namespace, projectId);
-    await this.client.upsert(this.collectionFor(args.userId, args.namespace, projectId), {
-      points: [
-        {
-          id: ulidToUuid(args.id),
-          vector: args.embedding,
-          payload: {
-            ...args.payload,
-            entryId: args.id,
-            userId: args.userId,
-            projectId,
-          },
-        },
-      ],
-    });
+    const point = {
+      id: ulidToUuid(args.id),
+      vector: args.embedding,
+      payload: {
+        ...args.payload,
+        entryId: args.id,
+        userId: args.userId,
+        projectId,
+      },
+    };
+    const collection = this.collectionFor(args.userId, args.namespace, projectId);
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this.client.upsert(collection, { points: [point] });
+        return;
+      } catch (err) {
+        if (attempt >= 3 || !isRetryableQdrantUpsertError(err)) throw err;
+        await sleep(25 * attempt);
+      }
+    }
   }
 
   async search(args: {

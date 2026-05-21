@@ -66,4 +66,32 @@ describe("ColdStore", () => {
     expect(qdrant.createCollection).toHaveBeenCalledTimes(2);
     expect(qdrant.upsert).toHaveBeenCalledTimes(2);
   });
+
+  it("retries Qdrant upserts when a replicated collection asks the client to retry", async () => {
+    const store = new ColdStore({ url: "http://qdrant.test", vectorSize: 3 });
+    const retryable = new Error("Internal Server Error") as Error & {
+      status?: number;
+      data?: { status?: { error?: string } };
+    };
+    retryable.status = 500;
+    retryable.data = {
+      status: {
+        error:
+          "Service internal error: Failed to apply operation to at least one `Active` replica. Consistency of this update is not guaranteed. Please retry.",
+      },
+    };
+    qdrant.upsert.mockRejectedValueOnce(retryable).mockResolvedValueOnce({});
+
+    await expect(
+      store.upsert({
+        userId: "user-1",
+        namespace: "fresh-namespace",
+        id: "entry-1",
+        embedding: [1, 0, 0],
+        payload: { text: "first" },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(qdrant.upsert).toHaveBeenCalledTimes(2);
+  });
 });
