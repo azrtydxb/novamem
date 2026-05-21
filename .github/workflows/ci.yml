@@ -190,6 +190,8 @@ jobs:
       - name: Trivy scan pushed image (HIGH+CRITICAL, fail on findings)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_PLATFORM: linux/${{ matrix.arch }}
         with:
           image-ref: ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
           severity: HIGH,CRITICAL
