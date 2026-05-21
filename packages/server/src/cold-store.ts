@@ -167,8 +167,8 @@ export class ColdStore {
         await this.client.upsert(collection, { points: [point] });
         return;
       } catch (err) {
-        if (attempt >= 3 || !isRetryableQdrantUpsertError(err)) throw err;
-        await sleep(25 * attempt);
+        if (attempt >= 8 || !isRetryableQdrantUpsertError(err)) throw err;
+        await sleep(Math.min(1000, 50 * 2 ** (attempt - 1)));
       }
     }
   }

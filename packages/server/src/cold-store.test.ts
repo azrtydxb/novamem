@@ -80,7 +80,12 @@ describe("ColdStore", () => {
           "Service internal error: Failed to apply operation to at least one `Active` replica. Consistency of this update is not guaranteed. Please retry.",
       },
     };
-    qdrant.upsert.mockRejectedValueOnce(retryable).mockResolvedValueOnce({});
+    qdrant.upsert
+      .mockRejectedValueOnce(retryable)
+      .mockRejectedValueOnce(retryable)
+      .mockRejectedValueOnce(retryable)
+      .mockRejectedValueOnce(retryable)
+      .mockResolvedValueOnce({});
 
     await expect(
       store.upsert({
@@ -92,6 +97,6 @@ describe("ColdStore", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(qdrant.upsert).toHaveBeenCalledTimes(2);
+    expect(qdrant.upsert).toHaveBeenCalledTimes(5);
   });
 });
