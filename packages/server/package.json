@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
-    "@fastify/cors": "^10.0.1",
+    "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.1.1",
     "@fastify/static": "^9.1.3",
     "@fastify/swagger": "^9.4.2",
