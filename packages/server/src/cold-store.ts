@@ -15,6 +15,14 @@ function ulidToUuid(id: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
+function isCollectionAlreadyExistsError(err: unknown): boolean {
+  const maybe = err as { status?: unknown; statusCode?: unknown; message?: unknown };
+  const status = maybe.status ?? maybe.statusCode;
+  if (status === 409 || status === "409") return true;
+  const message = typeof maybe.message === "string" ? maybe.message.toLowerCase() : "";
+  return message.includes("collection") && message.includes("already exists");
+}
+
 export interface ColdStoreConfig {
   url: string;
   /** Embedding vector dimensionality. Configurable for swappable embedders. */
@@ -98,9 +106,17 @@ export class ColdStore {
     const existing = await this.client.getCollections();
     const exists = existing.collections.some((c) => c.name === name);
     if (!exists) {
-      await this.client.createCollection(name, {
-        vectors: { size: this.vectorSize, distance: "Cosine" },
-      });
+      try {
+        await this.client.createCollection(name, {
+          vectors: { size: this.vectorSize, distance: "Cosine" },
+        });
+      } catch (err) {
+        // Concurrent first writes can both observe a missing collection;
+        // Qdrant returns 409 to the loser after the winner creates it.
+        // At that point the collection exists and this writer can proceed
+        // to the upsert. Preserve all other creation failures.
+        if (!isCollectionAlreadyExistsError(err)) throw err;
+      }
     }
     this.seenCollections.add(name);
   }
