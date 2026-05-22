@@ -149,12 +149,18 @@ export class GraphStore {
     relation: string,
     strength = 1.0,
     projectId: string | null = null,
+    /** Arch-plan Phase 3: bitemporal validity stamps. Default to "now,
+     *  open-ended". Callers can supply explicit ranges for historical
+     *  imports or supersedes. */
+    validFromMs: number = Date.now(),
+    validToMs: number | null = null,
   ): Promise<void> {
     if (!this.graph) return;
     await this.graph.query(
       "MERGE (a:Memory {id: $from, user: $user, project: $project}) " +
         "MERGE (b:Memory {id: $to, user: $user, project: $project}) " +
-        "MERGE (a)-[r:RELATES {kind: $rel}]->(b) SET r.strength = $strength",
+        "MERGE (a)-[r:RELATES {kind: $rel}]->(b) " +
+        "SET r.strength = $strength, r.validFrom = $validFrom, r.validTo = $validTo",
       {
         params: {
           from: fromId,
@@ -163,6 +169,8 @@ export class GraphStore {
           project: projectId ?? "",
           rel: relation,
           strength,
+          validFrom: validFromMs,
+          validTo: validToMs ?? 0,
         },
       },
     );
@@ -174,10 +182,11 @@ export class GraphStore {
   async addEdgesBatch(
     userId: string,
     fromId: string,
-    edges: Array<{ to: string; relation: string; strength?: number }>,
+    edges: Array<{ to: string; relation: string; strength?: number; validFromMs?: number; validToMs?: number | null }>,
     projectId: string | null = null,
   ): Promise<void> {
     if (!this.graph || edges.length === 0) return;
+    const now = Date.now();
     const params = {
       from: fromId,
       user: userId,
@@ -186,6 +195,8 @@ export class GraphStore {
         to: e.to,
         rel: e.relation,
         strength: e.strength ?? 1.0,
+        validFrom: e.validFromMs ?? now,
+        validTo: e.validToMs ?? 0,
       })),
     };
     await this.graph.query(
@@ -193,9 +204,43 @@ export class GraphStore {
         "WITH a UNWIND $edges AS edge " +
         "MERGE (b:Memory {id: edge.to, user: $user, project: $project}) " +
         "MERGE (a)-[r:RELATES {kind: edge.rel}]->(b) " +
-        "SET r.strength = edge.strength",
+        "SET r.strength = edge.strength, r.validFrom = edge.validFrom, r.validTo = edge.validTo",
       { params },
     );
+  }
+
+  /** Arch-plan Phase 3: supersede a fact-edge — mark all matching active
+   *  edges (validTo=0 → currently valid) as ending at `atMs`, then add a
+   *  new active edge from→toNew with validFrom=atMs.
+   *  This is the clean "fact changed at T" path: the OLD knowledge stays
+   *  queryable with `asOf < atMs`, and the NEW knowledge wins for
+   *  `asOf >= atMs`. */
+  async supersedeEdge(
+    userId: string,
+    fromId: string,
+    toIdNew: string,
+    relation: string,
+    strength = 1.0,
+    projectId: string | null = null,
+    atMs: number = Date.now(),
+  ): Promise<void> {
+    if (!this.graph) return;
+    // Close out any open edges with the same (from, relation).
+    await this.graph.query(
+      "MATCH (a:Memory {id: $from, user: $user, project: $project})-[r:RELATES {kind: $rel}]->() " +
+        "WHERE r.validTo = 0 SET r.validTo = $at",
+      {
+        params: {
+          from: fromId,
+          user: userId,
+          project: projectId ?? "",
+          rel: relation,
+          at: atMs,
+        },
+      },
+    );
+    // Open a new edge to the new target.
+    await this.addEdge(userId, fromId, toIdNew, relation, strength, projectId, atMs, null);
   }
 
   /** Drop a node and all its incident edges. Called on `forget()` so graph
@@ -215,6 +260,12 @@ export class GraphStore {
     depth = 1,
     limit = 20,
     projectId: string | null = null,
+    /** Arch-plan Phase 3: bitemporal `as-of` filter. When provided, the
+     *  traversal only follows edges that were valid at this instant
+     *  (validFrom <= asOf AND (validTo = 0 OR validTo >= asOf)). Edges
+     *  written before Phase 3 had no temporal columns and so default to
+     *  always-valid (validFrom = 0, validTo = 0). */
+    asOfMs: number | null = null,
   ): Promise<Array<{ id: string; score: number }>> {
     if (!this.graph) return [];
     // ── Cypher param hardening (issue #44) ─────────────────────────────
@@ -254,20 +305,32 @@ export class GraphStore {
     // `b.id <> $id` excludes the seed itself from results — without it,
     // a self-loop edge (fromId === toId) would surface the seed as its
     // own neighbour. The depth ≥ 2 branch has the same predicate.
+    // Arch-plan Phase 3: optional as-of validity filter. When asOfMs is
+    // null we don't filter (backwards-compat with pre-Phase-3 edges that
+    // have no validFrom/validTo set — Cypher's coalesce treats them as
+    // always-valid).
+    const tempCond =
+      asOfMs === null
+        ? ""
+        : " AND coalesce(r.validFrom, 0) <= $asOf AND (coalesce(r.validTo, 0) = 0 OR coalesce(r.validTo, 0) >= $asOf)";
+    const tempCondPath =
+      asOfMs === null
+        ? ""
+        : " AND ALL(rel IN relationships(p) WHERE coalesce(rel.validFrom, 0) <= $asOf AND (coalesce(rel.validTo, 0) = 0 OR coalesce(rel.validTo, 0) >= $asOf))";
     const cypher =
       depth <= 1
         ? `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES]-(b:Memory)
-             WHERE b.user = $user AND b.project = $project AND b.id <> $id
+             WHERE b.user = $user AND b.project = $project AND b.id <> $id${tempCond}
              RETURN b.id AS id, MAX(r.strength) AS score
              LIMIT ${limit}`
         : `MATCH p = (a:Memory {id: $id, user: $user, project: $project})-[:RELATES*1..${depth}]-(b:Memory)
-             WHERE b.user = $user AND b.project = $project AND b.id <> $id
+             WHERE b.user = $user AND b.project = $project AND b.id <> $id${tempCondPath}
              WITH b.id AS id,
                   reduce(s = 1.0, x IN [rel IN relationships(p) | rel.strength] | s * x) AS pathScore
              RETURN id, MAX(pathScore) AS score
              LIMIT ${limit}`;
     const r = await this.graph.query<{ id: string; score: number }>(cypher, {
-      params: { id: seedId, user: userId, project },
+      params: { id: seedId, user: userId, project, asOf: asOfMs ?? 0 },
     });
     return (r.data ?? []).map((row) => ({ id: row.id, score: Number(row.score ?? 0) }));
   }

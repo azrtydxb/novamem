@@ -144,6 +144,13 @@ export const memoryRelations = pgTable(
     relation: text("relation").notNull().default("co_occurs"),
     strength: real("strength").notNull().default(1.0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Arch-plan Phase 3: bitemporal validity. `valid_from` defaults to
+     *  insertion time; `valid_to` NULL means "currently valid". Callers
+     *  with `asOf` in /v1/search filter to edges whose interval contains
+     *  the requested time. Zep/Graphiti pattern: history-preserving,
+     *  contradiction-tolerant. */
+    validFrom: timestamp("valid_from", { withTimezone: true }).notNull().defaultNow(),
+    validTo: timestamp("valid_to", { withTimezone: true }),
   },
   (table) => [
     unique("uq_relation").on(table.fromId, table.toId, table.relation),
@@ -151,6 +158,7 @@ export const memoryRelations = pgTable(
     index("idx_relations_project").on(table.projectId),
     index("idx_relations_from").on(table.fromId),
     index("idx_relations_to").on(table.toId),
+    index("idx_relations_valid_to").on(table.validTo),
   ],
 );
 

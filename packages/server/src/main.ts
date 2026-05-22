@@ -115,6 +115,48 @@ async function main() {
     },
   });
 
+  // Arch-plan Phase 2/4/5: optional LLM modules. Each is constructed iff
+  // its `enabled` flag and required (endpoint, model) are set in config.
+  // Disabling them falls back to the pre-arch-plan engine behaviour.
+  let extractor: import("./engine/fact-extractor.js").FactExtractor | undefined;
+  if (cfg.extraction.enabled && cfg.extraction.endpoint && cfg.extraction.model) {
+    const { FactExtractor } = await import("./engine/fact-extractor.js");
+    extractor = new FactExtractor({
+      endpoint: cfg.extraction.endpoint,
+      model: cfg.extraction.model,
+      apiKey: cfg.extraction.apiKey,
+      maxFactsPerChunk: cfg.extraction.maxFactsPerChunk,
+      timeoutMs: cfg.extraction.timeoutMs,
+    });
+  }
+  let decomposer: import("./engine/query-decomposer.js").QueryDecomposer | undefined;
+  if (cfg.queryDecomp.enabled && cfg.queryDecomp.endpoint && cfg.queryDecomp.model) {
+    const { QueryDecomposer } = await import("./engine/query-decomposer.js");
+    decomposer = new QueryDecomposer({
+      endpoint: cfg.queryDecomp.endpoint,
+      model: cfg.queryDecomp.model,
+      apiKey: cfg.queryDecomp.apiKey,
+      maxSubqueries: cfg.queryDecomp.maxSubqueries,
+      coherenceRerank: cfg.queryDecomp.coherenceRerank,
+      timeoutMs: cfg.queryDecomp.timeoutMs,
+    });
+  }
+  let observer: import("./engine/observer.js").Observer | undefined;
+  if (cfg.observer.enabled && cfg.observer.endpoint && cfg.observer.model) {
+    const { Observer } = await import("./engine/observer.js");
+    observer = new Observer(
+      {
+        endpoint: cfg.observer.endpoint,
+        model: cfg.observer.model,
+        apiKey: cfg.observer.apiKey,
+        observeThreshold: cfg.observer.observeThreshold,
+        reflectThreshold: cfg.observer.reflectThreshold,
+        timeoutMs: cfg.observer.timeoutMs,
+      },
+      warm,
+    );
+  }
+
   const engine = new MemoryEngine({
     warm,
     cold,
@@ -122,6 +164,10 @@ async function main() {
     embedder,
     defaultEffectiveDays: cfg.decay.defaultEffectiveDays,
     metrics,
+    extractor,
+    extractorMaxFacts: cfg.extraction.maxFactsPerChunk,
+    decomposer,
+    observer,
   });
 
   // Better Auth instance — owns the dashboard control plane (login,

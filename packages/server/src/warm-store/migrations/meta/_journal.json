@@ -8,6 +8,13 @@
       "when": 1777912854997,
       "tag": "0000_wonderful_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779467469337,
+      "tag": "0001_closed_iron_patriot",
+      "breakpoints": true
     }
   ]
 }

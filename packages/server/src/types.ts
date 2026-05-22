@@ -67,10 +67,24 @@ export interface SearchRequest {
    *  shelves. When set, takes precedence over the singular `namespace`
    *  field. */
   includeNamespaces?: string[];
-  /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour. */
-  weights?: { keyword?: number; vector?: number; graph?: number };
+  /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour.
+   *  `recency` and `entity` are arch-plan Phase 1 additions. */
+  weights?: {
+    keyword?: number;
+    vector?: number;
+    graph?: number;
+    recency?: number;
+    entity?: number;
+  };
   /** Maximum sensitivity returned. Defaults to private, excluding sensitive entries unless explicitly requested. */
   maxSensitivity?: SensitivityLevel;
+  /** Arch-plan Phase 3: bitemporal as-of query — filter graph edges to
+   *  those valid at this ISO 8601 instant. Default null = no filter. */
+  asOf?: string | null;
+  /** Arch-plan Phase 4: opt-in query decomposition + coherence rerank.
+   *  Requires the engine to be configured with a decomposer; otherwise
+   *  ignored. */
+  decompose?: boolean;
 }
 
 export interface SearchResult {

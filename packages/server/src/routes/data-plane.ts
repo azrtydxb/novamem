@@ -237,6 +237,61 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
   );
 
+  // Arch-plan Phase 5: cacheable per-(user, project) observation prefix.
+  // Returns the latest reflected log if the observer is enabled; otherwise
+  // returns 404. Callers feed this into their LLM as a static prefix to
+  // benefit from prompt caching, replacing dynamic retrieval for cost-
+  // sensitive agents (Mastra OM pattern).
+  r.get(
+    "/v1/context-prefix",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Cacheable observation log prefix for prompt-caching agents",
+        querystring: z
+          .object({
+            project: z.string().max(128).optional().nullable(),
+          })
+          .optional(),
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prefix = await ctx.engine.getContextPrefix(
+        req.userId,
+        (req.query as { project?: string | null } | undefined)?.project ?? null,
+      );
+      if (prefix === null) return reply.code(404).send({ error: "observer disabled" });
+      reply.send({ prefix });
+    },
+  );
+
+  r.post(
+    "/v1/observe",
+    {
+      schema: {
+        tags: ["memory"],
+        summary: "Trigger an observer+reflector pass over recent memories (admin only)",
+        body: z
+          .object({
+            project: z.string().max(128).optional().nullable(),
+            limit: z.number().int().positive().max(200).optional(),
+          })
+          .optional(),
+        security: [{ SessionCookie: [] }],
+      },
+    },
+    async (req, reply) => {
+      if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
+      const body = (req.body ?? {}) as { project?: string | null; limit?: number };
+      const result = await ctx.engine.runObserver(req.userId, body.project ?? null, {
+        limit: body.limit ?? 20,
+      });
+      if (result === null) return reply.code(503).send({ error: "observer disabled" });
+      reply.send(result);
+    },
+  );
+
   r.post(
     "/v1/decay",
     {

@@ -26,7 +26,10 @@ import {
   DEFAULT_WEIGHTS,
   effectiveDays,
   EFFECTIVE_LIFESPAN_SQL,
+  entityMatchScore,
+  extractQueryEntities,
   fuse,
+  recencyScore,
 } from "./hybrid-search.js";
 import { traceAsync } from "../tracing.js";
 
@@ -245,6 +248,20 @@ export interface EngineConfig {
    *  hot paths (search/remember/forget/promote/demote/decay/reap). Pure
    *  observation — never affects behaviour. */
   metrics?: MetricsCollector;
+  /** Arch-plan Phase 2: optional write-time LLM fact extractor. When
+   *  provided, every `remember()` schedules a background pass that
+   *  distills the chunk into typed facts and stores each as a sibling
+   *  memory_entries row. Fire-and-forget — never blocks the write. */
+  extractor?: import("./fact-extractor.js").FactExtractor;
+  /** Max facts to store per chunk (extractor self-limits at LLM time; this
+   *  is a belt-and-braces ingest cap). */
+  extractorMaxFacts?: number;
+  /** Arch-plan Phase 4: optional query decomposer for /v1/search. When
+   *  provided AND the caller opts in via SearchRequest.decompose=true,
+   *  the query is rewritten into ≤N parallel sub-queries before retrieval. */
+  decomposer?: import("./query-decomposer.js").QueryDecomposer;
+  /** Arch-plan Phase 5: optional observer/reflector for /v1/context-prefix. */
+  observer?: import("./observer.js").Observer;
 }
 
 export class MemoryEngine {
@@ -256,6 +273,10 @@ export class MemoryEngine {
   private logger: EngineLogger;
   private readonly graphLinkFanout: number;
   private readonly metrics: MetricsCollector | null;
+  private readonly extractor: import("./fact-extractor.js").FactExtractor | null;
+  private readonly extractorMaxFacts: number;
+  private readonly decomposer: import("./query-decomposer.js").QueryDecomposer | null;
+  private readonly observer: import("./observer.js").Observer | null;
   /** Reactive promotions since the last decay run — flushed to
    *  `decay_runs.promoted` so the column stops being dead weight. */
   private promotedSinceLastDecay = 0;
@@ -274,6 +295,10 @@ export class MemoryEngine {
     this.logger = cfg.logger ?? (console as unknown as EngineLogger);
     this.graphLinkFanout = cfg.graphLinkFanout ?? 3;
     this.metrics = cfg.metrics ?? null;
+    this.extractor = cfg.extractor ?? null;
+    this.extractorMaxFacts = cfg.extractorMaxFacts ?? 5;
+    this.decomposer = cfg.decomposer ?? null;
+    this.observer = cfg.observer ?? null;
   }
 
   /** Replace the engine's logger after construction. main.ts uses this
@@ -434,8 +459,114 @@ export class MemoryEngine {
         }
       }
       this.metrics?.recordRemember(userId, token);
+      // Arch-plan Phase 2: schedule LLM fact extraction in the background.
+      // Fire-and-forget — never blocks the write. Errors are logged only.
+      if (this.extractor) {
+        // Capture necessary closure values before the floating promise.
+        const chunkId = id;
+        const chunkContent = req.content;
+        const chunkNamespace = namespace;
+        const chunkProjectId = projectId;
+        const sensitivity = req.sensitivity;
+        const sourceMeta = req.source ?? "manual";
+        void this.storeFactsForChunk({
+          userId,
+          projectId: chunkProjectId,
+          chunkId,
+          chunkContent,
+          namespace: chunkNamespace,
+          sensitivity,
+          parentSource: sourceMeta,
+        }).catch((err: unknown) => {
+          this.logger.warn(
+            { err: (err as Error).message, chunkId },
+            "fact extraction failed (chunk persisted, no facts)",
+          );
+        });
+      }
       return { id };
     });
+  }
+
+  /** Arch-plan Phase 2 helper: distill a raw chunk into typed facts and
+   *  store each as its own memory_entries row + Qdrant point.
+   *  Each fact's metadata carries the fact object and a `source_chunk_id`
+   *  pointer back to the raw chunk so the answerer can join up to original
+   *  text on demand. ADD-only — contradictions are resolved at read time
+   *  via recency / temporal scoring (Mem0 v2 pattern). */
+  private async storeFactsForChunk(args: {
+    userId: string;
+    projectId: string | null;
+    chunkId: string;
+    chunkContent: string;
+    namespace: string;
+    sensitivity?: SensitivityLevel;
+    parentSource: string;
+  }): Promise<void> {
+    if (!this.extractor) return;
+    const facts = await traceAsync(
+      "FactExtractor.extract",
+      { "novamem.chunk_id": args.chunkId, "novamem.content_chars": args.chunkContent.length },
+      () => this.extractor!.extract(args.chunkContent),
+    );
+    if (facts.length === 0) return;
+    const { factToText } = await import("./fact-extractor.js");
+    const capped = facts.slice(0, this.extractorMaxFacts);
+    for (const fact of capped) {
+      const text = factToText(fact);
+      // Each fact gets its own content-hash so dedup behaves correctly
+      // (an identical fact ingested from a different chunk won't double-store).
+      const contentHash = sha256Hex(text.trim());
+      const existing = await this.warm.findByContentHash(args.userId, args.projectId, contentHash);
+      if (existing) {
+        await this.warm.bumpHits(existing);
+        continue;
+      }
+      const factId = await this.warm.insertEntry({
+        userId: args.userId,
+        projectId: args.projectId,
+        content: text,
+        namespace: args.namespace,
+        source: args.parentSource,
+        agentName: null,
+        metadata: {
+          fact: {
+            type: fact.type,
+            subject: fact.subject,
+            predicate: fact.predicate,
+            object: fact.object,
+            occurred_at: fact.occurredAt ?? null,
+            entities: fact.entities,
+            importance: fact.importance,
+          },
+          source_chunk_id: args.chunkId,
+          ...(args.sensitivity ? { sensitivity: args.sensitivity } : {}),
+        } as Record<string, unknown>,
+        sourceType: "fact",
+        capturedFrom: null,
+        confidence: 1,
+        contentHash,
+      });
+      // Embed the distilled fact so semantic search picks it up cleanly.
+      try {
+        const [embedding] = await this.embedder.embed(text);
+        if (embedding) {
+          await this.cold.upsert({
+            userId: args.userId,
+            projectId: args.projectId,
+            id: factId,
+            namespace: args.namespace,
+            embedding,
+            payload: { source: args.parentSource, agentName: null },
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          { err: (err as Error).message, factId, chunkId: args.chunkId },
+          "embedding fact failed (fact persisted in warm only)",
+        );
+      }
+    }
   }
 
   /** Capture is the agent-facing write path. Unlike raw remember(), it first
@@ -707,9 +838,32 @@ export class MemoryEngine {
         ? [req.namespace]
         : await this.resolveDefaultNamespaces(userId, scopes);
 
-    const [embedding] = await traceAsync("Embedder.embed.search", {
+    // Arch-plan Phase 4: query decomposition. If opted in via req.decompose
+    // and a decomposer is configured, rewrite into ≤N sub-queries and run
+    // retrieval per sub-query. The original query is always included first.
+    // The downstream FTS/vector fan-out then uses each sub-query in turn
+    // and we union the hits before fusion.
+    let queries: string[] = [req.query];
+    if (req.decompose && this.decomposer) {
+      try {
+        const decomposed = await traceAsync(
+          "QueryDecomposer.decompose",
+          { "novamem.query_chars": req.query.length },
+          () => this.decomposer!.decompose(req.query),
+        );
+        if (decomposed.length > 0) queries = decomposed;
+      } catch (err) {
+        this.logger.warn({ err: (err as Error).message }, "decompose failed (using original query)");
+      }
+    }
+
+    // Embed every query (one batch). Different sub-queries → different
+    // vector candidates, which is the whole point of decomposition.
+    const queryEmbeddings = await traceAsync("Embedder.embed.search", {
       "novamem.query_chars": req.query.length,
-    }, () => this.embedder.embed(req.query));
+      "novamem.subqueries": queries.length,
+    }, () => this.embedder.embed(queries));
+    const embedding = queryEmbeddings[0] ?? null;
     // FTS supports multi-namespace via `namespace = ANY(...)` in one query
     // per scope, so we fan out only across scopes (not namespaces).
     // Cold-store needs one search per (scope × namespace) collection.
@@ -719,42 +873,52 @@ export class MemoryEngine {
     // becomes meaningful for warm/cold (not just graph). Without this,
     // one Postgres or Qdrant blip rejects the whole top-level Promise.all.
     let degraded = false;
+    // Phase 4: per-sub-query keyword retrieval. Per-query promises are
+    // independent so they run concurrently across the whole (queries ×
+    // scopes) matrix; the resulting flat list is what feeds fuse().
     const keywordsPromise = Promise.all(
-      scopes.map((projectId) =>
-        traceAsync("WarmStore.ftsSearch", {
-          "novamem.namespace_count": namespaces.length,
-          "novamem.k": k * 3,
-        }, () => this.warm.ftsSearch({
-          userId,
-          projectId,
-          query: req.query,
-          namespace: namespaces[0]!, // ignored when namespaces array is set
-          namespaces: namespaces.length > 1 ? namespaces : undefined,
-          k: k * 3,
-          agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
-        })),
+      queries.flatMap((q) =>
+        scopes.map((projectId) =>
+          traceAsync("WarmStore.ftsSearch", {
+            "novamem.namespace_count": namespaces.length,
+            "novamem.k": k * 3,
+          }, () => this.warm.ftsSearch({
+            userId,
+            projectId,
+            query: q,
+            namespace: namespaces[0]!, // ignored when namespaces array is set
+            namespaces: namespaces.length > 1 ? namespaces : undefined,
+            k: k * 3,
+            agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
+          })),
+        ),
       ),
     ).catch((err) => {
       degraded = true;
       this.logger.warn({ err: (err as Error).message }, "keyword tier failed");
       return [] as Array<Array<{ id: string; score: number }>>;
     });
-    const vectorsPromise = embedding
-      ? Promise.all(
-          scopes.flatMap((projectId) =>
-            namespaces.map((namespace) =>
-              traceAsync("ColdStore.search", {
-                "novamem.namespace": namespace,
-                "novamem.k": k * 3,
-              }, () => this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 })),
+    // Phase 4: per-sub-query vector retrieval. Each sub-query has its own
+    // embedding so different facets surface different candidates.
+    const vectorsPromise =
+      queryEmbeddings.length > 0 && queryEmbeddings[0]
+        ? Promise.all(
+            queryEmbeddings.flatMap((emb) =>
+              scopes.flatMap((projectId) =>
+                namespaces.map((namespace) =>
+                  traceAsync("ColdStore.search", {
+                    "novamem.namespace": namespace,
+                    "novamem.k": k * 3,
+                  }, () => this.cold.search({ userId, projectId, namespace, embedding: emb, k: k * 3 })),
+                ),
+              ),
             ),
-          ),
-        ).catch((err) => {
-          degraded = true;
-          this.logger.warn({ err: (err as Error).message }, "vector tier failed");
-          return [] as Array<Array<{ id: string; score: number }>>;
-        })
-      : Promise.resolve([] as Array<Array<{ id: string; score: number }>>);
+          ).catch((err) => {
+            degraded = true;
+            this.logger.warn({ err: (err as Error).message }, "vector tier failed");
+            return [] as Array<Array<{ id: string; score: number }>>;
+          })
+        : Promise.resolve([] as Array<Array<{ id: string; score: number }>>);
     const [keywordHitsAll, vectorHitsAll] = await Promise.all([keywordsPromise, vectorsPromise]);
     const keywordHits = keywordHitsAll.flat();
     const vectorHits = vectorHitsAll.flat();
@@ -762,6 +926,9 @@ export class MemoryEngine {
     // (entries / neighbors). Multi-scope path uses null + per-id resolution.
     const projectId = scopes.length === 1 ? scopes[0]! : null;
 
+    // Arch-plan Phase 3: parse optional asOf into milliseconds for the
+    // graph traversal's bitemporal filter.
+    const asOfMs = req.asOf ? Date.parse(req.asOf) : null;
     let graphHits: Array<{ id: string; score: number }> = [];
     if (this.graph?.isConnected() && vectorHits.length > 0) {
       const seed = vectorHits[0]!.id;
@@ -770,7 +937,7 @@ export class MemoryEngine {
         // ambiguous, so skip the project scope (project_id is null) — entry
         // resolution below will still filter to the visible scope set.
         const seedScope = scopes.length === 1 ? scopes[0]! : null;
-        graphHits = await this.graph.neighbors(userId, seed, 1, k, seedScope);
+        graphHits = await this.graph.neighbors(userId, seed, 1, k, seedScope, Number.isFinite(asOfMs) ? asOfMs : null);
       } catch (err) {
         degraded = true;
         this.logger.warn({ err: (err as Error).message }, "graph neighbours failed");
@@ -780,24 +947,80 @@ export class MemoryEngine {
       this.maybeWarnGraphDown();
     }
 
-    const fused = fuse(
+    // Pre-fetch entries for the UNION of all tier candidate ids so the
+    // recency + entity signals (Phase 1 arch-plan additions) can join the
+    // fusion. Without this we'd need a second post-fusion pass for the
+    // new signals, which would leave them blind to candidates ranked just
+    // below the fused-top-k cutoff. One batched lookup keeps it cheap.
+    const candidateIds = Array.from(new Set([
+      ...keywordHits.map((h) => h.id),
+      ...vectorHits.map((h) => h.id),
+      ...graphHits.map((h) => h.id),
+    ]));
+    const candidateEntries = candidateIds.length > 0
+      ? await this.warm.getEntries(userId, candidateIds, {
+          projectId,
+          includeProjects: req.includeProjects,
+        })
+      : [];
+    const entryById = new Map<string, (typeof candidateEntries)[number]>();
+    for (let i = 0; i < candidateIds.length; i++) {
+      const e = candidateEntries[i];
+      if (e) entryById.set(candidateIds[i]!, e);
+    }
+    const queryEntities = extractQueryEntities(req.query);
+
+    let fused = fuse(
       [
         ...keywordHits.map((h) => ({ id: h.id, signals: { keyword: h.score } })),
         ...vectorHits.map((h) => ({ id: h.id, signals: { vector: h.score } })),
         ...graphHits.map((h) => ({ id: h.id, signals: { graph: h.score } })),
+        // Recency: exp(-ageDays / 180). Skipped for entries we couldn't
+        // resolve (filtered out by visibility) — they'll drop out anyway.
+        ...candidateIds.flatMap((id) => {
+          const e = entryById.get(id);
+          if (!e?.updatedAt) return [];
+          const score = recencyScore(e.updatedAt);
+          return score > 0 ? [{ id, signals: { recency: score } }] : [];
+        }),
+        // Entity match: count of distinct query-entity tokens present in
+        // the memory's content text. Catches "answer lives in sibling
+        // chunk" cases where the exact noun is in content but cosine
+        // didn't score it best.
+        ...(queryEntities.length === 0 ? [] : candidateIds.flatMap((id) => {
+          const e = entryById.get(id);
+          if (!e?.content) return [];
+          const score = entityMatchScore(e.content, queryEntities);
+          return score > 0 ? [{ id, signals: { entity: score } }] : [];
+        })),
       ],
       weights,
     ).slice(0, k);
 
-    // Batch the per-result lookups + bump-hits to collapse the
-    // search hot path from 2N+1 round-trips. Cold-entry promotion stats
-    // are now batched too (one query for the cold slice instead of one
-    // per cold hit) — the per-id loop only computes the gate.
+    // Arch-plan Phase 4: coherence rerank. When the caller opts into
+    // decomposition AND the decomposer is configured AND there are enough
+    // candidates to rerank, ask the LLM to put the final top-k in the
+    // order best supporting the question. Drops fused candidates the LLM
+    // considers irrelevant or duplicative.
+    if (req.decompose && this.decomposer && fused.length >= 2) {
+      const memTexts = fused.map((f) => entryById.get(f.id)?.content ?? "");
+      try {
+        const newOrder = await traceAsync(
+          "QueryDecomposer.coherenceRerank",
+          { "novamem.candidate_count": fused.length },
+          () => this.decomposer!.coherenceRerank(req.query, memTexts),
+        );
+        if (newOrder && newOrder.length === fused.length) {
+          fused = newOrder.map((i) => fused[i]!);
+        }
+      } catch (err) {
+        this.logger.warn({ err: (err as Error).message }, "coherenceRerank failed");
+      }
+    }
+
+    // Re-use the pre-fetched batch — no second round-trip.
     const fusedIds = fused.map((f) => f.id);
-    const entries = await this.warm.getEntries(userId, fusedIds, {
-      projectId,
-      includeProjects: req.includeProjects,
-    });
+    const entries = fusedIds.map((id) => entryById.get(id));
     // Pre-fetch promotion stats for cold hits in one round-trip.
     const coldHitIds: string[] = [];
     for (let i = 0; i < fused.length; i++) {
@@ -1528,6 +1751,50 @@ export class MemoryEngine {
       recentDecisions: recent.filter((r) => String(r.metadata?.memoryType ?? "") === "decision" || /\bdecision\b/i.test(r.content)),
       all,
     };
+  }
+
+  /** Arch-plan Phase 5: return the cacheable observation prefix for a
+   *  (user, project) scope. Returns `null` when no observer is wired —
+   *  the route surfaces that as a 404. */
+  async getContextPrefix(userId: string, projectId: string | null): Promise<string | null> {
+    if (!this.observer) return null;
+    return this.observer.getPrefix(userId, projectId);
+  }
+
+  /** Arch-plan Phase 5: run an observer + (conditional) reflector pass.
+   *  Pulls the N most-recent raw memories in scope, asks the LLM to
+   *  convert them to dated bullets, appends to the persisted observation
+   *  log, and (if the log grew past reflectThreshold) asks the LLM to
+   *  collapse + supersede across the whole log. Returns counts.  */
+  async runObserver(
+    userId: string,
+    projectId: string | null,
+    opts: { limit?: number } = {},
+  ): Promise<{ observed: number; reflected: boolean; logChars: number } | null> {
+    if (!this.observer) return null;
+    const limit = opts.limit ?? 20;
+    // Pull recent raw memories (skip the observer-managed namespace).
+    const rows = await this.warm.listRecent(userId, {
+      namespaces: ["default"],
+      k: limit,
+      projectId,
+    });
+    const visible = rows.filter((r) => r.namespace !== "__observation__");
+    const newBullets = visible.length > 0
+      ? await this.observer.observe(userId, projectId, visible.map((r) => r.content))
+      : "";
+    const existing = await this.observer.getPrefix(userId, projectId);
+    let combined = (existing + (existing && newBullets ? "\n" : "") + newBullets).trim();
+    let reflected = false;
+    if (combined.split("\n").length > 50) {
+      const compacted = await this.observer.reflect(combined);
+      if (compacted.trim()) {
+        combined = compacted.trim();
+        reflected = true;
+      }
+    }
+    if (combined) await this.observer.upsertPrefix(userId, projectId, combined);
+    return { observed: visible.length, reflected, logChars: combined.length };
   }
 
   async hygieneReport(userId: string, opts: { k?: number } = {}): Promise<Record<string, unknown>> {
