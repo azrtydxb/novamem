@@ -87,8 +87,13 @@ export const ConfigSchema = z
         /** Hard ceiling on the LLM call; if extraction times out the
          *  raw chunk still gets stored (degraded-safe). */
         timeoutMs: z.coerce.number().int().positive().default(15_000),
+        /** Per-pod concurrency cap on extraction calls (semaphore). Tune
+         *  so {pod_count × this} stays below upstream LLM's effective
+         *  concurrency. With qwen3.6-35b max-num-seqs=10 on 3 pods, 3
+         *  here = 9 total — safely below 10. */
+        maxConcurrent: z.coerce.number().int().positive().default(3),
       })
-      .default({ enabled: false, maxFactsPerChunk: 5, timeoutMs: 15_000 })
+      .default({ enabled: false, maxFactsPerChunk: 5, timeoutMs: 15_000, maxConcurrent: 3 })
       .refine((v) => !v.enabled || (!!v.endpoint && !!v.model), {
         message: "extraction.enabled = true requires endpoint + model",
         path: ["endpoint"],
@@ -249,6 +254,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       apiKey: env.NOVAMEM_EXTRACTION_API_KEY,
       maxFactsPerChunk: env.NOVAMEM_EXTRACTION_MAX_FACTS,
       timeoutMs: env.NOVAMEM_EXTRACTION_TIMEOUT_MS,
+      maxConcurrent: env.NOVAMEM_EXTRACTION_MAX_CONCURRENT,
     },
     queryDecomp: {
       enabled: env.NOVAMEM_QUERY_DECOMP_ENABLED ?? false,

@@ -127,6 +127,7 @@ async function main() {
       apiKey: cfg.extraction.apiKey,
       maxFactsPerChunk: cfg.extraction.maxFactsPerChunk,
       timeoutMs: cfg.extraction.timeoutMs,
+      maxConcurrent: cfg.extraction.maxConcurrent,
     });
   }
   let decomposer: import("./engine/query-decomposer.js").QueryDecomposer | undefined;

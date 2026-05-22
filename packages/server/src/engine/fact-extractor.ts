@@ -31,6 +31,20 @@ export interface FactExtractorConfig {
   apiKey?: string;
   maxFactsPerChunk: number;
   timeoutMs: number;
+  /** Per-extractor concurrency cap. Bounds how many extract() calls can
+   *  be in-flight against the upstream LLM at once. New calls queue on a
+   *  semaphore; the upstream queue depth stays bounded even when the
+   *  bench ingest fires 100s of fire-and-forget extractions per second.
+   *
+   *  Without this, fire-and-forget extractions stack faster than the
+   *  upstream LLM drains, AbortControllers all fire ~timeoutMs later,
+   *  and most extractions silently fail (we observed 97% drop on the
+   *  100q ingest with qwen max-num-seqs=10 and no cap here).
+   *
+   *  Pick a value slightly below upstream's effective concurrency
+   *  divided by replica count: e.g., qwen max-num-seqs=10 on 3 pods →
+   *  cap=3 (9 total, safely below 10). */
+  maxConcurrent: number;
 }
 
 const SYSTEM_PROMPT = `You distill conversational text into typed memory facts. You output ONLY a JSON array.
@@ -124,15 +138,51 @@ export function factToText(f: ExtractedFact): string {
   return `[${f.type}] ${f.subject} ${f.predicate} ${f.object}${time}`;
 }
 
+/** Minimal Promise-based semaphore. acquire() resolves when a slot is
+ *  free; release() returns a slot. No queue cancellation — call sites
+ *  use AbortController on the actual fetch for that. */
+class Semaphore {
+  private readonly capacity: number;
+  private inFlight = 0;
+  private waiters: Array<() => void> = [];
+  constructor(capacity: number) {
+    this.capacity = Math.max(1, capacity);
+  }
+  async acquire(): Promise<void> {
+    if (this.inFlight < this.capacity) {
+      this.inFlight++;
+      return;
+    }
+    await new Promise<void>((res) => this.waiters.push(res));
+    this.inFlight++;
+  }
+  release(): void {
+    this.inFlight = Math.max(0, this.inFlight - 1);
+    const next = this.waiters.shift();
+    if (next) next();
+  }
+}
+
 export class FactExtractor {
   private readonly cfg: FactExtractorConfig;
+  private readonly sem: Semaphore;
 
   constructor(cfg: FactExtractorConfig) {
     this.cfg = cfg;
+    this.sem = new Semaphore(cfg.maxConcurrent);
   }
 
   async extract(content: string): Promise<ExtractedFact[]> {
     if (!content.trim()) return [];
+    await this.sem.acquire();
+    try {
+      return await this.extractUnlimited(content);
+    } finally {
+      this.sem.release();
+    }
+  }
+
+  private async extractUnlimited(content: string): Promise<ExtractedFact[]> {
     const url = this.cfg.endpoint.replace(/\/+$/, "") + "/chat/completions";
     const headers: Record<string, string> = {
       "content-type": "application/json",
