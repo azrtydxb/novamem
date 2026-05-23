@@ -120,7 +120,12 @@ function metadataStatus(metadata: Record<string, unknown> | null | undefined): s
 }
 
 function isInactiveMemory(metadata: Record<string, unknown> | null | undefined): boolean {
-  return ["superseded", "deprecated"].includes(metadataStatus(metadata));
+  if (["superseded", "deprecated"].includes(metadataStatus(metadata))) return true;
+  // Arch-plan Phase 2 v2 (Mem0 updation): facts that lost a write-time
+  // DELETE decision get `fact_inactive: true` and stay in the warm row
+  // for history-preservation but must drop out of search results.
+  if ((metadata as Record<string, unknown> | null | undefined)?.fact_inactive) return true;
+  return false;
 }
 
 function extractComparableScalars(content: string): Set<string> {
@@ -522,6 +527,145 @@ export class MemoryEngine {
         await this.warm.bumpHits(existing);
         continue;
       }
+      // ── Mem0-style updation (arch-plan gap #2) ───────────────────────
+      // Embed first so we can search for semantically-similar existing
+      // facts and let the LLM decide ADD / UPDATE / DELETE / NOOP. This
+      // is what closes Mem0 v1 (~67% LongMemEval) → v2 (93%): write-time
+      // dedup + supersedence vs uncurated ADD-only. We pay one extra
+      // LLM call per new fact when the similarity gate fires; the
+      // semaphore in FactExtractor keeps upstream queue depth bounded.
+      let factEmbedding: number[] | null = null;
+      try {
+        const embedded = await this.embedder.embed(text);
+        factEmbedding = embedded[0] ?? null;
+      } catch (err) {
+        this.logger.warn(
+          { err: (err as Error).message, chunkId: args.chunkId },
+          "embedding fact failed (will store as ADD without similarity check)",
+        );
+      }
+      let similar: Array<{ id: string; text: string; factType?: string; importance?: number }> = [];
+      if (factEmbedding) {
+        try {
+          const hits = await this.cold.search({
+            userId: args.userId,
+            projectId: args.projectId,
+            namespace: args.namespace,
+            embedding: factEmbedding,
+            k: 5,
+          });
+          if (hits.length > 0) {
+            const ids = hits.map((h) => h.id);
+            const rows = await this.warm.getEntries(args.userId, ids, {
+              projectId: args.projectId,
+            });
+            similar = rows
+              .map((r, i) => {
+                if (!r) return null;
+                // Only compare against existing FACT rows. Comparing the
+                // new fact to a raw chunk would prompt UPDATE/DELETE on
+                // the chunk which is wrong — chunks aren't supersedable.
+                if (r.sourceType !== "fact") return null;
+                const meta = (r.metadata ?? {}) as Record<string, unknown>;
+                const f = (meta.fact ?? {}) as Record<string, unknown>;
+                return {
+                  id: ids[i]!,
+                  text: r.content,
+                  factType: typeof f.type === "string" ? f.type : undefined,
+                  importance: typeof f.importance === "number" ? f.importance : undefined,
+                };
+              })
+              .filter((x): x is NonNullable<typeof x> => x !== null);
+          }
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message, chunkId: args.chunkId },
+            "similarity search for updation failed (defaulting to ADD)",
+          );
+        }
+      }
+      const decision = similar.length > 0
+        ? await traceAsync(
+            "FactExtractor.decideOperation",
+            { "novamem.candidate_count": similar.length },
+            () => this.extractor!.decideOperation(text, similar),
+          )
+        : { op: "ADD" as const, targetId: undefined as string | undefined };
+
+      if (decision.op === "NOOP" && decision.targetId) {
+        await this.warm.bumpHits(decision.targetId);
+        continue;
+      }
+      if (decision.op === "UPDATE" && decision.targetId) {
+        // Replace the existing fact's content + metadata in place; bump
+        // hits. Embedding stays the new text's via cold.upsert(targetId).
+        const ok = await this.warm.updateEntry({
+          userId: args.userId,
+          id: decision.targetId,
+          projectId: args.projectId,
+          content: text,
+          metadata: {
+            fact: {
+              type: fact.type,
+              subject: fact.subject,
+              predicate: fact.predicate,
+              object: fact.object,
+              occurred_at: fact.occurredAt ?? null,
+              entities: fact.entities,
+              importance: fact.importance,
+            },
+            source_chunk_id: args.chunkId,
+            updated_via: "fact_updation",
+            ...(args.sensitivity ? { sensitivity: args.sensitivity } : {}),
+          } as Record<string, unknown>,
+          contentHash,
+        });
+        if (ok && factEmbedding) {
+          try {
+            await this.cold.upsert({
+              userId: args.userId,
+              projectId: args.projectId,
+              id: decision.targetId,
+              namespace: args.namespace,
+              embedding: factEmbedding,
+              payload: { source: args.parentSource, agentName: null },
+            });
+          } catch (err) {
+            this.logger.warn(
+              { err: (err as Error).message, factId: decision.targetId },
+              "cold.upsert on UPDATE failed (warm row updated, vector stale)",
+            );
+          }
+          await this.warm.bumpHits(decision.targetId);
+        }
+        continue;
+      }
+      if (decision.op === "DELETE" && decision.targetId) {
+        // Mark the contradicted fact inactive via metadata so it falls
+        // out of `isInactiveMemory` filtering at search time, but don't
+        // hard-delete (history-preserving — Mem0/Zep pattern). Then
+        // store the new fact as ADD.
+        try {
+          await this.warm.updateEntry({
+            userId: args.userId,
+            id: decision.targetId,
+            projectId: args.projectId,
+            metadata: {
+              fact_inactive: true,
+              superseded_at: new Date().toISOString(),
+              superseded_by_chunk: args.chunkId,
+            } as Record<string, unknown>,
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message, targetId: decision.targetId },
+            "DELETE supersede update failed (continuing to ADD)",
+          );
+        }
+        // Fall through to ADD below.
+      }
+
+      // ADD (default + post-DELETE)
       const factId = await this.warm.insertEntry({
         userId: args.userId,
         projectId: args.projectId,
@@ -540,6 +684,9 @@ export class MemoryEngine {
             importance: fact.importance,
           },
           source_chunk_id: args.chunkId,
+          ...(decision.op === "ADD" && decision.targetId
+            ? { supersedes: decision.targetId }
+            : {}),
           ...(args.sensitivity ? { sensitivity: args.sensitivity } : {}),
         } as Record<string, unknown>,
         sourceType: "fact",
@@ -547,24 +694,22 @@ export class MemoryEngine {
         confidence: 1,
         contentHash,
       });
-      // Embed the distilled fact so semantic search picks it up cleanly.
-      try {
-        const [embedding] = await this.embedder.embed(text);
-        if (embedding) {
+      if (factEmbedding) {
+        try {
           await this.cold.upsert({
             userId: args.userId,
             projectId: args.projectId,
             id: factId,
             namespace: args.namespace,
-            embedding,
+            embedding: factEmbedding,
             payload: { source: args.parentSource, agentName: null },
           });
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message, factId, chunkId: args.chunkId },
+            "cold.upsert on ADD failed (fact persisted in warm only)",
+          );
         }
-      } catch (err) {
-        this.logger.warn(
-          { err: (err as Error).message, factId, chunkId: args.chunkId },
-          "embedding fact failed (fact persisted in warm only)",
-        );
       }
     }
   }
@@ -995,7 +1140,27 @@ export class MemoryEngine {
         })),
       ],
       weights,
-    ).slice(0, k);
+    ).slice(0, k * 2); // keep extra headroom so importance-reordering doesn't truncate
+
+    // Arch-plan gap #4: importance-weighted boost for fact memories.
+    // Each fact extracted at write time carries metadata.fact.importance
+    // (1..5, model-judged). Treat 3 as neutral and multiply the fused
+    // score by importance/3 so high-importance facts (4,5) beat noisy
+    // low-importance ones (1,2). Raw chunks (sourceType != "fact") get
+    // multiplier 1.0 — no penalty. Re-truncate to k after re-sort.
+    fused = fused
+      .map((f) => {
+        const e = entryById.get(f.id);
+        const meta = (e?.metadata ?? {}) as Record<string, unknown>;
+        const fact = (meta.fact ?? {}) as Record<string, unknown>;
+        const imp = typeof fact.importance === "number"
+          ? Math.max(1, Math.min(5, fact.importance))
+          : 3;
+        const boost = imp / 3;
+        return { ...f, score: f.score * boost };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k);
 
     // Arch-plan Phase 4: coherence rerank. When the caller opts into
     // decomposition AND the decomposer is configured AND there are enough
