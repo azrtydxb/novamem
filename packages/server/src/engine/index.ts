@@ -1245,6 +1245,48 @@ export class MemoryEngine {
       }
     }
     if (idsToBump.length > 0) await this.warm.bumpHitsMany(idsToBump);
+
+    // ── Arch-plan gap-closer: auto-expand source_chunk for fact memories ──
+    // Each extracted-fact memory carries metadata.source_chunk_id pointing
+    // to the raw chunk it was distilled from. Inlining that chunk's text
+    // into the response lets answerer LLMs see both the compressed fact
+    // AND the supporting conversation, which is critical for multi-item
+    // counting and rich preference questions. Validated +10pp at k=50 on
+    // the LongMemEval 40q slice when done client-side; promoting it here
+    // so every caller benefits.
+    if (req.expandSourceChunks !== false) {
+      const sourceIds = Array.from(new Set(
+        results
+          .map((r) => (r.metadata as { source_chunk_id?: string } | undefined)?.source_chunk_id)
+          .filter((x): x is string => typeof x === "string"),
+      ));
+      if (sourceIds.length > 0) {
+        try {
+          const srcRows = await this.warm.getEntries(userId, sourceIds, {
+            projectId,
+            includeProjects: req.includeProjects,
+          });
+          const byId = new Map<string, string>();
+          for (let i = 0; i < sourceIds.length; i++) {
+            const row = srcRows[i];
+            if (row) byId.set(sourceIds[i]!, row.content);
+          }
+          for (const r of results) {
+            const meta = r.metadata as { source_chunk_id?: string; sourceText?: string };
+            const srcId = meta?.source_chunk_id;
+            if (srcId && byId.has(srcId)) {
+              r.metadata = { ...meta, sourceText: byId.get(srcId)! };
+            }
+          }
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message },
+            "source-chunk auto-expand failed (returning facts without sourceText)",
+          );
+        }
+      }
+    }
+
     // Per-tier hit counts: each result may have contributed via more than
     // one signal (e.g. keyword + vector), and we count every contributing
     // signal — that's the operator-visible "this tier carried weight".

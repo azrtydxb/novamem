@@ -83,7 +83,7 @@ export const ConfigSchema = z
         endpoint: z.string().optional(),
         model: z.string().optional(),
         apiKey: z.string().optional(),
-        maxFactsPerChunk: z.coerce.number().int().positive().default(5),
+        maxFactsPerChunk: z.coerce.number().int().positive().default(8),
         /** Hard ceiling on the LLM call; if extraction times out the
          *  raw chunk still gets stored (degraded-safe). */
         timeoutMs: z.coerce.number().int().positive().default(15_000),
@@ -93,7 +93,7 @@ export const ConfigSchema = z
          *  here = 9 total — safely below 10. */
         maxConcurrent: z.coerce.number().int().positive().default(3),
       })
-      .default({ enabled: false, maxFactsPerChunk: 5, timeoutMs: 15_000, maxConcurrent: 3 })
+      .default({ enabled: false, maxFactsPerChunk: 8, timeoutMs: 15_000, maxConcurrent: 3 })
       .refine((v) => !v.enabled || (!!v.endpoint && !!v.model), {
         message: "extraction.enabled = true requires endpoint + model",
         path: ["endpoint"],

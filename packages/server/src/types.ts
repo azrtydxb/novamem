@@ -85,6 +85,12 @@ export interface SearchRequest {
    *  Requires the engine to be configured with a decomposer; otherwise
    *  ignored. */
   decompose?: boolean;
+  /** Arch-plan gap-closer: when a result is an extracted-fact memory,
+   *  populate `metadata.sourceText` with its source chunk's content
+   *  (looked up via metadata.source_chunk_id). Lets answerer LLMs see
+   *  both the compressed fact and the supporting raw conversation.
+   *  Default true. */
+  expandSourceChunks?: boolean;
 }
 
 export interface SearchResult {

@@ -127,6 +127,7 @@ export const SearchBody = z.object({
   maxSensitivity: SensitivityRule.optional(),
   asOf: z.string().datetime().optional().nullable(),
   decompose: z.boolean().optional(),
+  expandSourceChunks: z.boolean().optional(),
 });
 
 export const ContextBody = z.object({
@@ -149,6 +150,7 @@ export const ContextBody = z.object({
   maxSensitivity: SensitivityRule.optional(),
   asOf: z.string().datetime().optional().nullable(),
   decompose: z.boolean().optional(),
+  expandSourceChunks: z.boolean().optional(),
 });
 
 

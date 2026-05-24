@@ -52,26 +52,33 @@ const SYSTEM_PROMPT = `You distill conversational text into typed memory facts. 
 Each fact MUST have these fields exactly:
   "type": one of "preference" | "fact" | "event" | "task" | "knowledge"
   "subject": who/what the fact is about ("the user", a named person, an entity)
-  "predicate": short verb-phrase ("prefers", "located_in", "did", "owns", "wants")
+  "predicate": short verb-phrase ("prefers", "located_in", "did", "owns", "wants", "ordered", "redeemed", "visited", "pickup_at", "return_at")
   "object": the value (free text, concise)
-  "occurredAt": ISO-8601 timestamp if the fact has a clear time, else omit
-  "entities": array of proper nouns, places, dollar amounts, counts mentioned
+  "occurredAt": ISO-8601 timestamp if the fact has a clear time. If the chunk header carries a "Date:" line, use that date. Else omit.
+  "entities": array of every proper noun, place name, brand, dollar amount, count, location, person referenced. Be exhaustive.
   "importance": 1..5 (5 = critical for recall)
 
 Type meanings:
-  preference: stable likes/dislikes/habits
-  fact:       static personal info (degree, name, address)
+  preference: stable likes/dislikes/habits — every distinct preference gets its own fact
+  fact:       static personal info (degree, name, address, ownership)
   event:      something that happened with a time
-  task:       open todo / pending action
-  knowledge:  user's situation/status that may change (location, job)
+  task:       open todo / pending action — every distinct task gets its own fact
+  knowledge:  user's situation/status that may change (location, job, plans)
+
+CRITICAL — ENUMERATION:
+- Each distinct item, action, person, place, or preference is its OWN fact, not a summary.
+- If the user mentions "3 items at the store: blazer, boots, dress", emit THREE separate facts, one per item.
+- If the user lists preferences ("I like X, also Y, and Z"), emit ONE fact per preference.
+- If the user mentions counts or amounts ("$5 coupon", "2 weeks", "3 items"), include them in entities AND in the object text.
+- Prefer many small facts over one summary fact. Aim for 3-6 facts when the chunk has multiple items.
 
 Rules:
-- Only emit facts that are clearly supported by the text. If unsure, skip.
+- Only emit facts clearly supported by the text. If unsure, skip.
 - Skip "the user is asking" / pleasantries / assistant suggestions.
-- Use the conversation's date metadata for occurredAt when relevant.
+- Always include the chunk's Date in occurredAt when the fact is event/task/knowledge.
 - Output an empty array [] if no facts can be extracted.`;
 
-const USER_PROMPT_TEMPLATE = (content: string, max: number) => `Extract up to ${max} typed facts from this conversation chunk:
+const USER_PROMPT_TEMPLATE = (content: string, max: number) => `Extract up to ${max} typed facts from this conversation chunk. Enumerate every distinct item, action, or preference as its own fact:
 
 \`\`\`
 ${content}
