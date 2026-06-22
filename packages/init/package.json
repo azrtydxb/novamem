@@ -27,10 +27,10 @@
   "dependencies": {
     "@inquirer/prompts": "^7.8.6",
     "commander": "^14.0.0",
-    "smol-toml": "^1.4.2"
+    "smol-toml": "^1.7.0"
   },
   "devDependencies": {
-    "tsx": "^4.19.2",
+    "tsx": "^4.22.4",
     "@types/node": "^22.10.0"
   },
   "engines": {
