@@ -14,6 +14,11 @@
  */
 
 import { chatCompletionsURL } from "./endpoint-url.js";
+import {
+  chatCompletionBody,
+  readCompletionText,
+  type ChatCompletionResponse,
+} from "./llm-response.js";
 export type FactType = "preference" | "fact" | "event" | "task" | "knowledge";
 
 export interface ExtractedFact {
@@ -197,14 +202,13 @@ export class FactExtractor {
       accept: "application/json",
     };
     if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
-    const body = JSON.stringify({
+    const body = chatCompletionBody({
       model: this.cfg.model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: USER_PROMPT_TEMPLATE(content, this.cfg.maxFactsPerChunk) },
       ],
-      temperature: 0,
-      max_tokens: 1024,
+      maxTokens: 1024,
     });
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
@@ -212,10 +216,13 @@ export class FactExtractor {
     try {
       const resp = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
       if (!resp.ok) return [];
-      const obj = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-      text = obj.choices?.[0]?.message?.content ?? "";
-    } catch {
-      return [];
+      const read = readCompletionText((await resp.json()) as ChatCompletionResponse);
+      // An unusable response is not "this chunk had no facts". Throwing
+      // routes it to the caller's existing failure log instead of being
+      // indistinguishable from a legitimately empty extraction — the
+      // exact conflation that let extraction sit inert on nova-bench.
+      if (read.emptyReason) throw new Error(`fact extraction: ${read.emptyReason}`);
+      text = read.text;
     } finally {
       clearTimeout(timer);
     }
@@ -243,23 +250,28 @@ export class FactExtractor {
         accept: "application/json",
       };
       if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
-      const body = JSON.stringify({
+      // 128 tokens was too tight to be reliable even without a reasoning
+      // model in the way; with one it could not emit a single content
+      // token, so every decision silently fell back to ADD and the
+      // supersession path never ran.
+      const body = chatCompletionBody({
         model: this.cfg.model,
         messages: [
           { role: "system", content: OP_SYSTEM_PROMPT },
           { role: "user", content: OP_USER_PROMPT(newText, existing) },
         ],
-        temperature: 0,
-        max_tokens: 128,
+        maxTokens: 256,
       });
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
       try {
         const resp = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
         if (!resp.ok) return { op: "ADD" };
-        const obj = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-        const text = obj.choices?.[0]?.message?.content ?? "";
-        return parseOperation(text, new Set(existing.map((e) => e.id)));
+        const read = readCompletionText((await resp.json()) as ChatCompletionResponse);
+        // ADD stays the fallback for an unusable response: it is the only
+        // option that cannot lose an existing memory.
+        if (read.emptyReason) return { op: "ADD" };
+        return parseOperation(read.text, new Set(existing.map((e) => e.id)));
       } catch {
         return { op: "ADD" };
       } finally {
