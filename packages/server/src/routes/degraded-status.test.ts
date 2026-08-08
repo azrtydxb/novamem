@@ -171,6 +171,54 @@ describe("/v1/neighbors degraded semantics", () => {
   });
 });
 
+describe("/v1/context degraded semantics", () => {
+  // /v1/context is the endpoint an agent calls FIRST, and its guidance text
+  // tells the caller to proceed when `relevant` is empty. Returning 200 with
+  // an empty set during a tier outage therefore does not just lose a result —
+  // it actively instructs the agent to carry on as though the store held
+  // nothing. That is the most costly place in the API for this ambiguity.
+  it("returns 503 when a tier failed and produced no relevant memories", async () => {
+    const { app, warm } = makeApp({ graphConnected: false });
+    try {
+      const headers = await userSession(warm);
+      const r = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers,
+        payload: { message: "anything at all", namespace: "default" },
+      });
+      expect(r.statusCode).toBe(503);
+      const body = r.json();
+      expect(body.relevant.degraded).toBe(true);
+      expect(body.relevant.results).toEqual([]);
+      expect(body.error).toBeTruthy();
+      // The guidance that tells a caller to proceed must NOT ride along on a
+      // response that means "I could not look".
+      expect(body.guidance).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("stays 200 when every tier answered", async () => {
+    const { app, warm } = makeApp();
+    try {
+      const headers = await userSession(warm);
+      const r = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers,
+        payload: { message: "anything at all", namespace: "default" },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(r.json().relevant.degraded).toBe(false);
+      expect(r.json().guidance).toBeTruthy();
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe("/v1/capture reports embedding state", () => {
   it("reports embedded:true on a healthy write", async () => {
     const { app, warm } = makeApp();

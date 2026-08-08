@@ -56,6 +56,8 @@ Every novamem-server config knob lives in env vars. The schema is enforced at st
 | `NOVAMEM_EMBEDDINGS_MODEL` | — | e.g. `text-embedding-3-small` (OpenAI) or `nomic-embed-text` (Ollama). |
 | `NOVAMEM_EMBEDDINGS_API_KEY` | — | API key for the external endpoint. |
 | `NOVAMEM_EMBEDDINGS_DIM` | `384` | Vector dimension produced by the model. Must match Qdrant collection size. |
+| `NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS` | `60000` | How often the reconciler drains entries whose vector is missing. `memory_entries.embedded_at IS NULL` **is** the queue: a write whose embedding failed still stores the memory and leaves the marker NULL, so nothing is lost while the embedder is down and the backlog drains itself when it returns — no operator sweep, no re-embedding pass. |
+| `NOVAMEM_EMBEDDINGS_RECONCILE_BATCH` | `50` | Entries embedded per reconciler tick (max 1000). A failed batch is simply retried next tick; there is no attempt ceiling, which is what lets it survive a multi-day outage. |
 | `NOVAMEM_EMBEDDINGS_TIMEOUT_MS` | `30000` | Per-request timeout for remote embedders. The query is embedded *before* the per-tier degradation fan-out, so an unbounded hang here stalls every search. |
 | `NOVAMEM_EMBEDDINGS_QUERY_PREFIX` | inferred | Prefix applied when embedding a **search query**. Left unset, it is inferred from the model id (`e5-*` → `query: `, `bge-*-en` → `Represent this sentence for searching relevant passages: `). |
 | `NOVAMEM_EMBEDDINGS_DOCUMENT_PREFIX` | inferred | Prefix applied when embedding **stored content** (`e5-*` → `passage: `). |

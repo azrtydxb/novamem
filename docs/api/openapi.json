@@ -229,7 +229,8 @@
                     "items": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 128
+                      "maxLength": 128,
+                      "pattern": "^[a-z0-9][a-z0-9._:-]*$"
                     }
                   },
                   "weights": {
@@ -243,6 +244,12 @@
                       },
                       "graph": {
                         "type": "number"
+                      },
+                      "recency": {
+                        "type": "number"
+                      },
+                      "entity": {
+                        "type": "number"
                       }
                     }
                   },
@@ -254,6 +261,18 @@
                       "private",
                       "sensitive"
                     ]
+                  },
+                  "asOf": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "decompose": {
+                    "type": "boolean"
+                  },
+                  "expandSourceChunks": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -327,7 +346,8 @@
                     "items": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 128
+                      "maxLength": 128,
+                      "pattern": "^[a-z0-9][a-z0-9._:-]*$"
                     }
                   },
                   "weights": {
@@ -341,6 +361,12 @@
                       },
                       "graph": {
                         "type": "number"
+                      },
+                      "recency": {
+                        "type": "number"
+                      },
+                      "entity": {
+                        "type": "number"
                       }
                     }
                   },
@@ -352,6 +378,18 @@
                       "private",
                       "sensitive"
                     ]
+                  },
+                  "asOf": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "decompose": {
+                    "type": "boolean"
+                  },
+                  "expandSourceChunks": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -696,6 +734,80 @@
         }
       }
     },
+    "/v1/context-prefix": {
+      "get": {
+        "summary": "Cacheable observation log prefix for prompt-caching agents",
+        "tags": [
+          "memory"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "maxLength": 128
+            },
+            "in": "query",
+            "name": "project",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/observe": {
+      "post": {
+        "summary": "Trigger an observer+reflector pass over recent memories (admin only)",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/v1/decay": {
       "post": {
         "summary": "Trigger a decay sweep (admin only)",
@@ -902,7 +1014,8 @@
                     "items": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 128
+                      "maxLength": 128,
+                      "pattern": "^[a-z0-9][a-z0-9._:-]*$"
                     }
                   },
                   "maxSensitivity": {
@@ -985,7 +1098,8 @@
                     "items": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 128
+                      "maxLength": 128,
+                      "pattern": "^[a-z0-9][a-z0-9._:-]*$"
                     }
                   },
                   "maxSensitivity": {
@@ -1750,11 +1864,88 @@
         }
       }
     },
-    "/health": {
+    "/live": {
       "get": {
-        "summary": "Liveness probe — boolean only (no infrastructure detail)",
+        "summary": "Liveness probe — process only, no dependency checks",
         "tags": [
           "liveness"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Readiness probe — dependency checks, boolean only",
+        "tags": [
+          "readiness"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Readiness probe — dependency checks, boolean only",
+        "tags": [
+          "readiness"
         ],
         "responses": {
           "200": {
@@ -1844,19 +2035,32 @@
                             "unreachable",
                             "disabled"
                           ]
+                        },
+                        "embedder": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "failing"
+                          ]
                         }
                       },
                       "required": [
                         "warm",
                         "cold",
-                        "graph"
+                        "graph",
+                        "embedder"
                       ],
                       "additionalProperties": false
+                    },
+                    "pendingEmbeddings": {
+                      "nullable": true,
+                      "type": "number"
                     }
                   },
                   "required": [
                     "ok",
-                    "deps"
+                    "deps",
+                    "pendingEmbeddings"
                   ],
                   "additionalProperties": false
                 }
@@ -1916,19 +2120,32 @@
                             "unreachable",
                             "disabled"
                           ]
+                        },
+                        "embedder": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "failing"
+                          ]
                         }
                       },
                       "required": [
                         "warm",
                         "cold",
-                        "graph"
+                        "graph",
+                        "embedder"
                       ],
                       "additionalProperties": false
+                    },
+                    "pendingEmbeddings": {
+                      "nullable": true,
+                      "type": "number"
                     }
                   },
                   "required": [
                     "ok",
-                    "deps"
+                    "deps",
+                    "pendingEmbeddings"
                   ],
                   "additionalProperties": false
                 }

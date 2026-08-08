@@ -161,6 +161,23 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         includeProjects: body.includeProjects,
         maxSensitivity: body.maxSensitivity,
       });
+      // Same rule as /v1/search and /v1/neighbors, and for the same reason:
+      // this endpoint's whole job is to tell a caller what it knows, and
+      // "I found nothing" is a different claim from "I could not look".
+      // Returning 200 with an empty `relevant` while a tier was down invites
+      // the caller to conclude the store is empty and to stop asking — the
+      // guidance text below literally tells it to proceed. So a degraded
+      // search that produced nothing is a 503 here too. Degraded WITH
+      // results stays a 200: partial context is still useful, and the flag
+      // rides along on `relevant` for a caller that wants to know.
+      if (relevant.degraded && relevant.results.length === 0) {
+        reply.code(503).send({
+          relevant,
+          recent,
+          error: "context degraded: a backing tier was unavailable and no relevant memories could be produced",
+        });
+        return;
+      }
       reply.send({
         relevant,
         recent,
