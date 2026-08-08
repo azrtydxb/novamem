@@ -968,6 +968,27 @@ export class WarmStore {
     });
   }
 
+  /** Read a persisted background-job state value, or null when unset. */
+  async getEngineState(key: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ value: schema.engineState.value })
+      .from(schema.engineState)
+      .where(eq(schema.engineState.key, key))
+      .limit(1);
+    return row?.value ?? null;
+  }
+
+  /** Persist a background-job state value. */
+  async setEngineState(key: string, value: string): Promise<void> {
+    await this.db
+      .insert(schema.engineState)
+      .values({ key, value })
+      .onConflictDoUpdate({
+        target: schema.engineState.key,
+        set: { value, updatedAt: sql`now()` },
+      });
+  }
+
   /** Queue a warm entry whose cold vector is missing, so the reaper can
    *  re-embed it. The mirror of the `delete`-kind orphan rows written by
    *  `engine.forget()` when a Qdrant delete fails: this side covers the

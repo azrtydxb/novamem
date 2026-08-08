@@ -229,6 +229,31 @@ export class FakeWarmStore {
         const idleDays = (Date.now() - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24);
         return { rows: [{ hits: r.hits, idle_days: String(idleDays) }] };
       }
+      // dreamCycle's forward table walk:
+      //   SELECT ... FROM memory_entries WHERE id > $2 ORDER BY id ASC LIMIT $1
+      if (sql.includes("FROM memory_entries") && sql.includes("ORDER BY id ASC")) {
+        const limit = Number(params[0]);
+        const cursor = String(params[1] ?? "");
+        const rows = [...this.rows.values()]
+          .filter((r) => r.id > cursor)
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          .slice(0, limit)
+          .map((r) => ({
+            id: r.id,
+            user_id: r.userId,
+            project_id: r.projectId,
+            namespace: r.namespace,
+            content: r.content,
+          }));
+        return { rows };
+      }
+      // dreamCycle phase 2 (common-neighbour edge promotion). The fake
+      // relation graph is exercised directly by the graph tests; here we
+      // return "no promotable pairs", which is a legitimate outcome and
+      // keeps the cursor tests focused on phase 1.
+      if (sql.includes("WITH co AS") && sql.includes("from_id")) {
+        return { rows: [] };
+      }
       throw new Error(`fake pool: unhandled SQL — ${sql.slice(0, 60)}`);
     },
   };
@@ -329,6 +354,17 @@ export class FakeWarmStore {
     const r = this.rows.get(id);
     if (!r) return undefined;
     return { userId: r.userId, projectId: r.projectId };
+  }
+
+  /** In-memory stand-in for the `engine_state` key/value table. */
+  engineState = new Map<string, string>();
+
+  async getEngineState(key: string): Promise<string | null> {
+    return this.engineState.get(key) ?? null;
+  }
+
+  async setEngineState(key: string, value: string): Promise<void> {
+    this.engineState.set(key, value);
   }
 
   /** Queue a warm row whose cold vector never landed, for the reaper to

@@ -60,6 +60,10 @@ Every novamem-server config knob lives in env vars. The schema is enforced at st
 | `NOVAMEM_EMBEDDINGS_QUERY_PREFIX` | inferred | Prefix applied when embedding a **search query**. Left unset, it is inferred from the model id (`e5-*` → `query: `, `bge-*-en` → `Represent this sentence for searching relevant passages: `). |
 | `NOVAMEM_EMBEDDINGS_DOCUMENT_PREFIX` | inferred | Prefix applied when embedding **stored content** (`e5-*` → `passage: `). |
 
+::: warning Changing the embedding model
+On start-up the server records the embedding model id that produced the stored vectors. If it changes between runs, it logs a loud error: vectors from two models live in incompatible spaces, so existing memories silently stop being findable. A dimension change at least errors on write; a same-dimension swap (384 → 384, the common case) fails completely silently. Re-embed after a deliberate swap — all content lives in Postgres, so re-embedding is total and safe.
+:::
+
 ::: tip Asymmetric retrieval models
 The e5 and bge families are trained with *different* prefixes on the query and document sides and lose a large chunk of their accuracy when both sides are embedded identically. novamem now embeds each side separately and infers the right prefixes from the model id, so these models work correctly out of the box.
 

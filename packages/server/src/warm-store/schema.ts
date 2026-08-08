@@ -183,6 +183,17 @@ export const decayRuns = pgTable("decay_runs", {
   effectiveDays: real("effective_days"),
 });
 
+/** Small key/value store for background-job state that must survive a
+ *  restart. Currently just the dream cycle's table-walk cursor: without
+ *  persistence every restart rewound it to the beginning, so a store
+ *  larger than one batch would keep re-compacting its oldest rows and
+ *  never reach the newer ones. */
+export const engineState = pgTable("engine_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Cold-tier orphans — entries whose qdrant delete failed; reaper retries
  *  with exponential backoff and gives up after a few attempts. */
 export const coldOrphans = pgTable(

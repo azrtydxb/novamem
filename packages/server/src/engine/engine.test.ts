@@ -738,3 +738,45 @@ describe("engine.search: result ordering", () => {
     expect(scores).toEqual(sorted);
   });
 });
+
+describe("engine.checkEmbeddingModel", () => {
+  it("records the model id on first run and reports no change", async () => {
+    const { engine, warm } = bench();
+    const r = await engine.checkEmbeddingModel();
+    expect(r.changed).toBe(false);
+    expect(r.previous).toBeNull();
+    expect(await warm.getEngineState("embedding_model_id")).toBe("fake:test-embedder");
+  });
+
+  it("reports no change when the model is unchanged", async () => {
+    const { engine } = bench();
+    await engine.checkEmbeddingModel();
+    const second = await engine.checkEmbeddingModel();
+    expect(second.changed).toBe(false);
+  });
+
+  it("detects a model swap — the silent-corruption case", async () => {
+    // A same-dimension swap produces vectors in an incompatible space
+    // with no error anywhere: old memories just stop being findable.
+    const { engine, warm } = bench();
+    await warm.setEngineState("embedding_model_id", "local-transformers:some/other-model");
+    const r = await engine.checkEmbeddingModel();
+    expect(r.changed).toBe(true);
+    expect(r.previous).toBe("local-transformers:some/other-model");
+    // The new id is adopted so the operator is warned once, not forever.
+    expect(await warm.getEngineState("embedding_model_id")).toBe("fake:test-embedder");
+  });
+});
+
+describe("engine.dreamCycle: cursor persistence", () => {
+  it("resumes from the persisted cursor instead of rewinding on restart", async () => {
+    const { engine, warm } = bench();
+    for (let i = 0; i < 3; i++) {
+      await engine.remember("u1", { content: `durable cursor fact number ${i}`, force: true });
+    }
+    await engine.dreamCycle({ maxEntries: 2 });
+    const after = await warm.getEngineState("dream_cycle_cursor");
+    expect(after).toBeTruthy();
+    expect(typeof after).toBe("string");
+  });
+});

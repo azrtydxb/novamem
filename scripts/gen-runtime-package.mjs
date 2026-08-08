@@ -24,6 +24,7 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 const [rootPath, serverPath, outPath] = process.argv.slice(2);
 if (!rootPath || !serverPath || !outPath) {
@@ -48,6 +49,40 @@ function stripSelector(key) {
   return key.slice(0, at);
 }
 
+/** Read the version actually installed in the workspace for `name`.
+ *
+ *  This is the whole point of the exercise. The runtime stage installs
+ *  with `npm install --no-package-lock`, which resolves declared ranges
+ *  fresh against the registry — so the image could ship different
+ *  versions from the ones CI tested, with nothing to catch it.
+ *
+ *  That is not hypothetical: `@qdrant/js-client-rest` was declared
+ *  `^1.12.0`; the lockfile pinned 1.17.0 for tests while the image
+ *  resolved 1.19.0, which had REMOVED the `search()` method the cold
+ *  store called. Every vector search in the published image would have
+ *  thrown, with a fully green test suite.
+ *
+ *  Resolving against the workspace's installed tree (which `pnpm install
+ *  --frozen-lockfile` built from pnpm-lock.yaml) and writing exact pins
+ *  makes "what we ship" equal "what we tested" for every direct
+ *  dependency. Transitives are still resolved by npm, but the CVE floors
+ *  below constrain the ones that matter. */
+function resolveInstalledVersion(name, serverPkgPath) {
+  const serverDir = dirname(resolve(serverPkgPath));
+  const candidates = [
+    join(serverDir, "node_modules", name, "package.json"),
+    join(serverDir, "..", "..", "node_modules", name, "package.json"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(readFileSync(candidate, "utf8")).version;
+    } catch {
+      // try the next location
+    }
+  }
+  return null;
+}
+
 const root = JSON.parse(readFileSync(rootPath, "utf8"));
 const server = JSON.parse(readFileSync(serverPath, "utf8"));
 
@@ -62,9 +97,36 @@ for (const [key, value] of Object.entries(root.pnpm?.overrides ?? {})) {
 
 delete server.devDependencies;
 delete server.scripts;
+
+// Pin every direct production dependency to the version the workspace
+// lockfile resolved, so the image cannot drift from what CI tested.
+const pinned = {};
+const unresolved = [];
+for (const [name, range] of Object.entries(server.dependencies ?? {})) {
+  const version = resolveInstalledVersion(name, serverPath);
+  if (version) {
+    pinned[name] = version;
+  } else {
+    // Fall back to the declared range rather than failing the build; a
+    // missing package here means the workspace install did not include
+    // it, which npm will still resolve in the runtime stage.
+    pinned[name] = range;
+    unresolved.push(name);
+  }
+}
+server.dependencies = pinned;
 server.overrides = overrides;
 
 writeFileSync(outPath, `${JSON.stringify(server, null, 2)}\n`);
 console.log(
-  `[gen-runtime-package] wrote ${outPath} with ${Object.keys(overrides).length} npm overrides`,
+  `[gen-runtime-package] wrote ${outPath}: ` +
+    `${Object.keys(pinned).length} dependencies pinned to lockfile-resolved versions, ` +
+    `${Object.keys(overrides).length} npm overrides`,
 );
+if (unresolved.length > 0) {
+  console.warn(
+    `[gen-runtime-package] WARNING: could not resolve installed versions for ` +
+      `${unresolved.join(", ")} — these fall back to their declared range and may ` +
+      `differ in the image from what was tested.`,
+  );
+}

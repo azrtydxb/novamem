@@ -1,8 +1,20 @@
-FROM node:25-bookworm-slim AS base
-# node:25-bookworm-slim no longer ships corepack (it was unbundled
-# starting with Node 25). Install it from npm before activating pnpm.
-# `--force` because the base image has yarn shims at /usr/local/bin/yarnpkg
-# that corepack also wants to write — without --force npm bails on EEXIST.
+# Base image is DIGEST-pinned, not just tag-pinned.
+#
+# `node:24-bookworm-slim` is a moving tag: it resolves to a different
+# image over time, so the Trivy gate could go from green to red with no
+# commit to this repo — which is exactly what happened before this pin
+# (the scan passed in June and failed in August on an unchanged
+# Dockerfile). Pinning the digest makes base-image updates an explicit,
+# reviewable change instead of a surprise. Refresh it deliberately when
+# picking up upstream security fixes.
+#
+# Node 24 rather than 25: 24 is the LTS line, it is what release.yml
+# publishes from, and it is now covered by the CI test matrix. The image
+# previously ran the non-LTS 25 line while CI tested only Node 20.
+FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS base
+# Install corepack from npm before activating pnpm. `--force` because the
+# base image has yarn shims at /usr/local/bin/yarnpkg that corepack also
+# wants to write — without --force npm bails on EEXIST.
 RUN npm install -g --force corepack@latest \
  && corepack enable \
  && corepack prepare pnpm@9.12.0 --activate
@@ -31,24 +43,23 @@ RUN pnpm -r \
   --filter '!@azrtydxb/novamem-docs-site' \
   --filter '!@azrtydxb/novamem-benchmarks' \
   build
-# Generate a runtime package.json with devDependencies stripped — keeps
-# `dependencies` only so npm in the runtime stage doesn't choke on
-# `workspace:*` URL schemes it doesn't understand. Writing to a fresh
-# path so we don't mutate the source tree.
-# Generate a runtime package.json: drop devDependencies + scripts, and
-# inject npm `overrides` for transitive deps with known HIGH/CRITICAL CVEs
-# (the pnpm.overrides at workspace root don't carry to a fresh npm install
-# in the runtime stage, because npm doesn't read them).
+# Generate the runtime package.json. Three jobs, all of them about making
+# the image match what CI actually tested (see the script for detail):
 #
-# The override list is DERIVED from the root package.json's
-# `pnpm.overrides` rather than hand-maintained here. Keeping two parallel
-# lists meant the image silently drifted from the workspace every time an
-# advisory was fixed in one place and not the other. pnpm's selector
-# syntax ("pkg@<1.2.3") is translated to npm's plain form ("pkg"), and a
-# couple of runtime-only entries are merged on top.
+#   1. Drop devDependencies + scripts, so npm never sees `workspace:*`
+#      specifiers it can't resolve. Written to a fresh path so the source
+#      tree isn't mutated.
+#   2. PIN every direct dependency to the version the pnpm lockfile
+#      resolved. Without this the runtime `npm install` re-resolves ranges
+#      against the registry, and the image can ship different versions
+#      from the ones under test — which is how a qdrant client that had
+#      removed the method cold-store calls nearly reached production.
+#   3. Translate the root `pnpm.overrides` CVE floors into npm's
+#      `overrides` field, since npm doesn't read pnpm's. Deriving them
+#      beats a hand-maintained second list, which had already drifted.
 RUN node ./scripts/gen-runtime-package.mjs ./package.json ./packages/server/package.json /tmp/runtime-package.json
 
-FROM node:25-bookworm-slim AS runtime
+FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS runtime
 
 # Keep the runtime image patched even when the upstream Node image lags
 # behind Debian security updates. Trivy gates HIGH/CRITICAL OS CVEs in CI.
@@ -58,10 +69,12 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Ship only the server's compiled JS + a *fresh* prod-only node_modules
-# resolved from the server's own dependencies (not the shared workspace
-# lockfile, which would otherwise drag in dev tooling like esbuild/vite/
-# vitest). Smaller image, smaller attack surface.
+# Ship only the server's compiled JS + a prod-only node_modules resolved
+# from the server's own (now version-pinned) dependencies. Installing
+# with npm here rather than reusing the whole pnpm store keeps dev
+# tooling — esbuild/vite/vitest and better-auth's optional peers — out of
+# the image; `pnpm deploy --prod` was measured at +88MB and +174 packages
+# for the same application. Smaller image, smaller attack surface.
 COPY --from=build /tmp/runtime-package.json ./package.json
 COPY --from=build /app/packages/server/dist ./dist
 # Keep --omit=dev but NOT --omit=optional. `onnxruntime-node` ships as an

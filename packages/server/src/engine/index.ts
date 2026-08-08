@@ -111,6 +111,13 @@ export function tokenJaccard(a: string, b: string): number {
 
 const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
 const CAPTURE_CANDIDATE_K = 5;
+/** `engine_state` key holding the dream cycle's table-walk cursor. */
+const DREAM_CURSOR_KEY = "dream_cycle_cursor";
+
+/** `engine_state` key holding the embedding model id that produced the
+ *  vectors currently in the cold store. */
+const EMBEDDING_MODEL_KEY = "embedding_model_id";
+
 /** How many of the top vector hits seed the graph traversal. */
 const GRAPH_SEED_COUNT = 3;
 /** Candidates fetched per requested result, so post-fusion visibility
@@ -370,10 +377,13 @@ export class MemoryEngine {
   private promotedSinceLastDecay = 0;
   private readonly startedAt = Date.now();
   /** Resume point for the dream cycle's table walk (a ULID entry id, or
-   *  "" to start from the beginning). Process-local: a restart replays
-   *  from the start of the table, which is exactly the old behaviour and
-   *  therefore never worse. */
-  private dreamCursor = "";
+   *  "" to start from the beginning). Persisted in `engine_state` so a
+   *  restart resumes where the last run stopped — an in-memory cursor
+   *  rewound to the beginning on every deploy, which on a store larger
+   *  than one batch meant the oldest rows were re-compacted forever and
+   *  the newer ones never reached. Cached here to keep the hot path free
+   *  of a read per cycle. */
+  private dreamCursor: string | null = null;
 
   constructor(cfg: EngineConfig) {
     this.warm = cfg.warm;
@@ -391,6 +401,50 @@ export class MemoryEngine {
     this.personalTerms = cfg.personalTerms ?? [];
     this.minVectorScore = cfg.minVectorScore ?? DEFAULT_MIN_VECTOR_SCORE;
     this.maxContentChars = cfg.maxContentChars ?? 4_000;
+  }
+
+  /** Detect a change of embedding model between runs.
+   *
+   *  Vectors from two different models live in incompatible spaces, so a
+   *  swap silently invalidates every stored embedding: cosine scores
+   *  become meaningless, old memories stop being findable, and the
+   *  capture dedup threshold misfires. When the dimension also changes
+   *  the cold store at least errors on upsert — but a same-dimension swap
+   *  (384 → 384 is the common case) fails completely silently, which is
+   *  the worst version.
+   *
+   *  We can't re-embed the corpus safely on boot without knowing the
+   *  operator's intent, so this records the model id and warns loudly on
+   *  a mismatch, telling them exactly what to do. Called from main.ts
+   *  after the stores are up. */
+  async checkEmbeddingModel(): Promise<{ changed: boolean; previous: string | null }> {
+    const current = this.embedder.modelId;
+    let previous: string | null = null;
+    try {
+      previous = await this.warm.getEngineState(EMBEDDING_MODEL_KEY);
+    } catch (err) {
+      this.logger.warn(
+        { err: (err as Error).message },
+        "could not read stored embedding-model id — skipping mismatch check",
+      );
+      return { changed: false, previous: null };
+    }
+    if (previous && previous !== current) {
+      this.logger.error(
+        { previousModel: previous, currentModel: current },
+        "EMBEDDING MODEL CHANGED — stored vectors were produced by a different model and are " +
+          "no longer comparable to new ones. Vector search will silently return poor or empty " +
+          "results for existing memories until they are re-embedded. Either restore the previous " +
+          "model, or re-embed the corpus (content is all in Postgres, so re-embedding is total " +
+          "and safe).",
+      );
+      await this.warm.setEngineState(EMBEDDING_MODEL_KEY, current).catch(() => {});
+      return { changed: true, previous };
+    }
+    if (!previous) {
+      await this.warm.setEngineState(EMBEDDING_MODEL_KEY, current).catch(() => {});
+    }
+    return { changed: false, previous };
   }
 
   /** Replace the engine's logger after construction. main.ts uses this
@@ -1728,6 +1782,9 @@ export class MemoryEngine {
     // an index range scan on the primary key. Running out of rows wraps
     // the cursor back to the start, so coverage is a continuous loop
     // over the whole table.
+    if (this.dreamCursor === null) {
+      this.dreamCursor = (await this.warm.getEngineState(DREAM_CURSOR_KEY).catch(() => null)) ?? "";
+    }
     const rows = await this.warm.pool.query<{
       id: string;
       user_id: string;
@@ -1745,6 +1802,14 @@ export class MemoryEngine {
     // Advance (or wrap) before doing the work, so a mid-run failure
     // doesn't pin the cycle to the same slice forever.
     this.dreamCursor = rows.rows.length < limit ? "" : (rows.rows[rows.rows.length - 1]?.id ?? "");
+    await this.warm.setEngineState(DREAM_CURSOR_KEY, this.dreamCursor).catch((err) => {
+      // Non-fatal: the cycle still runs, it just may repeat this slice
+      // after a restart.
+      this.logger.warn(
+        { err: (err as Error).message },
+        "could not persist dream-cycle cursor",
+      );
+    });
     for (const row of rows.rows) {
       walked++;
       // Skip ones we've already merged this run.

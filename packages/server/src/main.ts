@@ -238,6 +238,13 @@ async function main() {
     },
   });
 
+  // Embedding-model provenance check. Runs after the logger swap below
+  // would be too late — but before serving traffic is what matters, and
+  // the engine logger is already wired by this point.
+  await engine.checkEmbeddingModel().catch((err) => {
+    app.log.warn({ err: (err as Error).message }, "embedding-model check failed");
+  });
+
   // Now that the Fastify pino logger exists, swap the engine + graph
   // store boot-time console fallbacks for component-tagged child
   // loggers. Anything they log from this point on lands in the same
