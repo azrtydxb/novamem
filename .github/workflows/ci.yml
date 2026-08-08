@@ -51,7 +51,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
+      # PINNED TO v4 DELIBERATELY — do not take dependabot's v6 bump.
+      # v6 installs pnpm as a native binary (@pnpm/exe) which needs
+      # libatomic.so.1; the self-hosted arc-azrtydxb-amd64 runner image does
+      # not have it, so every job dies with "error while loading shared
+      # libraries ... exits with code 127". v4 uses the JS distribution and
+      # works on both hosted and self-hosted runners.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
@@ -77,7 +83,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -96,7 +102,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version: 20
