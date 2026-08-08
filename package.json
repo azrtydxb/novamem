@@ -32,7 +32,7 @@
     "node": ">=20.19"
   },
   "pnpm": {
-    "comment": "Overrides for transitive dependencies carrying HIGH/CRITICAL advisories that their direct parents have not yet released a fix for. Each entry is a floor, not a pin, so a parent that later bumps past it still wins. Re-check with `pnpm audit --prod --audit-level=high` and drop entries once the parent ships the fix.",
+    "comment": "Overrides for transitive dependencies carrying HIGH/CRITICAL advisories that their direct parents have not yet released a fix for. Each entry is a floor, not a pin, so a parent that later bumps past it still wins. Re-check with `pnpm audit --prod --audit-level=high` and drop entries once the parent ships the fix. NOTE undici: the floor is BOUNDED to <7 deliberately. An unbounded '>=6.27.0' resolved to undici 8, whose handler interface (onRequestStart) is incompatible with @qdrant/js-client-rest, which declares ^6.23.0 \u2014 every Qdrant call then failed with 'fetch failed / invalid onRequestStart method' while plain global fetch still worked, so it looked like a network fault. Keep majors bounded.",
     "overrides": {
       "esbuild@<0.25.0": ">=0.25.0",
       "vite@<8.0.16": ">=8.0.16",
@@ -45,7 +45,7 @@
       "postcss@<8.5.18": ">=8.5.18",
       "protobufjs@<8.4.1": ">=8.4.1",
       "sharp@<0.35.0": ">=0.35.0",
-      "undici@<6.27.0": ">=6.27.0",
+      "undici@<6.27.0": ">=6.27.0 <7",
       "ws@<8.21.0": ">=8.21.0",
       "@opentelemetry/propagator-jaeger@<2.9.0": ">=2.9.0"
     }
