@@ -209,13 +209,32 @@ export class ColdStore {
     // collection on a pure read path.
     const collections = await this.resolveReadCollections(args.userId, args.namespace, projectId);
     if (collections.length === 0) return [];
+    // Uses the Query API rather than the legacy `search()` method.
+    //
+    // This is not cosmetic. `search()` was removed in
+    // @qdrant/js-client-rest 1.19.0, and the production image installs
+    // without a lockfile (`npm install --no-package-lock` in the runtime
+    // stage), so it resolves the declared range fresh instead of reusing
+    // the version the tests pin. With the old `^1.12.0` range that meant
+    // tests ran 1.17.0 (where `search()` exists) while the shipped image
+    // got 1.19.0 (where it does not) — every vector search in production
+    // would have thrown `this.client.search is not a function`, with a
+    // fully green test suite.
+    //
+    // `query()` exists in both, so the call no longer depends on which
+    // version resolves. Passing the raw embedding as `query` is a plain
+    // nearest-neighbour lookup — `QueryInterface` accepts a `VectorInput`
+    // (i.e. `number[]`) directly — exactly what `search({ vector })` did.
+    // The response is `{ points }` rather than a bare array.
     const perCollection = await Promise.all(
       collections.map((collection) =>
-        this.client.search(collection, {
-          vector: args.embedding,
-          limit: args.k,
-          with_payload: true,
-        }),
+        this.client
+          .query(collection, {
+            query: args.embedding,
+            limit: args.k,
+            with_payload: true,
+          })
+          .then((r) => r.points),
       ),
     );
     // Merge, keep the best score per entry, and re-apply the caller's k.
