@@ -135,6 +135,39 @@ describe("ColdStore", () => {
     expect(hits[0]!.score).toBeCloseTo(0.91);
   });
 
+  it("deduplicates an entry present in BOTH the primary and legacy collections", async () => {
+    // Mid-migration an entry can have a vector in both collections: a
+    // re-upsert writes to the primary while the legacy copy remains.
+    // Without dedup that entry occupies two of the k slots and pushes a
+    // genuinely different memory out of the results.
+    const store = new ColdStore({ url: "http://qdrant.test", vectorSize: 3 });
+    qdrant.collections.add("novamem_u_user-1_default");
+    qdrant.collections.add("novamem_user-1_default"); // legacy name
+    qdrant.query
+      .mockResolvedValueOnce({
+        points: [{ id: "uuid-a", score: 0.9, payload: { entryId: "entry-a" } }],
+      })
+      .mockResolvedValueOnce({
+        points: [
+          { id: "uuid-a", score: 0.5, payload: { entryId: "entry-a" } }, // same entry, stale copy
+          { id: "uuid-b", score: 0.4, payload: { entryId: "entry-b" } },
+        ],
+      });
+
+    const hits = await store.search({
+      userId: "user-1",
+      namespace: "default",
+      embedding: [1, 0, 0],
+      k: 2,
+    });
+
+    expect(qdrant.query).toHaveBeenCalledTimes(2);
+    // entry-a appears once, at its BEST score, and entry-b still makes
+    // the cut rather than being crowded out by the duplicate.
+    expect(hits.map((h) => h.id)).toEqual(["entry-a", "entry-b"]);
+    expect(hits[0]!.score).toBeCloseTo(0.9);
+  });
+
   it("clamps negative cosine scores to zero", async () => {
     const store = new ColdStore({ url: "http://qdrant.test", vectorSize: 3 });
     qdrant.collections.add("novamem_u_user-1_default");

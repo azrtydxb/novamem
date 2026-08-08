@@ -86,13 +86,41 @@ function resolveInstalledVersion(name, serverPkgPath) {
 const root = JSON.parse(readFileSync(rootPath, "utf8"));
 const server = JSON.parse(readFileSync(serverPath, "utf8"));
 
+/** Compare two floor ranges (`">=1.2.3"`) by version, not by string.
+ *
+ *  String comparison is wrong here in a way that silently *weakens*
+ *  security: `">=10.0.0" > ">=9.9.9"` is false lexicographically, because
+ *  "1" sorts before "9". Picking the loser would drop a package's floor
+ *  from 10.0.0 to 9.9.9 — exactly the outcome this merge exists to
+ *  prevent. Returns a positive number when `a` is the higher floor.
+ *
+ *  Unparseable input sorts lowest rather than throwing, so a malformed
+ *  entry can never win and quietly become the effective floor. */
+function compareFloors(a, b) {
+  const parse = (range) => {
+    const m = /(\d+(?:\.\d+)*)/.exec(String(range ?? ""));
+    if (!m) return null;
+    return m[1].split(".").map((n) => Number.parseInt(n, 10));
+  };
+  const va = parse(a);
+  const vb = parse(b);
+  if (!va && !vb) return 0;
+  if (!va) return -1;
+  if (!vb) return 1;
+  for (let i = 0; i < Math.max(va.length, vb.length); i += 1) {
+    const d = (va[i] ?? 0) - (vb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 const overrides = { ...RUNTIME_ONLY_OVERRIDES };
 for (const [key, value] of Object.entries(root.pnpm?.overrides ?? {})) {
   const name = stripSelector(key);
   // If the same package appears under several selectors, keep the
   // highest floor so we never weaken a pin.
   const existing = overrides[name];
-  overrides[name] = existing && existing > value ? existing : value;
+  overrides[name] = existing && compareFloors(existing, value) > 0 ? existing : value;
 }
 
 delete server.devDependencies;

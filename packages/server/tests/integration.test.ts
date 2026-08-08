@@ -177,21 +177,35 @@ describe("integration: live service end-to-end", () => {
   });
 
   itLive("a hit on a cold entry promotes it back to warm", async () => {
-    // Force everything to cold first (admin-gated).
-    await adminApi("/v1/decay", { effectiveDays: 0.0001 });
-    // Re-search — the entry should be served and reverted to warm.
-    const r = await api<{ results: Array<{ id: string; tier: string }> }>("/v1/search", {
-      query: "tiered memory systems",
+    // Forcing everything cold is admin-gated. Without an admin credential
+    // the decay silently doesn't happen, nothing is cold, and the rest of
+    // this test asserts nothing — so bail out explicitly rather than
+    // reporting a green no-op.
+    const forced = await adminApi("/v1/decay", { effectiveDays: 0.0001 });
+    if (!forced) return;
+
+    // Seed a known-cold entry rather than relying on whatever the decay
+    // happened to demote, so the assertion below is about promotion and
+    // not about the state the namespace was left in by earlier tests.
+    const seeded = await api<{ id: string }>("/v1/remember", {
+      content: "promotion probe entry for the cold-to-warm path",
       namespace: NS,
-      k: 1,
     });
-    if (r.body.results.length > 0) {
-      // After a hit, the next stats read should show it back in warm.
-      // We give the engine a moment in case the markCold UPDATE is async-buffered.
-      await new Promise((res) => setTimeout(res, 100));
-      const stats = await api<{ byNamespace: Record<string, { warm: number; cold: number }> }>("/v1/stats");
-      expect(stats.body.byNamespace[NS]?.warm ?? 0).toBeGreaterThanOrEqual(0);
-    }
+    createdIds.push(seeded.body.id);
+    await adminApi("/v1/decay", { effectiveDays: 0.0001 });
+
+    // A search that hits the entry must serve it AND flip it back to warm.
+    const r = await api<{ results: Array<{ id: string; tier: string }> }>("/v1/search", {
+      query: "promotion probe entry cold-to-warm",
+      namespace: NS,
+      k: 5,
+    });
+    const hit = r.body.results.find((x) => x.id === seeded.body.id);
+    expect(hit).toBeDefined();
+    // The engine reports the post-promotion tier on the response itself,
+    // so this is a real assertion rather than the previous `>= 0`, which
+    // held for every possible value.
+    expect(hit!.tier).toBe("warm");
   });
 
   itLive("forget removes the entry; reap-orphans returns clean counts", async () => {

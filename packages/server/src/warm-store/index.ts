@@ -940,13 +940,23 @@ export class WarmStore {
         // Lost the race — a concurrent writer already stored this exact
         // content in this scope. Return their id; the caller treats it as
         // a dedup hit, which is what a sequential run would have produced.
+        // Match the hash the way SQL actually treats it. Coercing a null
+        // hash to "" would compare against a value no row can hold, so
+        // the lookup would miss and this path would throw even when the
+        // conflicting row exists. Today the partial unique index is
+        // `WHERE content_hash IS NOT NULL`, so a null-hash insert can
+        // only conflict on the primary key — but writing it correctly
+        // costs nothing and stops the guard being wrong by construction
+        // if the index or a caller ever changes.
         const [existing] = await tx
           .select({ id: schema.memoryEntries.id })
           .from(schema.memoryEntries)
           .where(
             and(
               eq(schema.memoryEntries.userId, args.userId),
-              eq(schema.memoryEntries.contentHash, args.contentHash ?? ""),
+              args.contentHash == null
+                ? isNull(schema.memoryEntries.contentHash)
+                : eq(schema.memoryEntries.contentHash, args.contentHash),
               args.projectId == null
                 ? isNull(schema.memoryEntries.projectId)
                 : eq(schema.memoryEntries.projectId, args.projectId),

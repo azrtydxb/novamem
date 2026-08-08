@@ -237,20 +237,31 @@ export class ColdStore {
           .then((r) => r.points),
       ),
     );
-    // Merge, keep the best score per entry, and re-apply the caller's k.
-    const r = perCollection.flat().sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, args.k);
-    return r.map((p) => {
+    // Merge by resolved entry id, keeping the best score per entry,
+    // THEN sort and re-apply the caller's k.
+    //
+    // Deduplicating before the slice is load-bearing whenever the primary
+    // and legacy collections both hold a vector for the same entry —
+    // which is the normal state mid-migration, since a re-upsert of a
+    // pre-rename entry writes to the primary collection while the legacy
+    // copy remains. Slicing a merged-but-undeduplicated list would let
+    // one entry occupy two of the k slots and push a genuinely different
+    // memory out of the results.
+    const best = new Map<string, { id: string; score: number; payload: Record<string, unknown> }>();
+    for (const p of perCollection.flat()) {
       const payload = (p.payload ?? {}) as Record<string, unknown>;
       const id = typeof payload.entryId === "string" ? payload.entryId : String(p.id);
       // Cosine similarity ranges over [-1, 1] but a negative score means
-      // "vectors point apart" → semantically unrelated. Clip to 0 so the
-      // fuse step's max-normalisation doesn't collapse a near-orthogonal
-      // hit's signal contribution to zero across the whole result set
-      // (when the only vector hit had score < 0, max.vector was 0 and
-      // every entry's vector signal got divided to 0).
+      // "vectors point apart" → semantically unrelated. Clip to 0 so a
+      // near-orthogonal hit contributes nothing rather than a negative
+      // weight (and so `fuse`'s keyword normalisation can't divide by a
+      // negative max).
       const raw = p.score ?? 0;
-      return { id, score: raw > 0 ? raw : 0, payload };
-    });
+      const score = raw > 0 ? raw : 0;
+      const prev = best.get(id);
+      if (!prev || score > prev.score) best.set(id, { id, score, payload });
+    }
+    return [...best.values()].sort((a, b) => b.score - a.score).slice(0, args.k);
   }
 
 
