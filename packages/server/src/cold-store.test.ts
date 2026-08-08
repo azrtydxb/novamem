@@ -29,7 +29,13 @@ const qdrant = vi.hoisted(() => ({
 }));
 
 vi.mock("@qdrant/js-client-rest", () => ({
-  QdrantClient: vi.fn(() => qdrant),
+  // A function EXPRESSION, not an arrow: ColdStore calls `new QdrantClient(...)`,
+  // and arrow functions are not constructable in JavaScript. vitest 3 happened
+  // to tolerate it; vitest 4 calls the factory result directly and it fails with
+  // "is not a constructor".
+  QdrantClient: vi.fn(function () {
+    return qdrant;
+  }),
 }));
 
 const { ColdStore } = await import("./cold-store.js");
