@@ -219,6 +219,9 @@ importers:
       '@opentelemetry/instrumentation-pg':
         specifier: ^0.73.0
         version: 0.73.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-node':
+        specifier: ^0.221.0
+        version: 0.221.0(@opentelemetry/api@1.9.1)
       '@qdrant/js-client-rest':
         specifier: ^1.19.0
         version: 1.19.0(typescript@6.0.3)
@@ -253,9 +256,6 @@ importers:
       '@azrtydxb/novamem-admin-ui':
         specifier: workspace:*
         version: link:../admin-ui
-      '@opentelemetry/sdk-node':
-        specifier: ^0.221.0
-        version: 0.221.0(@opentelemetry/api@1.9.1)
       '@types/node':
         specifier: ^24
         version: 24.13.3

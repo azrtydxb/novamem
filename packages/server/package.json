@@ -18,7 +18,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && pnpm run build:assets",
+    "build": "rm -rf dist && tsc -p tsconfig.json && pnpm run build:assets && node scripts/check-runtime-deps.mjs",
     "build:assets": "node ./scripts/copy-admin-ui.mjs",
     "test": "vitest run",
     "test:integration": "NOVAMEM_INTEGRATION=1 vitest run --dir tests",
@@ -27,7 +27,8 @@
     "db:check": "drizzle-kit check",
     "db:introspect": "drizzle-kit introspect",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx watch src/main.ts"
+    "dev": "tsx watch src/main.ts",
+    "check:runtime-deps": "node scripts/check-runtime-deps.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
@@ -42,6 +43,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
     "@opentelemetry/instrumentation-http": "^0.221.0",
     "@opentelemetry/instrumentation-pg": "^0.73.0",
+    "@opentelemetry/sdk-node": "^0.221.0",
     "@qdrant/js-client-rest": "^1.19.0",
     "@xenova/transformers": "^2.17.2",
     "better-auth": "^1.6.26",
@@ -55,7 +57,6 @@
   },
   "devDependencies": {
     "@azrtydxb/novamem-admin-ui": "workspace:*",
-    "@opentelemetry/sdk-node": "^0.221.0",
     "@types/node": "^24",
     "@types/pg": "^8.21.0",
     "drizzle-kit": "^0.31.10",
