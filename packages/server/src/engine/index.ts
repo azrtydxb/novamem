@@ -1629,7 +1629,19 @@ export class MemoryEngine {
     // Phase 4: per-sub-query keyword retrieval. Per-query promises are
     // independent so they run concurrently across the whole (queries ×
     // scopes) matrix; the resulting flat list is what feeds fuse().
-    const keywordsPromise = Promise.all(
+    // A tier weighted 0 contributes 0 to every fused score, so querying it
+    // is pure latency. This used to run regardless: a caller passing
+    // `{ keyword: 0, vector: 1 }` still paid for the full FTS fan-out
+    // across every namespace in scope, and only its *ranking* changed.
+    //
+    // The one behavioural difference is the noise floor in fuse(), which
+    // treats a keyword or graph hit as corroboration that rescues a
+    // low-cosine candidate. A candidate rescued that way scores ~0 under a
+    // 0 weight and sorts to the bottom regardless, so dropping it costs
+    // nothing a caller can observe.
+    const keywordsPromise = weights.keyword === 0
+      ? Promise.resolve([] as Array<Array<{ id: string; score: number }>>)
+      : Promise.all(
       queries.flatMap((q) =>
         scopes.map((projectId) =>
           traceAsync("WarmStore.ftsSearch", {
@@ -1686,7 +1698,14 @@ export class MemoryEngine {
     // Entity bridging works from the query text alone, so unlike the
     // neighbour walk it does not require the vector tier to have returned
     // anything — it still contributes when the embedder is down.
-    if (this.graph?.isConnected()) {
+    // Same reasoning as the keyword tier: a 0 weight makes the neighbour
+    // walk and the entity bridge pure cost. This one is worth more —  it
+    // is GRAPH_SEED_COUNT round-trips plus an entity lookup.
+    if (weights.graph === 0) {
+      // Not a degraded search: the caller asked for no graph signal, and
+      // got exactly that. Marking it degraded would make an intentional
+      // configuration look like an outage.
+    } else if (this.graph?.isConnected()) {
       try {
         // Seed from the top few vector hits rather than only the single
         // best one. With one seed, an off-topic top-1 dragged its whole
