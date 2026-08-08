@@ -1,6 +1,6 @@
 import { SpanStatusCode, trace, type Attributes, type Span } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { FastifyInstrumentation } from "@opentelemetry/instrumentation-fastify";
+import { FastifyOtelInstrumentation } from "@fastify/otel";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { PgInstrumentation } from "@opentelemetry/instrumentation-pg";
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -18,7 +18,12 @@ export async function initTracing(): Promise<void> {
     traceExporter: new OTLPTraceExporter({ url: tracesEndpoint }),
     instrumentations: [
       new HttpInstrumentation(),
-      new FastifyInstrumentation(),
+      // registerOnInitialization makes this hook every Fastify instance as it
+      // is created, which is why buildHttpServer needs no tracing-specific
+      // code. It only works if the instrumentation exists before Fastify is
+      // imported — main.ts awaits initTracing() before buildHttpServer, and
+      // that ordering is load-bearing, not incidental.
+      new FastifyOtelInstrumentation({ registerOnInitialization: true }),
       new PgInstrumentation(),
     ],
   });
