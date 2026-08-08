@@ -38,8 +38,15 @@ RUN pnpm -r \
 # Generate a runtime package.json: drop devDependencies + scripts, and
 # inject npm `overrides` for transitive deps with known HIGH/CRITICAL CVEs
 # (the pnpm.overrides at workspace root don't carry to a fresh npm install
-# in the runtime stage). Versions chosen from Trivy's fixed-version field.
-RUN node -e "const p=require('./packages/server/package.json');delete p.devDependencies;delete p.scripts;p.overrides={protobufjs:'>=7.5.5',picomatch:'>=4.0.4',underscore:'>=1.13.8'};require('fs').writeFileSync('/tmp/runtime-package.json',JSON.stringify(p,null,2));"
+# in the runtime stage, because npm doesn't read them).
+#
+# The override list is DERIVED from the root package.json's
+# `pnpm.overrides` rather than hand-maintained here. Keeping two parallel
+# lists meant the image silently drifted from the workspace every time an
+# advisory was fixed in one place and not the other. pnpm's selector
+# syntax ("pkg@<1.2.3") is translated to npm's plain form ("pkg"), and a
+# couple of runtime-only entries are merged on top.
+RUN node ./scripts/gen-runtime-package.mjs ./package.json ./packages/server/package.json /tmp/runtime-package.json
 
 FROM node:25-bookworm-slim AS runtime
 
@@ -63,6 +70,21 @@ COPY --from=build /app/packages/server/dist ./dist
 # embedder at runtime with ERR_MODULE_NOT_FOUND on every embed call.
 RUN npm install --omit=dev --no-audit --no-fund --no-package-lock \
  && npm cache clean --force \
+ # Strip the TypeScript compiler from the runtime tree.
+ #
+ # `@qdrant/js-client-rest` declares `typescript: ">=4.7"` as a
+ # NON-optional peerDependency, and npm 7+ auto-installs those. TypeScript
+ # 7 is written in Go and ships a ~27MB native binary
+ # (@typescript/typescript-<platform>), so a production image that never
+ # compiles anything was carrying a Go toolchain — along with its Go
+ # stdlib and golang.org/x/text CVEs, which Trivy (correctly) fails on and
+ # which no npm-level override can fix, because they live inside a
+ # compiled binary.
+ #
+ # Nothing imports typescript at runtime: it is a types-only peer, and the
+ # qdrant client's dist never requires it. Verified by loading the client
+ # with the compiler removed.
+ && rm -rf node_modules/typescript node_modules/@typescript \
  # Drop the global npm tree once install is done — we run plain `node` at
  # runtime, not npm. Keeps Trivy from flagging CVEs in npm's own bundled
  # deps (picomatch, etc.) that aren't part of our application.
