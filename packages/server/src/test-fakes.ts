@@ -1082,6 +1082,39 @@ export class FakeGraphStore {
     return `${userId}:${projectId ?? "_"}:${id}`;
   }
 
+  /** memoryId -> lowercase entity names, mirroring the MENTIONS edges. */
+  entities = new Map<string, Set<string>>();
+
+  async linkEntities(
+    _userId: string,
+    memoryId: string,
+    names: string[],
+    _projectId: string | null = null,
+  ): Promise<void> {
+    if (!this.connected) return;
+    const set = this.entities.get(memoryId) ?? new Set<string>();
+    for (const n of names) set.add(n.toLowerCase());
+    this.entities.set(memoryId, set);
+  }
+
+  async memoriesByEntities(
+    _userId: string,
+    names: string[],
+    limit = 20,
+    _projectId: string | null = null,
+    excludeId?: string,
+  ): Promise<Array<{ id: string; score: number }>> {
+    if (!this.connected || names.length === 0) return [];
+    const wanted = names.map((n) => n.toLowerCase());
+    const out: Array<{ id: string; score: number }> = [];
+    for (const [id, set] of this.entities) {
+      if (id === excludeId) continue;
+      const shared = wanted.filter((n) => set.has(n)).length;
+      if (shared > 0) out.push({ id, score: Math.min(1, shared / Math.max(1, names.length)) });
+    }
+    return out.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
   isConnected(): boolean { return this.connected; }
   async ping(): Promise<boolean> { return this.connected; }
 

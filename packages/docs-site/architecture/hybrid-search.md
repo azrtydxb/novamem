@@ -43,6 +43,17 @@ The three signals are *not* the same kind of number, so they are not treated the
 - **Keyword** is `ts_rank`, which has no absolute scale at all — its magnitude depends on document length and corpus term frequency. It is therefore max-normalised within the query, the only defensible reading of it.
 - **Graph** is an edge strength that was a cosine at write time, so it is used raw like the vector signal.
 
+## The graph tier's two signals
+
+The graph contributes through two distinct paths, and only one of them is independent of the others:
+
+- **Neighbour walk** — `co_occurs` edges written at ingest time between a new memory and its top vector neighbours. Useful for surfacing the "central" memory in a cluster, but derived from vector similarity, so traversing it largely re-finds what the vector tier already returned. Seeded from the top 3 vector hits (one seed meant an off-topic best hit dragged in its whole wrong neighbourhood).
+- **Entity bridging** — `(:Memory)-[:MENTIONS]->(:Entity)` edges, matched against entities extracted from the *query text*. This links on exact identifiers, which is precisely where embeddings are weakest, so it can reach memories neither cosine nor stemmed FTS would rank. It works from the query alone, so it still contributes when the vector tier is down.
+
+Entity extraction is deliberately high-precision: code identifiers, CamelCase, capitalised non-stopwords, versioned product names, and anything in backticks or quotes. A **bare lowercase** word like `novanas` is *not* extracted — no cheap rule separates it from `cluster` or `deployment`, and admitting those would wire every memory to every other through common nouns. Bare lowercase terms are already matched exactly by the keyword tier; backticks opt one into the entity graph explicitly.
+
+Entity nodes are scoped by user and project exactly like Memory nodes, so an entity name never joins two tenants' memories.
+
 ## Weighted fuse
 
 Default weights: `keyword: 0.3, vector: 0.6, graph: 0.1`. Tuned for prose; the user can override per call.

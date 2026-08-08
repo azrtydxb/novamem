@@ -289,6 +289,72 @@ export class GraphStore {
     );
   }
 
+  /** Attach extracted entities to a memory as `(:Memory)-[:MENTIONS]->(:Entity)`.
+   *
+   *  Entity nodes are scoped by user+project exactly like Memory nodes, so
+   *  the isolation boundary is identical — an entity name never joins two
+   *  tenants' memories. Idempotent via MERGE. */
+  async linkEntities(
+    userId: string,
+    memoryId: string,
+    entities: string[],
+    projectId: string | null = null,
+  ): Promise<void> {
+    if (!this.graph || entities.length === 0) return;
+    await this.query(
+      "MERGE (m:Memory {id: $id, user: $user, project: $project}) " +
+        "WITH m UNWIND $entities AS name " +
+        "MERGE (e:Entity {name: name, user: $user, project: $project}) " +
+        "MERGE (m)-[:MENTIONS]->(e)",
+      { params: { id: memoryId, user: userId, project: projectId ?? "", entities } },
+    );
+  }
+
+  /** Find memories mentioning any of `entities`, ranked by how many of
+   *  them each memory shares with the query.
+   *
+   *  This is the graph tier's one genuinely independent signal. The
+   *  `co_occurs` edges are derived from vector similarity, so traversing
+   *  them re-finds what the vector tier already returned; entity overlap
+   *  instead bridges on exact identifiers, which is where embeddings are
+   *  weakest. `excludeId` keeps the seed memory out of its own results. */
+  async memoriesByEntities(
+    userId: string,
+    entities: string[],
+    limit = 20,
+    projectId: string | null = null,
+    excludeId?: string,
+  ): Promise<Array<{ id: string; score: number }>> {
+    if (!this.graph || entities.length === 0) return [];
+    validateGraphParams(1, limit);
+    limit = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const r = await this.query<{ id: string; shared: number }>(
+      `UNWIND $entities AS name
+       MATCH (e:Entity {name: name, user: $user, project: $project})<-[:MENTIONS]-(m:Memory)
+       WHERE m.user = $user AND m.project = $project AND m.id <> $exclude
+       WITH m.id AS id, count(DISTINCT name) AS shared
+       RETURN id, shared
+       ORDER BY shared DESC
+       LIMIT ${limit}`,
+      {
+        params: {
+          entities,
+          user: userId,
+          project: projectId ?? "",
+          exclude: excludeId ?? "",
+        },
+      },
+    );
+    // Normalise overlap into [0,1] against the number of query entities so
+    // the score is comparable with the cosine-derived edge strengths the
+    // other graph path produces.
+    const denom = Math.max(1, entities.length);
+    return (r.data ?? []).map((row) => ({
+      id: row.id,
+      score: Math.min(1, Number(row.shared ?? 0) / denom),
+    }));
+  }
+
   /** Drop a node and all its incident edges. Called on `forget()` so graph
    *  state stays consistent with warm/cold deletions. */
   async removeNode(userId: string, id: string): Promise<void> {

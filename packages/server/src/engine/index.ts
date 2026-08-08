@@ -111,6 +111,79 @@ export function tokenJaccard(a: string, b: string): number {
 
 const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
 const CAPTURE_CANDIDATE_K = 5;
+/** Words that look like entities by capitalisation but carry no identity —
+ *  sentence openers and calendar words dominate this list. */
+const ENTITY_STOPWORDS = new Set([
+  "the", "a", "an", "i", "we", "he", "she", "it", "they", "you",
+  "this", "that", "these", "those", "there", "here", "then", "when", "while",
+  "if", "and", "but", "or", "so", "also", "however", "after", "before",
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  "january", "february", "march", "april", "may", "june", "july",
+  "august", "september", "october", "november", "december",
+  "today", "tomorrow", "yesterday", "now", "note", "notes", "todo",
+  "use", "used", "using", "set", "add", "added", "new", "old",
+]);
+
+/** Extract identity-bearing tokens from memory content.
+ *
+ *  The graph tier was previously a pure echo of the vector tier: its only
+ *  edges were `co_occurs` links to the top-N vector neighbours at write
+ *  time, so traversing it could never surface anything embeddings had not
+ *  already found. That made its 0.1 weight close to redundant.
+ *
+ *  Entities give the graph an orthogonal signal — exact identifier
+ *  bridging, which is precisely what embeddings are worst at. Two
+ *  memories mentioning `novanas` or `PostgreSQL` are connected even when
+ *  their prose is dissimilar, so a query naming an entity can reach
+ *  memories that neither cosine nor stemmed FTS would rank.
+ *
+ *  Deliberately heuristic and dependency-free rather than an NLP model or
+ *  an LLM call: this runs on every write, and a cheap high-precision
+ *  extractor beats an expensive high-recall one when the output is a
+ *  ranking *hint* rather than an answer. Four shapes, all high-signal:
+ *    - code identifiers (snake_case, kebab-case, dotted paths, CamelCase)
+ *    - capitalised words that aren't sentence-opening stopwords
+ *    - versioned product names (postgres16, node24)
+ *    - anything in backticks or quotes, which in technical prose is
+ *      almost always an identifier
+ *
+ *  Precision is chosen over recall on purpose. A *bare lowercase* word
+ *  like `novanas` is not extracted, because no cheap rule separates it
+ *  from `cluster`, `target`, or `deployment` — admitting those would wire
+ *  every memory to every other through common nouns and turn the entity
+ *  signal into noise. Bare lowercase terms are already served well by the
+ *  keyword tier, which matches them exactly; the entity graph exists to
+ *  cover what FTS and embeddings both miss, not to duplicate FTS. Writing
+ *  such a term capitalised or in backticks opts it in. */
+export function extractEntities(content: string, max = 12): string[] {
+  const found = new Map<string, string>();
+  const add = (raw: string) => {
+    const key = raw.toLowerCase();
+    if (key.length < 3 || key.length > 64) return;
+    if (ENTITY_STOPWORDS.has(key)) return;
+    if (!found.has(key)) found.set(key, raw);
+  };
+
+  // Code-ish identifiers: contain an internal separator or interior caps.
+  for (const m of content.matchAll(/\b[A-Za-z][A-Za-z0-9]*(?:[._/-][A-Za-z0-9]+)+\b/g)) {
+    add(m[0]);
+  }
+  for (const m of content.matchAll(/\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b/g)) add(m[0]);
+  // Capitalised words not at a position we can prove is sentence-initial;
+  // the stopword list removes the common false positives.
+  for (const m of content.matchAll(/\b[A-Z][a-zA-Z0-9]{2,}\b/g)) add(m[0]);
+  // Product+version tokens.
+  for (const m of content.matchAll(/\b[a-zA-Z]{3,}\d+(?:\.\d+)*\b/g)) add(m[0]);
+  // Backticked / quoted spans — in technical prose these are identifiers
+  // far more often than not, and they let an author opt a bare lowercase
+  // term into the entity graph explicitly.
+  for (const m of content.matchAll(/[`"']([A-Za-z][A-Za-z0-9._/-]{2,63})[`"']/g)) {
+    if (m[1]) add(m[1]);
+  }
+
+  return [...found.keys()].slice(0, max);
+}
+
 /** `engine_state` key holding the dream cycle's table-walk cursor. */
 const DREAM_CURSOR_KEY = "dream_cycle_cursor";
 
@@ -635,7 +708,7 @@ export class MemoryEngine {
           await traceAsync("MemoryEngine.linkVectorNeighbors", {
             "novamem.namespace": namespace,
             "novamem.graph_link_fanout": this.graphLinkFanout,
-          }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding));
+          }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, req.content));
         }
       } else {
         // Embedder returned nothing at all — same consequence as a failed
@@ -980,6 +1053,7 @@ export class MemoryEngine {
     id: string,
     namespace: string,
     embedding: number[],
+    content: string,
   ): Promise<void> {
     try {
       const hits = await traceAsync("ColdStore.search.linkVectorNeighbors", {
@@ -1009,6 +1083,24 @@ export class MemoryEngine {
             { entryId: id, err: (err as Error).message },
             "graph addEdgesBatch failed",
           );
+        }
+      }
+      // Entity edges. Independent of the vector neighbours above — this
+      // is what gives the graph tier a signal embeddings don't already
+      // have. Failures are non-fatal: enrichment must never fail a write.
+      if (this.graph?.isConnected()) {
+        const entities = extractEntities(content);
+        if (entities.length > 0) {
+          try {
+            await traceAsync("GraphStore.linkEntities", {
+              "novamem.entity_count": entities.length,
+            }, () => this.graph!.linkEntities(userId, id, entities, projectId));
+          } catch (err) {
+            this.logger.warn(
+              { entryId: id, err: (err as Error).message },
+              "graph linkEntities failed",
+            );
+          }
         }
       }
       // Warm relations are per-row in SQL but issued in parallel so the
@@ -1132,7 +1224,10 @@ export class MemoryEngine {
     const projectId = scopes.length === 1 ? scopes[0]! : null;
 
     let graphHits: Array<{ id: string; score: number }> = [];
-    if (this.graph?.isConnected() && vectorHits.length > 0) {
+    // Entity bridging works from the query text alone, so unlike the
+    // neighbour walk it does not require the vector tier to have returned
+    // anything — it still contributes when the embedder is down.
+    if (this.graph?.isConnected()) {
       try {
         // Seed from the top few vector hits rather than only the single
         // best one. With one seed, an off-topic top-1 dragged its whole
@@ -1146,12 +1241,25 @@ export class MemoryEngine {
         // ambiguous, so skip the project scope (project_id is null) — entry
         // resolution below will still filter to the visible scope set.
         const seedScope = scopes.length === 1 ? scopes[0]! : null;
-        const perSeed = await Promise.all(
-          seeds.map((seed) => this.graph!.neighbors(userId, seed, 1, k, seedScope)),
-        );
-        // Union the neighbourhoods, keeping the strongest edge per id.
+        const perSeed = seeds.length > 0
+          ? await Promise.all(
+              seeds.map((seed) => this.graph!.neighbors(userId, seed, 1, k, seedScope)),
+            )
+          : [];
+        // Entity bridging, straight from the query text. This is the one
+        // graph signal that isn't downstream of the vector tier: it links
+        // on exact identifiers, so a query naming `novanas` or
+        // `PostgreSQL` reaches memories that neither cosine nor stemmed
+        // FTS would surface. Runs alongside the neighbour walk and is
+        // unioned into the same signal.
+        const queryEntities = extractEntities(req.query);
+        const entityHits = queryEntities.length > 0
+          ? await this.graph.memoriesByEntities(userId, queryEntities, k * 2, seedScope)
+          : [];
+
+        // Union everything, keeping the strongest evidence per id.
         const best = new Map<string, number>();
-        for (const hits of perSeed) {
+        for (const hits of [...perSeed, entityHits]) {
           for (const h of hits) {
             const prev = best.get(h.id);
             if (prev === undefined || h.score > prev) best.set(h.id, h.score);
@@ -1162,7 +1270,7 @@ export class MemoryEngine {
         degraded = true;
         this.logger.warn({ err: (err as Error).message }, "graph neighbours failed");
       }
-    } else if (!this.graph || !this.graph.isConnected()) {
+    } else {
       degraded = true;
       this.maybeWarnGraphDown();
     }

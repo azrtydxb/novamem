@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isContentSuperset, MemoryEngine, tokenJaccard } from "./index.js";
+import { extractEntities, isContentSuperset, MemoryEngine, tokenJaccard } from "./index.js";
 import {
   asCold,
   asWarm,
@@ -778,5 +778,78 @@ describe("engine.dreamCycle: cursor persistence", () => {
     const after = await warm.getEngineState("dream_cycle_cursor");
     expect(after).toBeTruthy();
     expect(typeof after).toBe("string");
+  });
+});
+
+describe("extractEntities", () => {
+  it("pulls code identifiers, product names and versioned tokens", () => {
+    const e = extractEntities(
+      "The novamem-server deploys to the `novanas` cluster running PostgreSQL and node24",
+    );
+    expect(e).toContain("novamem-server");
+    expect(e).toContain("novanas");
+    expect(e).toContain("postgresql");
+    expect(e).toContain("node24");
+  });
+
+  it("ignores sentence-opening and calendar words that merely look capitalised", () => {
+    const e = extractEntities("The meeting is on Monday. However, we moved it to Tuesday.");
+    for (const noise of ["the", "however", "monday", "tuesday"]) {
+      expect(e).not.toContain(noise);
+    }
+  });
+
+  it("leaves bare lowercase words to the keyword tier (precision over recall)", () => {
+    // Deliberate: no cheap rule separates `novanas` from `cluster` or
+    // `deployment`. Admitting bare lowercase words would wire every
+    // memory to every other through common nouns. FTS already matches
+    // them exactly, so the entity graph doesn't need to.
+    const e = extractEntities("deployment target is the novanas cluster");
+    expect(e).not.toContain("novanas");
+    expect(e).not.toContain("cluster");
+    expect(e).not.toContain("deployment");
+    // Backticks opt a term in explicitly.
+    expect(extractEntities("target is the `novanas` cluster")).toContain("novanas");
+  });
+
+  it("deduplicates case variants and caps the count", () => {
+    const e = extractEntities("Qdrant qdrant QDRANT " + Array.from({ length: 40 }, (_, i) => `Thing${i}`).join(" "));
+    expect(e.filter((x) => x === "qdrant")).toHaveLength(1);
+    expect(e.length).toBeLessThanOrEqual(12);
+  });
+});
+
+describe("engine.search: entity bridging (graph signal independent of vectors)", () => {
+  it("surfaces a memory sharing a rare identifier with the query", async () => {
+    const { engine, embedder, graph } = bench();
+    // Make the two texts vector-DISSIMILAR so only the entity link can
+    // connect them — this is the case embeddings are worst at.
+    embedder.table.set("deployment target is the `novanas` cluster", [1, 0, 0, 0]);
+    embedder.table.set("what runs on `novanas`", [0, 0, 0, 1]);
+
+    const stored = await engine.remember("u1", {
+      content: "deployment target is the `novanas` cluster",
+      force: true,
+    });
+    expect(graph.entities.get(stored.id)?.has("novanas")).toBe(true);
+
+    const r = await engine.search("u1", { query: "what runs on `novanas`", k: 5 });
+    const hit = r.results.find((x) => x.id === stored.id);
+    expect(hit).toBeDefined();
+    expect(hit!.signals.graph).toBeGreaterThan(0);
+  });
+
+  it("contributes even when the vector tier returns nothing", async () => {
+    const { engine, cold, graph } = bench();
+    const stored = await engine.remember("u1", {
+      content: "the `novanas` cluster hosts the Qdrant instance",
+      force: true,
+    });
+    expect(graph.entities.get(stored.id)?.size).toBeGreaterThan(0);
+    // Vector tier down entirely.
+    cold.fail = true;
+    const r = await engine.search("u1", { query: "`novanas` Qdrant", k: 5 });
+    expect(r.degraded).toBe(true);
+    expect(r.results.some((x) => x.id === stored.id)).toBe(true);
   });
 });
