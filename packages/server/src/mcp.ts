@@ -365,8 +365,19 @@ export function buildMcpServer(
           if (project.ownerUserId !== userId) {
             throw new Error("only the owner can share a project");
           }
-          const target = await warm.findUserByUsername(args.username);
-          if (!target) throw new Error(`unknown user '${args.username}'`);
+          // Exact email only. `findUserByUsername` also matches on the
+          // self-settable `name` column and on the email local-part, so a
+          // newly-registered attacker could set their display name to a
+          // target's handle and be invited into the project in their
+          // place — with full read+write over every memory in it. The
+          // HTTP route (routes/me.ts) was hardened against exactly this;
+          // this path had been left on the fuzzy resolver.
+          const target = await warm.findUserByExactEmail(args.username);
+          if (!target) {
+            throw new Error(
+              `unknown user '${args.username}' — share by exact email address`,
+            );
+          }
           const ok = await warm.addProjectMember(scope.project, target.id, "member");
           return {
             content: [
@@ -394,8 +405,15 @@ export function buildMcpServer(
           if (project.ownerUserId !== userId) {
             throw new Error("only the owner can unshare a project");
           }
-          const target = await warm.findUserByUsername(args.username);
-          if (!target) throw new Error(`unknown user '${args.username}'`);
+          // Exact email only — see the note on project_share above. An
+          // ambiguous display-name match here would remove the wrong
+          // member.
+          const target = await warm.findUserByExactEmail(args.username);
+          if (!target) {
+            throw new Error(
+              `unknown user '${args.username}' — unshare by exact email address`,
+            );
+          }
           if (target.id === project.ownerUserId) {
             throw new Error(
               "the owner cannot unshare themselves — delete the project instead",

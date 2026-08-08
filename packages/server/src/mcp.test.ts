@@ -420,8 +420,12 @@ describe("mcp: tool dispatch", () => {
   it("memory_capture updates a semantic duplicate instead of inserting another row", async () => {
     const { engine, warm, embedder } = makeEngine();
     const server = buildMcpServer(engine, "public");
+    // A restatement that *keeps* everything the original said and adds
+    // detail. Capture only overwrites in place when nothing is dropped —
+    // see `isContentSuperset` for why a similarity threshold can't make
+    // that call safely.
     const original = "Pascal prefers concise technical answers.";
-    const duplicate = "Pascal likes concise technical answers.";
+    const duplicate = "Pascal prefers concise technical answers, with code samples.";
     embedder.table.set(original, [1, 0, 0, 0]);
     embedder.table.set(duplicate, [1, 0, 0, 0]);
 
@@ -445,6 +449,29 @@ describe("mcp: tool dispatch", () => {
       lifecycleStatus: "active",
       captureAction: "updated",
     });
+  });
+
+  it("memory_capture keeps both rows when a near-duplicate drops information", async () => {
+    // Deliberate trade-off. "prefers" → "likes" is a synonym swap, but
+    // token math cannot tell it apart from "wife's" → "daughter's",
+    // which is a different fact wearing the same shape. Overwriting is
+    // unrecoverable; keeping both is visible and reconcilable, and the
+    // dream cycle's two-signal merge gate (cosine 0.97 AND Jaccard 0.5)
+    // collapses the genuine duplicates later. So capture keeps both.
+    const { engine, warm, embedder } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const original = "Pascal prefers concise technical answers.";
+    const paraphrase = "Pascal likes concise technical answers.";
+    embedder.table.set(original, [1, 0, 0, 0]);
+    embedder.table.set(paraphrase, [1, 0, 0, 0]);
+
+    await callTool(server, "memory_capture", { content: original, namespace: "user" });
+    await callTool(server, "memory_capture", { content: paraphrase, namespace: "user" });
+
+    expect(warm.rows.size).toBe(2);
+    const contents = [...warm.rows.values()].map((r) => r.content);
+    expect(contents).toContain(original);
+    expect(contents).toContain(paraphrase);
   });
 
   it("memory_capture supersedes a contradictory older fact and hides it from context", async () => {

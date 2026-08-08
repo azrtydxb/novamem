@@ -17,9 +17,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege by default. `packages: write` is granted per-job to the
+# two jobs that actually publish container images (docker, manifest)
+# rather than to every job in the workflow.
 permissions:
   contents: read
-  packages: write   # publish container images to ghcr.io (only on main pushes)
 
 env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/novamem
@@ -29,8 +31,12 @@ jobs:
   # CI tests run once on the amd64 ARC scale set (novanas). ARM64
   # validation happens in the Docker build job below on KW ARC, where the
   # native ARM64 image is built without QEMU/cross-compile.
+  # Node versions: 20 is the `engines` floor declared in package.json; 24
+  # is what release.yml publishes from and what the runtime image is
+  # closest to. Testing only on 20 left a skew where code could pass CI
+  # and break on the version we actually ship.
   test:
-    name: test (${{ matrix.arch }})
+    name: test (${{ matrix.arch }}, node ${{ matrix.node }})
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -38,13 +44,17 @@ jobs:
         include:
           - arch: amd64
             runner: arc-azrtydxb-amd64
+            node: 20
+          - arch: amd64
+            runner: arc-azrtydxb-amd64
+            node: 24
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile --reporter=append-only
       # Build before typecheck so workspace packages that consume each
@@ -116,6 +126,9 @@ jobs:
   # fail independently. needs:[test] gates on a green test run.
   docker:
     name: docker (${{ matrix.arch }})
+    permissions:
+      contents: read
+      packages: write   # publish container images to ghcr.io
     needs: [test]
     timeout-minutes: 20
     strategy:
@@ -201,6 +214,9 @@ jobs:
   manifest:
     name: manifest (multi-arch)
     needs: [docker]
+    permissions:
+      contents: read
+      packages: write   # push the multi-arch manifest to ghcr.io
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5

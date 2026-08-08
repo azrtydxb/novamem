@@ -17,7 +17,7 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 
 - [ ] Reverse proxy (nginx / Traefik / cloudflared) terminating TLS in front of novamem. The server itself doesn't do TLS.
 - [ ] `NOVAMEM_INSECURE_COOKIES=0` (default). Anything else drops `Secure` flag — only safe behind a guaranteed-TLS proxy on localhost.
-- [ ] `NOVAMEM_CORS_ORIGINS` is a tight allowlist if you're running browser-based SDK clients on different origins.
+- [ ] `NOVAMEM_CORS_ORIGINS` is a tight allowlist if you're running browser-based SDK clients on different origins. `*` is accepted but disables credentialed CORS — sessions from a browser need explicit origins.
 - [ ] `NOVAMEM_HOST=127.0.0.1` if your reverse proxy is on the same host — avoids accidental direct exposure.
 
 ## Auth

@@ -8,7 +8,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 
 import { AdminRevokeBody } from "./schemas.js";
-import { adminAuth, type RouteContext } from "./context.js";
+import { requireAdmin, type RouteContext } from "./context.js";
 
 const AdminSecurity = [{ SessionCookie: [] as string[] }];
 const AuditLogQuery = z.object({
@@ -30,7 +30,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       if (!ctx.warm) return reply.code(404).send({ error: "admin disabled" });
-      if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
+      if (!requireAdmin(req, reply)) return;
       const ok = await ctx.warm.revokeUserToken(req.body.token);
       reply.send({ revoked: ok });
     },
@@ -48,7 +48,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       if (!ctx.warm) return reply.code(404).send({ error: "admin disabled" });
-      if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
+      if (!requireAdmin(req, reply)) return;
       const { limit } = req.query;
       reply.send({ entries: await ctx.warm.listAuditLog({ limit }) });
     },
@@ -67,7 +67,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       if (!ctx.adminDashboard || !ctx.metrics) {
         return reply.code(404).send({ error: "admin disabled" });
       }
-      if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
+      if (!requireAdmin(req, reply)) return;
       reply.send(await ctx.metrics.snapshot());
     },
   );
@@ -85,7 +85,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       if (!ctx.adminDashboard || !ctx.metrics) {
         return reply.code(404).send({ error: "admin disabled" });
       }
-      if (!adminAuth(req)) return reply.code(401).send({ error: "unauthorized" });
+      if (!requireAdmin(req, reply)) return;
       reply
         .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
         .send(await ctx.metrics.renderProm());
