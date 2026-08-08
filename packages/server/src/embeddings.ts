@@ -31,6 +31,8 @@ const MODEL_PREFIX_PRESETS: Array<{ match: RegExp; prefixes: EmbeddingPrefixes }
   // intfloat/e5-*, multilingual-e5-*
   { match: /(^|\/)(multilingual-)?e5-/i, prefixes: { query: "query: ", document: "passage: " } },
   // BAAI/bge-*-en / bge-*-en-v1.5 — only the query side is prefixed.
+  // NOTE: bge-m3 deliberately does not match. It is trained without
+  // prefixes on either side, unlike the -en/-zh v1.5 line.
   {
     match: /(^|\/)bge-.*-(en|zh)(-v\d+(\.\d+)?)?$/i,
     prefixes: {
@@ -38,21 +40,53 @@ const MODEL_PREFIX_PRESETS: Array<{ match: RegExp; prefixes: EmbeddingPrefixes }
       document: "",
     },
   },
+  // Qwen3-Embedding-* — instruction-aware. The query side takes an
+  // "Instruct: <task>\nQuery: <text>" envelope and the document side is
+  // bare text. Measured on a LongMemEval slice against
+  // Qwen3-Embedding-0.6B, running it *without* this envelope cost
+  // 7.6pp Recall@10, 0.086 nDCG@10 and 0.045 MRR — a large, entirely
+  // silent loss, since an unmatched model simply gets empty prefixes.
+  {
+    match: /(^|\/)qwen3-embedding(-|$)/i,
+    prefixes: {
+      query:
+        "Instruct: Given a question or task from a user, retrieve stored memories " +
+        "that contain the information needed to answer it\nQuery: ",
+      document: "",
+    },
+  },
 ];
+
+/** How a model's prefixes were decided. Exposed because "no preset
+ *  matched" is indistinguishable at runtime from "this model wants no
+ *  prefixes", and the two have very different consequences: an asymmetric
+ *  model driven symmetrically loses a large slice of its accuracy with
+ *  nothing in the logs to say so. Operators get told at startup. */
+export type PrefixSource = "explicit" | "preset" | "none";
+
+export function resolvePrefixesWithSource(
+  model: string | undefined,
+  explicit?: Partial<EmbeddingPrefixes>,
+): { prefixes: EmbeddingPrefixes; source: PrefixSource } {
+  if (explicit?.query !== undefined || explicit?.document !== undefined) {
+    return {
+      prefixes: { query: explicit.query ?? "", document: explicit.document ?? "" },
+      source: "explicit",
+    };
+  }
+  if (model) {
+    for (const preset of MODEL_PREFIX_PRESETS) {
+      if (preset.match.test(model)) return { prefixes: preset.prefixes, source: "preset" };
+    }
+  }
+  return { prefixes: { query: "", document: "" }, source: "none" };
+}
 
 export function resolvePrefixes(
   model: string | undefined,
   explicit?: Partial<EmbeddingPrefixes>,
 ): EmbeddingPrefixes {
-  if (explicit?.query !== undefined || explicit?.document !== undefined) {
-    return { query: explicit.query ?? "", document: explicit.document ?? "" };
-  }
-  if (model) {
-    for (const preset of MODEL_PREFIX_PRESETS) {
-      if (preset.match.test(model)) return preset.prefixes;
-    }
-  }
-  return { query: "", document: "" };
+  return resolvePrefixesWithSource(model, explicit).prefixes;
 }
 
 export interface EmbeddingsConfig {
@@ -70,6 +104,39 @@ export interface EmbeddingsConfig {
   /** Explicit prefix overrides. When unset, inferred from the model id. */
   queryPrefix?: string;
   documentPrefix?: string;
+  /** Last-resort input cap, in characters. Not a policy limit — the
+   *  engine's `maxContentChars` is that — but a guarantee that no input
+   *  can be *unembeddable*.
+   *
+   *  A remote provider answers an over-length input with a 4xx, which is
+   *  correctly classified non-retryable, which means the entry is stored,
+   *  parked with `embedded_at` NULL, and retried by the reconciler
+   *  forever without ever succeeding: invisible to vector search
+   *  permanently. Truncating is strictly better — the tail is lost either
+   *  way, but the head becomes searchable. Set 0 to disable. */
+  maxInputChars?: number;
+}
+
+/** ~4 chars/token, so this sits under an 8192-token window with room for
+ *  text that tokenises worse than average. Models with smaller windows
+ *  truncate server-side as they always have; this only exists to stop the
+ *  hard failure at the top end. */
+export const DEFAULT_MAX_INPUT_CHARS = 24_000;
+
+/** Truncate on a character budget, reporting whether anything was cut so
+ *  the caller can say so rather than silently shortening a memory. */
+export function capInputs(
+  texts: string[],
+  maxInputChars: number,
+): { texts: string[]; truncated: number } {
+  if (maxInputChars <= 0) return { texts, truncated: 0 };
+  let truncated = 0;
+  const out = texts.map((t) => {
+    if (t.length <= maxInputChars) return t;
+    truncated += 1;
+    return t.slice(0, maxInputChars);
+  });
+  return { texts: out, truncated };
 }
 
 export interface Embedder {
@@ -109,6 +176,7 @@ class OpenAICompatibleEmbedder implements Embedder {
   private readonly apiKey?: string;
   private readonly timeoutMs: number;
   private readonly prefixes: EmbeddingPrefixes;
+  private readonly maxInputChars: number;
 
   constructor(cfg: EmbeddingsConfig) {
     if (!cfg.endpoint) throw new Error("openai-compatible embeddings require endpoint");
@@ -117,6 +185,7 @@ class OpenAICompatibleEmbedder implements Embedder {
     this.model = cfg.model;
     this.apiKey = cfg.apiKey;
     this.dimensions = cfg.dimensions;
+    this.maxInputChars = cfg.maxInputChars ?? DEFAULT_MAX_INPUT_CHARS;
     this.timeoutMs = cfg.timeoutMs ?? 30_000;
     this.prefixes = resolvePrefixes(cfg.model, {
       query: cfg.queryPrefix,
@@ -127,7 +196,15 @@ class OpenAICompatibleEmbedder implements Embedder {
 
   async embed(input: string | string[], kind: EmbeddingKind = "document"): Promise<number[][]> {
     const prefix = kind === "query" ? this.prefixes.query : this.prefixes.document;
-    const arr = (Array.isArray(input) ? input : [input]).map((t) => `${prefix}${t}`);
+    const raw = (Array.isArray(input) ? input : [input]).map((t) => `${prefix}${t}`);
+    const { texts: arr, truncated } = capInputs(raw, this.maxInputChars);
+    if (truncated > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[embeddings] truncated ${truncated} input(s) to ${this.maxInputChars} chars for ${this.model}; ` +
+          `the tail is not represented in the vector`,
+      );
+    }
     const body = JSON.stringify({ input: arr, model: this.model });
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;

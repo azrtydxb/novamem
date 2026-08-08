@@ -677,10 +677,19 @@ export class MemoryEngine {
     ) {
       return "conversational filler — not durable knowledge";
     }
-    // Embedding models silently truncate at their context window (~256
-    // word-pieces for the default MiniLM), so everything past the cut is
-    // invisible to vector search while keyword search still finds it.
-    // Reject rather than half-store, and say what to do about it.
+    return null;
+  }
+
+  /** Length check, split out of `shouldReject` because it applies even
+   *  under `force` — see the call site in `remember`.
+   *
+   *  The limit is a policy about what a memory *is* (one fact, not a
+   *  document), which is why it is well below any model's context window.
+   *  It is deliberately not the embedder's limit: `Embedder` truncates as
+   *  a last-resort backstop so that content slipping past this check can
+   *  still be embedded rather than parked forever. */
+  private contentTooLong(content: string): string | null {
+    const trimmed = content.trim();
     if (this.maxContentChars > 0 && trimmed.length > this.maxContentChars) {
       return `too long (${trimmed.length} chars, max ${this.maxContentChars}) — split into one fact per entry`;
     }
@@ -710,6 +719,20 @@ export class MemoryEngine {
           span.setAttribute("novamem.rejected", reason);
           return { id: null, rejected: reason };
         }
+      }
+      // The length limit is checked even under `force`. `force` means
+      // "skip the worthiness heuristics" — it is not a claim that the
+      // content will fit the embedder. It used to skip this too, and the
+      // result was not a stored-but-unworthy memory, it was a memory that
+      // could never be embedded at all: the provider rejects an
+      // over-length input with a 4xx, which is classified non-retryable,
+      // so the row is parked with `embedded_at` NULL and the reconciler
+      // retries it forever without ever succeeding. Invisible to vector
+      // search, permanently, with a repair queue that cannot drain.
+      const overLength = this.contentTooLong(req.content);
+      if (overLength) {
+        span.setAttribute("novamem.rejected", overLength);
+        return { id: null, rejected: overLength };
       }
       req = withSensitivityMetadata(req);
       const namespace = req.namespace ?? "default";
@@ -1200,6 +1223,9 @@ export class MemoryEngine {
       const reason = this.shouldReject(req.content);
       if (reason) return { id: null, rejected: reason };
     }
+    // Enforced under `force` as well — same reasoning as remember().
+    const overLength = this.contentTooLong(req.content);
+    if (overLength) return { id: null, rejected: overLength };
 
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
