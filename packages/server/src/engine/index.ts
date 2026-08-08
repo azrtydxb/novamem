@@ -94,14 +94,19 @@ export function isContentSuperset(prev: string, next: string): boolean {
   return true;
 }
 
-export function tokenJaccard(a: string, b: string): number {
-  const ta = contentTokens(a);
-  const tb = contentTokens(b);
+/** Jaccard over pre-tokenised sets. Split out from `tokenJaccard` so
+ *  callers that compare one text against many (the search-result
+ *  diversity filter) can tokenise each text once instead of per pair. */
+function jaccardOf(ta: Set<string>, tb: Set<string>): number {
   if (ta.size === 0 || tb.size === 0) return 0;
   let intersect = 0;
   for (const t of ta) if (tb.has(t)) intersect++;
   const union = ta.size + tb.size - intersect;
   return intersect / union;
+}
+
+export function tokenJaccard(a: string, b: string): number {
+  return jaccardOf(contentTokens(a), contentTokens(b));
 }
 
 const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
@@ -1188,11 +1193,23 @@ export class MemoryEngine {
     // Greedy redundancy filter (MMR-style, using token overlap as the
     // similarity measure so no extra vector fetches are needed): keep a
     // candidate only if it isn't a restatement of one already selected.
+    // Token sets are memoised — the comparison is O(selected × visible),
+    // and re-tokenising the same content on every pair is pure waste.
+    const tokenCache = new Map<string, Set<string>>();
+    const tokensFor = (content: string): Set<string> => {
+      let t = tokenCache.get(content);
+      if (!t) {
+        t = contentTokens(content);
+        tokenCache.set(content, t);
+      }
+      return t;
+    };
     const selected: typeof visible = [];
     for (const cand of visible) {
       if (selected.length >= k) break;
+      const candTokens = tokensFor(cand.result.content);
       const redundant = selected.some(
-        (s) => tokenJaccard(s.result.content, cand.result.content) >= RESULT_DIVERSITY_MAX_JACCARD,
+        (s) => jaccardOf(tokensFor(s.result.content), candTokens) >= RESULT_DIVERSITY_MAX_JACCARD,
       );
       if (!redundant) selected.push(cand);
     }
@@ -1205,6 +1222,12 @@ export class MemoryEngine {
         if (selected.length >= k) break;
         if (!chosen.has(cand.result.id)) selected.push(cand);
       }
+      // Backfilled candidates are appended after the diversified set, so
+      // the array is no longer in score order — a redundant high scorer
+      // would sit behind a lower-scoring unique one. Callers (and the
+      // "is the top hit good enough?" heuristic) rely on descending
+      // score, so restore it.
+      selected.sort((a, b) => b.result.score - a.result.score);
     }
 
     const results: SearchResult[] = [];

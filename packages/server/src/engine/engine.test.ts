@@ -716,3 +716,25 @@ describe("isContentSuperset (capture overwrite gate)", () => {
     expect(isContentSuperset("the server is on novanas", "server on novanas")).toBe(true);
   });
 });
+
+describe("engine.search: result ordering", () => {
+  it("returns results in descending score order even after diversity backfill", async () => {
+    // A store full of near-identical facts: the diversity filter drops
+    // most of them, then the backfill re-adds them to reach k. The
+    // backfill appends, so without an explicit re-sort the array comes
+    // back out of score order — a redundant high scorer sitting behind a
+    // lower-scoring unique one.
+    const { engine } = makeEngine();
+    for (let i = 0; i < 8; i++) {
+      await engine.remember("u1", {
+        content: `the deployment runs on the novanas cluster variant ${i}`,
+        force: true,
+      });
+    }
+    const r = await engine.search("u1", { query: "deployment novanas cluster", k: 6 });
+    expect(r.results.length).toBeGreaterThan(1);
+    const scores = r.results.map((x) => x.score);
+    const sorted = [...scores].sort((a, b) => b - a);
+    expect(scores).toEqual(sorted);
+  });
+});
