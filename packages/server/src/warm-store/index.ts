@@ -1027,10 +1027,11 @@ export class WarmStore {
 
   /** Look up an existing entry by content hash within a user's scope.
    *  Used by the worthiness gate to short-circuit exact duplicates
-   *  without re-embedding. Returns the existing entry's id when found. */
-  /** The match's `namespace` is returned alongside its id because the
-   *  dedup scope (user, project, hash) deliberately spans namespaces: the
-   *  hit may live on a different shelf than the caller is writing to.
+   *  without re-embedding.
+   *
+   *  Returns the match's `namespace` alongside its id because the dedup
+   *  scope (user, project, hash) deliberately spans namespaces: the hit
+   *  may live on a different shelf than the caller is writing to.
    *  Callers that go on to touch namespace-scoped storage must use the
    *  entry's own namespace, not the request's. */
   async findByContentHash(

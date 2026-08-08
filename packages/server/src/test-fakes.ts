@@ -906,7 +906,15 @@ export class FakeWarmStore {
     if (!id) return null;
     // The dedup scope spans namespaces, so the hit's own namespace is the
     // part callers actually need — mirror the real store and report it.
-    return { id, namespace: this.rows.get(id)?.namespace ?? "default" };
+    const row = this.rows.get(id);
+    if (!row) {
+      // The hash index and the row map are written together; a hash
+      // pointing at a missing row means the fake's state is corrupt.
+      // Defaulting the namespace here would let namespace-scoping tests
+      // pass against a store that cannot exist.
+      throw new Error(`FakeWarmStore: contentHashIdx references unknown entry ${id}`);
+    }
+    return { id, namespace: row.namespace };
   }
 
   async updateEntry(args: {

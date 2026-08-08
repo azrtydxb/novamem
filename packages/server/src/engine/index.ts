@@ -1820,15 +1820,19 @@ export class MemoryEngine {
     // candidates to rerank, ask the LLM to put the final top-k in the
     // order best supporting the question. Drops fused candidates the LLM
     // considers irrelevant or duplicative.
-    if (req.decompose && this.decomposer && fused.length >= 2) {
-      // Rerank the head, not the whole over-fetch pool. `fused` holds up
-      // to k * OVERFETCH_FACTOR candidates — 600 at k=200 — and the
-      // rerank prompt inlines 600 chars of each, so passing all of them
-      // built a ~360KB prompt and asked for a 600-element permutation
-      // back inside a 200-token budget and a 12s timeout. It could only
-      // ever time out or come back truncated. Reranking is a top-of-list
-      // concern anyway: nothing below the cutoff can reach the caller.
-      const rerankCount = Math.min(fused.length, k, COHERENCE_RERANK_MAX_CANDIDATES);
+    // Rerank the head, not the whole over-fetch pool. `fused` holds up to
+    // k * OVERFETCH_FACTOR candidates — 600 at k=200 — and the rerank
+    // prompt inlines 600 chars of each, so passing all of them built a
+    // ~360KB prompt and asked for a 600-element permutation back inside a
+    // 200-token budget and a 12s timeout. It could only ever time out or
+    // come back truncated. Reranking is a top-of-list concern anyway:
+    // nothing below the cutoff can reach the caller.
+    //
+    // The head, not `fused`, is what decides whether there is anything to
+    // reorder: at k=1 the head is a single candidate even though `fused`
+    // holds many.
+    const rerankCount = Math.min(fused.length, k, COHERENCE_RERANK_MAX_CANDIDATES);
+    if (req.decompose && this.decomposer && rerankCount >= 2) {
       const head = fused.slice(0, rerankCount);
       const tail = fused.slice(rerankCount);
       const memTexts = head.map((f) => entryById.get(f.id)?.content ?? "");

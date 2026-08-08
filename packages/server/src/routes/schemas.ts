@@ -139,9 +139,10 @@ export const SearchBody = z.object({
   decompose: z.boolean().optional(),
   expandSourceChunks: z.boolean().optional(),
   /** Cosine floor for vector-only candidates. The engine has always
-   *  honoured `SearchRequest.minVectorScore`, but this body is `.strict()`
-   *  and never accepted it, so the only way to move the noise floor was an
-   *  env var and a redeploy. 0 disables the filter. */
+   *  honoured `SearchRequest.minVectorScore`, but the field was not part
+   *  of this schema, so zod stripped it from every request body before the
+   *  handler saw it and the only way to move the noise floor was an env
+   *  var and a redeploy. 0 disables the filter. */
   minVectorScore: z.number().min(0).max(1).optional(),
 });
 
