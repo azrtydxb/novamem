@@ -99,6 +99,17 @@ export const ConfigSchema = z
        *  the model id (e5 / bge families); set explicitly to override. */
       queryPrefix: z.string().optional(),
       documentPrefix: z.string().optional(),
+      /** How often the reconciler looks for entries written without a
+       *  vector. 60s trades a minute of "stored but not yet semantically
+       *  findable" for a loop that is invisible when the backlog is
+       *  empty (one indexed count against a near-empty partial index). */
+      reconcileIntervalMs: z.coerce.number().int().positive().default(60_000),
+      /** Entries per reconciler tick. Bounds both the embedder load and
+       *  the tick duration while a large backlog drains — at the default
+       *  a 10k-entry outage clears in a couple of hours without ever
+       *  issuing a burst the embedder can't absorb. Raise it to drain
+       *  faster if the embedder has headroom. */
+      reconcileBatchSize: z.coerce.number().int().positive().max(1000).default(50),
     }),
     search: z.object({
       /** Absolute cosine below which a vector-only candidate is treated as
@@ -111,6 +122,70 @@ export const ConfigSchema = z
        *  scorer (operator name, product names, project slugs). */
       personalTerms: z.array(z.string()).default([]),
     }).default({ minVectorScore: 0.25, maxContentChars: 4_000, personalTerms: [] }),
+    /** Arch-plan Phase 2: write-time LLM fact extraction. When enabled, every
+     *  `/v1/remember` triggers a background LLM pass that distills the raw
+     *  chunk into ≤5 typed facts (preference / fact / event / task /
+     *  knowledge). Each fact is stored as its own memory_entries row with
+     *  metadata.fact = {...} and metadata.source_chunk_id back-pointing to
+     *  the raw chunk. Fire-and-forget so write-path latency is unaffected. */
+    extraction: z
+      .object({
+        enabled: z.coerce.boolean().default(false),
+        endpoint: z.string().optional(),
+        model: z.string().optional(),
+        apiKey: z.string().optional(),
+        maxFactsPerChunk: z.coerce.number().int().positive().default(8),
+        /** Hard ceiling on the LLM call; if extraction times out the
+         *  raw chunk still gets stored (degraded-safe). */
+        timeoutMs: z.coerce.number().int().positive().default(15_000),
+        /** Per-pod concurrency cap on extraction calls (semaphore). Tune
+         *  so {pod_count × this} stays below upstream LLM's effective
+         *  concurrency. With qwen3.6-35b max-num-seqs=10 on 3 pods, 3
+         *  here = 9 total — safely below 10. */
+        maxConcurrent: z.coerce.number().int().positive().default(3),
+      })
+      .default({ enabled: false, maxFactsPerChunk: 8, timeoutMs: 15_000, maxConcurrent: 3 })
+      .refine((v) => !v.enabled || (!!v.endpoint && !!v.model), {
+        message: "extraction.enabled = true requires endpoint + model",
+        path: ["endpoint"],
+      }),
+    /** Arch-plan Phase 4: query decomposition + coherence rerank. Off by
+     *  default — set NOVAMEM_QUERY_DECOMP_ENABLED=1 to opt in per request
+     *  via the `decompose: true` body field. */
+    queryDecomp: z
+      .object({
+        enabled: z.coerce.boolean().default(false),
+        endpoint: z.string().optional(),
+        model: z.string().optional(),
+        apiKey: z.string().optional(),
+        maxSubqueries: z.coerce.number().int().min(1).max(5).default(3),
+        coherenceRerank: z.coerce.boolean().default(true),
+        timeoutMs: z.coerce.number().int().positive().default(8_000),
+      })
+      .default({ enabled: false, maxSubqueries: 3, coherenceRerank: true, timeoutMs: 8_000 })
+      .refine((v) => !v.enabled || (!!v.endpoint && !!v.model), {
+        message: "queryDecomp.enabled = true requires endpoint + model",
+        path: ["endpoint"],
+      }),
+    /** Arch-plan Phase 5: Observer/Reflector background distillation worker.
+     *  Produces a single per-(user, project) markdown blob that callers can
+     *  fetch via /v1/context-prefix. Cheaper-than-retrieval path for agents
+     *  that want cacheable prompts. */
+    observer: z
+      .object({
+        enabled: z.coerce.boolean().default(false),
+        endpoint: z.string().optional(),
+        model: z.string().optional(),
+        apiKey: z.string().optional(),
+        observeThreshold: z.coerce.number().int().positive().default(10),
+        reflectThreshold: z.coerce.number().int().positive().default(50),
+        timeoutMs: z.coerce.number().int().positive().default(30_000),
+      })
+      .default({ enabled: false, observeThreshold: 10, reflectThreshold: 50, timeoutMs: 30_000 })
+      .refine((v) => !v.enabled || (!!v.endpoint && !!v.model), {
+        message: "observer.enabled = true requires endpoint + model",
+        path: ["endpoint"],
+      }),
     decay: z.object({
       intervalMs: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
       defaultEffectiveDays: z.coerce.number().positive().default(7),
@@ -230,6 +305,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       timeoutMs: env.NOVAMEM_EMBEDDINGS_TIMEOUT_MS,
       queryPrefix: env.NOVAMEM_EMBEDDINGS_QUERY_PREFIX,
       documentPrefix: env.NOVAMEM_EMBEDDINGS_DOCUMENT_PREFIX,
+      reconcileIntervalMs: env.NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS,
+      reconcileBatchSize: env.NOVAMEM_EMBEDDINGS_RECONCILE_BATCH,
     },
     search: {
       minVectorScore: env.NOVAMEM_SEARCH_MIN_VECTOR_SCORE,
@@ -238,6 +315,32 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         ? env.NOVAMEM_PERSONAL_TERMS.split(",").map((s) => s.trim()).filter(Boolean)
         : undefined,
     },
+    extraction: {
+      enabled: env.NOVAMEM_EXTRACTION_ENABLED ?? false,
+      endpoint: env.NOVAMEM_EXTRACTION_ENDPOINT,
+      model: env.NOVAMEM_EXTRACTION_MODEL,
+      apiKey: env.NOVAMEM_EXTRACTION_API_KEY,
+      maxFactsPerChunk: env.NOVAMEM_EXTRACTION_MAX_FACTS,
+      timeoutMs: env.NOVAMEM_EXTRACTION_TIMEOUT_MS,
+      maxConcurrent: env.NOVAMEM_EXTRACTION_MAX_CONCURRENT,
+    },
+    queryDecomp: {
+      enabled: env.NOVAMEM_QUERY_DECOMP_ENABLED ?? false,
+      endpoint: env.NOVAMEM_QUERY_DECOMP_ENDPOINT,
+      model: env.NOVAMEM_QUERY_DECOMP_MODEL,
+      apiKey: env.NOVAMEM_QUERY_DECOMP_API_KEY,
+      maxSubqueries: env.NOVAMEM_QUERY_DECOMP_MAX_SUBQUERIES,
+      coherenceRerank: env.NOVAMEM_QUERY_DECOMP_COHERENCE_RERANK ?? true,
+      timeoutMs: env.NOVAMEM_QUERY_DECOMP_TIMEOUT_MS,
+    },
+    observer: {
+      enabled: env.NOVAMEM_OBSERVER_ENABLED ?? false,
+      endpoint: env.NOVAMEM_OBSERVER_ENDPOINT,
+      model: env.NOVAMEM_OBSERVER_MODEL,
+      apiKey: env.NOVAMEM_OBSERVER_API_KEY,
+      observeThreshold: env.NOVAMEM_OBSERVER_OBSERVE_THRESHOLD,
+      reflectThreshold: env.NOVAMEM_OBSERVER_REFLECT_THRESHOLD,
+      timeoutMs: env.NOVAMEM_OBSERVER_TIMEOUT_MS,    },
     decay: {
       intervalMs: env.NOVAMEM_DECAY_INTERVAL_MS,
       defaultEffectiveDays: env.NOVAMEM_DECAY_DAYS,

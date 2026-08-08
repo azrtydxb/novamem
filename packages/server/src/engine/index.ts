@@ -27,8 +27,11 @@ import {
   DEFAULT_WEIGHTS,
   effectiveDays,
   EFFECTIVE_LIFESPAN_SQL,
+  entityMatchScore,
+  extractQueryEntities,
   fuse,
   rankPrior,
+  recencyScore,
 } from "./hybrid-search.js";
 import { traceAsync } from "../tracing.js";
 
@@ -239,7 +242,12 @@ function metadataStatus(metadata: Record<string, unknown> | null | undefined): s
 }
 
 function isInactiveMemory(metadata: Record<string, unknown> | null | undefined): boolean {
-  return ["superseded", "deprecated"].includes(metadataStatus(metadata));
+  if (["superseded", "deprecated"].includes(metadataStatus(metadata))) return true;
+  // Arch-plan Phase 2 v2 (Mem0 updation): facts that lost a write-time
+  // DELETE decision get `fact_inactive: true` and stay in the warm row
+  // for history-preservation but must drop out of search results.
+  if ((metadata as Record<string, unknown> | null | undefined)?.fact_inactive) return true;
+  return false;
 }
 
 function extractComparableScalars(content: string): Set<string> {
@@ -417,6 +425,20 @@ export interface EngineConfig {
    *  hot paths (search/remember/forget/promote/demote/decay/reap). Pure
    *  observation — never affects behaviour. */
   metrics?: MetricsCollector;
+  /** Arch-plan Phase 2: optional write-time LLM fact extractor. When
+   *  provided, every `remember()` schedules a background pass that
+   *  distills the chunk into typed facts and stores each as a sibling
+   *  memory_entries row. Fire-and-forget — never blocks the write. */
+  extractor?: import("./fact-extractor.js").FactExtractor;
+  /** Max facts to store per chunk (extractor self-limits at LLM time; this
+   *  is a belt-and-braces ingest cap). */
+  extractorMaxFacts?: number;
+  /** Arch-plan Phase 4: optional query decomposer for /v1/search. When
+   *  provided AND the caller opts in via SearchRequest.decompose=true,
+   *  the query is rewritten into ≤N parallel sub-queries before retrieval. */
+  decomposer?: import("./query-decomposer.js").QueryDecomposer;
+  /** Arch-plan Phase 5: optional observer/reflector for /v1/context-prefix. */
+  observer?: import("./observer.js").Observer;
   /** Deployment-specific high-relevance vocabulary (operator name,
    *  product names, project slugs) used by the worthiness scorer. */
   personalTerms?: readonly string[];
@@ -442,6 +464,10 @@ export class MemoryEngine {
   private logger: EngineLogger;
   private readonly graphLinkFanout: number;
   private readonly metrics: MetricsCollector | null;
+  private readonly extractor: import("./fact-extractor.js").FactExtractor | null;
+  private readonly extractorMaxFacts: number;
+  private readonly decomposer: import("./query-decomposer.js").QueryDecomposer | null;
+  private readonly observer: import("./observer.js").Observer | null;
   private readonly personalTerms: readonly string[];
   private readonly minVectorScore: number;
   private readonly maxContentChars: number;
@@ -471,6 +497,10 @@ export class MemoryEngine {
     this.logger = cfg.logger ?? (console as unknown as EngineLogger);
     this.graphLinkFanout = cfg.graphLinkFanout ?? 3;
     this.metrics = cfg.metrics ?? null;
+    this.extractor = cfg.extractor ?? null;
+    this.extractorMaxFacts = cfg.extractorMaxFacts ?? 5;
+    this.decomposer = cfg.decomposer ?? null;
+    this.observer = cfg.observer ?? null;
     this.personalTerms = cfg.personalTerms ?? [];
     this.minVectorScore = cfg.minVectorScore ?? DEFAULT_MIN_VECTOR_SCORE;
     this.maxContentChars = cfg.maxContentChars ?? 4_000;
@@ -582,6 +612,44 @@ export class MemoryEngine {
     this.logger.warn("graph store unreachable — search degraded to keyword + vector only");
   }
 
+  /** Last observed embedder outcomes. A destroyed embeddings host is
+   *  invisible in every other signal — the writes still succeed and the
+   *  searches still return rows — so the engine has to remember that it
+   *  failed in order to report it at all. */
+  private lastEmbedErrorAt: number | null = null;
+  private lastEmbedOkAt: number | null = null;
+  /** Backlog as of the last reconciler tick. Cached rather than counted
+   *  on demand because health() is on the k8s probe path and must not
+   *  add a query per probe. */
+  private pendingEmbeddingsSeen: number | null = null;
+  private lastEmbedErrorLoggedAt = 0;
+  private suppressedEmbedErrors = 0;
+
+  /** Log an embedder failure at ERROR — this is data becoming unfindable,
+   *  not a degraded nicety — but at most once a minute. A dead embeddings
+   *  host fails on *every* write, and an unthrottled ERROR per write turns
+   *  a two-day outage into a log volume incident on top of a search
+   *  incident. The suppressed count rides along so nothing is hidden. */
+  private recordEmbedFailure(err: unknown, context: Record<string, unknown>): void {
+    this.lastEmbedErrorAt = Date.now();
+    const now = Date.now();
+    if (now - this.lastEmbedErrorLoggedAt < 60_000) {
+      this.suppressedEmbedErrors++;
+      return;
+    }
+    const suppressed = this.suppressedEmbedErrors;
+    this.lastEmbedErrorLoggedAt = now;
+    this.suppressedEmbedErrors = 0;
+    this.logger.error(
+      { ...context, err: (err as Error).message, suppressedSinceLastLog: suppressed },
+      "embedder failed — entry stored without a vector and is not findable by semantic search until the reconciler drains it",
+    );
+  }
+
+  private recordEmbedSuccess(): void {
+    this.lastEmbedOkAt = Date.now();
+  }
+
   /** Hard-rule worthiness gate. Returns null when the content is fit to
    *  store, or a short reason string when it should be rejected. The
    *  caller is responsible for honouring `force: true` to bypass.
@@ -620,7 +688,7 @@ export class MemoryEngine {
      *  embeds the content to find near-duplicates; passing it through
      *  halves the embedder calls on the agent-facing write path. */
     precomputedEmbedding?: number[],
-  ): Promise<{ id: string | null; rejected?: string; deduplicated?: boolean }> {
+  ): Promise<{ id: string | null; rejected?: string; deduplicated?: boolean; embedded?: boolean }> {
     return traceAsync("MemoryEngine.remember", {
       "novamem.namespace": req.namespace ?? "default",
       "novamem.project": req.project ?? "",
@@ -657,7 +725,10 @@ export class MemoryEngine {
         // along; this is its missing twin.
         await this.backfillMissingVector(userId, projectId, existing, namespace, req);
         this.metrics?.recordRemember(userId, token);
-        return { id: existing, deduplicated: true };
+        // The dedup target may itself be an outage-window row with no
+        // vector. Report its real state rather than inheriting this
+        // call's optimism.
+        return { id: existing, deduplicated: true, embedded: await this.warm.isEmbedded(existing) };
       }
       const id = await traceAsync("WarmStore.insertEntry", { "novamem.namespace": namespace }, () =>
         this.warm.insertEntry({
@@ -675,12 +746,28 @@ export class MemoryEngine {
         }),
       );
       span.setAttribute("novamem.entry_id", id);
-      const [embedding] = precomputedEmbedding
-        ? [precomputedEmbedding]
-        : await traceAsync("Embedder.embed.remember", {
+      // The row is already committed. If the embedder is unreachable we
+      // keep it that way and leave `embedded_at` NULL: losing the memory
+      // outright is a worse failure than a memory that is temporarily
+      // findable by keyword and graph only, and the NULL is what lets the
+      // reconciler finish the job later.
+      let embedding: number[] | undefined;
+      let embedderDown = false;
+      if (precomputedEmbedding) {
+        embedding = precomputedEmbedding;
+      } else {
+        try {
+          [embedding] = await traceAsync("Embedder.embed.remember", {
             "novamem.content_chars": req.content.length,
           }, () => this.embedder.embed(req.content, "document"));
+          this.recordEmbedSuccess();
+        } catch (err) {
+          embedderDown = true;
+          this.recordEmbedFailure(err, { entryId: id, op: "remember" });
+        }
+      }
       span.setAttribute("novamem.embedding_present", Boolean(embedding));
+      let embedded = false;
       if (embedding) {
         // If the vector write fails the warm row is already committed.
         // Park it so the reaper can finish the job instead of leaving a
@@ -704,24 +791,283 @@ export class MemoryEngine {
           await this.parkMissingVector(userId, projectId, id, namespace, err);
           throw err;
         }
+        // Stamp only after the vector is durably in the cold store. The
+        // marker means "a vector exists", so ordering it after the upsert
+        // is what keeps it from lying when the cold store is the tier
+        // that failed.
+        await this.warm.setEmbeddedAt(id, new Date());
+        embedded = true;
         if (this.graphLinkFanout > 0) {
           await traceAsync("MemoryEngine.linkVectorNeighbors", {
             "novamem.namespace": namespace,
             "novamem.graph_link_fanout": this.graphLinkFanout,
           }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, req.content));
         }
-      } else {
-        // Embedder returned nothing at all — same consequence as a failed
-        // upsert, so record it the same way.
+      } else if (!embedderDown) {
+        // The embedder answered but handed back nothing — a bad response,
+        // not an outage, so the reaper's repair queue is the right owner.
+        // A genuine outage is deliberately NOT parked here: during a
+        // multi-day embedder failure every write would enqueue an orphan,
+        // and the reaper would burn its bounded attempt budget against a
+        // dead host and then *abandon* the entries. The NULL `embedded_at`
+        // left on the row is the outage queue, and the reconciler drains
+        // it with no attempt ceiling once the embedder returns.
         await this.parkMissingVector(userId, projectId, id, namespace, new Error("embedder returned no vector"));
       }
+      span.setAttribute("novamem.embedded", embedded);
       this.metrics?.recordRemember(userId, token);
+      // Arch-plan Phase 2: schedule LLM fact extraction in the background.
+      // Fire-and-forget — never blocks the write. Errors are logged only.
+      if (this.extractor) {
+        // Capture necessary closure values before the floating promise.
+        const chunkId = id;
+        const chunkContent = req.content;
+        const chunkNamespace = namespace;
+        const chunkProjectId = projectId;
+        const sensitivity = req.sensitivity;
+        const sourceMeta = req.source ?? "manual";
+        void this.storeFactsForChunk({
+          userId,
+          projectId: chunkProjectId,
+          chunkId,
+          chunkContent,
+          namespace: chunkNamespace,
+          sensitivity,
+          parentSource: sourceMeta,
+        }).catch((err: unknown) => {
+          this.logger.warn(
+            { err: (err as Error).message, chunkId },
+            "fact extraction failed (chunk persisted, no facts)",
+          );
+        });
+      }
       this.metrics?.recordLatency("remember", Date.now() - rememberStartedAt);
-      return { id };
+      return { id, embedded };
     }).catch((err) => {
       this.metrics?.recordError("remember");
       throw err;
     });
+  }
+
+  /** Arch-plan Phase 2 helper: distill a raw chunk into typed facts and
+   *  store each as its own memory_entries row + Qdrant point.
+   *  Each fact's metadata carries the fact object and a `source_chunk_id`
+   *  pointer back to the raw chunk so the answerer can join up to original
+   *  text on demand. ADD-only — contradictions are resolved at read time
+   *  via recency / temporal scoring (Mem0 v2 pattern). */
+  private async storeFactsForChunk(args: {
+    userId: string;
+    projectId: string | null;
+    chunkId: string;
+    chunkContent: string;
+    namespace: string;
+    sensitivity?: SensitivityLevel;
+    parentSource: string;
+  }): Promise<void> {
+    if (!this.extractor) return;
+    const facts = await traceAsync(
+      "FactExtractor.extract",
+      { "novamem.chunk_id": args.chunkId, "novamem.content_chars": args.chunkContent.length },
+      () => this.extractor!.extract(args.chunkContent),
+    );
+    if (facts.length === 0) return;
+    const { factToText } = await import("./fact-extractor.js");
+    const capped = facts.slice(0, this.extractorMaxFacts);
+    for (const fact of capped) {
+      const text = factToText(fact);
+      // Each fact gets its own content-hash so dedup behaves correctly
+      // (an identical fact ingested from a different chunk won't double-store).
+      const contentHash = sha256Hex(text.trim());
+      const existing = await this.warm.findByContentHash(args.userId, args.projectId, contentHash);
+      if (existing) {
+        await this.warm.bumpHits(existing);
+        continue;
+      }
+      // ── Mem0-style updation (arch-plan gap #2) ───────────────────────
+      // Embed first so we can search for semantically-similar existing
+      // facts and let the LLM decide ADD / UPDATE / DELETE / NOOP. This
+      // is what closes Mem0 v1 (~67% LongMemEval) → v2 (93%): write-time
+      // dedup + supersedence vs uncurated ADD-only. We pay one extra
+      // LLM call per new fact when the similarity gate fires; the
+      // semaphore in FactExtractor keeps upstream queue depth bounded.
+      let factEmbedding: number[] | null = null;
+      try {
+        const embedded = await this.embedder.embed(text);
+        factEmbedding = embedded[0] ?? null;
+      } catch (err) {
+        this.logger.warn(
+          { err: (err as Error).message, chunkId: args.chunkId },
+          "embedding fact failed (will store as ADD without similarity check)",
+        );
+      }
+      let similar: Array<{ id: string; text: string; factType?: string; importance?: number }> = [];
+      if (factEmbedding) {
+        try {
+          const hits = await this.cold.search({
+            userId: args.userId,
+            projectId: args.projectId,
+            namespace: args.namespace,
+            embedding: factEmbedding,
+            k: 5,
+          });
+          if (hits.length > 0) {
+            const ids = hits.map((h) => h.id);
+            const rows = await this.warm.getEntries(args.userId, ids, {
+              projectId: args.projectId,
+            });
+            similar = rows
+              .map((r, i) => {
+                if (!r) return null;
+                // Only compare against existing FACT rows. Comparing the
+                // new fact to a raw chunk would prompt UPDATE/DELETE on
+                // the chunk which is wrong — chunks aren't supersedable.
+                if (r.sourceType !== "fact") return null;
+                const meta = (r.metadata ?? {}) as Record<string, unknown>;
+                const f = (meta.fact ?? {}) as Record<string, unknown>;
+                return {
+                  id: ids[i]!,
+                  text: r.content,
+                  factType: typeof f.type === "string" ? f.type : undefined,
+                  importance: typeof f.importance === "number" ? f.importance : undefined,
+                };
+              })
+              .filter((x): x is NonNullable<typeof x> => x !== null);
+          }
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message, chunkId: args.chunkId },
+            "similarity search for updation failed (defaulting to ADD)",
+          );
+        }
+      }
+      const decision = similar.length > 0
+        ? await traceAsync(
+            "FactExtractor.decideOperation",
+            { "novamem.candidate_count": similar.length },
+            () => this.extractor!.decideOperation(text, similar),
+          )
+        : { op: "ADD" as const, targetId: undefined as string | undefined };
+
+      if (decision.op === "NOOP" && decision.targetId) {
+        await this.warm.bumpHits(decision.targetId);
+        continue;
+      }
+      if (decision.op === "UPDATE" && decision.targetId) {
+        // Replace the existing fact's content + metadata in place; bump
+        // hits. Embedding stays the new text's via cold.upsert(targetId).
+        const ok = await this.warm.updateEntry({
+          userId: args.userId,
+          id: decision.targetId,
+          projectId: args.projectId,
+          content: text,
+          metadata: {
+            fact: {
+              type: fact.type,
+              subject: fact.subject,
+              predicate: fact.predicate,
+              object: fact.object,
+              occurred_at: fact.occurredAt ?? null,
+              entities: fact.entities,
+              importance: fact.importance,
+            },
+            source_chunk_id: args.chunkId,
+            updated_via: "fact_updation",
+            ...(args.sensitivity ? { sensitivity: args.sensitivity } : {}),
+          } as Record<string, unknown>,
+          contentHash,
+        });
+        if (ok && factEmbedding) {
+          try {
+            await this.cold.upsert({
+              userId: args.userId,
+              projectId: args.projectId,
+              id: decision.targetId,
+              namespace: args.namespace,
+              embedding: factEmbedding,
+              payload: { source: args.parentSource, agentName: null },
+            });
+          } catch (err) {
+            this.logger.warn(
+              { err: (err as Error).message, factId: decision.targetId },
+              "cold.upsert on UPDATE failed (warm row updated, vector stale)",
+            );
+          }
+          await this.warm.bumpHits(decision.targetId);
+        }
+        continue;
+      }
+      if (decision.op === "DELETE" && decision.targetId) {
+        // Mark the contradicted fact inactive via metadata so it falls
+        // out of `isInactiveMemory` filtering at search time, but don't
+        // hard-delete (history-preserving — Mem0/Zep pattern). Then
+        // store the new fact as ADD.
+        try {
+          await this.warm.updateEntry({
+            userId: args.userId,
+            id: decision.targetId,
+            projectId: args.projectId,
+            metadata: {
+              fact_inactive: true,
+              superseded_at: new Date().toISOString(),
+              superseded_by_chunk: args.chunkId,
+            } as Record<string, unknown>,
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message, targetId: decision.targetId },
+            "DELETE supersede update failed (continuing to ADD)",
+          );
+        }
+        // Fall through to ADD below.
+      }
+
+      // ADD (default + post-DELETE)
+      const factId = await this.warm.insertEntry({
+        userId: args.userId,
+        projectId: args.projectId,
+        content: text,
+        namespace: args.namespace,
+        source: args.parentSource,
+        agentName: null,
+        metadata: {
+          fact: {
+            type: fact.type,
+            subject: fact.subject,
+            predicate: fact.predicate,
+            object: fact.object,
+            occurred_at: fact.occurredAt ?? null,
+            entities: fact.entities,
+            importance: fact.importance,
+          },
+          source_chunk_id: args.chunkId,
+          ...(decision.op === "ADD" && decision.targetId
+            ? { supersedes: decision.targetId }
+            : {}),
+          ...(args.sensitivity ? { sensitivity: args.sensitivity } : {}),
+        } as Record<string, unknown>,
+        sourceType: "fact",
+        capturedFrom: null,
+        confidence: 1,
+        contentHash,
+      });
+      if (factEmbedding) {
+        try {
+          await this.cold.upsert({
+            userId: args.userId,
+            projectId: args.projectId,
+            id: factId,
+            namespace: args.namespace,
+            embedding: factEmbedding,
+            payload: { source: args.parentSource, agentName: null },
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message, factId, chunkId: args.chunkId },
+            "cold.upsert on ADD failed (fact persisted in warm only)",
+          );
+        }
+      }
+    }
   }
 
   /** Record a warm row whose cold vector is missing, so `reapOrphans()`
@@ -800,6 +1146,10 @@ export class MemoryEngine {
     deduplicated?: boolean;
     updated?: boolean;
     superseded?: string[];
+    /** False when the entry is stored but has no vector yet. Callers need
+     *  this to tell "stored and searchable" from "stored but not yet
+     *  findable semantically" — a 201 alone cannot say which. */
+    embedded?: boolean;
   }> {
     // capture() is the primary agent-facing write, but only the nested
     // remember() call was ever traced — the dedup search, the
@@ -829,6 +1179,7 @@ export class MemoryEngine {
     deduplicated?: boolean;
     updated?: boolean;
     superseded?: string[];
+    embedded?: boolean;
   }> {
     req = withSensitivityMetadata(req);
     if (!req.force) {
@@ -849,10 +1200,23 @@ export class MemoryEngine {
       // it matters most here.
       await this.backfillMissingVector(userId, projectId, exact, namespace, req);
       this.metrics?.recordRemember(userId, token);
-      return { id: exact, deduplicated: true };
+      return { id: exact, deduplicated: true, embedded: await this.warm.isEmbedded(exact) };
     }
 
-    const [embedding] = await this.embedder.embed(req.content, "document");
+    // This embed only powers the near-duplicate lookup, and unlike
+    // remember() it runs *before* anything is written. An unguarded throw
+    // here would drop the caller's memory on the floor for the duration
+    // of an embedder outage — the one outcome worse than storing it
+    // unembedded. On failure we skip dedup and fall through to the plain
+    // insert; the cost is a possible duplicate row, which the dream
+    // cycle merges later.
+    let embedding: number[] | undefined;
+    try {
+      [embedding] = await this.embedder.embed(req.content, "document");
+      this.recordEmbedSuccess();
+    } catch (err) {
+      this.recordEmbedFailure(err, { op: "capture.dedup-probe" });
+    }
     if (embedding) {
       const nearby = await this.cold.search({
         userId,
@@ -906,7 +1270,14 @@ export class MemoryEngine {
           });
           if (updated.updated) {
             this.metrics?.recordRemember(userId, token);
-            return { id: candidate.id, deduplicated: true, updated: true };
+            // `embeddingChanged` is false when the re-embed failed, so the
+            // caller is told the row is stored but not yet searchable.
+            return {
+              id: candidate.id,
+              deduplicated: true,
+              updated: true,
+              embedded: updated.embeddingChanged,
+            };
           }
         }
       }
@@ -937,7 +1308,13 @@ export class MemoryEngine {
     projectId: string | null,
     token: TokenIdentity | undefined,
     embedding: number[],
-  ): Promise<{ id: string | null; superseded?: string[]; rejected?: string; deduplicated?: boolean }> {
+  ): Promise<{
+    id: string | null;
+    superseded?: string[];
+    rejected?: string;
+    deduplicated?: boolean;
+    embedded?: boolean;
+  }> {
     const supersededIds = [candidate.id];
     const supersededAt = new Date().toISOString();
     const newMetadata = captureMetadata(
@@ -979,7 +1356,7 @@ export class MemoryEngine {
       }
       throw err;
     }
-    return { id: created.id, superseded: supersededIds };
+    return { id: created.id, superseded: supersededIds, embedded: created.embedded ?? false };
   }
 
   /** Update an existing entry in place. Preserves `created_at`,
@@ -1027,7 +1404,13 @@ export class MemoryEngine {
       // may have omitted it from the update body).
       const entry = await this.warm.getEntry(userId, id, { projectId });
       if (!entry) return { updated: true, embeddingChanged: false };
-      const [embedding] = await this.embedder.embed(req.content);
+      let embedding: number[] | undefined;
+      try {
+        [embedding] = await this.embedder.embed(req.content);
+        this.recordEmbedSuccess();
+      } catch (err) {
+        this.recordEmbedFailure(err, { entryId: id, op: "update" });
+      }
       if (embedding) {
         await this.cold.upsert({
           userId,
@@ -1037,7 +1420,14 @@ export class MemoryEngine {
           embedding,
           payload: { source: entry.source, agentName: entry.agentName ?? null },
         });
+        await this.warm.setEmbeddedAt(id, new Date());
         embeddingChanged = true;
+      } else {
+        // The content moved but the vector didn't. Re-queue rather than
+        // leave the entry marked embedded: the stale vector now describes
+        // text that no longer exists, so semantic search would surface
+        // this entry for the *old* wording and miss it for the new.
+        await this.warm.setEmbeddedAt(id, null);
       }
     }
     return { updated: true, embeddingChanged };
@@ -1165,12 +1555,49 @@ export class MemoryEngine {
         ? [req.namespace]
         : await this.resolveDefaultNamespaces(userId, scopes);
 
+    // Arch-plan Phase 4: query decomposition. If opted in via req.decompose
+    // and a decomposer is configured, rewrite into ≤N sub-queries and run
+    // retrieval per sub-query. The original query is always included first.
+    // The downstream FTS/vector fan-out then uses each sub-query in turn
+    // and we union the hits before fusion.
+    let queries: string[] = [req.query];
+    if (req.decompose && this.decomposer) {
+      try {
+        const decomposed = await traceAsync(
+          "QueryDecomposer.decompose",
+          { "novamem.query_chars": req.query.length },
+          () => this.decomposer!.decompose(req.query),
+        );
+        if (decomposed.length > 0) queries = decomposed;
+      } catch (err) {
+        this.logger.warn({ err: (err as Error).message }, "decompose failed (using original query)");
+      }
+    }
+
+    // Embed every query (one batch). Different sub-queries → different
+    // vector candidates, which is the whole point of decomposition.
+    //
+    // A dead embedder is a failed tier, not a failed request: the caller
+    // still gets keyword + graph. It must however mark the search
+    // degraded, or an outage looks exactly like "nothing matched" — the
+    // confusion that let a half-blind store pass for a healthy one.
+    //
     // "query" side of the asymmetric-retrieval prefix pair — see
     // embeddings.ts. Symmetric models (the default MiniLM) get an empty
     // prefix and behave exactly as before.
-    const [embedding] = await traceAsync("Embedder.embed.search", {
-      "novamem.query_chars": req.query.length,
-    }, () => this.embedder.embed(req.query, "query"));
+    let degraded = false;
+    let queryEmbeddings: number[][] = [];
+    try {
+      queryEmbeddings = await traceAsync("Embedder.embed.search", {
+        "novamem.query_chars": req.query.length,
+        "novamem.subqueries": queries.length,
+      }, () => this.embedder.embed(queries, "query"));
+      this.recordEmbedSuccess();
+    } catch (err) {
+      degraded = true;
+      this.recordEmbedFailure(err, { op: "search" });
+    }
+    const embedding = queryEmbeddings[0] ?? null;
     // FTS supports multi-namespace via `namespace = ANY(...)` in one query
     // per scope, so we fan out only across scopes (not namespaces).
     // Cold-store needs one search per (scope × namespace) collection.
@@ -1179,43 +1606,54 @@ export class MemoryEngine {
     // still returns whatever the surviving tiers produced, and `degraded`
     // becomes meaningful for warm/cold (not just graph). Without this,
     // one Postgres or Qdrant blip rejects the whole top-level Promise.all.
-    let degraded = false;
+    // (`degraded` is declared above — the query-embed step is the first
+    // tier that can set it.)
+    // Phase 4: per-sub-query keyword retrieval. Per-query promises are
+    // independent so they run concurrently across the whole (queries ×
+    // scopes) matrix; the resulting flat list is what feeds fuse().
     const keywordsPromise = Promise.all(
-      scopes.map((projectId) =>
-        traceAsync("WarmStore.ftsSearch", {
-          "novamem.namespace_count": namespaces.length,
-          "novamem.k": k * 3,
-        }, () => this.warm.ftsSearch({
-          userId,
-          projectId,
-          query: req.query,
-          namespace: namespaces[0]!, // ignored when namespaces array is set
-          namespaces: namespaces.length > 1 ? namespaces : undefined,
-          k: k * 3,
-          agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
-        })),
+      queries.flatMap((q) =>
+        scopes.map((projectId) =>
+          traceAsync("WarmStore.ftsSearch", {
+            "novamem.namespace_count": namespaces.length,
+            "novamem.k": k * 3,
+          }, () => this.warm.ftsSearch({
+            userId,
+            projectId,
+            query: q,
+            namespace: namespaces[0]!, // ignored when namespaces array is set
+            namespaces: namespaces.length > 1 ? namespaces : undefined,
+            k: k * 3,
+            agentName: req.agentName === undefined ? undefined : (req.agentName ?? null),
+          })),
+        ),
       ),
     ).catch((err) => {
       degraded = true;
       this.logger.warn({ err: (err as Error).message }, "keyword tier failed");
       return [] as Array<Array<{ id: string; score: number }>>;
     });
-    const vectorsPromise = embedding
-      ? Promise.all(
-          scopes.flatMap((projectId) =>
-            namespaces.map((namespace) =>
-              traceAsync("ColdStore.search", {
-                "novamem.namespace": namespace,
-                "novamem.k": k * 3,
-              }, () => this.cold.search({ userId, projectId, namespace, embedding, k: k * 3 })),
+    // Phase 4: per-sub-query vector retrieval. Each sub-query has its own
+    // embedding so different facets surface different candidates.
+    const vectorsPromise =
+      queryEmbeddings.length > 0 && queryEmbeddings[0]
+        ? Promise.all(
+            queryEmbeddings.flatMap((emb) =>
+              scopes.flatMap((projectId) =>
+                namespaces.map((namespace) =>
+                  traceAsync("ColdStore.search", {
+                    "novamem.namespace": namespace,
+                    "novamem.k": k * 3,
+                  }, () => this.cold.search({ userId, projectId, namespace, embedding: emb, k: k * 3 })),
+                ),
+              ),
             ),
-          ),
-        ).catch((err) => {
-          degraded = true;
-          this.logger.warn({ err: (err as Error).message }, "vector tier failed");
-          return [] as Array<Array<{ id: string; score: number }>>;
-        })
-      : Promise.resolve([] as Array<Array<{ id: string; score: number }>>);
+          ).catch((err) => {
+            degraded = true;
+            this.logger.warn({ err: (err as Error).message }, "vector tier failed");
+            return [] as Array<Array<{ id: string; score: number }>>;
+          })
+        : Promise.resolve([] as Array<Array<{ id: string; score: number }>>);
     const [keywordHitsAll, vectorHitsAll] = await Promise.all([keywordsPromise, vectorsPromise]);
     const keywordHits = keywordHitsAll.flat();
     const vectorHits = vectorHitsAll.flat();
@@ -1223,6 +1661,9 @@ export class MemoryEngine {
     // (entries / neighbors). Multi-scope path uses null + per-id resolution.
     const projectId = scopes.length === 1 ? scopes[0]! : null;
 
+    // Arch-plan Phase 3: parse optional asOf into milliseconds for the
+    // graph traversal's bitemporal filter.
+    const asOfMs = req.asOf ? Date.parse(req.asOf) : null;
     let graphHits: Array<{ id: string; score: number }> = [];
     // Entity bridging works from the query text alone, so unlike the
     // neighbour walk it does not require the vector tier to have returned
@@ -1241,9 +1682,10 @@ export class MemoryEngine {
         // ambiguous, so skip the project scope (project_id is null) — entry
         // resolution below will still filter to the visible scope set.
         const seedScope = scopes.length === 1 ? scopes[0]! : null;
+        const asOfFilter = asOfMs !== null && Number.isFinite(asOfMs) ? asOfMs : null;
         const perSeed = seeds.length > 0
           ? await Promise.all(
-              seeds.map((seed) => this.graph!.neighbors(userId, seed, 1, k, seedScope)),
+              seeds.map((seed) => this.graph!.neighbors(userId, seed, 1, k, seedScope, asOfFilter)),
             )
           : [];
         // Entity bridging, straight from the query text. This is the one
@@ -1275,6 +1717,29 @@ export class MemoryEngine {
       this.maybeWarnGraphDown();
     }
 
+    // Pre-fetch entries for the UNION of all tier candidate ids so the
+    // recency + entity signals (Phase 1 arch-plan additions) can join the
+    // fusion. Without this we'd need a second post-fusion pass for the
+    // new signals, which would leave them blind to candidates ranked just
+    // below the fused-top-k cutoff. One batched lookup keeps it cheap.
+    const candidateIds = Array.from(new Set([
+      ...keywordHits.map((h) => h.id),
+      ...vectorHits.map((h) => h.id),
+      ...graphHits.map((h) => h.id),
+    ]));
+    const candidateEntries = candidateIds.length > 0
+      ? await this.warm.getEntries(userId, candidateIds, {
+          projectId,
+          includeProjects: req.includeProjects,
+        })
+      : [];
+    const entryById = new Map<string, (typeof candidateEntries)[number]>();
+    for (let i = 0; i < candidateIds.length; i++) {
+      const e = candidateEntries[i];
+      if (e) entryById.set(candidateIds[i]!, e);
+    }
+    const queryEntities = extractQueryEntities(req.query);
+
     // Over-fetch before the visibility filters below. Superseded and
     // sensitivity-hidden entries used to be dropped *after* slicing to k,
     // so a top-10 containing four superseded rows returned six results
@@ -1285,21 +1750,77 @@ export class MemoryEngine {
         ...keywordHits.map((h) => ({ id: h.id, signals: { keyword: h.score } })),
         ...vectorHits.map((h) => ({ id: h.id, signals: { vector: h.score } })),
         ...graphHits.map((h) => ({ id: h.id, signals: { graph: h.score } })),
+        // Recency: exp(-ageDays / 180). Skipped for entries we couldn't
+        // resolve (filtered out by visibility) — they'll drop out anyway.
+        ...candidateIds.flatMap((id) => {
+          const e = entryById.get(id);
+          if (!e?.updatedAt) return [];
+          const score = recencyScore(e.updatedAt);
+          return score > 0 ? [{ id, signals: { recency: score } }] : [];
+        }),
+        // Entity match: count of distinct query-entity tokens present in
+        // the memory's content text. Catches "answer lives in sibling
+        // chunk" cases where the exact noun is in content but cosine
+        // didn't score it best.
+        ...(queryEntities.length === 0 ? [] : candidateIds.flatMap((id) => {
+          const e = entryById.get(id);
+          if (!e?.content) return [];
+          const score = entityMatchScore(e.content, queryEntities);
+          return score > 0 ? [{ id, signals: { entity: score } }] : [];
+        })),
       ],
       weights,
       { minVectorScore: req.minVectorScore ?? this.minVectorScore },
     );
-    const fused = fusedAll.slice(0, k * OVERFETCH_FACTOR);
+    let fused = fusedAll.slice(0, k * OVERFETCH_FACTOR);
 
-    // Batch the per-result lookups + bump-hits to collapse the
-    // search hot path from 2N+1 round-trips. Cold-entry promotion stats
-    // are now batched too (one query for the cold slice instead of one
-    // per cold hit) — the per-id loop only computes the gate.
+    // Arch-plan gap #4: importance-weighted boost for fact memories.
+    // Each fact extracted at write time carries metadata.fact.importance
+    // (1..5, model-judged). Treat 3 as neutral and multiply the fused
+    // score by importance/3 so high-importance facts (4,5) beat noisy
+    // low-importance ones (1,2). Raw chunks (sourceType != "fact") get
+    // multiplier 1.0 — no penalty. Re-truncate to k after re-sort.
+    fused = fused
+      .map((f) => {
+        const e = entryById.get(f.id);
+        const meta = (e?.metadata ?? {}) as Record<string, unknown>;
+        const fact = (meta.fact ?? {}) as Record<string, unknown>;
+        const imp = typeof fact.importance === "number"
+          ? Math.max(1, Math.min(5, fact.importance))
+          : 3;
+        const boost = imp / 3;
+        return { ...f, score: f.score * boost };
+      })
+      .sort((a, b) => b.score - a.score);
+    // Deliberately NOT truncated to k here: the visibility filter below
+    // drops superseded / sensitivity-hidden rows, and cutting to k first
+    // is exactly the recall bug the over-fetch above exists to prevent.
+    // The diversify stage does the final truncation.
+
+    // Arch-plan Phase 4: coherence rerank. When the caller opts into
+    // decomposition AND the decomposer is configured AND there are enough
+    // candidates to rerank, ask the LLM to put the final top-k in the
+    // order best supporting the question. Drops fused candidates the LLM
+    // considers irrelevant or duplicative.
+    if (req.decompose && this.decomposer && fused.length >= 2) {
+      const memTexts = fused.map((f) => entryById.get(f.id)?.content ?? "");
+      try {
+        const newOrder = await traceAsync(
+          "QueryDecomposer.coherenceRerank",
+          { "novamem.candidate_count": fused.length },
+          () => this.decomposer!.coherenceRerank(req.query, memTexts),
+        );
+        if (newOrder && newOrder.length === fused.length) {
+          fused = newOrder.map((i) => fused[i]!);
+        }
+      } catch (err) {
+        this.logger.warn({ err: (err as Error).message }, "coherenceRerank failed");
+      }
+    }
+
+    // Re-use the pre-fetched batch — no second round-trip.
     const fusedIds = fused.map((f) => f.id);
-    const entries = await this.warm.getEntries(userId, fusedIds, {
-      projectId,
-      includeProjects: req.includeProjects,
-    });
+    const entries = fusedIds.map((id) => entryById.get(id));
     // Pre-fetch promotion stats for cold hits in one round-trip.
     const coldHitIds: string[] = [];
     for (let i = 0; i < fused.length; i++) {
@@ -1427,6 +1948,48 @@ export class MemoryEngine {
       }
     }
     if (idsToBump.length > 0) await this.warm.bumpHitsMany(idsToBump);
+
+    // ── Arch-plan gap-closer: auto-expand source_chunk for fact memories ──
+    // Each extracted-fact memory carries metadata.source_chunk_id pointing
+    // to the raw chunk it was distilled from. Inlining that chunk's text
+    // into the response lets answerer LLMs see both the compressed fact
+    // AND the supporting conversation, which is critical for multi-item
+    // counting and rich preference questions. Validated +10pp at k=50 on
+    // the LongMemEval 40q slice when done client-side; promoting it here
+    // so every caller benefits.
+    if (req.expandSourceChunks !== false) {
+      const sourceIds = Array.from(new Set(
+        results
+          .map((r) => (r.metadata as { source_chunk_id?: string } | undefined)?.source_chunk_id)
+          .filter((x): x is string => typeof x === "string"),
+      ));
+      if (sourceIds.length > 0) {
+        try {
+          const srcRows = await this.warm.getEntries(userId, sourceIds, {
+            projectId,
+            includeProjects: req.includeProjects,
+          });
+          const byId = new Map<string, string>();
+          for (let i = 0; i < sourceIds.length; i++) {
+            const row = srcRows[i];
+            if (row) byId.set(sourceIds[i]!, row.content);
+          }
+          for (const r of results) {
+            const meta = r.metadata as { source_chunk_id?: string; sourceText?: string };
+            const srcId = meta?.source_chunk_id;
+            if (srcId && byId.has(srcId)) {
+              r.metadata = { ...meta, sourceText: byId.get(srcId)! };
+            }
+          }
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message },
+            "source-chunk auto-expand failed (returning facts without sourceText)",
+          );
+        }
+      }
+    }
+
     // Per-tier hit counts: each result may have contributed via more than
     // one signal (e.g. keyword + vector), and we count every contributing
     // signal — that's the operator-visible "this tier carried weight".
@@ -2181,6 +2744,50 @@ export class MemoryEngine {
     };
   }
 
+  /** Arch-plan Phase 5: return the cacheable observation prefix for a
+   *  (user, project) scope. Returns `null` when no observer is wired —
+   *  the route surfaces that as a 404. */
+  async getContextPrefix(userId: string, projectId: string | null): Promise<string | null> {
+    if (!this.observer) return null;
+    return this.observer.getPrefix(userId, projectId);
+  }
+
+  /** Arch-plan Phase 5: run an observer + (conditional) reflector pass.
+   *  Pulls the N most-recent raw memories in scope, asks the LLM to
+   *  convert them to dated bullets, appends to the persisted observation
+   *  log, and (if the log grew past reflectThreshold) asks the LLM to
+   *  collapse + supersede across the whole log. Returns counts.  */
+  async runObserver(
+    userId: string,
+    projectId: string | null,
+    opts: { limit?: number } = {},
+  ): Promise<{ observed: number; reflected: boolean; logChars: number } | null> {
+    if (!this.observer) return null;
+    const limit = opts.limit ?? 20;
+    // Pull recent raw memories (skip the observer-managed namespace).
+    const rows = await this.warm.listRecent(userId, {
+      namespaces: ["default"],
+      k: limit,
+      projectId,
+    });
+    const visible = rows.filter((r) => r.namespace !== "__observation__");
+    const newBullets = visible.length > 0
+      ? await this.observer.observe(userId, projectId, visible.map((r) => r.content))
+      : "";
+    const existing = await this.observer.getPrefix(userId, projectId);
+    let combined = (existing + (existing && newBullets ? "\n" : "") + newBullets).trim();
+    let reflected = false;
+    if (combined.split("\n").length > 50) {
+      const compacted = await this.observer.reflect(combined);
+      if (compacted.trim()) {
+        combined = compacted.trim();
+        reflected = true;
+      }
+    }
+    if (combined) await this.observer.upsertPrefix(userId, projectId, combined);
+    return { observed: visible.length, reflected, logChars: combined.length };
+  }
+
   async hygieneReport(userId: string, opts: { k?: number } = {}): Promise<Record<string, unknown>> {
     const k = opts.k ?? 20;
     const scanLimit = Math.max(k * 20, 100);
@@ -2268,6 +2875,62 @@ export class MemoryEngine {
     };
   }
 
+  /** Drain one bounded batch of entries whose vector was never written.
+   *
+   *  Deliberately dumb: take the oldest N pending rows, embed, upsert,
+   *  stamp. There is no retry counter, no backoff and no dead-letter
+   *  state, because the failure this exists for is a *shared* one — the
+   *  embedder is either up or it isn't. Per-entry backoff would only
+   *  stagger the recovery of entries that will all succeed on the same
+   *  tick; when the embedder returns, the backlog drains at batch-size
+   *  per interval with no thundering retry. The batch bound is what
+   *  keeps a two-day backlog from becoming one enormous request.
+   *
+   *  Entries that fail keep `embedded_at` NULL and are simply picked up
+   *  again next tick, which is the whole point of putting the state on
+   *  the row. */
+  async reconcilePendingEmbeddings(
+    opts: { batchSize?: number } = {},
+  ): Promise<{ scanned: number; embedded: number; failed: number; pending: number }> {
+    const batchSize = opts.batchSize ?? 50;
+    const rows = await this.warm.listPendingEmbedding(batchSize);
+    let embedded = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const [embedding] = await this.embedder.embed(row.content);
+        if (!embedding) {
+          failed++;
+          continue;
+        }
+        await this.cold.upsert({
+          userId: row.userId,
+          projectId: row.projectId,
+          id: row.id,
+          namespace: row.namespace,
+          embedding,
+          payload: { source: row.source, agentName: row.agentName },
+        });
+        await this.warm.setEmbeddedAt(row.id, new Date());
+        this.recordEmbedSuccess();
+        embedded++;
+      } catch (err) {
+        failed++;
+        this.recordEmbedFailure(err, { entryId: row.id, op: "reconcile" });
+      }
+    }
+    // Count after the batch so the gauge reflects the post-drain backlog;
+    // reading it here also keeps health() off the query path.
+    const pending = await this.warm.countPendingEmbedding();
+    this.pendingEmbeddingsSeen = pending;
+    return { scanned: rows.length, embedded, failed, pending };
+  }
+
+  /** Backlog as of the last reconciler tick, or null before the first. */
+  pendingEmbeddingBacklog(): number | null {
+    return this.pendingEmbeddingsSeen;
+  }
+
   async health(): Promise<HealthSnapshot> {
     const [warmOk, coldOk] = await Promise.all([this.warm.ping(), this.cold.ping()]);
     const graphState: HealthSnapshot["deps"]["graph"] = !this.graph
@@ -2275,13 +2938,30 @@ export class MemoryEngine {
       : this.graph.isConnected()
         ? "ok"
         : "unreachable";
+    // The embedder is "failing" only if its most recent outcome was a
+    // failure — a single blip that later succeeded is not an outage.
+    const embedderState: HealthSnapshot["deps"]["embedder"] =
+      this.lastEmbedErrorAt !== null &&
+      (this.lastEmbedOkAt === null || this.lastEmbedErrorAt > this.lastEmbedOkAt)
+        ? "failing"
+        : "ok";
     return {
+      // Deliberate asymmetry: a failing embedder and a pending backlog are
+      // reported, but neither enters `ok` — and `ok` is what /ready
+      // returns. Keyword and graph search still work with a dead embedder,
+      // so pulling the whole service out of rotation would convert a
+      // partial loss of recall into a total loss of memory for every
+      // caller. warm/cold are different: without them there is nothing to
+      // serve at all. Alert on `pendingEmbeddings` (also exposed as a
+      // metrics gauge); do not gate traffic on it.
       ok: warmOk && coldOk,
       deps: {
         warm: warmOk ? "ok" : "unreachable",
         cold: coldOk ? "ok" : "unreachable",
         graph: graphState,
+        embedder: embedderState,
       },
+      pendingEmbeddings: this.pendingEmbeddingsSeen,
     };
   }
 }

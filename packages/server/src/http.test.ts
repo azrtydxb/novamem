@@ -130,7 +130,11 @@ describe("http: health probes", () => {
       headers: adminH,
     });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ ok: true, deps: { warm: "ok", cold: "ok", graph: "ok" } });
+    expect(r.json()).toEqual({
+      ok: true,
+      deps: { warm: "ok", cold: "ok", graph: "ok", embedder: "ok" },
+      pendingEmbeddings: null,
+    });
   });
 
   it("/v1/admin/health/deep returns 401 without admin auth", async () => {

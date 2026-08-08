@@ -130,9 +130,14 @@ export const SearchBody = z.object({
       keyword: z.number().optional(),
       vector: z.number().optional(),
       graph: z.number().optional(),
+      recency: z.number().optional(),
+      entity: z.number().optional(),
     })
     .optional(),
   maxSensitivity: SensitivityRule.optional(),
+  asOf: z.string().datetime().optional().nullable(),
+  decompose: z.boolean().optional(),
+  expandSourceChunks: z.boolean().optional(),
 });
 
 export const ContextBody = z.object({
@@ -148,9 +153,14 @@ export const ContextBody = z.object({
       keyword: z.number().optional(),
       vector: z.number().optional(),
       graph: z.number().optional(),
+      recency: z.number().optional(),
+      entity: z.number().optional(),
     })
     .optional(),
   maxSensitivity: SensitivityRule.optional(),
+  asOf: z.string().datetime().optional().nullable(),
+  decompose: z.boolean().optional(),
+  expandSourceChunks: z.boolean().optional(),
 });
 
 

@@ -1544,6 +1544,75 @@ export class WarmStore {
     };
   }
 
+  // ─── Pending-embedding queue ──────────────────────────────────────────
+  // `memory_entries.embedded_at IS NULL` is the queue. There is no queue
+  // table, so a row and its queue state cannot drift apart and a crash
+  // between the INSERT and the embedder call leaves work the reconciler
+  // finds instead of an entry that is silently absent from vector search.
+
+  /** Stamp (or clear) an entry's embedded marker. `null` re-queues the
+   *  entry — used when its content changed but the re-embed failed, since
+   *  the vector on file now describes text that no longer exists. */
+  async setEmbeddedAt(id: string, at: Date | null): Promise<void> {
+    await this.db
+      .update(schema.memoryEntries)
+      .set({ embeddedAt: at })
+      .where(eq(schema.memoryEntries.id, id));
+  }
+
+  /** True when the entry already has a vector. Cheap PK lookup — used on
+   *  the dedup fast-paths, where the caller returns an id it did not
+   *  itself embed and must not claim it is searchable. */
+  async isEmbedded(id: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ embeddedAt: schema.memoryEntries.embeddedAt })
+      .from(schema.memoryEntries)
+      .where(eq(schema.memoryEntries.id, id))
+      .limit(1);
+    return row?.embeddedAt != null;
+  }
+
+  /** One bounded reconciler batch, oldest first. Oldest-first matters
+   *  because a backlog is almost always an outage window: draining in
+   *  write order means the gap in semantic search closes from its start
+   *  rather than leaving arbitrary holes. */
+  async listPendingEmbedding(limit: number): Promise<
+    Array<{
+      id: string;
+      userId: string;
+      projectId: string | null;
+      content: string;
+      namespace: string;
+      source: string;
+      agentName: string | null;
+    }>
+  > {
+    return this.db
+      .select({
+        id: schema.memoryEntries.id,
+        userId: schema.memoryEntries.userId,
+        projectId: schema.memoryEntries.projectId,
+        content: schema.memoryEntries.content,
+        namespace: schema.memoryEntries.namespace,
+        source: schema.memoryEntries.source,
+        agentName: schema.memoryEntries.agentName,
+      })
+      .from(schema.memoryEntries)
+      .where(isNull(schema.memoryEntries.embeddedAt))
+      .orderBy(asc(schema.memoryEntries.createdAt))
+      .limit(limit);
+  }
+
+  /** Size of the pending backlog. Feeds the metrics gauge; a number that
+   *  stops falling is the alertable signal that the embedder is gone. */
+  async countPendingEmbedding(): Promise<number> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(schema.memoryEntries)
+      .where(isNull(schema.memoryEntries.embeddedAt));
+    return Number(row?.n ?? 0);
+  }
+
   async ping(): Promise<boolean> {
     try {
       await this.db.execute(sql`SELECT 1`);

@@ -758,6 +758,20 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       );
     }
 
+    // Admin-gated deep health: full per-dependency snapshot. `embedder`
+    // and `pendingEmbeddings` are reported here but deliberately absent
+    // from `ok` — see MemoryEngine.health() for why a dead embedder must
+    // not take the service out of rotation.
+    const DeepHealth = z.object({
+      ok: z.boolean(),
+      deps: z.object({
+        warm: z.enum(["ok", "unreachable"]),
+        cold: z.enum(["ok", "unreachable"]),
+        graph: z.enum(["ok", "unreachable", "disabled"]),
+        embedder: z.enum(["ok", "failing"]),
+      }),
+      pendingEmbeddings: z.number().nullable(),
+    });
     // Admin-gated deep health: full per-dependency snapshot.
     instance.get(
       "/v1/admin/health/deep",
@@ -767,22 +781,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
           summary: "Admin-only dependency snapshot (warm/cold/graph status)",
           security: [{ SessionCookie: [] }],
           response: {
-            200: z.object({
-              ok: z.boolean(),
-              deps: z.object({
-                warm: z.enum(["ok", "unreachable"]),
-                cold: z.enum(["ok", "unreachable"]),
-                graph: z.enum(["ok", "unreachable", "disabled"]),
-              }),
-            }),
-            503: z.object({
-              ok: z.boolean(),
-              deps: z.object({
-                warm: z.enum(["ok", "unreachable"]),
-                cold: z.enum(["ok", "unreachable"]),
-                graph: z.enum(["ok", "unreachable", "disabled"]),
-              }),
-            }),
+            200: DeepHealth,
+            503: DeepHealth,
             401: z.object({ error: z.string() }),
           },
         },

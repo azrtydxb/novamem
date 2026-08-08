@@ -67,10 +67,30 @@ export interface SearchRequest {
    *  shelves. When set, takes precedence over the singular `namespace`
    *  field. */
   includeNamespaces?: string[];
-  /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour. */
-  weights?: { keyword?: number; vector?: number; graph?: number };
+  /** Per-signal weights; defaults preserve NovaFlow's pre-extraction behaviour.
+   *  `recency` and `entity` are arch-plan Phase 1 additions. */
+  weights?: {
+    keyword?: number;
+    vector?: number;
+    graph?: number;
+    recency?: number;
+    entity?: number;
+  };
   /** Maximum sensitivity returned. Defaults to private, excluding sensitive entries unless explicitly requested. */
   maxSensitivity?: SensitivityLevel;
+  /** Arch-plan Phase 3: bitemporal as-of query — filter graph edges to
+   *  those valid at this ISO 8601 instant. Default null = no filter. */
+  asOf?: string | null;
+  /** Arch-plan Phase 4: opt-in query decomposition + coherence rerank.
+   *  Requires the engine to be configured with a decomposer; otherwise
+   *  ignored. */
+  decompose?: boolean;
+  /** Arch-plan gap-closer: when a result is an extracted-fact memory,
+   *  populate `metadata.sourceText` with its source chunk's content
+   *  (looked up via metadata.source_chunk_id). Lets answerer LLMs see
+   *  both the compressed fact and the supporting raw conversation.
+   *  Default true. */
+  expandSourceChunks?: boolean;
   /** Absolute cosine floor below which a vector-only candidate is treated
    *  as noise rather than a hit. Defaults to the server's configured
    *  value (NOVAMEM_SEARCH_MIN_VECTOR_SCORE, default 0.25). Pass 0 to
@@ -140,10 +160,20 @@ export interface MemoryStats {
 }
 
 export interface HealthSnapshot {
+  /** Readiness. Covers warm + cold only — see the asymmetry note in
+   *  `MemoryEngine.health()` for why a failing embedder is reported but
+   *  never removes the service from rotation. */
   ok: boolean;
   deps: {
     warm: "ok" | "unreachable";
     cold: "ok" | "unreachable";
     graph: "ok" | "unreachable" | "disabled";
+    /** "failing" when the embedder's most recent call threw. New writes
+     *  are still accepted; they land with no vector and queue for the
+     *  reconciler. */
+    embedder: "ok" | "failing";
   };
+  /** Entries awaiting a vector as of the last reconciler tick; null before
+   *  the first tick. A number that stops falling means the queue is stuck. */
+  pendingEmbeddings: number | null;
 }

@@ -98,9 +98,37 @@ export interface RememberRequest {
   force?: boolean;
 }
 
+/**
+ * What `/v1/capture` and `/v1/remember` actually return (201). `id` is
+ * null when the worthiness gate rejected the content — `rejected` then
+ * carries the reason, and nothing was stored.
+ *
+ * (This type previously described `/v1/session-recap`'s `{saved, results}`
+ * envelope, which is a different endpoint — see `SessionRecapResponse`.)
+ */
 export interface CaptureResponse {
+  id: string | null;
+  /** Reason the worthiness gate refused the write. Present ⇒ `id` is null. */
+  rejected?: string;
+  /** The content already existed; `id` points at the pre-existing entry. */
+  deduplicated?: boolean;
+  /** A near-duplicate was rewritten in place rather than inserted. */
+  updated?: boolean;
+  /** Entries this write marked superseded (it contradicted them). */
+  superseded?: string[];
+  /**
+   * Whether the entry has a vector yet. `false` means it is stored and
+   * durable but **not findable by semantic search** until the server's
+   * reconciler catches up — keyword and graph search still reach it.
+   * Absent on responses from servers predating this field.
+   */
+  embedded?: boolean;
+}
+
+/** `/v1/session-recap` — one capture per item, wrapped in a count. */
+export interface SessionRecapResponse {
   saved: number;
-  results: RememberResponse[];
+  results: CaptureResponse[];
 }
 
 export interface SessionRecapRequest {
@@ -123,9 +151,8 @@ export interface SessionRecapRequest {
   sensitivity?: SensitivityLevel;
 }
 
-export interface RememberResponse {
-  id: string;
-}
+/** `/v1/remember` shares `/v1/capture`'s result shape. */
+export type RememberResponse = CaptureResponse;
 
 export interface UpdateRequest {
   content?: string;
@@ -269,6 +296,13 @@ export class NovamemClient {
 
   // ─── Data plane ────────────────────────────────────────────────────────
 
+  /**
+   * Hybrid search. Throws on 503, which the server returns when a backing
+   * tier failed *and* produced nothing — that is "I could not look", not
+   * "I found nothing", and the two must not collapse into an empty array.
+   * A 200 with `degraded: true` means the results are real but possibly
+   * incomplete.
+   */
   async search(req: SearchRequest): Promise<SearchResponse> {
     return this.request<SearchResponse>("/v1/search", { method: "POST", body: req });
   }
@@ -293,8 +327,8 @@ export class NovamemClient {
     return this.request<CaptureResponse>("/v1/capture", { method: "POST", body: req });
   }
 
-  async sessionRecap(req: SessionRecapRequest): Promise<CaptureResponse> {
-    return this.request<CaptureResponse>("/v1/session-recap", { method: "POST", body: req });
+  async sessionRecap(req: SessionRecapRequest): Promise<SessionRecapResponse> {
+    return this.request<SessionRecapResponse>("/v1/session-recap", { method: "POST", body: req });
   }
 
   async remember(req: RememberRequest): Promise<RememberResponse> {
@@ -335,8 +369,18 @@ export class NovamemClient {
     });
   }
 
-  async forget(id: string, opts: { project?: string | null } = {}): Promise<{ deleted: boolean }> {
-    return this.request<{ deleted: boolean }>("/v1/forget", {
+  /**
+   * Delete an entry. Check **both** fields: `coldDeleteOk: false` means the
+   * warm row is gone but the vector copy survived (the server queued it for
+   * its reaper), so the deletion is not yet complete. Deletion is a promise
+   * to a person; reporting a half-completed one as done is how that promise
+   * gets quietly broken.
+   */
+  async forget(
+    id: string,
+    opts: { project?: string | null } = {},
+  ): Promise<{ deleted: boolean; coldDeleteOk: boolean }> {
+    return this.request<{ deleted: boolean; coldDeleteOk: boolean }>("/v1/forget", {
       method: "POST",
       body: { id, ...opts },
     });

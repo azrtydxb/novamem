@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>novamem — product one-pager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0d12;
+    --panel: #11151c;
+    --subtle: #161b24;
+    --rule: #1f2530;
+    --rule-soft: #171c25;
+    --ink: #e6ebf2;
+    --dim: #8a93a3;
+    --faint: #5a6373;
+    --accent: oklch(70% 0.16 250);
+    --accent-soft: oklch(28% 0.10 250);
+    --warm: oklch(72% 0.17 35);
+    --cold: oklch(72% 0.14 220);
+    --graph: oklch(72% 0.16 165);
+    --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* A4 portrait, single page. Margins kept tight so the dark canvas
+     reaches the page edges when printed (Chrome's `--no-pdf-header-footer`
+     plus background printing render this faithfully). */
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  body {
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 11mm 12mm 10mm;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.025) 1px, transparent 0);
+    background-size: 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 5mm;
+  }
+
+  /* ─── Header ────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 5mm;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 30px; height: 30px; color: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .brand-name { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand-tag { font-size: 10px; color: var(--dim); margin-top: 1px; }
+  .meta { text-align: right; font-family: var(--font-mono); font-size: 9.5px; color: var(--dim); line-height: 1.7; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+  .pill {
+    display: inline-block;
+    font-family: var(--font-mono); font-size: 9px;
+    padding: 2px 7px; border-radius: 999px;
+    border: 1px solid var(--rule); color: var(--accent);
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+
+  /* ─── Hero ──────────────────────────────────────── */
+  .hero { padding-top: 1mm; }
+  .kicker {
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 3mm;
+  }
+  h1 {
+    font-size: 21px; font-weight: 700; letter-spacing: -0.024em;
+    line-height: 1.1; margin: 0 0 2.5mm; max-width: 165mm;
+  }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lede {
+    font-size: 11.5px; color: var(--dim); max-width: 170mm; line-height: 1.55;
+    margin: 0;
+  }
+
+  /* ─── Generic section ───────────────────────────── */
+  section { display: flex; flex-direction: column; gap: 3mm; }
+  h2 {
+    font-size: 11px; margin: 0;
+    font-family: var(--font-mono); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink);
+  }
+  h2::before {
+    content: ""; display: inline-block; width: 6px; height: 6px;
+    background: var(--accent); border-radius: 999px;
+    margin-right: 8px; vertical-align: middle; transform: translateY(-1px);
+  }
+
+  /* ─── 3 tiers ──────────────────────────────────── */
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .tier {
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 8px; padding: 4.5mm 5mm;
+    display: flex; flex-direction: column; gap: 2mm;
+  }
+  .tier-head { display: flex; align-items: center; gap: 7px; }
+  .tier-dot { width: 8px; height: 8px; border-radius: 999px; }
+  .tier.warm  .tier-dot { background: var(--warm);  box-shadow: 0 0 0 3px color-mix(in oklab, var(--warm)  20%, transparent); }
+  .tier.cold  .tier-dot { background: var(--cold);  box-shadow: 0 0 0 3px color-mix(in oklab, var(--cold)  20%, transparent); }
+  .tier.graph .tier-dot { background: var(--graph); box-shadow: 0 0 0 3px color-mix(in oklab, var(--graph) 20%, transparent); }
+  .tier-name { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+  .tier-tech { font-family: var(--font-mono); font-size: 9px; color: var(--faint); margin-left: auto; }
+  .tier-body { font-size: 10px; color: var(--dim); line-height: 1.5; }
+  .tier-body b { color: var(--ink); font-weight: 500; }
+
+  /* ─── Capabilities + use cases (two-col band) ──── */
+  .band { display: grid; grid-template-columns: 1.05fr 1fr; gap: 6mm; }
+  .col-title { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); margin-bottom: 2.5mm; }
+  ul.feat { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2mm; }
+  ul.feat.feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 6mm; }
+  ul.feat li { display: flex; gap: 8px; font-size: 10px; line-height: 1.5; color: var(--dim); }
+  ul.feat li::before {
+    content: "▸"; color: var(--accent); font-size: 9px; line-height: 1.55; flex-shrink: 0;
+  }
+  ul.feat b { color: var(--ink); font-weight: 500; }
+
+  /* ─── Three deploys ────────────────────────────── */
+  .deploys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .deploy {
+    background: var(--subtle); border: 1px solid var(--rule-soft);
+    border-radius: 8px; padding: 4mm 5mm;
+  }
+  .deploy-h { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); margin-bottom: 2mm; }
+  .deploy-h .scale { color: var(--faint); font-size: 8.5px; margin-left: 6px; }
+  .deploy-b { font-size: 9.5px; color: var(--dim); line-height: 1.5; }
+
+  /* ─── Specs strip ──────────────────────────────── */
+  .specs {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 4mm;
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    padding: 4mm 0;
+  }
+  .specs.specs-3 { grid-template-columns: repeat(3, 1fr); }
+  .spec { display: flex; flex-direction: column; gap: 1mm; }
+  .spec-label { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+  .spec-value { font-size: 10px; color: var(--ink); line-height: 1.45; }
+  .spec-value code {
+    font-family: var(--font-mono); font-size: 9px;
+    color: var(--accent); background: transparent;
+  }
+
+  /* ─── Footer / CTA ─────────────────────────────── */
+  footer {
+    margin-top: auto;
+    border-top: 1px solid var(--rule);
+    padding-top: 5mm;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 6mm;
+  }
+  .footer-left { display: flex; flex-direction: column; gap: 1.5mm; }
+  .footer-cta { font-size: 11.5px; font-weight: 600; color: var(--ink); letter-spacing: -0.005em; }
+  .footer-sub { font-size: 9.5px; color: var(--dim); }
+  .links { display: flex; flex-direction: column; gap: 1mm; font-family: var(--font-mono); font-size: 9.5px; text-align: right; line-height: 1.5; }
+  .links a { color: var(--ink); text-decoration: none; }
+  .links span.k { color: var(--faint); margin-right: 6px; }
+
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="brand">
+      <div class="brand-mark">
+        <!-- Synapse / connected-nodes mark, matches the landing favicon family -->
+        <svg width="30" height="30" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="6" cy="9" r="2.5" fill="currentColor"/>
+          <circle cx="26" cy="9" r="2.5" fill="currentColor"/>
+          <circle cx="16" cy="22" r="2.5" fill="currentColor"/>
+          <circle cx="16" cy="6" r="1.6" fill="currentColor" opacity="0.5"/>
+          <path d="M6 9 L16 22 L26 9 M6 9 L26 9 M16 6 L16 22"
+                stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">novamem</div>
+        <div class="brand-tag">Tiered memory for AI agents · Apache-2.0 · self-hostable</div>
+      </div>
+    </div>
+    <div class="meta">
+      <strong>azrtydxb.github.io/novamem</strong>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="kicker">One memory across every AI agent you use</div>
+    <h1>The persistence layer your agents <em>were already supposed to have</em>.</h1>
+    <p class="lede">
+      LLMs forget every session. RAG silos every codebase. Each new agent re-discovers what the last one already learned.
+      <strong style="color:var(--ink);font-weight:500">novamem</strong> is a single self-hostable service that gives Claude, ChatGPT, Cursor, Cline, Codex,
+      and any other MCP- or HTTP-speaking agent a shared, durable memory — with hybrid retrieval, per-user
+      isolation, and team-shareable sub-brains.
+    </p>
+  </div>
+
+  <section>
+    <h2>How it works — three retrieval signals, fused into one ranked answer</h2>
+    <div class="tiers">
+      <div class="tier warm">
+        <div class="tier-head"><span class="tier-dot"></span><span class="tier-name">Warm</span><span class="tier-tech">Postgres</span></div>
+        <div class="tier-body"><b>Keyword-first hot path.</b> Full-text search over every entry the user has ever written. Sub-millisecond. The default for "what did I just say."</div>
+      </div>
+      <div class="tier cold">
+        <div class="tier-head"><span class="tier-dot"></span><span class="tier-name">Cold</span><span class="tier-tech">Qdrant</span></div>
+        <div class="tier-body"><b>Vector recall over older memory.</b> Semantic similarity finds the entry whose words don't match but whose meaning does — the deep archive of long-decayed context.</div>
+      </div>
+      <div class="tier graph">
+        <div class="tier-head"><span class="tier-dot"></span><span class="tier-name">Graph</span><span class="tier-tech">FalkorDB</span></div>
+        <div class="tier-body"><b>Adjacency from edges.</b> Memories link to related memories. The graph surfaces context next-door — what was filed near this idea, on this project, by this collaborator.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="band">
+    <section>
+      <h2>What you get</h2>
+      <ul class="feat">
+        <li><span><b>Hybrid search by default.</b> One call returns warm + cold + graph signals fused with tunable per-signal weights.</span></li>
+        <li><span><b>Worthiness gate + dedup.</b> Trivial filler is rejected; near-duplicates merge — memory stays signal-dense.</span></li>
+        <li><span><b>Decay + dream cycle.</b> Stale entries fade; the daily compaction pass promotes graph edges between related memories.</span></li>
+        <li><span><b>Projects (sub-brains).</b> Per-user isolation by default, with shareable project scopes for team workflows.</span></li>
+        <li><span><b>Two transports, one engine.</b> JSON HTTP <em>and</em> MCP (Streamable HTTP + SSE) over the same store.</span></li>
+        <li><span><b>Built-in dashboard.</b> Sign-in, tokens, browse / today / graph / metrics — no third-party UI to wire up.</span></li>
+      </ul>
+    </section>
+    <section>
+      <h2>Why you'd want it</h2>
+      <ul class="feat">
+        <li><span><b>You switch agents constantly.</b> Claude, ChatGPT, Cursor, Cline, Codex — and each one starts the day with no idea what you did yesterday. novamem is the layer that remembers, so the agent doesn't have to.</span></li>
+        <li><span><b>Your team needs shared context.</b> A project sub-brain that on-call rotation, post-mortems, and design decisions all write into — every agent, every teammate, reads from the same place.</span></li>
+        <li><span><b>Long-running investigations.</b> A research project that spans months and many conversations needs a memory that doesn't get truncated when the context window fills up.</span></li>
+        <li><span><b>You don't want SaaS.</b> Self-hostable, Apache-2.0, your data stays on your infra. Same code from a laptop Compose stack to a multi-tenant Kubernetes deploy.</span></li>
+      </ul>
+    </section>
+  </div>
+
+  <section>
+    <h2>Three deploys — same product, different scale</h2>
+    <div class="deploys">
+      <div class="deploy">
+        <div class="deploy-h">Laptop <span class="scale">solo</span></div>
+        <div class="deploy-b">Docker Compose, single user, no auth. Stand it up with one command and connect every host on your machine via the <code style="color:var(--accent);font-family:var(--font-mono);font-size:9.5px">novamem-init</code> CLI.</div>
+      </div>
+      <div class="deploy">
+        <div class="deploy-h">Homelab <span class="scale">team</span></div>
+        <div class="deploy-b">Self-hosted Kubernetes / k3s. Multi-user with Better Auth, per-user bearer tokens, project sharing, and the admin dashboard for tenant + token CRUD.</div>
+      </div>
+      <div class="deploy">
+        <div class="deploy-h">Multi-tenant <span class="scale">org</span></div>
+        <div class="deploy-b">Same code, multi-tenant mode. Per-tenant isolation, audit log, Prometheus metrics, JWT/JWKS for service-to-service. Run a memory backbone for a whole company.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="specs specs-3">
+    <div class="spec">
+      <div class="spec-label">Stack</div>
+      <div class="spec-value">Fastify · TypeScript · Postgres · Qdrant · FalkorDB</div>
+    </div>
+    <div class="spec">
+      <div class="spec-label">Transports</div>
+      <div class="spec-value">HTTP/JSON · MCP <code>Streamable</code> · MCP <code>SSE</code></div>
+    </div>
+    <div class="spec">
+      <div class="spec-label">Auth modes</div>
+      <div class="spec-value"><code>bearer</code> · <code>user</code> (Better Auth)</div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-left">
+      <div class="footer-cta">Give your agents a memory.</div>
+      <div class="footer-sub">Self-hostable in minutes. Apache-2.0. No SaaS dependency. No vendor lock-in.</div>
+    </div>
+    <div class="links">
+      <div><span class="k">docs</span><a>azrtydxb.github.io/novamem</a></div>
+      <div><span class="k">code</span><a>github.com/azrtydxb/novamem</a></div>
+      <div><span class="k">npm </span><a>@azrtydxb/novamem-init</a></div>
+      <div><span class="k">img </span><a>ghcr.io/azrtydxb/novamem</a></div>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
