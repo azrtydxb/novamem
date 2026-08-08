@@ -123,6 +123,35 @@ There are two metric layers:
    - `safety.forbiddenHitRateAtK` — how often superseded/forbidden memories appear in top-K.
    - `latency` — average, p95, and max retrieval latency.
 
+### Scores are not comparable across embedding models
+
+Two measurements from a 50-question LongMemEval slice on `nova-bench`
+(bge-m3, 1024-dim) that are easy to get wrong:
+
+**`DEFAULT_WEIGHTS` are calibrated for a weak embedder.** With bge-m3,
+searching with `{ keyword: 0, vector: 1, graph: 0, recency: 0, entity: 0 }`
+beat the shipped defaults on every retrieval metric — hit@5 92% → 100%,
+Recall@10 50.3% → 56.9%, MRR 0.9 → 1.0 — and reproduced on a disjoint
+60-question set (hit@10 95.0% → 98.3%, Recall@20 70.1% → 75.4%). `ts_rank`
+is max-normalised per query, so the best lexical match in a result set
+always scores 1.0 and takes its full 0.25 weight even when it is a poor
+match, which is enough to outrank a strong semantic hit. The defaults are
+unchanged — they still suit stores of short factual memories where exact
+identifiers matter — but a deployment using a strong embedder on prose
+should measure before trusting them.
+
+**Recency contributes nothing on imported corpora.** A `recency: 0` arm
+scored byte-identical to the default. Every entry ingested in one batch
+has the same `updated_at`, so the signal is a constant that consumes 10%
+of the weight mass and carries no information.
+
+**There is no model-independent "this was a miss" score.** Measured
+question-to-chunk cosines under bge-m3: relevant chunks 0.455–0.651,
+irrelevant chunks 0.448–0.564. The bands overlap almost entirely, and the
+top-1 result cleared 0.4 on 50 of 50 queries — so a fixed cutoff cannot
+detect a miss on this model. Decide from content, and calibrate any floor
+against the deployed model.
+
 Do not compare tiny-fixture `Recall@5` smoke-test numbers with public LongMemEval/Mem0 leaderboards. Public comparisons require running the same dataset and reporting the comparable `accuracy` percentages at the same top-k cutoffs, with the answerer and judge models recorded.
 
 ## LongMemEval live comparison guardrails

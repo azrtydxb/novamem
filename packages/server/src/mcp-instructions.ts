@@ -32,7 +32,7 @@ Projects: \`project_list\`, \`project_create\`, \`project_delete\`, \`project_ac
 
 ## When to search
 
-Search before: prior-work references, non-trivial design choices, unstated preferences/conventions, unfamiliar project areas, or any question where durable context may change the answer. If every hit scores below about 0.4, treat it as a miss.
+Search before: prior-work references, non-trivial design choices, unstated preferences/conventions, unfamiliar project areas, or any question where durable context may change the answer. Judge hits by whether the content actually answers the question, not by an absolute score: the usable score range depends on the deployed embedding model, and on some models (bge-m3) relevant and irrelevant hits overlap so heavily that no fixed cutoff separates them.
 
 Default search weights are tuned for prose. Useful overrides: \`{ keyword: 1, vector: 0 }\` for exact ids/symbols/hashes; \`{ vector: 1, keyword: 0 }\` for semantic recall; \`{ graph: 1 }\` for neighbour-driven recall.
 

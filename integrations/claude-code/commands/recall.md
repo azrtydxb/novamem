@@ -13,8 +13,9 @@ below. Use defaults unless the query strongly hints otherwise:
   pass `weights: { vector: 1, keyword: 0 }`.
 
 Cap at `k: 10`. Show results compactly: id (short hash), score, tier,
-1-line content excerpt. If every score < 0.4, say "no strong matches"
-and stop — don't pad with low-confidence hits.
+1-line content excerpt. If nothing in the returned content actually answers the
+query, say "no strong matches" and stop — don't pad with irrelevant hits. Don't
+gate on an absolute score: the usable range is model-dependent.
 
 QUERY:
 $ARGUMENTS
