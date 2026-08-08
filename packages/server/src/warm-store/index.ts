@@ -1028,13 +1028,18 @@ export class WarmStore {
   /** Look up an existing entry by content hash within a user's scope.
    *  Used by the worthiness gate to short-circuit exact duplicates
    *  without re-embedding. Returns the existing entry's id when found. */
+  /** The match's `namespace` is returned alongside its id because the
+   *  dedup scope (user, project, hash) deliberately spans namespaces: the
+   *  hit may live on a different shelf than the caller is writing to.
+   *  Callers that go on to touch namespace-scoped storage must use the
+   *  entry's own namespace, not the request's. */
   async findByContentHash(
     userId: string,
     projectId: string | null,
     contentHash: string,
-  ): Promise<string | null> {
+  ): Promise<{ id: string; namespace: string } | null> {
     const [row] = await this.db
-      .select({ id: schema.memoryEntries.id })
+      .select({ id: schema.memoryEntries.id, namespace: schema.memoryEntries.namespace })
       .from(schema.memoryEntries)
       .where(
         and(
@@ -1046,7 +1051,7 @@ export class WarmStore {
         ),
       )
       .limit(1);
-    return row?.id ?? null;
+    return row ? { id: row.id, namespace: row.namespace } : null;
   }
 
   /** Update an existing entry's content and/or metadata in-place.

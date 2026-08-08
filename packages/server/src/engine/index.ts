@@ -203,6 +203,13 @@ const OVERFETCH_FACTOR = 3;
  *  restatements of one another; only the higher-ranked one is returned. */
 const RESULT_DIVERSITY_MAX_JACCARD = 0.75;
 
+/** Ceiling on how many candidates the coherence reranker is shown. The
+ *  prompt inlines 600 chars each and asks for a permutation back within a
+ *  200-token budget, so the list has to stay small enough for the model to
+ *  actually enumerate. Reranking beyond the caller's k is wasted work in
+ *  any case. */
+const COHERENCE_RERANK_MAX_CANDIDATES = 40;
+
 const SENSITIVITY_ORDER: Record<SensitivityLevel, number> = { public: 0, internal: 1, private: 2, sensitive: 3 };
 const DEFAULT_MAX_SENSITIVITY: SensitivityLevel = "private";
 
@@ -715,7 +722,7 @@ export class MemoryEngine {
       );
       if (existing) {
         span.setAttribute("novamem.deduplicated", true);
-        await traceAsync("WarmStore.bumpHits", { "novamem.entry_id": existing }, () => this.warm.bumpHits(existing));
+        await traceAsync("WarmStore.bumpHits", { "novamem.entry_id": existing.id }, () => this.warm.bumpHits(existing.id));
         // Self-heal the insert-side partial write. If a previous attempt
         // stored the warm row and then died before the cold upsert (embed
         // failure, Qdrant blip), the entry has no vector and is invisible
@@ -723,12 +730,19 @@ export class MemoryEngine {
         // return the id and bump hits without ever noticing. The delete
         // side has had a repair queue (`cold_orphans` + reaper) all
         // along; this is its missing twin.
-        await this.backfillMissingVector(userId, projectId, existing, namespace, req);
+        //
+        // Repair the entry where it actually lives. Dedup matches on
+        // (user, project, hash) with namespace excluded, so `existing`
+        // may sit on a different shelf than this request targets. Passing
+        // the *request's* namespace made this "repair" index the entry
+        // under a namespace it was never written to, and search scoped to
+        // that namespace then returned it — a cross-shelf leak.
+        await this.backfillMissingVector(userId, projectId, existing.id, existing.namespace, req);
         this.metrics?.recordRemember(userId, token);
         // The dedup target may itself be an outage-window row with no
         // vector. Report its real state rather than inheriting this
         // call's optimism.
-        return { id: existing, deduplicated: true, embedded: await this.warm.isEmbedded(existing) };
+        return { id: existing.id, deduplicated: true, embedded: await this.warm.isEmbedded(existing.id) };
       }
       const id = await traceAsync("WarmStore.insertEntry", { "novamem.namespace": namespace }, () =>
         this.warm.insertEntry({
@@ -880,7 +894,7 @@ export class MemoryEngine {
       const contentHash = sha256Hex(text.trim());
       const existing = await this.warm.findByContentHash(args.userId, args.projectId, contentHash);
       if (existing) {
-        await this.warm.bumpHits(existing);
+        await this.warm.bumpHits(existing.id);
         continue;
       }
       // ── Mem0-style updation (arch-plan gap #2) ───────────────────────
@@ -1192,15 +1206,19 @@ export class MemoryEngine {
     const contentHash = sha256Hex(req.content.trim());
     const exact = await this.warm.findByContentHash(userId, projectId, contentHash);
     if (exact) {
-      await this.warm.bumpHits(exact);
+      await this.warm.bumpHits(exact.id);
       // Same self-heal as remember()'s dedup fast-path: an entry whose
       // cold upsert failed on an earlier attempt would otherwise stay
       // invisible to vector search forever, because this short-circuit
       // never re-embeds. capture() is the agent-facing write path, so
       // it matters most here.
-      await this.backfillMissingVector(userId, projectId, exact, namespace, req);
+      //
+      // Repaired in the entry's own namespace, not the request's — see
+      // the matching note in remember(). Dedup spans namespaces, so these
+      // can differ, and using the request's leaked entries across shelves.
+      await this.backfillMissingVector(userId, projectId, exact.id, exact.namespace, req);
       this.metrics?.recordRemember(userId, token);
-      return { id: exact, deduplicated: true, embedded: await this.warm.isEmbedded(exact) };
+      return { id: exact.id, deduplicated: true, embedded: await this.warm.isEmbedded(exact.id) };
     }
 
     // This embed only powers the near-duplicate lookup, and unlike
@@ -1803,15 +1821,25 @@ export class MemoryEngine {
     // order best supporting the question. Drops fused candidates the LLM
     // considers irrelevant or duplicative.
     if (req.decompose && this.decomposer && fused.length >= 2) {
-      const memTexts = fused.map((f) => entryById.get(f.id)?.content ?? "");
+      // Rerank the head, not the whole over-fetch pool. `fused` holds up
+      // to k * OVERFETCH_FACTOR candidates — 600 at k=200 — and the
+      // rerank prompt inlines 600 chars of each, so passing all of them
+      // built a ~360KB prompt and asked for a 600-element permutation
+      // back inside a 200-token budget and a 12s timeout. It could only
+      // ever time out or come back truncated. Reranking is a top-of-list
+      // concern anyway: nothing below the cutoff can reach the caller.
+      const rerankCount = Math.min(fused.length, k, COHERENCE_RERANK_MAX_CANDIDATES);
+      const head = fused.slice(0, rerankCount);
+      const tail = fused.slice(rerankCount);
+      const memTexts = head.map((f) => entryById.get(f.id)?.content ?? "");
       try {
         const newOrder = await traceAsync(
           "QueryDecomposer.coherenceRerank",
-          { "novamem.candidate_count": fused.length },
+          { "novamem.candidate_count": head.length },
           () => this.decomposer!.coherenceRerank(req.query, memTexts),
         );
-        if (newOrder && newOrder.length === fused.length) {
-          fused = newOrder.map((i) => fused[i]!);
+        if (newOrder && newOrder.length === head.length) {
+          fused = [...newOrder.map((i) => head[i]!), ...tail];
         }
       } catch (err) {
         this.logger.warn({ err: (err as Error).message }, "coherenceRerank failed");

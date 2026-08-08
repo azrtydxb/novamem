@@ -901,8 +901,12 @@ export class FakeWarmStore {
     userId: string,
     projectId: string | null,
     contentHash: string,
-  ): Promise<string | null> {
-    return this.contentHashIdx.get(`${userId}:${projectId ?? ""}:${contentHash}`) ?? null;
+  ): Promise<{ id: string; namespace: string } | null> {
+    const id = this.contentHashIdx.get(`${userId}:${projectId ?? ""}:${contentHash}`);
+    if (!id) return null;
+    // The dedup scope spans namespaces, so the hit's own namespace is the
+    // part callers actually need — mirror the real store and report it.
+    return { id, namespace: this.rows.get(id)?.namespace ?? "default" };
   }
 
   async updateEntry(args: {
@@ -1066,8 +1070,27 @@ export class FakeColdStore {
   }
 
 
-  async existingIds(entries: Array<{ id: string }>): Promise<Set<string>> {
-    return new Set(entries.filter((e) => this.vectors.has(e.id)).map((e) => e.id));
+  /** Real Qdrant keeps one collection per (user|project × namespace) and
+   *  this lookup only ever reads the caller's collection. Ignoring the
+   *  scope here made the fake unable to express any bug where a vector is
+   *  looked for in the wrong namespace — it answered "present" for an id
+   *  living on a different shelf entirely. */
+  async existingIds(
+    entries: Array<{ id: string; userId: string; projectId: string | null; namespace: string }>,
+  ): Promise<Set<string>> {
+    return new Set(
+      entries
+        .filter((e) => {
+          const v = this.vectors.get(e.id);
+          return (
+            v !== undefined &&
+            v.userId === e.userId &&
+            v.namespace === e.namespace &&
+            (v.projectId ?? null) === (e.projectId ?? null)
+          );
+        })
+        .map((e) => e.id),
+    );
   }
 
   async delete(
