@@ -29,6 +29,11 @@ export interface FakeWarmRow {
   createdAt: Date;
   hits: number;
   lastAccessed: Date;
+  /** Persisted and projected by `getEntry`. The updation path filters
+   *  candidates on `sourceType === "fact"`, so these have to round-trip
+   *  or that branch silently never runs. */
+  sourceType: string | null;
+  confidence?: number;
 }
 
 export class FakeWarmStore {
@@ -1323,11 +1328,14 @@ export interface MakeEngineOpts {
    *  fake stores and wires it into the engine. Default false. */
   withMetrics?: boolean;
   /** Inject a fact extractor to exercise the write-time extraction and
-   *  Mem0-style updation path, which is otherwise disabled in tests. */
-  extractor?: {
-    extract(content: string): Promise<unknown[]>;
-    decideOperation(newText: string, existing: unknown[]): Promise<{ op: string; targetId?: string }>;
-  };
+   *  Mem0-style updation path, which is otherwise disabled in tests.
+   *  Typed against the real contract — a stub that drifts from
+   *  `FactExtractor` should fail to compile rather than fail at runtime.
+   *  Only the two methods the engine calls are required. */
+  extractor?: Pick<
+    import("./engine/fact-extractor.js").FactExtractor,
+    "extract" | "decideOperation"
+  >;
 }
 
 export interface MakeEngineResult {
@@ -1370,7 +1378,10 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
     minVectorScore: opts.minVectorScore ?? 0,
     maxContentChars: opts.maxContentChars,
     personalTerms: opts.personalTerms,
-    extractor: opts.extractor as never,
+    // The engine's field is the full class; a stub implementing the two
+    // methods it actually calls is sufficient and is type-checked as such
+    // by MakeEngineOpts above.
+    extractor: opts.extractor as import("./engine/fact-extractor.js").FactExtractor | undefined,
   });
   return { engine, warm, cold, graph, embedder, metrics };
 }

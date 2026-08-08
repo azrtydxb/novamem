@@ -65,8 +65,18 @@ async function runWithNeighbourScore(score: number): Promise<number> {
   b.cold.search = async () => [{ id: neighbourId, score, payload: {} }];
 
   await b.engine.remember("u1", { content: "a chunk mentioning coffee preferences", force: true });
-  // Extraction is fire-and-forget; let the floating promise settle.
-  await new Promise((r) => setTimeout(r, 20));
+  // Extraction is fire-and-forget, so wait on the side effect rather than
+  // a fixed delay: poll until the extracted fact row appears. A sleep long
+  // enough to be safe on a loaded runner would slow every run, and one
+  // short enough to be quick would flake.
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const stored = [...b.warm.rows.values()].some(
+      (r) => r.sourceType === "fact" && r.content.includes("oat milk"),
+    );
+    if (stored) break;
+    await new Promise((r) => setTimeout(r, 5));
+  }
   return decisions.calls;
 }
 
