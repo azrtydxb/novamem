@@ -29,6 +29,11 @@ export interface FakeWarmRow {
   createdAt: Date;
   hits: number;
   lastAccessed: Date;
+  /** Persisted and projected by `getEntry`. The updation path filters
+   *  candidates on `sourceType === "fact"`, so these have to round-trip
+   *  or that branch silently never runs. */
+  sourceType: string | null;
+  confidence?: number;
 }
 
 export class FakeWarmStore {
@@ -321,6 +326,12 @@ export class FakeWarmStore {
       createdAt: new Date(),
       hits: 0,
       lastAccessed: new Date(),
+      // Accepted as an argument but previously discarded, so every stored
+      // row read back as sourceType null. The updation path only compares
+      // against rows whose sourceType is "fact", so that branch could
+      // never run under test.
+      sourceType: args.sourceType ?? null,
+      confidence: args.confidence,
     });
     if (args.contentHash) {
       this.contentHashIdx.set(
@@ -447,6 +458,11 @@ export class FakeWarmStore {
       cold: r.cold,
       createdAt: r.createdAt,
       updatedAt: r.createdAt,
+      // The updation path filters candidates on `sourceType === "fact"`,
+      // so omitting it here made every candidate look like a raw chunk
+      // and silently disabled that whole branch in tests.
+      sourceType: r.sourceType ?? null,
+      confidence: r.confidence ?? null,
     };
   }
 
@@ -1311,6 +1327,15 @@ export interface MakeEngineOpts {
   /** When true, builds a `MetricsCollector`, binds gauge sources to the
    *  fake stores and wires it into the engine. Default false. */
   withMetrics?: boolean;
+  /** Inject a fact extractor to exercise the write-time extraction and
+   *  Mem0-style updation path, which is otherwise disabled in tests.
+   *  Typed against the real contract — a stub that drifts from
+   *  `FactExtractor` should fail to compile rather than fail at runtime.
+   *  Only the two methods the engine calls are required. */
+  extractor?: Pick<
+    import("./engine/fact-extractor.js").FactExtractor,
+    "extract" | "decideOperation"
+  >;
 }
 
 export interface MakeEngineResult {
@@ -1353,6 +1378,10 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
     minVectorScore: opts.minVectorScore ?? 0,
     maxContentChars: opts.maxContentChars,
     personalTerms: opts.personalTerms,
+    // The engine's field is the full class; a stub implementing the two
+    // methods it actually calls is sufficient and is type-checked as such
+    // by MakeEngineOpts above.
+    extractor: opts.extractor as import("./engine/fact-extractor.js").FactExtractor | undefined,
   });
   return { engine, warm, cold, graph, embedder, metrics };
 }
