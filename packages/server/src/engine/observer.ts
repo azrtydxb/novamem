@@ -15,6 +15,7 @@
  */
 
 import type { WarmStore } from "../warm-store/index.js";
+import { chatCompletionsURL } from "./endpoint-url.js";
 
 export interface ObserverConfig {
   endpoint: string;
@@ -80,7 +81,7 @@ export class Observer {
 
   /** Call the LLM with system + user prompt. */
   private async llm(system: string, user: string, maxTokens: number): Promise<string> {
-    const url = this.cfg.endpoint.replace(/\/+$/, "") + "/chat/completions";
+    const url = chatCompletionsURL(this.cfg.endpoint);
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",

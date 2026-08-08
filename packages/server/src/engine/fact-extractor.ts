@@ -13,6 +13,7 @@
  * write-side LLM cost to one call per chunk.
  */
 
+import { chatCompletionsURL } from "./endpoint-url.js";
 export type FactType = "preference" | "fact" | "event" | "task" | "knowledge";
 
 export interface ExtractedFact {
@@ -190,7 +191,7 @@ export class FactExtractor {
   }
 
   private async extractUnlimited(content: string): Promise<ExtractedFact[]> {
-    const url = this.cfg.endpoint.replace(/\/+$/, "") + "/chat/completions";
+    const url = chatCompletionsURL(this.cfg.endpoint);
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
@@ -236,7 +237,7 @@ export class FactExtractor {
     if (!existing.length) return { op: "ADD" };
     await this.sem.acquire();
     try {
-      const url = this.cfg.endpoint.replace(/\/+$/, "") + "/chat/completions";
+      const url = chatCompletionsURL(this.cfg.endpoint);
       const headers: Record<string, string> = {
         "content-type": "application/json",
         accept: "application/json",

@@ -12,6 +12,7 @@
  * Borrowed from Exabase Mneme M-1's three-stage pipeline.
  */
 
+import { chatCompletionsURL } from "./endpoint-url.js";
 export interface QueryDecomposerConfig {
   endpoint: string;
   model: string;
@@ -91,7 +92,7 @@ export class QueryDecomposer {
   async decompose(query: string): Promise<string[]> {
     const orig = query.trim();
     if (!orig) return [];
-    const url = this.cfg.endpoint.replace(/\/+$/, "") + "/chat/completions";
+    const url = chatCompletionsURL(this.cfg.endpoint);
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
@@ -136,7 +137,7 @@ export class QueryDecomposer {
    *  Disabled by default unless config.coherenceRerank=true. */
   async coherenceRerank(query: string, candidates: string[]): Promise<number[] | null> {
     if (!this.cfg.coherenceRerank || candidates.length < 2) return null;
-    const url = this.cfg.endpoint.replace(/\/+$/, "") + "/chat/completions";
+    const url = chatCompletionsURL(this.cfg.endpoint);
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
