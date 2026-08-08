@@ -7,6 +7,18 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
+/** Env-var boolean. Accepts real booleans (for programmatic callers) and
+ *  the usual string spellings, treating "0"/"false"/"no"/"off"/"" as
+ *  false. `z.coerce.boolean()` cannot be used for env vars: it applies JS
+ *  truthiness, so every non-empty string — including "false" — is true. */
+const EnvBoolean = z
+  .union([z.boolean(), z.string()])
+  .transform((v) => {
+    if (typeof v === "boolean") return v;
+    const s = v.trim().toLowerCase();
+    return s !== "" && s !== "0" && s !== "false" && s !== "no" && s !== "off";
+  });
+
 export const ConfigSchema = z
   .object({
     service: z.object({
@@ -26,7 +38,7 @@ export const ConfigSchema = z
       /** When true (NOVAMEM_INSECURE_COOKIES=1), session cookies are
        *  emitted without the Secure attribute so localhost dev over HTTP
        *  works. Production must leave this false. */
-      insecureCookies: z.coerce.boolean().default(false),
+      insecureCookies: EnvBoolean.default(false),
       /** Public-facing base URL for the service — used by Better Auth as
        *  its trusted origin / cookie domain. Defaults to
        *  http://${host}:${port} when unset. */
@@ -53,13 +65,24 @@ export const ConfigSchema = z
     cold: z.object({
       url: z.string(),
       vectorSize: z.coerce.number().int().positive().default(384),
+      /** Per-request Qdrant timeout in ms. */
+      timeoutMs: z.coerce.number().int().positive().default(15_000),
     }),
     graph: z
       .object({
-        enabled: z.coerce.boolean().default(true),
+        // NOT `z.coerce.boolean()`: that is JS truthiness, under which the
+        // *string* "false" (and "0", and "no") is `true`. Operators who
+        // set NOVAMEM_GRAPH_ENABLED=false got a fully enabled graph that
+        // then tried to reach redis://localhost:6379, marked every search
+        // `degraded`, and warn-spammed — the exact opposite of the
+        // documented behaviour. Parse env-style booleans explicitly, the
+        // way `admin.dashboard` below already did.
+        enabled: EnvBoolean.default(true),
         url: z.string().optional(),
+        /** Per-query FalkorDB timeout in ms. */
+        queryTimeoutMs: z.coerce.number().int().positive().default(10_000),
       })
-      .default({ enabled: true })
+      .default({ enabled: true, queryTimeoutMs: 10_000 })
       .refine((v) => !v.enabled || !!v.url, {
         message: "graph.enabled = true requires graph.url (NOVAMEM_GRAPH_URL)",
         path: ["url"],
@@ -70,7 +93,24 @@ export const ConfigSchema = z
       model: z.string().optional(),
       apiKey: z.string().optional(),
       dimensions: z.coerce.number().int().positive().default(384),
+      /** Per-request timeout for remote embedders. */
+      timeoutMs: z.coerce.number().int().positive().default(30_000),
+      /** Asymmetric-retrieval prefixes. Left unset, they're inferred from
+       *  the model id (e5 / bge families); set explicitly to override. */
+      queryPrefix: z.string().optional(),
+      documentPrefix: z.string().optional(),
     }),
+    search: z.object({
+      /** Absolute cosine below which a vector-only candidate is treated as
+       *  noise rather than a hit. */
+      minVectorScore: z.coerce.number().min(0).max(1).default(0.25),
+      /** Reject writes longer than this many characters — beyond the
+       *  embedding model's window the tail is silently unsearchable. */
+      maxContentChars: z.coerce.number().int().min(0).default(4_000),
+      /** Deployment-specific high-relevance vocabulary for the worthiness
+       *  scorer (operator name, product names, project slugs). */
+      personalTerms: z.array(z.string()).default([]),
+    }).default({ minVectorScore: 0.25, maxContentChars: 4_000, personalTerms: [] }),
     decay: z.object({
       intervalMs: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
       defaultEffectiveDays: z.coerce.number().positive().default(7),
@@ -157,7 +197,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       rateLimitPerMinute: env.NOVAMEM_RATE_LIMIT_PER_MINUTE,
       logLevel: env.LOG_LEVEL,
       corsOrigins,
-      insecureCookies: env.NOVAMEM_INSECURE_COOKIES === "1",
+      // Raw string: EnvBoolean understands "1"/"true"/"yes"/"on" as well
+      // as the "0"/"false"/"no"/"off" spellings an operator is likely to
+      // reach for when explicitly turning this *off* in production.
+      insecureCookies: env.NOVAMEM_INSECURE_COOKIES,
       baseUrl,
       pgPoolMax: env.NOVAMEM_PG_POOL_MAX,
     },
@@ -171,10 +214,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cold: {
       url: env.NOVAMEM_COLD_URL ?? "http://localhost:6333",
       vectorSize: env.NOVAMEM_COLD_VECTOR_SIZE,
+      timeoutMs: env.NOVAMEM_COLD_TIMEOUT_MS,
     },
     graph: {
       enabled: env.NOVAMEM_GRAPH_ENABLED ?? "true",
       url: env.NOVAMEM_GRAPH_URL ?? "redis://localhost:6379",
+      queryTimeoutMs: env.NOVAMEM_GRAPH_TIMEOUT_MS,
     },
     embeddings: {
       provider: env.NOVAMEM_EMBEDDINGS_PROVIDER,
@@ -182,6 +227,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       model: env.NOVAMEM_EMBEDDINGS_MODEL,
       apiKey: env.NOVAMEM_EMBEDDINGS_API_KEY,
       dimensions: env.NOVAMEM_EMBEDDINGS_DIM,
+      timeoutMs: env.NOVAMEM_EMBEDDINGS_TIMEOUT_MS,
+      queryPrefix: env.NOVAMEM_EMBEDDINGS_QUERY_PREFIX,
+      documentPrefix: env.NOVAMEM_EMBEDDINGS_DOCUMENT_PREFIX,
+    },
+    search: {
+      minVectorScore: env.NOVAMEM_SEARCH_MIN_VECTOR_SCORE,
+      maxContentChars: env.NOVAMEM_MAX_CONTENT_CHARS,
+      personalTerms: env.NOVAMEM_PERSONAL_TERMS
+        ? env.NOVAMEM_PERSONAL_TERMS.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined,
     },
     decay: {
       intervalMs: env.NOVAMEM_DECAY_INTERVAL_MS,

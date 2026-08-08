@@ -196,6 +196,33 @@ export class WarmStore {
          GENERATED ALWAYS AS (to_tsvector('english', content)) STORED`,
     );
     await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_fts_tsv ON memory_fts USING gin(tsv)`);
+    // Partial unique index backing the content-hash dedup fast-path.
+    // Without it, `findByContentHash` → `insertEntry` is check-then-act:
+    // two concurrent identical writes both miss the lookup and both
+    // insert. With it, the loser hits ON CONFLICT and adopts the winner's
+    // id. COALESCE because NULL project_id (user-global entries) would
+    // otherwise never collide with itself under SQL NULL semantics.
+    //
+    // Best-effort: a database that already accumulated duplicates from
+    // the racy era cannot build this index. That is not a reason to
+    // refuse to boot — the dedup lookup still works, it is just racy —
+    // so we log the conflict and carry on. `novamem-admin dedup` (or a
+    // dream cycle pass) collapses the duplicates, after which a restart
+    // creates the index.
+    try {
+      await this.pool.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_content_hash_scope
+           ON memory_entries (user_id, COALESCE(project_id, ''), content_hash)
+         WHERE content_hash IS NOT NULL`,
+      );
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[warm-store] could not create idx_entries_content_hash_scope (pre-existing duplicate ` +
+          `content hashes?): ${(err as Error).message}. Exact-duplicate writes remain racy until ` +
+          `the duplicates are collapsed and the service restarts.`,
+      );
+    }
   }
 
 
@@ -879,29 +906,92 @@ export class WarmStore {
     contentHash?: string | null;
   }): Promise<string> {
     const id = ulid();
-    await this.db.insert(schema.memoryEntries).values({
-      id,
-      userId: args.userId,
-      projectId: args.projectId ?? null,
-      content: args.content,
-      namespace: args.namespace,
-      source: args.source,
-      agentName: args.agentName ?? null,
-      metadata: args.metadata ?? {},
-      sourceType: args.sourceType ?? null,
-      capturedFrom: args.capturedFrom ?? null,
-      ...(args.confidence !== undefined ? { confidence: args.confidence } : {}),
-      contentHash: args.contentHash ?? null,
+    // All three rows in one transaction. Previously these were three
+    // independent statements: a crash (or a connection drop) between the
+    // entry insert and the FTS insert left a memory that keyword search
+    // could never see again, with nothing to repair it.
+    //
+    // `onConflictDoNothing` on the entry insert closes the check-then-act
+    // race in the caller's dedup fast-path (`findByContentHash` then
+    // insert): two concurrent identical writes both miss the lookup, and
+    // the partial unique index created in `ensureFtsExtras` makes the
+    // loser land here instead of creating a duplicate row.
+    return this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(schema.memoryEntries)
+        .values({
+          id,
+          userId: args.userId,
+          projectId: args.projectId ?? null,
+          content: args.content,
+          namespace: args.namespace,
+          source: args.source,
+          agentName: args.agentName ?? null,
+          metadata: args.metadata ?? {},
+          sourceType: args.sourceType ?? null,
+          capturedFrom: args.capturedFrom ?? null,
+          ...(args.confidence !== undefined ? { confidence: args.confidence } : {}),
+          contentHash: args.contentHash ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.memoryEntries.id });
+      const winner = inserted[0]?.id;
+      if (!winner) {
+        // Lost the race — a concurrent writer already stored this exact
+        // content in this scope. Return their id; the caller treats it as
+        // a dedup hit, which is what a sequential run would have produced.
+        const [existing] = await tx
+          .select({ id: schema.memoryEntries.id })
+          .from(schema.memoryEntries)
+          .where(
+            and(
+              eq(schema.memoryEntries.userId, args.userId),
+              eq(schema.memoryEntries.contentHash, args.contentHash ?? ""),
+              args.projectId == null
+                ? isNull(schema.memoryEntries.projectId)
+                : eq(schema.memoryEntries.projectId, args.projectId),
+            ),
+          )
+          .limit(1);
+        if (existing?.id) return existing.id;
+        throw new Error("insertEntry: conflict with no resolvable existing row");
+      }
+      await tx.insert(schema.memoryFts).values({
+        entryId: winner,
+        userId: args.userId,
+        projectId: args.projectId ?? null,
+        content: args.content,
+        namespace: args.namespace,
+      });
+      await tx.insert(schema.memoryAccess).values({ entryId: winner });
+      return winner;
     });
-    await this.db.insert(schema.memoryFts).values({
-      entryId: id,
-      userId: args.userId,
-      projectId: args.projectId ?? null,
-      content: args.content,
-      namespace: args.namespace,
-    });
-    await this.db.insert(schema.memoryAccess).values({ entryId: id });
-    return id;
+  }
+
+  /** Queue a warm entry whose cold vector is missing, so the reaper can
+   *  re-embed it. The mirror of the `delete`-kind orphan rows written by
+   *  `engine.forget()` when a Qdrant delete fails: this side covers the
+   *  case where a Qdrant *write* failed after the warm row committed. */
+  async recordMissingVector(args: {
+    userId: string;
+    projectId: string | null;
+    entryId: string;
+    namespace: string;
+  }): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO cold_orphans (id, user_id, namespace, project_id, kind, attempts, last_attempt_at)
+       VALUES ($1, $2, $3, $4, 'backfill', 0, NULL)
+       ON CONFLICT (id) DO UPDATE SET
+         kind = 'backfill',
+         namespace = EXCLUDED.namespace,
+         project_id = EXCLUDED.project_id`,
+      [args.entryId, args.userId, args.namespace, args.projectId],
+    );
+  }
+
+  /** Drop a backfill row once the vector is present again. */
+  async clearMissingVector(entryId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM cold_orphans WHERE id = $1 AND kind = 'backfill'`, [entryId]);
   }
 
   /** Look up an existing entry by content hash within a user's scope.
@@ -973,21 +1063,26 @@ export class WarmStore {
     if (args.capturedFrom !== undefined) patch.capturedFrom = args.capturedFrom;
     if (args.confidence !== undefined) patch.confidence = args.confidence;
     if (args.contentHash !== undefined) patch.contentHash = args.contentHash;
-    await this.db
-      .update(schema.memoryEntries)
-      .set(patch)
-      .where(eq(schema.memoryEntries.id, args.id));
-    // FTS shadow has its own row keyed by entry_id — refresh content +
-    // namespace when they change so keyword search picks up the rewrite.
-    if (args.content !== undefined || args.namespace !== undefined) {
-      const fPatch: Partial<typeof schema.memoryFts.$inferInsert> = {};
-      if (args.content !== undefined) fPatch.content = args.content;
-      if (args.namespace !== undefined) fPatch.namespace = args.namespace;
-      await this.db
-        .update(schema.memoryFts)
-        .set(fPatch)
-        .where(eq(schema.memoryFts.entryId, args.id));
-    }
+    // Entry row and FTS shadow move together or not at all — a failure
+    // between them would leave keyword search serving the old text while
+    // vector search served the new.
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(schema.memoryEntries)
+        .set(patch)
+        .where(eq(schema.memoryEntries.id, args.id));
+      // FTS shadow has its own row keyed by entry_id — refresh content +
+      // namespace when they change so keyword search picks up the rewrite.
+      if (args.content !== undefined || args.namespace !== undefined) {
+        const fPatch: Partial<typeof schema.memoryFts.$inferInsert> = {};
+        if (args.content !== undefined) fPatch.content = args.content;
+        if (args.namespace !== undefined) fPatch.namespace = args.namespace;
+        await tx
+          .update(schema.memoryFts)
+          .set(fPatch)
+          .where(eq(schema.memoryFts.entryId, args.id));
+      }
+    });
     return true;
   }
 
@@ -1058,12 +1153,6 @@ export class WarmStore {
   }): Promise<Array<{ id: string; score: number }>> {
     const isProject = args.projectId != null;
     const useNsArray = !!args.namespaces?.length;
-    // ts_rank + tsv + plainto_tsquery are Postgres-specific expressions —
-    // wrap each in `sql` so drizzle binds parameters but emits the raw
-    // operator. Memory_fts.tsv is a GENERATED column not in the schema;
-    // refer to it by raw column name.
-    const score = sql<number>`ts_rank(${schema.memoryFts}.tsv, plainto_tsquery('english', ${args.query}))`;
-    const tsvMatch = sql`${schema.memoryFts}.tsv @@ plainto_tsquery('english', ${args.query})`;
     const nsMatch = useNsArray
       ? inArray(schema.memoryFts.namespace, args.namespaces!)
       : eq(schema.memoryFts.namespace, args.namespace);
@@ -1071,29 +1160,66 @@ export class WarmStore {
       ? eq(schema.memoryFts.projectId, args.projectId!)
       : and(eq(schema.memoryFts.userId, args.userId), isNull(schema.memoryFts.projectId));
 
-    if (args.agentName !== undefined) {
-      // Agent filter requires the join to memory_entries since agent_name
-      // lives there, not on memory_fts.
-      const agentMatch =
-        args.agentName === null
-          ? isNull(schema.memoryEntries.agentName)
-          : eq(schema.memoryEntries.agentName, args.agentName);
+    // ── tsquery construction (AND-then-OR) ────────────────────────────
+    // The keyword tier used to build its query with `plainto_tsquery`,
+    // which ANDs every lexeme. That is fine for a hand-typed keyword
+    // search and actively broken for the way this tier is actually
+    // driven: `memory_context` passes the *entire user message* as the
+    // query, so a stored fact like "NovaMem runs on port 7778" could
+    // never match "what port does the novamem deployment run on in
+    // production" — every one of those lexemes had to appear in the same
+    // row. In practice the tier returned nothing on the primary grounding
+    // path and hybrid search silently collapsed to vector-only.
+    //
+    // `websearch_to_tsquery` is the modern equivalent and additionally
+    // understands quoted phrases and OR/-negation, so power users get
+    // operator syntax for free. We still try the strict (AND) form first
+    // because when it matches it is the most precise answer; only when it
+    // returns nothing do we fall back to the OR form, built by rewriting
+    // the parsed tsquery's `&` operators to `|`. Rewriting the *parsed*
+    // query (rather than the raw string) keeps stemming, stop-word
+    // removal, and phrase operators intact, and keeps the user's text a
+    // bound parameter throughout — there is no string interpolation here.
+    const strictQuery = sql`websearch_to_tsquery('english', ${args.query})`;
+    const looseQuery = sql`replace(websearch_to_tsquery('english', ${args.query})::text, '&', '|')::tsquery`;
+
+    const run = async (tsquery: ReturnType<typeof sql>) => {
+      // ts_rank + tsv are Postgres-specific expressions — wrap each in
+      // `sql` so drizzle binds parameters but emits the raw operator.
+      // memory_fts.tsv is a GENERATED column not in the schema; refer to
+      // it by raw column name. `ts_rank_cd` (cover density) rewards rows
+      // where the matched lexemes sit close together, which is what we
+      // want once the OR fallback lets partial matches through.
+      const score = sql<number>`ts_rank_cd(${schema.memoryFts}.tsv, ${tsquery})`;
+      const tsvMatch = sql`${schema.memoryFts}.tsv @@ ${tsquery}`;
+      if (args.agentName !== undefined) {
+        // Agent filter requires the join to memory_entries since
+        // agent_name lives there, not on memory_fts.
+        const agentMatch =
+          args.agentName === null
+            ? isNull(schema.memoryEntries.agentName)
+            : eq(schema.memoryEntries.agentName, args.agentName);
+        const rows = await this.db
+          .select({ id: schema.memoryFts.entryId, score })
+          .from(schema.memoryFts)
+          .innerJoin(schema.memoryEntries, eq(schema.memoryEntries.id, schema.memoryFts.entryId))
+          .where(and(nsMatch, scopeMatch, agentMatch, tsvMatch))
+          .orderBy(desc(score))
+          .limit(args.k);
+        return rows.map((r) => ({ id: r.id, score: Number(r.score) }));
+      }
       const rows = await this.db
         .select({ id: schema.memoryFts.entryId, score })
         .from(schema.memoryFts)
-        .innerJoin(schema.memoryEntries, eq(schema.memoryEntries.id, schema.memoryFts.entryId))
-        .where(and(nsMatch, scopeMatch, agentMatch, tsvMatch))
+        .where(and(nsMatch, scopeMatch, tsvMatch))
         .orderBy(desc(score))
         .limit(args.k);
       return rows.map((r) => ({ id: r.id, score: Number(r.score) }));
-    }
-    const rows = await this.db
-      .select({ id: schema.memoryFts.entryId, score })
-      .from(schema.memoryFts)
-      .where(and(nsMatch, scopeMatch, tsvMatch))
-      .orderBy(desc(score))
-      .limit(args.k);
-    return rows.map((r) => ({ id: r.id, score: Number(r.score) }));
+    };
+
+    const strict = await run(strictQuery);
+    if (strict.length > 0) return strict;
+    return run(looseQuery);
   }
 
   /** Look up a single entry, scoped to a user or project. This is the

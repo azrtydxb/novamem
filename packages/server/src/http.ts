@@ -199,13 +199,23 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   //   ["*"]           → reflect-any (true) — legacy permissive
   //   [origins…]      → exact allow-list
   const corsList = opts.corsOrigins;
+  const wildcardCors = corsList?.length === 1 && corsList[0] === "*";
   const corsOrigin: boolean | string[] =
-    !corsList || corsList.length === 0
-      ? false
-      : corsList.length === 1 && corsList[0] === "*"
-        ? true
-        : corsList;
-  app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false });
+    !corsList || corsList.length === 0 ? false : wildcardCors ? true : corsList;
+  // `credentials: true` alongside a reflect-any origin is the classic
+  // dangerous CORS combination: any site could read authenticated
+  // responses from this API. Cookies are SameSite=Lax and bearer auth
+  // isn't ambient, so it was never trivially exploitable — but the
+  // wildcard is a legacy escape hatch, and pairing it with credentials
+  // has no legitimate use. Credentialed CORS now requires an explicit
+  // origin allow-list.
+  if (wildcardCors) {
+    app.log.warn(
+      'NOVAMEM_CORS_ORIGINS="*" reflects every origin; credentialed cross-origin ' +
+        "requests are disabled. Set an explicit origin allow-list to use cookie/session auth from a browser.",
+    );
+  }
+  app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false && !wildcardCors });
 
   // Cookie support for HttpOnly session storage. Cookies are
   // signed with a server-side secret so any bit-flip / tamper invalidates

@@ -12,6 +12,7 @@
 #     proxy (Caddy, Traefik, nginx, …) on the same docker network. See
 #     docs/install/docker.md for the pattern.
 #   - falkordb is pinned to a stable release tag instead of `:edge`.
+#   - Session cookies are forced back to Secure-only.
 #
 # Anything not overridden here (volumes, healthchecks, env wiring) is
 # inherited from docker-compose.yaml.
@@ -29,3 +30,14 @@ services:
 
   novamem:
     ports: !reset []
+    environment:
+      # The base compose file defaults NOVAMEM_INSECURE_COOKIES to 1 so
+      # that `docker compose up` works over plain HTTP on localhost.
+      # Inheriting that default in production would emit session cookies
+      # without the Secure attribute: the browser holds an HTTPS session
+      # (TLS terminates at the reverse proxy) but will also send the
+      # cookie over any plain-HTTP request to the same host, which is
+      # exactly the window an SSL-strip / MITM attack needs. Production
+      # pins it off — set it explicitly in `.env` only if you know you
+      # are terminating TLS somewhere this file can't see.
+      NOVAMEM_INSECURE_COOKIES: "0"

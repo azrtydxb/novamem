@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_WEIGHTS, effectiveDays, fuse } from "./hybrid-search.js";
+import { DEFAULT_WEIGHTS, effectiveDays, fuse, rankPrior } from "./hybrid-search.js";
 
 describe("hybrid-search.fuse", () => {
-  it("normalizes per-signal scores before weighting", () => {
+  it("max-normalizes the keyword signal (ts_rank has no absolute scale)", () => {
     const out = fuse(
       [
         { id: "a", signals: { keyword: 10 } },
@@ -20,12 +20,66 @@ describe("hybrid-search.fuse", () => {
     expect(a.score).toBeGreaterThan(b.score);
   });
 
+  it("keeps the vector signal on its absolute cosine scale", () => {
+    // Regression for the max-normalisation bug: the best vector hit used
+    // to be rescaled to 1.0 no matter how weak it actually was, so a
+    // query with nothing relevant in the store still produced a
+    // confident-looking top score and the documented "top score < 0.4 is
+    // a miss" heuristic could never fire.
+    const strong = fuse([{ id: "a", signals: { vector: 0.9 } }], DEFAULT_WEIGHTS);
+    const weak = fuse([{ id: "a", signals: { vector: 0.3 } }], DEFAULT_WEIGHTS);
+    expect(strong[0]!.signals.vector).toBeCloseTo(0.9);
+    expect(weak[0]!.signals.vector).toBeCloseTo(0.3);
+    // Absolute, comparable across queries — and the weak one reads as a miss.
+    expect(strong[0]!.score).toBeCloseTo(0.9);
+    expect(weak[0]!.score).toBeCloseTo(0.3);
+    expect(weak[0]!.score).toBeLessThan(0.4);
+  });
+
+  it("drops vector-only candidates below the noise floor", () => {
+    const out = fuse(
+      [
+        { id: "noise", signals: { vector: 0.1 } },
+        { id: "real", signals: { vector: 0.8 } },
+      ],
+      DEFAULT_WEIGHTS,
+      { minVectorScore: 0.25 },
+    );
+    expect(out.map((r) => r.id)).toEqual(["real"]);
+  });
+
+  it("keeps a weak vector hit when another signal corroborates it", () => {
+    // The floor only applies to candidates with no other evidence — an
+    // exact keyword match at a low cosine is still a legitimate hit.
+    const out = fuse(
+      [
+        { id: "a", signals: { vector: 0.1 } },
+        { id: "a", signals: { keyword: 0.9 } },
+      ],
+      DEFAULT_WEIGHTS,
+      { minVectorScore: 0.25 },
+    );
+    expect(out.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("redistributes the weight of tiers that produced no candidates", () => {
+    // Vector-only result set: with fixed weights the score would be
+    // capped at 0.6 (the vector weight), making the absolute threshold
+    // mean something different depending on which tiers happened to run.
+    const out = fuse([{ id: "a", signals: { vector: 1.0 } }], DEFAULT_WEIGHTS);
+    expect(out[0]!.score).toBeCloseTo(1.0);
+  });
+
   it("returns results sorted by descending score", () => {
-    const out = fuse([
-      { id: "a", signals: { vector: 0.1 } },
-      { id: "b", signals: { vector: 0.9 } },
-      { id: "c", signals: { vector: 0.5 } },
-    ]);
+    const out = fuse(
+      [
+        { id: "a", signals: { vector: 0.1 } },
+        { id: "b", signals: { vector: 0.9 } },
+        { id: "c", signals: { vector: 0.5 } },
+      ],
+      DEFAULT_WEIGHTS,
+      { minVectorScore: 0 },
+    );
     expect(out.map((r) => r.id)).toEqual(["b", "c", "a"]);
   });
 
@@ -45,6 +99,10 @@ describe("hybrid-search.fuse", () => {
         { id: "c", signals: { keyword: 1.0 } },
       ],
       { keyword: 0.3, vector: 0.6, graph: 0.1 },
+      // Disable the noise floor so the zero-cosine rows survive to be
+      // asserted on; the point of this regression is the arithmetic, not
+      // the filtering (which is covered separately above).
+      { minVectorScore: 0 },
     );
     const a = out.find((r) => r.id === "a")!;
     const b = out.find((r) => r.id === "b")!;
@@ -68,6 +126,7 @@ describe("hybrid-search.fuse", () => {
         { id: "y", signals: { vector: -0.2 } },
       ],
       { keyword: 0, vector: 1, graph: 0 },
+      { minVectorScore: 0 },
     );
     for (const r of rawNeg) {
       expect(Number.isFinite(r.score)).toBe(true);
@@ -92,6 +151,39 @@ describe("hybrid-search.fuse", () => {
       { keyword: 0, vector: 1, graph: 0 },
     );
     expect(vectorHeavy[0]!.id).toBe("b");
+  });
+});
+
+describe("hybrid-search.rankPrior", () => {
+  it("is neutral-ish for a confident, type-agnostic memory", () => {
+    const p = rankPrior({ confidence: 1, memoryType: "user_preference", ageDays: 500 });
+    expect(p).toBeCloseTo(1.0);
+  });
+
+  it("discounts low-confidence memories", () => {
+    const sure = rankPrior({ confidence: 1, memoryType: "general", ageDays: 1 });
+    const unsure = rankPrior({ confidence: 0.2, memoryType: "general", ageDays: 1 });
+    expect(unsure).toBeLessThan(sure);
+    expect(unsure).toBeGreaterThanOrEqual(0.7);
+  });
+
+  it("boosts recent deployment state over stale deployment state", () => {
+    const fresh = rankPrior({ confidence: 1, memoryType: "deployment_state", ageDays: 1 });
+    const stale = rankPrior({ confidence: 1, memoryType: "deployment_state", ageDays: 400 });
+    expect(fresh).toBeGreaterThan(stale);
+    expect(fresh).toBeLessThanOrEqual(1.15);
+  });
+
+  it("does not apply a recency boost to timeless memory types", () => {
+    // A safety constraint doesn't become less true with age; boosting
+    // recent ones would just add noise to the ranking.
+    const fresh = rankPrior({ confidence: 1, memoryType: "safety_constraint", ageDays: 1 });
+    const old = rankPrior({ confidence: 1, memoryType: "safety_constraint", ageDays: 400 });
+    expect(fresh).toBeCloseTo(old);
+  });
+
+  it("treats missing metadata as fully confident and non-recency-sensitive", () => {
+    expect(rankPrior({})).toBeCloseTo(1.0);
   });
 });
 

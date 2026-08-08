@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MemoryEngine, tokenJaccard } from "./index.js";
+import { isContentSuperset, MemoryEngine, tokenJaccard } from "./index.js";
 import {
   asCold,
   asWarm,
@@ -570,5 +570,149 @@ describe("engine.hygieneReport / evaluateMemoryQuality integrity", () => {
 
     expect(hygiene?.passed).toBe(false);
     expect(result.passed).toBe(false);
+  });
+});
+
+describe("engine.capture: overwrite guard (data-loss regression)", () => {
+  it("does not overwrite a distinct fact that is merely vector-similar", async () => {
+    const { engine, embedder, warm } = bench();
+    // Force both facts into near-identical vector space so the semantic
+    // duplicate threshold (0.92) is comfortably cleared. Their token sets
+    // barely overlap, which is the signal that they are different facts.
+    const shared = [1, 0, 0, 0];
+    embedder.table.set("Wife's birthday is May 3", shared);
+    embedder.table.set("Daughter's birthday is May 3", [0.999, 0.045, 0, 0]);
+
+    const first = await engine.capture("u1", { content: "Wife's birthday is May 3" });
+    const second = await engine.capture("u1", { content: "Daughter's birthday is May 3" });
+
+    expect(first.id).toBeTruthy();
+    expect(second.id).toBeTruthy();
+    // The critical assertion: a NEW entry, not an in-place overwrite.
+    expect(second.id).not.toBe(first.id);
+    expect(second.updated).not.toBe(true);
+
+    // And the original fact must still be stored, unchanged.
+    expect(warm.rows.get(first.id!)?.content).toBe("Wife's birthday is May 3");
+  });
+
+  it("still updates in place when the texts really are restatements", async () => {
+    const { engine, embedder } = bench();
+    const shared = [1, 0, 0, 0];
+    embedder.table.set("The deploy target is the novanas cluster", shared);
+    embedder.table.set("The deploy target is the novanas cluster now", [0.999, 0.045, 0, 0]);
+
+    const first = await engine.capture("u1", {
+      content: "The deploy target is the novanas cluster",
+    });
+    const second = await engine.capture("u1", {
+      content: "The deploy target is the novanas cluster now",
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second.updated).toBe(true);
+  });
+});
+
+describe("engine.remember: cold-vector repair (insert-side orphan)", () => {
+  it("parks an entry for backfill when the cold upsert fails", async () => {
+    const { engine, warm, cold } = bench();
+    cold.fail = true;
+    await expect(engine.remember("u1", { content: "a durable fact worth keeping" })).rejects.toThrow();
+    // Warm row committed, vector missing → queued for repair.
+    const parked = [...warm.coldOrphans.values()].filter((o) => o.kind === "backfill");
+    expect(parked).toHaveLength(1);
+  });
+
+  it("backfills the missing vector when the same content is remembered again", async () => {
+    const { engine, warm, cold } = bench();
+    cold.fail = true;
+    await expect(engine.remember("u1", { content: "a durable fact worth keeping" })).rejects.toThrow();
+    expect(cold.vectors.size).toBe(0);
+
+    // Qdrant recovers. The dedup fast-path used to return the existing id
+    // and bump hits without ever noticing the entry had no vector, so it
+    // stayed invisible to vector search forever.
+    cold.fail = false;
+    const again = await engine.remember("u1", { content: "a durable fact worth keeping" });
+    expect(again.deduplicated).toBe(true);
+    expect(cold.vectors.size).toBe(1);
+    expect(warm.coldOrphans.size).toBe(0);
+  });
+
+  it("reapOrphans re-embeds a parked backfill entry", async () => {
+    const { engine, warm, cold } = bench();
+    cold.fail = true;
+    await expect(engine.remember("u1", { content: "another durable fact to keep" })).rejects.toThrow();
+    expect(warm.coldOrphans.size).toBe(1);
+
+    cold.fail = false;
+    const r = await engine.reapOrphans();
+    expect(r.cleared).toBe(1);
+    expect(cold.vectors.size).toBe(1);
+    expect(warm.coldOrphans.size).toBe(0);
+  });
+});
+
+describe("engine.remember: content length gate", () => {
+  it("rejects content past the embedding window instead of half-storing it", async () => {
+    const { engine } = makeEngine({ maxContentChars: 100 });
+    const long = "x".repeat(101);
+    const r = await engine.remember("u1", { content: long });
+    expect(r.id).toBeNull();
+    expect(r.rejected).toMatch(/too long/);
+  });
+
+  it("accepts content at the limit", async () => {
+    const { engine } = makeEngine({ maxContentChars: 100 });
+    const r = await engine.remember("u1", { content: "y".repeat(100) });
+    expect(r.id).toBeTruthy();
+  });
+});
+
+describe("engine.search: query vs document embedding sides", () => {
+  it("embeds stored content as a document and the query as a query", async () => {
+    const { engine, embedder } = bench();
+    await engine.remember("u1", { content: "asymmetric retrieval needs prefixes" });
+    embedder.calls.length = 0;
+    await engine.search("u1", { query: "what needs prefixes" });
+    const queryCalls = embedder.calls.filter((c) => c.kind === "query");
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]!.input).toEqual(["what needs prefixes"]);
+  });
+});
+
+describe("engine.search: noise floor", () => {
+  it("drops vector-only candidates below the configured cosine floor", async () => {
+    const { engine, embedder } = makeEngine({ minVectorScore: 0.5 });
+    // Orthogonal vectors → cosine 0, well below the floor, and no
+    // keyword signal because the fake FTS matches on token overlap.
+    embedder.table.set("completely unrelated stored content", [1, 0, 0, 0]);
+    embedder.table.set("zzz", [0, 1, 0, 0]);
+    await engine.remember("u1", { content: "completely unrelated stored content" });
+    const r = await engine.search("u1", { query: "zzz" });
+    expect(r.results).toHaveLength(0);
+  });
+});
+
+describe("isContentSuperset (capture overwrite gate)", () => {
+  it("permits an overwrite when the new text only adds detail", () => {
+    expect(isContentSuperset("deploy target is novanas", "deploy target is novanas now")).toBe(true);
+    expect(isContentSuperset("user prefers dark mode", "user prefers dark mode in the terminal")).toBe(true);
+  });
+
+  it("blocks an overwrite when the new text drops a content word", () => {
+    // The motivating case: identical scalars, near-identical shape,
+    // different subject. A Jaccard threshold does NOT catch this — these
+    // two share `s`, `birthday`, `may`, `3`, for an overlap of ~0.67.
+    expect(tokenJaccard("Wife's birthday is May 3", "Daughter's birthday is May 3"))
+      .toBeGreaterThan(0.5);
+    expect(isContentSuperset("Wife's birthday is May 3", "Daughter's birthday is May 3"))
+      .toBe(false);
+    expect(isContentSuperset("Pascal lives in Dubai", "Pascal lives in Belgium")).toBe(false);
+  });
+
+  it("ignores stop words when judging containment", () => {
+    expect(isContentSuperset("the server is on novanas", "server on novanas")).toBe(true);
   });
 });

@@ -23,10 +23,12 @@ import type {
   SearchResult,
 } from "../types.js";
 import {
+  DEFAULT_MIN_VECTOR_SCORE,
   DEFAULT_WEIGHTS,
   effectiveDays,
   EFFECTIVE_LIFESPAN_SQL,
   fuse,
+  rankPrior,
 } from "./hybrid-search.js";
 import { traceAsync } from "../tracing.js";
 
@@ -57,17 +59,44 @@ const JACCARD_STOPWORDS = new Set([
  *  surface area or we'd merge contradictions like "Pascal lives in
  *  Dubai" with "Pascal lives in Belgium" (which share only the glue
  *  words `i`/`in`/`live` — exactly what the stopword filter strips). */
+function contentTokens(s: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of s.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+    if (JACCARD_STOPWORDS.has(t)) continue;
+    out.add(t);
+  }
+  return out;
+}
+
+/** True when `next` carries every content word `prev` had — i.e. the new
+ *  text restates or refines the old one without dropping anything.
+ *
+ *  This is the gate `capture()` uses before overwriting a memory in
+ *  place, and it is deliberately stricter than a similarity threshold.
+ *  Cosine — and even token-set Jaccard — cannot distinguish "same fact,
+ *  said again" from "different fact, said the same way": "wife's
+ *  birthday is May 3" and "daughter's birthday is May 3" sit above the
+ *  0.92 semantic-duplicate threshold *and* above a 0.5 Jaccard
+ *  threshold (they share `s`, `birthday`, `may`, `3` — overlap 0.67),
+ *  yet overwriting one with the other destroys a fact that was never
+ *  restated.
+ *
+ *  Subset containment answers the question that actually matters: is any
+ *  information being dropped? If the old text has a content word the new
+ *  one lacks, the new text is not a restatement of it, so we store both
+ *  and let supersession (or the agent) resolve it. Nothing is ever lost
+ *  silently. */
+export function isContentSuperset(prev: string, next: string): boolean {
+  const a = contentTokens(prev);
+  const b = contentTokens(next);
+  if (a.size === 0) return true;
+  for (const t of a) if (!b.has(t)) return false;
+  return true;
+}
+
 export function tokenJaccard(a: string, b: string): number {
-  const tokenize = (s: string) => {
-    const out = new Set<string>();
-    for (const t of s.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
-      if (JACCARD_STOPWORDS.has(t)) continue;
-      out.add(t);
-    }
-    return out;
-  };
-  const ta = tokenize(a);
-  const tb = tokenize(b);
+  const ta = contentTokens(a);
+  const tb = contentTokens(b);
   if (ta.size === 0 || tb.size === 0) return 0;
   let intersect = 0;
   for (const t of ta) if (tb.has(t)) intersect++;
@@ -77,6 +106,14 @@ export function tokenJaccard(a: string, b: string): number {
 
 const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
 const CAPTURE_CANDIDATE_K = 5;
+/** How many of the top vector hits seed the graph traversal. */
+const GRAPH_SEED_COUNT = 3;
+/** Candidates fetched per requested result, so post-fusion visibility
+ *  filtering and diversification have material to work with. */
+const OVERFETCH_FACTOR = 3;
+/** Two results whose token sets overlap at least this much are treated as
+ *  restatements of one another; only the higher-ranked one is returned. */
+const RESULT_DIVERSITY_MAX_JACCARD = 0.75;
 
 const SENSITIVITY_ORDER: Record<SensitivityLevel, number> = { public: 0, internal: 1, private: 2, sensitive: 3 };
 const DEFAULT_MAX_SENSITIVITY: SensitivityLevel = "private";
@@ -164,9 +201,31 @@ function clamp01(n: number): number {
   return Math.max(0, Math.min(1, Number(n.toFixed(3))));
 }
 
+/** The closed set of memory types. Exported so the route schemas and the
+ *  metadata validator agree on one list instead of drifting. */
+export const MEMORY_TYPES = [
+  "user_preference",
+  "bug_root_cause",
+  "decision",
+  "deployment_state",
+  "setup_fact",
+  "project_convention",
+  "safety_constraint",
+  "general",
+] as const;
+
+function isMemoryType(v: unknown): v is MemoryType {
+  return typeof v === "string" && (MEMORY_TYPES as readonly string[]).includes(v);
+}
+
 export function inferMemoryType(content: string, namespace?: string, metadata?: Record<string, unknown>): MemoryType {
+  // Caller-supplied `metadata.memoryType` used to be cast straight to
+  // MemoryType, so any arbitrary string became a "type" and flowed into
+  // retention-policy selection, where it silently fell through to the
+  // default branch. Validate against the closed set and fall back to
+  // inference when the caller sends something unrecognised.
   const explicit = metadata?.memoryType;
-  if (typeof explicit === "string") return explicit as MemoryType;
+  if (isMemoryType(explicit)) return explicit;
   const hay = `${namespace ?? ""} ${content}`.toLowerCase();
   if (/\b(prefer|prefers|likes|wants|communication style|response style)\b/.test(hay)) return "user_preference";
   if (/\b(root cause|post-?mortem|failed because|bug|incident|regression)\b/.test(hay)) return "bug_root_cause";
@@ -178,11 +237,34 @@ export function inferMemoryType(content: string, namespace?: string, metadata?: 
   return "general";
 }
 
-export function scoreWorthiness(content: string, type: MemoryType, confidence = 1): Record<string, number> {
+/** Generic "this is about the person or their work" cues. Deliberately
+ *  free of proper nouns: the previous version hard-coded this repo
+ *  author's name and household terms, which meant every *other* operator
+ *  of this self-hostable product scored their own name and projects at
+ *  the lower 0.65 band. Deployment-specific vocabulary belongs in
+ *  `personalTerms`, supplied by the caller. */
+const RELEVANCE_CUES =
+  /\b(i|me|my|mine|we|our|us|user|users|team|wife|husband|partner|spouse|family|household|kids?|children|project|projects|repo|repository|codebase|deployment|deploy|server|service|workflow|preference|prefers?)\b/i;
+
+export function scoreWorthiness(
+  content: string,
+  type: MemoryType,
+  confidence = 1,
+  /** Optional deployment-specific high-relevance terms (the operator's
+   *  own name, product names, project slugs). Matched case-insensitively
+   *  as whole words. */
+  personalTerms: readonly string[] = [],
+): Record<string, number> {
   const len = content.trim().length;
   const durable = clamp01(len >= 80 ? 0.9 : len >= 40 ? 0.75 : 0.55);
   const reuseLikelihood = clamp01(["user_preference", "setup_fact", "deployment_state", "project_convention", "safety_constraint"].includes(type) ? 0.85 : type === "decision" ? 0.75 : type === "bug_root_cause" ? 0.7 : 0.45);
-  const userRelevance = clamp01(/\b(pascal|user|wife|family|household|novamem|deployment|project)\b/i.test(content) ? 0.9 : 0.65);
+  const matchesPersonal =
+    personalTerms.length > 0 &&
+    personalTerms.some((term) => {
+      const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return escaped.length > 0 && new RegExp(`\\b${escaped}\\b`, "i").test(content);
+    });
+  const userRelevance = clamp01(matchesPersonal || RELEVANCE_CUES.test(content) ? 0.9 : 0.65);
   const c = clamp01(confidence);
   const overall = clamp01(durable * 0.3 + reuseLikelihood * 0.3 + userRelevance * 0.25 + c * 0.15);
   return { durable, reuseLikelihood, userRelevance, confidence: c, overall };
@@ -201,13 +283,18 @@ export function retentionPolicyFor(type: MemoryType): Record<string, unknown> {
   }
 }
 
-function captureMetadata(req: RememberRequest, action: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+function captureMetadata(
+  req: RememberRequest,
+  action: string,
+  extra: Record<string, unknown> = {},
+  personalTerms: readonly string[] = [],
+): Record<string, unknown> {
   const type = inferMemoryType(req.content, req.namespace, req.metadata);
   const sensitivity = inferSensitivity(req.content, req.metadata, req.sensitivity);
   return mergeCaptureMetadata(undefined, req.metadata, {
     memoryType: type,
     sensitivity,
-    worthiness: scoreWorthiness(req.content, type, req.confidence ?? 1),
+    worthiness: scoreWorthiness(req.content, type, req.confidence ?? 1, personalTerms),
     retention: retentionPolicyFor(type),
     captureAction: action,
     ...extra,
@@ -245,6 +332,20 @@ export interface EngineConfig {
    *  hot paths (search/remember/forget/promote/demote/decay/reap). Pure
    *  observation — never affects behaviour. */
   metrics?: MetricsCollector;
+  /** Deployment-specific high-relevance vocabulary (operator name,
+   *  product names, project slugs) used by the worthiness scorer. */
+  personalTerms?: readonly string[];
+  /** Absolute cosine floor for vector-only search candidates. See
+   *  `DEFAULT_MIN_VECTOR_SCORE`. */
+  minVectorScore?: number;
+  /** Maximum content length (characters) accepted by remember/capture.
+   *  Content beyond the embedding model's context window is silently
+   *  truncated by the tokenizer, so the tail of a long memory becomes
+   *  invisible to vector search while still being findable by keyword —
+   *  a confusing half-stored state. Rejecting is the honest option and
+   *  matches the "one fact per entry" guidance the skill already gives.
+   *  Set 0 to disable the check. */
+  maxContentChars?: number;
 }
 
 export class MemoryEngine {
@@ -256,10 +357,18 @@ export class MemoryEngine {
   private logger: EngineLogger;
   private readonly graphLinkFanout: number;
   private readonly metrics: MetricsCollector | null;
+  private readonly personalTerms: readonly string[];
+  private readonly minVectorScore: number;
+  private readonly maxContentChars: number;
   /** Reactive promotions since the last decay run — flushed to
    *  `decay_runs.promoted` so the column stops being dead weight. */
   private promotedSinceLastDecay = 0;
   private readonly startedAt = Date.now();
+  /** Resume point for the dream cycle's table walk (a ULID entry id, or
+   *  "" to start from the beginning). Process-local: a restart replays
+   *  from the start of the table, which is exactly the old behaviour and
+   *  therefore never worse. */
+  private dreamCursor = "";
 
   constructor(cfg: EngineConfig) {
     this.warm = cfg.warm;
@@ -274,6 +383,9 @@ export class MemoryEngine {
     this.logger = cfg.logger ?? (console as unknown as EngineLogger);
     this.graphLinkFanout = cfg.graphLinkFanout ?? 3;
     this.metrics = cfg.metrics ?? null;
+    this.personalTerms = cfg.personalTerms ?? [];
+    this.minVectorScore = cfg.minVectorScore ?? DEFAULT_MIN_VECTOR_SCORE;
+    this.maxContentChars = cfg.maxContentChars ?? 4_000;
   }
 
   /** Replace the engine's logger after construction. main.ts uses this
@@ -358,6 +470,13 @@ export class MemoryEngine {
     ) {
       return "conversational filler — not durable knowledge";
     }
+    // Embedding models silently truncate at their context window (~256
+    // word-pieces for the default MiniLM), so everything past the cut is
+    // invisible to vector search while keyword search still finds it.
+    // Reject rather than half-store, and say what to do about it.
+    if (this.maxContentChars > 0 && trimmed.length > this.maxContentChars) {
+      return `too long (${trimmed.length} chars, max ${this.maxContentChars}) — split into one fact per entry`;
+    }
     return null;
   }
 
@@ -365,6 +484,10 @@ export class MemoryEngine {
     userId: string,
     req: RememberRequest,
     token?: TokenIdentity,
+    /** Pre-computed embedding for `req.content`. `capture()` already
+     *  embeds the content to find near-duplicates; passing it through
+     *  halves the embedder calls on the agent-facing write path. */
+    precomputedEmbedding?: number[],
   ): Promise<{ id: string | null; rejected?: string; deduplicated?: boolean }> {
     return traceAsync("MemoryEngine.remember", {
       "novamem.namespace": req.namespace ?? "default",
@@ -372,6 +495,7 @@ export class MemoryEngine {
       "novamem.content_chars": req.content.length,
       "novamem.force": Boolean(req.force),
     }, async (span) => {
+      const rememberStartedAt = Date.now();
       // ── Worthiness gate (hard rules + dedup) ────────────────────────
       if (!req.force) {
         const reason = this.shouldReject(req.content);
@@ -392,6 +516,14 @@ export class MemoryEngine {
       if (existing) {
         span.setAttribute("novamem.deduplicated", true);
         await traceAsync("WarmStore.bumpHits", { "novamem.entry_id": existing }, () => this.warm.bumpHits(existing));
+        // Self-heal the insert-side partial write. If a previous attempt
+        // stored the warm row and then died before the cold upsert (embed
+        // failure, Qdrant blip), the entry has no vector and is invisible
+        // to vector search *forever* — this dedup fast-path used to
+        // return the id and bump hits without ever noticing. The delete
+        // side has had a repair queue (`cold_orphans` + reaper) all
+        // along; this is its missing twin.
+        await this.backfillMissingVector(userId, projectId, existing, namespace, req);
         this.metrics?.recordRemember(userId, token);
         return { id: existing, deduplicated: true };
       }
@@ -411,31 +543,115 @@ export class MemoryEngine {
         }),
       );
       span.setAttribute("novamem.entry_id", id);
-      const [embedding] = await traceAsync("Embedder.embed.remember", {
-        "novamem.content_chars": req.content.length,
-      }, () => this.embedder.embed(req.content));
+      const [embedding] = precomputedEmbedding
+        ? [precomputedEmbedding]
+        : await traceAsync("Embedder.embed.remember", {
+            "novamem.content_chars": req.content.length,
+          }, () => this.embedder.embed(req.content, "document"));
       span.setAttribute("novamem.embedding_present", Boolean(embedding));
       if (embedding) {
-        await traceAsync("ColdStore.upsert", { "novamem.namespace": namespace, "novamem.embedding_dim": embedding.length }, () =>
-          this.cold.upsert({
-            userId,
-            projectId,
-            id,
-            namespace,
-            embedding,
-            payload: { source: req.source ?? "manual", agentName: req.agentName ?? null },
-          }),
-        );
+        // If the vector write fails the warm row is already committed.
+        // Park it so the reaper can finish the job instead of leaving a
+        // memory that keyword search can find and vector search cannot.
+        try {
+          await traceAsync("ColdStore.upsert", { "novamem.namespace": namespace, "novamem.embedding_dim": embedding.length }, () =>
+            this.cold.upsert({
+              userId,
+              projectId,
+              id,
+              namespace,
+              embedding,
+              payload: {
+                source: req.source ?? "manual",
+                agentName: req.agentName ?? null,
+                embeddingModel: this.embedder.modelId,
+              },
+            }),
+          );
+        } catch (err) {
+          await this.parkMissingVector(userId, projectId, id, namespace, err);
+          throw err;
+        }
         if (this.graphLinkFanout > 0) {
           await traceAsync("MemoryEngine.linkVectorNeighbors", {
             "novamem.namespace": namespace,
             "novamem.graph_link_fanout": this.graphLinkFanout,
           }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding));
         }
+      } else {
+        // Embedder returned nothing at all — same consequence as a failed
+        // upsert, so record it the same way.
+        await this.parkMissingVector(userId, projectId, id, namespace, new Error("embedder returned no vector"));
       }
       this.metrics?.recordRemember(userId, token);
+      this.metrics?.recordLatency("remember", Date.now() - rememberStartedAt);
       return { id };
+    }).catch((err) => {
+      this.metrics?.recordError("remember");
+      throw err;
     });
+  }
+
+  /** Record a warm row whose cold vector is missing, so `reapOrphans()`
+   *  can re-embed and upsert it later. Best-effort: if even this write
+   *  fails we log — the hygiene report still detects the state via
+   *  `warm_without_cold_vector`. */
+  private async parkMissingVector(
+    userId: string,
+    projectId: string | null,
+    id: string,
+    namespace: string,
+    cause: unknown,
+  ): Promise<void> {
+    try {
+      await this.warm.recordMissingVector({ userId, projectId, entryId: id, namespace });
+      this.logger.warn(
+        { entryId: id, namespace, err: (cause as Error)?.message },
+        "cold upsert failed — parked for vector backfill",
+      );
+    } catch (err) {
+      this.logger.error(
+        { entryId: id, namespace, err: (err as Error).message },
+        "cold upsert failed AND could not park entry for backfill",
+      );
+    }
+  }
+
+  /** Repair path for the dedup fast-path: verify the existing entry still
+   *  has a vector, and re-embed if not. Failures are logged, never
+   *  fatal — a dedup hit must stay a success. */
+  private async backfillMissingVector(
+    userId: string,
+    projectId: string | null,
+    id: string,
+    namespace: string,
+    req: RememberRequest,
+  ): Promise<void> {
+    try {
+      const present = await this.cold.existingIds([{ id, userId, projectId, namespace }]);
+      if (present.has(id)) return;
+      const [embedding] = await this.embedder.embed(req.content, "document");
+      if (!embedding) return;
+      await this.cold.upsert({
+        userId,
+        projectId,
+        id,
+        namespace,
+        embedding,
+        payload: {
+          source: req.source ?? "manual",
+          agentName: req.agentName ?? null,
+          embeddingModel: this.embedder.modelId,
+        },
+      });
+      await this.warm.clearMissingVector(id);
+      this.logger.info?.({ entryId: id, namespace }, "backfilled missing cold vector on dedup hit");
+    } catch (err) {
+      this.logger.warn(
+        { entryId: id, namespace, err: (err as Error).message },
+        "vector backfill on dedup hit failed",
+      );
+    }
   }
 
   /** Capture is the agent-facing write path. Unlike raw remember(), it first
@@ -443,6 +659,35 @@ export class MemoryEngine {
    *  duplicate is updated in-place; a close contradiction is stored as the
    *  new active fact while the older fact is marked superseded. */
   async capture(
+    userId: string,
+    req: RememberRequest,
+    token?: TokenIdentity,
+  ): Promise<{
+    id: string | null;
+    rejected?: string;
+    deduplicated?: boolean;
+    updated?: boolean;
+    superseded?: string[];
+  }> {
+    // capture() is the primary agent-facing write, but only the nested
+    // remember() call was ever traced — the dedup search, the
+    // contradiction check and the supersede path were invisible in a
+    // trace. Span it directly.
+    return traceAsync("MemoryEngine.capture", {
+      "novamem.namespace": req.namespace ?? "default",
+      "novamem.project": req.project ?? "",
+      "novamem.content_chars": req.content.length,
+    }, async (span) => {
+      const r = await this.captureInner(userId, req, token);
+      span.setAttribute("novamem.capture_updated", Boolean(r.updated));
+      span.setAttribute("novamem.capture_superseded", r.superseded?.length ?? 0);
+      span.setAttribute("novamem.deduplicated", Boolean(r.deduplicated));
+      if (r.rejected) span.setAttribute("novamem.rejected", r.rejected);
+      return r;
+    });
+  }
+
+  private async captureInner(
     userId: string,
     req: RememberRequest,
     token?: TokenIdentity,
@@ -469,7 +714,7 @@ export class MemoryEngine {
       return { id: exact, deduplicated: true };
     }
 
-    const [embedding] = await this.embedder.embed(req.content);
+    const [embedding] = await this.embedder.embed(req.content, "document");
     if (embedding) {
       const nearby = await this.cold.search({
         userId,
@@ -487,52 +732,44 @@ export class MemoryEngine {
       const candidate = candidates.find((e) => e && !isInactiveMemory(e.metadata as Record<string, unknown> | null | undefined));
       if (candidate) {
         if (looksContradictory(candidate.content, req.content)) {
-          const supersededIds = [candidate.id];
-          const newMetadata = captureMetadata(req, "superseded", {
-            supersedes: supersededIds,
-            supersededAt: new Date().toISOString(),
-          });
-          const created = await this.remember(userId, {
-            ...req,
-            namespace,
-            metadata: newMetadata,
-            force: true,
-          }, token);
-          if (created.id) {
-            await this.update(userId, candidate.id, {
-              project: projectId,
-              metadata: {
-                ...(candidate.metadata ?? {}),
-                lifecycleStatus: "superseded",
-                supersededBy: created.id,
-                supersededReason: "contradiction",
-                supersededAt: new Date().toISOString(),
-              },
-            });
-            return { id: created.id, superseded: supersededIds };
-          }
-          return created;
+          return this.supersedeWithNewFact(userId, candidate, req, namespace, projectId, token, embedding);
         }
 
-        const mergedMetadata = mergeCaptureMetadata(candidate.metadata as Record<string, unknown> | null | undefined, req.metadata, {
-          memoryType: inferMemoryType(req.content, namespace, req.metadata),
-          worthiness: scoreWorthiness(req.content, inferMemoryType(req.content, namespace, req.metadata), req.confidence ?? 1),
-          retention: retentionPolicyFor(inferMemoryType(req.content, namespace, req.metadata)),
-          captureAction: "updated",
-          updatedByCaptureAt: new Date().toISOString(),
-        });
-        const updated = await this.update(userId, candidate.id, {
-          content: req.content,
-          namespace,
-          metadata: mergedMetadata,
-          sourceType: req.sourceType ?? "chat",
-          capturedFrom: req.capturedFrom ?? "memory_capture",
-          confidence: req.confidence,
-          project: projectId,
-        });
-        if (updated.updated) {
-          this.metrics?.recordRemember(userId, token);
-          return { id: candidate.id, deduplicated: true, updated: true };
+        // ── Overwrite guard ───────────────────────────────────────────
+        // A high cosine alone does NOT mean "same fact restated". Two
+        // distinct facts can clear the 0.92 semantic-duplicate threshold
+        // while differing in the one word that matters: "wife's birthday
+        // is May 3" vs "daughter's birthday is May 3" carry identical
+        // scalars (so `looksContradictory` sees no conflict) and nearly
+        // identical shape. Updating in place there silently destroyed
+        // the first fact, with no supersession trail to recover it.
+        //
+        // `isContentSuperset` only permits the overwrite when the new
+        // text keeps every content word the old one had — see its
+        // doc-comment for why a similarity threshold (including the
+        // dream cycle's Jaccard gate) cannot make this call.
+        if (isContentSuperset(candidate.content, req.content)) {
+          const inferredType = inferMemoryType(req.content, namespace, req.metadata);
+          const mergedMetadata = mergeCaptureMetadata(candidate.metadata as Record<string, unknown> | null | undefined, req.metadata, {
+            memoryType: inferredType,
+            worthiness: scoreWorthiness(req.content, inferredType, req.confidence ?? 1, this.personalTerms),
+            retention: retentionPolicyFor(inferredType),
+            captureAction: "updated",
+            updatedByCaptureAt: new Date().toISOString(),
+          });
+          const updated = await this.update(userId, candidate.id, {
+            content: req.content,
+            namespace,
+            metadata: mergedMetadata,
+            sourceType: req.sourceType ?? "chat",
+            capturedFrom: req.capturedFrom ?? "memory_capture",
+            confidence: req.confidence,
+            project: projectId,
+          });
+          if (updated.updated) {
+            this.metrics?.recordRemember(userId, token);
+            return { id: candidate.id, deduplicated: true, updated: true };
+          }
         }
       }
     }
@@ -540,8 +777,71 @@ export class MemoryEngine {
     return this.remember(userId, {
       ...req,
       namespace,
-      metadata: captureMetadata({ ...req, namespace }, "inserted"),
-    }, token);
+      metadata: captureMetadata({ ...req, namespace }, "inserted", {}, this.personalTerms),
+    }, token, embedding);
+  }
+
+  /** Store `req` as the new active fact and mark `candidate` superseded.
+   *
+   *  These two writes are not atomic (they touch different rows through
+   *  different code paths), so the failure mode is handled explicitly: if
+   *  marking the old fact superseded fails, the just-created row is
+   *  removed again. Without that compensation the caller got a 500 while
+   *  the new row stayed committed, leaving *two* active contradictory
+   *  facts in the store — and a retry could not fix it, because the
+   *  content-hash dedup path would then short-circuit to the orphaned
+   *  new row. */
+  private async supersedeWithNewFact(
+    userId: string,
+    candidate: { id: string; content: string; metadata: unknown },
+    req: RememberRequest,
+    namespace: string,
+    projectId: string | null,
+    token: TokenIdentity | undefined,
+    embedding: number[],
+  ): Promise<{ id: string | null; superseded?: string[]; rejected?: string; deduplicated?: boolean }> {
+    const supersededIds = [candidate.id];
+    const supersededAt = new Date().toISOString();
+    const newMetadata = captureMetadata(
+      req,
+      "superseded",
+      { supersedes: supersededIds, supersededAt },
+      this.personalTerms,
+    );
+    const created = await this.remember(
+      userId,
+      { ...req, namespace, metadata: newMetadata, force: true },
+      token,
+      embedding,
+    );
+    if (!created.id) return created;
+    try {
+      const updated = await this.update(userId, candidate.id, {
+        project: projectId,
+        metadata: {
+          ...((candidate.metadata as Record<string, unknown> | null) ?? {}),
+          lifecycleStatus: "superseded",
+          supersededBy: created.id,
+          supersededReason: "contradiction",
+          supersededAt,
+        },
+      });
+      if (!updated.updated) throw new Error(`could not mark ${candidate.id} superseded`);
+    } catch (err) {
+      // Compensate: undo the new fact so the store never holds two
+      // active contradictory memories, then surface the failure.
+      try {
+        await this.forget(userId, created.id, { project: projectId });
+      } catch (rollbackErr) {
+        this.logger.error(
+          { entryId: created.id, err: (rollbackErr as Error).message },
+          "capture: supersede failed AND rollback of the new fact failed — " +
+            "store now holds two active contradictory memories",
+        );
+      }
+      throw err;
+    }
+    return { id: created.id, superseded: supersededIds };
   }
 
   /** Update an existing entry in place. Preserves `created_at`,
@@ -679,6 +979,7 @@ export class MemoryEngine {
       "novamem.k": req.k ?? 10,
       "novamem.query_chars": req.query.length,
     }, async (span) => {
+    const searchStartedAt = Date.now();
     const k = req.k ?? 10;
     const weights = { ...DEFAULT_WEIGHTS, ...(req.weights ?? {}) };
 
@@ -707,9 +1008,12 @@ export class MemoryEngine {
         ? [req.namespace]
         : await this.resolveDefaultNamespaces(userId, scopes);
 
+    // "query" side of the asymmetric-retrieval prefix pair — see
+    // embeddings.ts. Symmetric models (the default MiniLM) get an empty
+    // prefix and behave exactly as before.
     const [embedding] = await traceAsync("Embedder.embed.search", {
       "novamem.query_chars": req.query.length,
-    }, () => this.embedder.embed(req.query));
+    }, () => this.embedder.embed(req.query, "query"));
     // FTS supports multi-namespace via `namespace = ANY(...)` in one query
     // per scope, so we fan out only across scopes (not namespaces).
     // Cold-store needs one search per (scope × namespace) collection.
@@ -764,13 +1068,31 @@ export class MemoryEngine {
 
     let graphHits: Array<{ id: string; score: number }> = [];
     if (this.graph?.isConnected() && vectorHits.length > 0) {
-      const seed = vectorHits[0]!.id;
       try {
+        // Seed from the top few vector hits rather than only the single
+        // best one. With one seed, an off-topic top-1 dragged its whole
+        // (wrong) neighbourhood into the results, and a correct-but-
+        // second-place hit contributed no graph signal at all.
+        const seeds = [...vectorHits]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, GRAPH_SEED_COUNT)
+          .map((h) => h.id);
         // Graph neighbours scope: when in active-project mode the seed is
         // ambiguous, so skip the project scope (project_id is null) — entry
         // resolution below will still filter to the visible scope set.
         const seedScope = scopes.length === 1 ? scopes[0]! : null;
-        graphHits = await this.graph.neighbors(userId, seed, 1, k, seedScope);
+        const perSeed = await Promise.all(
+          seeds.map((seed) => this.graph!.neighbors(userId, seed, 1, k, seedScope)),
+        );
+        // Union the neighbourhoods, keeping the strongest edge per id.
+        const best = new Map<string, number>();
+        for (const hits of perSeed) {
+          for (const h of hits) {
+            const prev = best.get(h.id);
+            if (prev === undefined || h.score > prev) best.set(h.id, h.score);
+          }
+        }
+        graphHits = [...best].map(([id, score]) => ({ id, score }));
       } catch (err) {
         degraded = true;
         this.logger.warn({ err: (err as Error).message }, "graph neighbours failed");
@@ -780,14 +1102,21 @@ export class MemoryEngine {
       this.maybeWarnGraphDown();
     }
 
-    const fused = fuse(
+    // Over-fetch before the visibility filters below. Superseded and
+    // sensitivity-hidden entries used to be dropped *after* slicing to k,
+    // so a top-10 containing four superseded rows returned six results
+    // and the relevant rank-11..14 memories were never fetched — recall
+    // silently shrank in exactly the stores that use supersession most.
+    const fusedAll = fuse(
       [
         ...keywordHits.map((h) => ({ id: h.id, signals: { keyword: h.score } })),
         ...vectorHits.map((h) => ({ id: h.id, signals: { vector: h.score } })),
         ...graphHits.map((h) => ({ id: h.id, signals: { graph: h.score } })),
       ],
       weights,
-    ).slice(0, k);
+      { minVectorScore: req.minVectorScore ?? this.minVectorScore },
+    );
+    const fused = fusedAll.slice(0, k * OVERFETCH_FACTOR);
 
     // Batch the per-result lookups + bump-hits to collapse the
     // search hot path from 2N+1 round-trips. Cold-entry promotion stats
@@ -807,41 +1136,91 @@ export class MemoryEngine {
     const coldStats = coldHitIds.length > 0
       ? await this.warm.getColdEntryStatsMany(coldHitIds)
       : new Map<string, { hits: number; idleDays: number }>();
-    const results: SearchResult[] = [];
-    const idsToBump: string[] = [];
-    const promotionTasks: Array<Promise<{ id: string; promoted: boolean }>> = [];
+
+    // ── Visibility filter → rank prior → diversify → truncate ─────────
+    // Order matters. Filtering first means the k we finally return is k
+    // *visible* results. The rank prior then re-orders near-ties using
+    // signals similarity is blind to (confidence, staleness of
+    // "current state" memory types). Diversification drops restatements
+    // of a fact already present so the agent's context budget isn't
+    // spent three times on the same thing.
+    const visible: Array<{ result: SearchResult; entry: (typeof entries)[number] }> = [];
     for (let i = 0; i < fused.length; i++) {
       const f = fused[i]!;
       const e = entries[i];
       if (!e) continue;
-      if (isInactiveMemory(e.metadata as Record<string, unknown> | null | undefined)) continue;
-      if (!isSensitivityVisible(e.metadata as Record<string, unknown> | null | undefined, req.maxSensitivity)) continue;
-      idsToBump.push(f.id);
+      const metadata = e.metadata as Record<string, unknown> | null | undefined;
+      if (isInactiveMemory(metadata)) continue;
+      if (!isSensitivityVisible(metadata, req.maxSensitivity)) continue;
 
+      const ageDays = e.createdAt
+        ? (Date.now() - new Date(e.createdAt).getTime()) / 86_400_000
+        : null;
+      const prior = rankPrior({
+        confidence: typeof e.confidence === "number" ? e.confidence : null,
+        memoryType: typeof metadata?.memoryType === "string" ? metadata.memoryType : null,
+        ageDays,
+      });
+
+      visible.push({
+        entry: e,
+        result: {
+          id: f.id,
+          score: f.score * prior,
+          content: e.content,
+          tier: e.cold ? "cold" : "warm",
+          namespace: e.namespace,
+          project: e.projectId ?? null,
+          source: e.source,
+          metadata: (e.metadata ?? {}) as Record<string, unknown>,
+          signals: f.signals,
+        },
+      });
+    }
+    visible.sort((a, b) => b.result.score - a.result.score);
+
+    // Greedy redundancy filter (MMR-style, using token overlap as the
+    // similarity measure so no extra vector fetches are needed): keep a
+    // candidate only if it isn't a restatement of one already selected.
+    const selected: typeof visible = [];
+    for (const cand of visible) {
+      if (selected.length >= k) break;
+      const redundant = selected.some(
+        (s) => tokenJaccard(s.result.content, cand.result.content) >= RESULT_DIVERSITY_MAX_JACCARD,
+      );
+      if (!redundant) selected.push(cand);
+    }
+    // If diversification starved the result set (a store legitimately
+    // full of similar short facts), backfill from what it dropped rather
+    // than under-returning.
+    if (selected.length < k) {
+      const chosen = new Set(selected.map((s) => s.result.id));
+      for (const cand of visible) {
+        if (selected.length >= k) break;
+        if (!chosen.has(cand.result.id)) selected.push(cand);
+      }
+    }
+
+    const results: SearchResult[] = [];
+    const idsToBump: string[] = [];
+    const promotionTasks: Array<Promise<{ id: string; promoted: boolean }>> = [];
+    for (const { result, entry } of selected) {
+      idsToBump.push(result.id);
       // Cold→warm promotion: capture stats *before* bumpHits so the
       // pre-hit idle age is what gates promotion — otherwise every hit
       // would trivially clear an idle gap of zero. The `markCold(false)`
       // writes still happen one-per-promotion, but the read side is now
-      // a single query for the whole cold slice.
-      const tier: "warm" | "cold" = e.cold ? "cold" : "warm";
-      if (e.cold) {
-        const preBump = coldStats.get(f.id) ?? null;
+      // a single query for the whole cold slice. Only entries actually
+      // returned to the caller count as "hit" — over-fetched candidates
+      // that never surfaced must not bump hit counts or trigger
+      // promotion, or the decay maths would drift on every search.
+      if (entry?.cold) {
+        const preBump = coldStats.get(result.id) ?? null;
         promotionTasks.push(
-          this.maybePromote(f.id, preBump).then((promoted) => ({ id: f.id, promoted })),
+          this.maybePromote(result.id, preBump).then((promoted) => ({ id: result.id, promoted })),
         );
       }
-
-      results.push({
-        id: f.id,
-        score: f.score,
-        content: e.content,
-        tier,
-        namespace: e.namespace,
-        project: e.projectId ?? null,
-        source: e.source,
-        metadata: (e.metadata ?? {}) as Record<string, unknown>,
-        signals: f.signals,
-      });
+      results.push(result);
     }
     // Run all cold→warm flips in parallel and apply tier upgrades to the
     // already-built result rows. Failures are swallowed by maybePromote
@@ -879,7 +1258,14 @@ export class MemoryEngine {
     }
     span.setAttribute("novamem.result_count", results.length);
     span.setAttribute("novamem.degraded", degraded);
+    this.metrics?.recordLatency("search", Date.now() - searchStartedAt);
     return { results, degraded };
+    }).catch((err) => {
+      // Errors were previously invisible to the dashboard: recordQuery
+      // only fires on success, so a failing search tier showed up as
+      // throughput quietly dropping to zero.
+      this.metrics?.recordError("search");
+      throw err;
     });
   }
 
@@ -1095,20 +1481,35 @@ export class MemoryEngine {
     // for shared projects). When user-wide, user_id is the boundary.
     const scopeClause = isProject ? "project_id = $2" : "user_id = $2";
     const scopeValue = isProject ? e.projectId! : userId;
-    await pool.query(
-      `DELETE FROM memory_fts WHERE entry_id = $1 AND ${scopeClause}`,
-      [id, scopeValue],
-    );
-    await pool.query("DELETE FROM memory_access WHERE entry_id = $1", [id]);
-    await pool.query(
-      `DELETE FROM memory_relations
-        WHERE (from_id = $1 OR to_id = $1) AND ${scopeClause}`,
-      [id, scopeValue],
-    );
-    await pool.query(
-      `DELETE FROM memory_entries WHERE id = $1 AND ${scopeClause}`,
-      [id, scopeValue],
-    );
+    // One transaction for all four deletes. As four independent
+    // statements, a failure part-way through left the store internally
+    // inconsistent in a way nothing repairs — e.g. the FTS shadow gone
+    // but the entry alive (still returned by vector search, still
+    // readable by id), or the entry gone but its relations dangling.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `DELETE FROM memory_fts WHERE entry_id = $1 AND ${scopeClause}`,
+        [id, scopeValue],
+      );
+      await client.query("DELETE FROM memory_access WHERE entry_id = $1", [id]);
+      await client.query(
+        `DELETE FROM memory_relations
+          WHERE (from_id = $1 OR to_id = $1) AND ${scopeClause}`,
+        [id, scopeValue],
+      );
+      await client.query(
+        `DELETE FROM memory_entries WHERE id = $1 AND ${scopeClause}`,
+        [id, scopeValue],
+      );
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
     if (this.graph?.isConnected()) {
       try {
         await this.graph.removeNode(userId, id);
@@ -1146,10 +1547,40 @@ export class MemoryEngine {
     return { deleted: true, coldDeleteOk };
   }
 
-  /** Reaper pass: retries each queued orphan's cold-store delete and
-   *  removes it from the queue on success. Called from the decay loop and
-   *  exposed at /v1/reap-orphans for manual triggers. Returns counts so
-   *  operators can tell how much drift was cleaned up. */
+  /** Re-embed and re-upsert a warm entry whose cold vector never landed.
+   *  Throws on failure so the caller's retry/abandon accounting applies.
+   *  A row whose warm entry has since been deleted is not an error — the
+   *  queue entry is simply obsolete, so we return and let it be cleared. */
+  private async backfillOrphanVector(r: {
+    id: string;
+    user_id: string;
+    namespace: string;
+    project_id: string | null;
+  }): Promise<void> {
+    const entry = await this.warm.getEntry(r.user_id, r.id, { projectId: r.project_id });
+    if (!entry) return;
+    const [embedding] = await this.embedder.embed(entry.content, "document");
+    if (!embedding) throw new Error("embedder returned no vector during backfill");
+    await this.cold.upsert({
+      userId: r.user_id,
+      projectId: r.project_id,
+      id: r.id,
+      namespace: entry.namespace,
+      embedding,
+      payload: {
+        source: entry.source,
+        agentName: entry.agentName ?? null,
+        embeddingModel: this.embedder.modelId,
+      },
+    });
+  }
+
+  /** Reaper pass: retries each queued orphan's cold-store repair — a
+   *  delete for vectors that outlived their warm row, a re-embed for warm
+   *  rows whose vector never landed — and removes it from the queue on
+   *  success. Called from the decay loop and exposed at /v1/reap-orphans
+   *  for manual triggers. Returns counts so operators can tell how much
+   *  drift was cleaned up. */
   async reapOrphans(opts: { maxAttempts?: number; limit?: number } = {}): Promise<{
     attempted: number;
     cleared: number;
@@ -1165,8 +1596,9 @@ export class MemoryEngine {
       namespace: string;
       project_id: string | null;
       attempts: number;
+      kind: string;
     }>(
-      `SELECT id, user_id, namespace, project_id, attempts FROM cold_orphans
+      `SELECT id, user_id, namespace, project_id, attempts, kind FROM cold_orphans
         WHERE attempts < $1
         ORDER BY last_attempt_at ASC NULLS FIRST
         LIMIT $2`,
@@ -1176,7 +1608,11 @@ export class MemoryEngine {
     let abandoned = 0;
     for (const r of rows.rows) {
       try {
-        await this.cold.delete(r.user_id, r.namespace, r.id, r.project_id);
+        if (r.kind === "backfill") {
+          await this.backfillOrphanVector(r);
+        } else {
+          await this.cold.delete(r.user_id, r.namespace, r.id, r.project_id);
+        }
         await this.warm.pool.query(`DELETE FROM cold_orphans WHERE id = $1`, [r.id]);
         cleared++;
       } catch (err) {
@@ -1254,6 +1690,15 @@ export class MemoryEngine {
     const mergedSet = new Set<string>();
 
     // ── Phase 1: dedup-merge ────────────────────────────────────────
+    // Walk forward from where the last run stopped instead of always
+    // re-reading the oldest `limit` rows. The old query
+    // (`ORDER BY created_at ASC LIMIT n`, no offset) meant a store with
+    // more than `limit` entries never compacted anything newer than its
+    // oldest slice, while re-embedding that same slice on every cycle.
+    // Entry ids are ULIDs, so `id > cursor` is both creation-ordered and
+    // an index range scan on the primary key. Running out of rows wraps
+    // the cursor back to the start, so coverage is a continuous loop
+    // over the whole table.
     const rows = await this.warm.pool.query<{
       id: string;
       user_id: string;
@@ -1263,10 +1708,14 @@ export class MemoryEngine {
     }>(
       `SELECT id, user_id, project_id, namespace, content
          FROM memory_entries
-        ORDER BY created_at ASC
+        WHERE id > $2
+        ORDER BY id ASC
         LIMIT $1`,
-      [limit],
+      [limit, this.dreamCursor],
     );
+    // Advance (or wrap) before doing the work, so a mid-run failure
+    // doesn't pin the cycle to the same slice forever.
+    this.dreamCursor = rows.rows.length < limit ? "" : (rows.rows[rows.rows.length - 1]?.id ?? "");
     for (const row of rows.rows) {
       walked++;
       // Skip ones we've already merged this run.

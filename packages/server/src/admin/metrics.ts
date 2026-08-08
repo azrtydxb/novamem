@@ -14,6 +14,52 @@
 
 const RATE_WINDOW_MS = 60_000;
 
+/** Cap on distinct users / tokens held in memory. The per-user and
+ *  per-token maps previously grew without bound, which is fine for a
+ *  handful of operators and a slow leak for a large multi-tenant
+ *  deployment (or anything that mints short-lived tokens). Eviction is
+ *  least-recently-observed. */
+const MAX_TRACKED_USERS = 10_000;
+const MAX_TRACKED_TOKENS = 10_000;
+
+/** Latency sketch: fixed exponential buckets in milliseconds, plus count
+ *  and sum. Enough to render p50/p95/p99 on the dashboard and to export
+ *  a Prometheus histogram, without retaining per-request samples. */
+const LATENCY_BUCKETS_MS = [1, 5, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000];
+
+export interface LatencySketch {
+  count: number;
+  sumMs: number;
+  /** One entry per LATENCY_BUCKETS_MS boundary, plus a final +Inf slot. */
+  buckets: number[];
+}
+
+function newLatencySketch(): LatencySketch {
+  return { count: 0, sumMs: 0, buckets: new Array(LATENCY_BUCKETS_MS.length + 1).fill(0) };
+}
+
+function observeLatency(sketch: LatencySketch, ms: number): void {
+  if (!Number.isFinite(ms) || ms < 0) return;
+  sketch.count += 1;
+  sketch.sumMs += ms;
+  let i = 0;
+  while (i < LATENCY_BUCKETS_MS.length && ms > LATENCY_BUCKETS_MS[i]!) i += 1;
+  sketch.buckets[i] = (sketch.buckets[i] ?? 0) + 1;
+}
+
+/** Approximate quantile from the bucket counts. Returns the upper bound
+ *  of the bucket the quantile falls in (null when no samples). */
+export function latencyQuantile(sketch: LatencySketch, q: number): number | null {
+  if (sketch.count === 0) return null;
+  const target = q * sketch.count;
+  let cumulative = 0;
+  for (let i = 0; i < sketch.buckets.length; i += 1) {
+    cumulative += sketch.buckets[i] ?? 0;
+    if (cumulative >= target) return LATENCY_BUCKETS_MS[i] ?? Infinity;
+  }
+  return Infinity;
+}
+
 /** Counters tracked per-user. The remaining lifecycle counters
  *  (`promotions_total`, `demotions_total`, `decay_runs_total`,
  *  `orphans_reaped_total`) are global only — the decay loop and reaper
@@ -32,7 +78,13 @@ export type GlobalCounterName =
   | "promotions_total"
   | "demotions_total"
   | "decay_runs_total"
-  | "orphans_reaped_total";
+  | "orphans_reaped_total"
+  /** Failed operations, by hot path. Without these the dashboard showed
+   *  request *counts* only — `recordQuery` fires exclusively on success,
+   *  so an error spike was invisible: throughput simply dropped and
+   *  nothing said why. */
+  | "search_errors_total"
+  | "remember_errors_total";
 
 export interface MetricsSnapshot {
   counters: Record<GlobalCounterName, number>;
@@ -120,6 +172,18 @@ class TimestampRing {
   }
 }
 
+/** Drop least-recently-inserted entries until the map fits `max`. */
+function evictOldest(map: Map<string, unknown>, max: number): void {
+  if (map.size <= max) return;
+  const excess = map.size - max;
+  let dropped = 0;
+  for (const key of map.keys()) {
+    map.delete(key);
+    dropped += 1;
+    if (dropped >= excess) break;
+  }
+}
+
 const ZERO_USER_COUNTERS: Record<UserCounterName, number> = {
   queries_total: 0,
   queries_zero_hit: 0,
@@ -185,6 +249,14 @@ export class MetricsCollector {
     demotions_total: 0,
     decay_runs_total: 0,
     orphans_reaped_total: 0,
+    search_errors_total: 0,
+    remember_errors_total: 0,
+  };
+
+  /** Latency distributions for the two hot paths. */
+  private readonly latency: Record<"search" | "remember", LatencySketch> = {
+    search: newLatencySketch(),
+    remember: newLatencySketch(),
   };
 
   /** Per-user counters + rate rings. Created lazily on first observation. */
@@ -218,13 +290,44 @@ export class MetricsCollector {
     if (!s) {
       s = newUserSlot();
       this.perUser.set(userId, s);
+      evictOldest(this.perUser, MAX_TRACKED_USERS);
+    } else {
+      // Refresh recency: Map preserves insertion order, so re-inserting
+      // moves this user to the young end and keeps eviction LRU-ish.
+      this.perUser.delete(userId);
+      this.perUser.set(userId, s);
     }
     return s;
+  }
+
+  /** Record a failed hot-path operation. Paired with the latency sketch
+   *  so the dashboard can show error rate alongside throughput. */
+  recordError(path: "search" | "remember"): void {
+    if (path === "search") this.globalCounters.search_errors_total += 1;
+    else this.globalCounters.remember_errors_total += 1;
+  }
+
+  /** Record how long a hot-path operation took, successful or not. */
+  recordLatency(path: "search" | "remember", ms: number): void {
+    observeLatency(this.latency[path], ms);
+  }
+
+  /** Read-only view of the latency sketches, for the admin snapshot. */
+  latencySnapshot(): Record<"search" | "remember", { count: number; p50: number | null; p95: number | null; p99: number | null; avgMs: number | null }> {
+    const one = (sk: LatencySketch) => ({
+      count: sk.count,
+      p50: latencyQuantile(sk, 0.5),
+      p95: latencyQuantile(sk, 0.95),
+      p99: latencyQuantile(sk, 0.99),
+      avgMs: sk.count > 0 ? sk.sumMs / sk.count : null,
+    });
+    return { search: one(this.latency.search), remember: one(this.latency.remember) };
   }
 
   private tokenSlot(userId: string, token: TokenIdentity): TokenSlot {
     let s = this.perToken.get(token.hash);
     if (!s) {
+      evictOldest(this.perToken, MAX_TRACKED_TOKENS - 1);
       s = newTokenSlot(userId, token.label);
       this.perToken.set(token.hash, s);
     } else if (s.label !== token.label) {
@@ -293,6 +396,21 @@ export class MetricsCollector {
       s.pendingRemembers = 0;
     }
     return out;
+  }
+
+  /** Put a drained batch back after a failed flush. `drainPendingSamples`
+   *  zeroes the counters before the caller's INSERT runs, so without this
+   *  a transient database error silently dropped a whole sample window
+   *  from the 24h throughput history. Adds rather than assigns, since
+   *  fresh traffic may have incremented the counters in the meantime. */
+  restorePendingSamples(
+    samples: Array<{ userId: string; queries: number; remembers: number }>,
+  ): void {
+    for (const s of samples) {
+      const slot = this.slot(s.userId);
+      slot.pendingQueries += s.queries;
+      slot.pendingRemembers += s.remembers;
+    }
   }
 
   recordForget(userId: string, token?: TokenIdentity): void {
