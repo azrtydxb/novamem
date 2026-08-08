@@ -46,12 +46,37 @@ export class FakeWarmStore {
   decayRunsUpdated = 0;
   coldOrphans = new Map<
     string,
-    { id: string; userId: string; namespace: string; attempts: number; lastError: string; lastAttemptAt: Date | null }
+    {
+      id: string;
+      userId: string;
+      namespace: string;
+      /** "delete" (vector outlived its warm row) or "backfill" (warm row
+       *  exists but its vector never landed). */
+      kind: string;
+      attempts: number;
+      lastError: string;
+      lastAttemptAt: Date | null;
+    }
   >();
   pool = {
     /** Fake the pool query surface used by engine.recent + engine.forget +
      *  engine.decay. Only the queries the engine actually issues are wired —
      *  anything else throws so tests fail loudly on unexpected SQL. */
+    /** `engine.forget()` runs its four DELETEs inside an explicit
+     *  transaction, which needs a checked-out client rather than the
+     *  pool's convenience `query`. The fake hands back a client that
+     *  shares the same handler and treats the transaction control
+     *  statements as no-ops — the fake store has no rollback semantics,
+     *  and the tests here assert the resulting row state, not atomicity
+     *  (that is Postgres's job, exercised by the integration suite). */
+    connect: async () => ({
+      query: async (sql: string, params: unknown[] = []) => {
+        const verb = sql.trim().toUpperCase();
+        if (verb === "BEGIN" || verb === "COMMIT" || verb === "ROLLBACK") return { rows: [] };
+        return this.pool.query(sql, params);
+      },
+      release: () => {},
+    }),
     query: async (sql: string, params: unknown[] = []): Promise<{ rows: any[] }> => {
       // (engine.recent moved off pool.query → WarmStore.listRecent — see
       // FakeWarmStore.listRecent below.)
@@ -154,6 +179,7 @@ export class FakeWarmStore {
             id,
             userId,
             namespace,
+            kind: sql.includes("'backfill'") ? "backfill" : "delete",
             attempts: 1,
             lastError,
             lastAttemptAt: new Date(),
@@ -161,7 +187,7 @@ export class FakeWarmStore {
         }
         return { rows: [] };
       }
-      if (sql.startsWith("SELECT id, user_id, namespace, project_id, attempts FROM cold_orphans")) {
+      if (sql.startsWith("SELECT id, user_id, namespace, project_id, attempts, kind FROM cold_orphans")) {
         const maxAttempts = Number(params[0]);
         const limit = Number(params[1]);
         return {
@@ -175,6 +201,7 @@ export class FakeWarmStore {
               namespace: o.namespace,
               project_id: null,
               attempts: o.attempts,
+              kind: o.kind ?? "delete",
             })),
         };
       }
@@ -204,6 +231,31 @@ export class FakeWarmStore {
         if (!r) return { rows: [] };
         const idleDays = (Date.now() - r.lastAccessed.getTime()) / (1000 * 60 * 60 * 24);
         return { rows: [{ hits: r.hits, idle_days: String(idleDays) }] };
+      }
+      // dreamCycle's forward table walk:
+      //   SELECT ... FROM memory_entries WHERE id > $2 ORDER BY id ASC LIMIT $1
+      if (sql.includes("FROM memory_entries") && sql.includes("ORDER BY id ASC")) {
+        const limit = Number(params[0]);
+        const cursor = String(params[1] ?? "");
+        const rows = [...this.rows.values()]
+          .filter((r) => r.id > cursor)
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          .slice(0, limit)
+          .map((r) => ({
+            id: r.id,
+            user_id: r.userId,
+            project_id: r.projectId,
+            namespace: r.namespace,
+            content: r.content,
+          }));
+        return { rows };
+      }
+      // dreamCycle phase 2 (common-neighbour edge promotion). The fake
+      // relation graph is exercised directly by the graph tests; here we
+      // return "no promotable pairs", which is a legitimate outcome and
+      // keeps the cursor tests focused on phase 1.
+      if (sql.includes("WITH co AS") && sql.includes("from_id")) {
+        return { rows: [] };
       }
       throw new Error(`fake pool: unhandled SQL — ${sql.slice(0, 60)}`);
     },
@@ -335,6 +387,41 @@ export class FakeWarmStore {
     const r = this.rows.get(id);
     if (!r) return undefined;
     return { userId: r.userId, projectId: r.projectId };
+  }
+
+  /** In-memory stand-in for the `engine_state` key/value table. */
+  engineState = new Map<string, string>();
+
+  async getEngineState(key: string): Promise<string | null> {
+    return this.engineState.get(key) ?? null;
+  }
+
+  async setEngineState(key: string, value: string): Promise<void> {
+    this.engineState.set(key, value);
+  }
+
+  /** Queue a warm row whose cold vector never landed, for the reaper to
+   *  re-embed. Mirrors the real store's `kind = 'backfill'` orphan row. */
+  async recordMissingVector(args: {
+    userId: string;
+    projectId: string | null;
+    entryId: string;
+    namespace: string;
+  }): Promise<void> {
+    this.coldOrphans.set(args.entryId, {
+      id: args.entryId,
+      userId: args.userId,
+      namespace: args.namespace,
+      kind: "backfill",
+      attempts: 0,
+      lastError: "",
+      lastAttemptAt: null,
+    });
+  }
+
+  async clearMissingVector(entryId: string): Promise<void> {
+    const o = this.coldOrphans.get(entryId);
+    if (o?.kind === "backfill") this.coldOrphans.delete(entryId);
   }
 
   async getEntry(userId: string, id: string, opts: { projectId?: string | null } = {}) {
@@ -1028,6 +1115,39 @@ export class FakeGraphStore {
     return `${userId}:${projectId ?? "_"}:${id}`;
   }
 
+  /** memoryId -> lowercase entity names, mirroring the MENTIONS edges. */
+  entities = new Map<string, Set<string>>();
+
+  async linkEntities(
+    _userId: string,
+    memoryId: string,
+    names: string[],
+    _projectId: string | null = null,
+  ): Promise<void> {
+    if (!this.connected) return;
+    const set = this.entities.get(memoryId) ?? new Set<string>();
+    for (const n of names) set.add(n.toLowerCase());
+    this.entities.set(memoryId, set);
+  }
+
+  async memoriesByEntities(
+    _userId: string,
+    names: string[],
+    limit = 20,
+    _projectId: string | null = null,
+    excludeId?: string,
+  ): Promise<Array<{ id: string; score: number }>> {
+    if (!this.connected || names.length === 0) return [];
+    const wanted = names.map((n) => n.toLowerCase());
+    const out: Array<{ id: string; score: number }> = [];
+    for (const [id, set] of this.entities) {
+      if (id === excludeId) continue;
+      const shared = wanted.filter((n) => set.has(n)).length;
+      if (shared > 0) out.push({ id, score: Math.min(1, shared / Math.max(1, names.length)) });
+    }
+    return out.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
   isConnected(): boolean { return this.connected; }
   async ping(): Promise<boolean> { return this.connected; }
 
@@ -1104,17 +1224,26 @@ export class FakeGraphStore {
 
 export class FakeEmbedder implements Embedder {
   readonly dimensions = 4;
+  readonly modelId = "fake:test-embedder";
   /** Maps content text → embedding for predictable cosine results. */
   table = new Map<string, number[]>();
+  /** Records the `kind` of each call so tests can assert that queries and
+   *  documents are embedded on their respective sides of an asymmetric
+   *  retrieval model. */
+  calls: Array<{ input: string[]; kind: "query" | "document" }> = [];
   /** Simulate an unreachable embeddings host. The real adapter throws on
    *  a failed fetch / non-2xx, so the fake throws too — a fake that
    *  returned `[]` instead would let the code under test pass without
    *  ever exercising the path that matters. */
   fail = false;
 
-  async embed(input: string | string[]): Promise<number[][]> {
-    if (this.fail) throw new Error("embeddings http 000: connection refused");
+  async embed(
+    input: string | string[],
+    kind: "query" | "document" = "document",
+  ): Promise<number[][]> {
     const arr = Array.isArray(input) ? input : [input];
+    this.calls.push({ input: arr, kind });
+    if (this.fail) throw new Error("embeddings http 000: connection refused");
     return arr.map((s) => this.table.get(s) ?? this.deterministic(s));
   }
 
@@ -1137,6 +1266,13 @@ export const asCold = (f: FakeColdStore): ColdStore => f as unknown as ColdStore
 export const asGraph = (f: FakeGraphStore): GraphStore => f as unknown as GraphStore;
 
 export interface MakeEngineOpts {
+  /** Absolute cosine floor for vector-only search candidates. Defaults
+   *  to 0 in tests — see the note in `makeEngine`. */
+  minVectorScore?: number;
+  /** Max accepted content length; 0 disables the check. */
+  maxContentChars?: number;
+  /** Deployment-specific high-relevance terms for the worthiness scorer. */
+  personalTerms?: readonly string[];
   /** Set false to simulate a disconnected graph store. Default true. */
   graphConnected?: boolean;
   /** Forwarded to `MemoryEngine`. */
@@ -1180,6 +1316,12 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
     embedder,
     defaultEffectiveDays: opts.defaultEffectiveDays,
     metrics,
+    // The fake embedder produces 4-dim vectors whose cosines cluster
+    // high, so the production noise floor would filter almost everything
+    // out. Tests that care about the floor pass their own value.
+    minVectorScore: opts.minVectorScore ?? 0,
+    maxContentChars: opts.maxContentChars,
+    personalTerms: opts.personalTerms,
   });
   return { engine, warm, cold, graph, embedder, metrics };
 }

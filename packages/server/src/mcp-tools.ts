@@ -515,14 +515,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "project_share",
     description:
-      "Invite another user to a project the user owns — gives them read AND write access to every entry in it. CALL THIS when the user says \"share X with bob\", \"add alice to my project\", \"give the team access\", \"invite [user] to Y\". Owner-only — if the calling user is just a member, surface that and tell them to ask the owner. Use the invitee's email or display name; the server resolves both. Confirm the username back in your reply (\"added alice@example.com to mcp-fulltest\") so the user catches typos. The invitee will see the project in their dashboard switcher immediately — no email is sent.",
+      "Invite another user to a project the user owns — gives them read AND write access to every entry in it. CALL THIS when the user says \"share X with bob\", \"add alice to my project\", \"give the team access\", \"invite [user] to Y\". Owner-only — if the calling user is just a member, surface that and tell them to ask the owner. Use the invitee's exact email address — display names are self-settable and therefore not accepted as an identifier here. Confirm the email back in your reply (\"added alice@example.com to mcp-fulltest\") so the user catches typos. The invitee will see the project in their dashboard switcher immediately — no email is sent.",
     inputSchema: {
       type: "object",
       properties: {
         project: { type: "string", description: "Project id or human name." },
         username: {
           type: "string",
-          description: "Email or display name of the user to add.",
+          description: "Exact email address of the user to add.",
         },
       },
       required: ["project", "username"],
@@ -545,7 +545,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         project: { type: "string", description: "Project id or human name." },
         username: {
           type: "string",
-          description: "Email or display name of the user to remove.",
+          description: "Exact email address of the user to remove.",
         },
       },
       required: ["project", "username"],

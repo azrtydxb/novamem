@@ -1,6 +1,6 @@
 {
-  "id": "36453d97-512d-48c0-bd11-2f2a3143581a",
-  "prevId": "af092d08-3802-432b-92e3-e2d5c04a2a9a",
+  "id": "14555dc1-76d4-4477-a284-1835ab146881",
+  "prevId": "36453d97-512d-48c0-bd11-2f2a3143581a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -433,6 +433,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "embedded_at": {
+          "name": "embedded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -592,6 +598,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_entries_pending_embedding": {
+          "name": "idx_entries_pending_embedding",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"memory_entries\".\"embedded_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -765,6 +787,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -818,6 +853,21 @@
           "columns": [
             {
               "expression": "to_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_relations_valid_to": {
+          "name": "idx_relations_valid_to",
+          "columns": [
+            {
+              "expression": "valid_to",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

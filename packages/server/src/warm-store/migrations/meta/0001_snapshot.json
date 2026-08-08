@@ -1,5 +1,5 @@
 {
-  "id": "bbd2d3b0-7d0e-424a-95f8-7a7428ffbc70",
+  "id": "af092d08-3802-432b-92e3-e2d5c04a2a9a",
   "prevId": "19994d02-4838-4f62-b04b-d06ce5c393ff",
   "version": "7",
   "dialect": "postgresql",
@@ -125,6 +125,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'delete'"
         },
         "attempts": {
           "name": "attempts",
@@ -726,19 +733,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "valid_from": {
-          "name": "valid_from",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "valid_to": {
-          "name": "valid_to",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -792,21 +786,6 @@
           "columns": [
             {
               "expression": "to_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_relations_valid_to": {
-          "name": "idx_relations_valid_to",
-          "columns": [
-            {
-              "expression": "valid_to",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

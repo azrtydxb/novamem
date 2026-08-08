@@ -56,10 +56,30 @@ async function main() {
   const warm = new WarmStore({ url: cfg.warm.url, pgPoolMax: cfg.service.pgPoolMax });
   await warm.initialize();
 
-  const cold = new ColdStore({ url: cfg.cold.url, vectorSize: cfg.cold.vectorSize });
+  const cold = new ColdStore({
+    url: cfg.cold.url,
+    vectorSize: cfg.cold.vectorSize,
+    timeoutMs: cfg.cold.timeoutMs,
+  });
 
-  const graph = cfg.graph.enabled && cfg.graph.url ? new GraphStore({ url: cfg.graph.url }) : null;
-  if (graph) await graph.connect();
+  const graph =
+    cfg.graph.enabled && cfg.graph.url
+      ? new GraphStore({ url: cfg.graph.url, queryTimeoutMs: cfg.graph.queryTimeoutMs })
+      : null;
+  if (graph) {
+    // A failed connect is not fatal — search degrades to keyword+vector —
+    // but it must not be permanent either. GraphStore now schedules its
+    // own backoff reconnect, so a FalkorDB that is simply slower to boot
+    // than we are gets picked up without a restart.
+    const connected = await graph.connect();
+    if (!connected) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[novamem] graph store unavailable at start-up — search runs degraded " +
+          "(keyword + vector) and will reconnect automatically in the background.",
+      );
+    }
+  }
 
   const embedder = makeEmbedder({
     provider: cfg.embeddings.provider,
@@ -67,6 +87,9 @@ async function main() {
     model: cfg.embeddings.model,
     apiKey: cfg.embeddings.apiKey,
     dimensions: cfg.embeddings.dimensions,
+    timeoutMs: cfg.embeddings.timeoutMs,
+    queryPrefix: cfg.embeddings.queryPrefix,
+    documentPrefix: cfg.embeddings.documentPrefix,
   });
 
   const metrics = new MetricsCollector();
@@ -173,6 +196,9 @@ async function main() {
     extractorMaxFacts: cfg.extraction.maxFactsPerChunk,
     decomposer,
     observer,
+    personalTerms: cfg.search.personalTerms,
+    minVectorScore: cfg.search.minVectorScore,
+    maxContentChars: cfg.search.maxContentChars,
   });
 
   // Better Auth instance — owns the dashboard control plane (login,
@@ -261,6 +287,13 @@ async function main() {
       // (and in HttpOptions) instead of a silent runtime mismatch.
       getSession: (headers) => ba.api.getSession({ headers }),
     },
+  });
+
+  // Embedding-model provenance check. Runs after the logger swap below
+  // would be too late — but before serving traffic is what matters, and
+  // the engine logger is already wired by this point.
+  await engine.checkEmbeddingModel().catch((err) => {
+    app.log.warn({ err: (err as Error).message }, "embedding-model check failed");
   });
 
   // Now that the Fastify pino logger exists, swap the engine + graph
@@ -365,7 +398,17 @@ async function main() {
       const now = new Date();
       now.setSeconds(0, 0);
       const samples = metrics.drainPendingSamples(now);
-      if (samples.length > 0) await warm.recordMetricsSamples(samples);
+      if (samples.length > 0) {
+        try {
+          await warm.recordMetricsSamples(samples);
+        } catch (err) {
+          // The drain already zeroed the in-memory counters, so a failed
+          // insert used to silently lose that whole window. Put the
+          // counts back so the next tick retries them.
+          metrics.restorePendingSamples(samples);
+          throw err;
+        }
+      }
       // Keep ~25h of history (24h chart + a margin) so a chart query at
       // sample-time-minus-24h always finds a left edge.
       const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000);
@@ -382,19 +425,64 @@ async function main() {
 
   app.log.info({ host: cfg.service.host, port: cfg.service.port }, "novamem listening");
 
-  const shutdown = async () => {
+  // Graceful shutdown. Three things the previous version got wrong:
+  //   1. Any rejection (e.g. `warm.close()` against a broken pool) became
+  //      an unhandled rejection and the process never reached
+  //      `process.exit(0)` — it hung until the orchestrator SIGKILLed it.
+  //   2. A hung `app.close()` (a long-poll SSE client, a stuck query) had
+  //      no deadline, same outcome.
+  //   3. A second SIGTERM re-entered the whole sequence.
+  const SHUTDOWN_DEADLINE_MS = 15_000;
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    app.log.info({ signal }, "shutting down");
+    // Hard deadline: if the graceful path stalls, exit anyway rather than
+    // waiting for the supervisor's kill signal.
+    const forceExit = setTimeout(() => {
+      app.log.error({ deadlineMs: SHUTDOWN_DEADLINE_MS }, "graceful shutdown timed out — forcing exit");
+      process.exit(1);
+    }, SHUTDOWN_DEADLINE_MS);
+    forceExit.unref?.();
+
     clearInterval(decayTimer);
     clearInterval(dreamTimer);
     clearInterval(reconcileTimer);
     clearInterval(metricsFlushTimer);
-    await app.close();
-    if (graph) await graph.close();
-    await warm.close();
-    await shutdownTracing();
+    // Each step is independently guarded: one broken dependency must not
+    // prevent the others from closing cleanly.
+    const steps: Array<[string, () => Promise<unknown>]> = [
+      ["http", () => app.close()],
+      ["graph", async () => graph?.close()],
+      ["warm", () => warm.close()],
+      ["tracing", () => shutdownTracing()],
+    ];
+    for (const [name, close] of steps) {
+      try {
+        await close();
+      } catch (err) {
+        app.log.error({ step: name, err: (err as Error).message }, "shutdown step failed");
+      }
+    }
+    clearTimeout(forceExit);
     process.exit(0);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+  // A rejected promise with no handler would otherwise terminate the
+  // process on Node ≥15 with no structured log line explaining why.
+  process.on("unhandledRejection", (reason) => {
+    app.log.error(
+      { err: reason instanceof Error ? reason.message : String(reason) },
+      "unhandled promise rejection",
+    );
+  });
+  process.on("uncaughtException", (err) => {
+    app.log.error({ err: err.message, stack: err.stack }, "uncaught exception — shutting down");
+    void shutdown("uncaughtException");
+  });
 }
 
 main().catch((err) => {

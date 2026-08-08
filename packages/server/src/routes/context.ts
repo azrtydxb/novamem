@@ -88,6 +88,28 @@ export function adminAuth(req: { dashUser?: DashboardUser }): boolean {
   return isAdmin(req.dashUser);
 }
 
+/** Admin gate with correct HTTP semantics, shared by every admin-only
+ *  route. `adminAuth` alone couldn't distinguish "no credentials" from
+ *  "credentials without the admin role", so callers picked a code and
+ *  drifted: /v1/admin/* answered 401 while /v1/decay answered 403 for the
+ *  identical condition. Returns true when the caller may proceed;
+ *  otherwise it has already sent 401 (unauthenticated) or 403
+ *  (authenticated, not an admin). */
+export function requireAdmin(
+  req: { dashUser?: DashboardUser },
+  reply: FastifyReply,
+): boolean {
+  if (!req.dashUser) {
+    reply.code(401).send({ error: "unauthorized" });
+    return false;
+  }
+  if (!isAdmin(req.dashUser)) {
+    reply.code(403).send({ error: "admin only" });
+    return false;
+  }
+  return true;
+}
+
 /** Resolve `req.dashUser` for handlers that require a logged-in user.
  *  Replies 401 + returns null when missing so the handler can `if (!u) return;`.
  *  Centralises what was a sprinkling of `req.dashUser!` non-null assertions. */

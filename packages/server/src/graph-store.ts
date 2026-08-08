@@ -33,6 +33,24 @@ export function validateGraphParams(depth: unknown, limit: unknown): void {
   }
 }
 
+/** Distinguish "the connection is gone" from "this query was bad". Only
+ *  the former should flip the store unhealthy and start the reconnect
+ *  loop; a Cypher syntax error or a driver decode hiccup must not take
+ *  the whole graph tier offline. */
+function isConnectionError(err: unknown): boolean {
+  const msg = (err as Error)?.message?.toLowerCase() ?? "";
+  return (
+    msg.includes("timed out") ||
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset") ||
+    msg.includes("epipe") ||
+    msg.includes("socket closed") ||
+    msg.includes("connection is closed") ||
+    msg.includes("client is closed") ||
+    msg.includes("not connected")
+  );
+}
+
 /** Minimal logger surface — structurally compatible with Pino /
  *  Fastify's logger. Object-first: `(obj, msg)` is the idiomatic Pino
  *  call shape. Defaults to console when no logger is supplied. */
@@ -46,6 +64,10 @@ export interface GraphStoreConfig {
   graphName?: string;
   /** Optional Pino-compatible logger. Defaults to console. */
   logger?: GraphStoreLogger;
+  /** Per-query timeout in ms. FalkorDB's driver has no built-in deadline,
+   *  so a stalled server would otherwise hold every traversal open —
+   *  the engine's per-tier `.catch` handles errors, not hangs. */
+  queryTimeoutMs?: number;
 }
 
 export class GraphStore {
@@ -55,14 +77,80 @@ export class GraphStore {
   private readonly graphName: string;
   private logger: GraphStoreLogger;
   private connected = false;
+  private readonly queryTimeoutMs: number;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
+  private closed = false;
 
   constructor(cfg: GraphStoreConfig) {
     this.url = cfg.url;
     this.graphName = cfg.graphName ?? "novamem";
+    this.queryTimeoutMs = cfg.queryTimeoutMs ?? 10_000;
     this.logger = cfg.logger ?? {
       // eslint-disable-next-line no-console
       warn: (...args: unknown[]) => console.warn(...(args as [unknown, ...unknown[]])),
     } as GraphStoreLogger;
+  }
+
+  /** Bound a driver call so a hung FalkorDB can't stall a request
+   *  forever. The underlying query is not cancellable, so this races it
+   *  against a timer — the connection is marked unhealthy and the
+   *  reconnect loop takes it from there. */
+  private async withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        p,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`graph ${label} timed out after ${this.queryTimeoutMs}ms`)),
+            this.queryTimeoutMs,
+          );
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /** All Cypher goes through here so every call gets the timeout and a
+   *  failure marks the store unhealthy + schedules a reconnect. */
+  private async query<T>(
+    cypher: string,
+    opts?: { params?: Record<string, unknown> },
+  ): Promise<{ data?: T[] }> {
+    if (!this.graph) throw new Error("graph store not connected");
+    try {
+      const r = (await this.withTimeout(
+        this.graph.query<T>(cypher, opts as never),
+        "query",
+      )) as { data?: T[] };
+      return r;
+    } catch (err) {
+      if (isConnectionError(err)) {
+        this.connected = false;
+        this.scheduleReconnect();
+      }
+      throw err;
+    }
+  }
+
+  /** Reconnect with capped exponential backoff. `connect()` used to be a
+   *  one-shot at boot whose return value main.ts ignored, so a FalkorDB
+   *  that was down at start-up (or died later) stayed disabled until the
+   *  process was restarted. */
+  private scheduleReconnect(): void {
+    if (this.closed || this.reconnectTimer || this.connected) return;
+    const delay = Math.min(30_000, 500 * 2 ** Math.min(this.reconnectAttempt, 6));
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connect().then((ok) => {
+        if (!ok) this.scheduleReconnect();
+      });
+    }, delay);
+    this.reconnectTimer.unref?.();
   }
 
   /** Replace the logger after construction — main.ts uses this to swap
@@ -73,11 +161,13 @@ export class GraphStore {
   }
 
   async connect(): Promise<boolean> {
+    if (this.closed) return false;
     try {
       this.db = await FalkorDB.connect({ url: this.url });
       this.graph = this.db.selectGraph(this.graphName);
       await this.ensureSchema();
       this.connected = true;
+      this.reconnectAttempt = 0;
       return true;
     } catch (err) {
       // Surface the cause so operators can distinguish wrong URL / auth /
@@ -88,6 +178,7 @@ export class GraphStore {
         "graph-store connect failed",
       );
       this.connected = false;
+      this.scheduleReconnect();
       return false;
     }
   }
@@ -117,7 +208,7 @@ export class GraphStore {
     ];
     for (const stmt of stmts) {
       try {
-        await this.graph.query(stmt);
+        await this.withTimeout(this.graph.query(stmt), "ensureSchema");
       } catch (err) {
         const msg = (err as Error).message ?? "";
         // FalkorDB returns one of these on a duplicate index create. They
@@ -156,7 +247,7 @@ export class GraphStore {
     validToMs: number | null = null,
   ): Promise<void> {
     if (!this.graph) return;
-    await this.graph.query(
+    await this.query(
       "MERGE (a:Memory {id: $from, user: $user, project: $project}) " +
         "MERGE (b:Memory {id: $to, user: $user, project: $project}) " +
         "MERGE (a)-[r:RELATES {kind: $rel}]->(b) " +
@@ -199,7 +290,7 @@ export class GraphStore {
         validTo: e.validToMs ?? 0,
       })),
     };
-    await this.graph.query(
+    await this.query(
       "MERGE (a:Memory {id: $from, user: $user, project: $project}) " +
         "WITH a UNWIND $edges AS edge " +
         "MERGE (b:Memory {id: edge.to, user: $user, project: $project}) " +
@@ -226,7 +317,7 @@ export class GraphStore {
   ): Promise<void> {
     if (!this.graph) return;
     // Close out any open edges with the same (from, relation).
-    await this.graph.query(
+    await this.query(
       "MATCH (a:Memory {id: $from, user: $user, project: $project})-[r:RELATES {kind: $rel}]->() " +
         "WHERE r.validTo = 0 SET r.validTo = $at",
       {
@@ -243,11 +334,77 @@ export class GraphStore {
     await this.addEdge(userId, fromId, toIdNew, relation, strength, projectId, atMs, null);
   }
 
+  /** Attach extracted entities to a memory as `(:Memory)-[:MENTIONS]->(:Entity)`.
+   *
+   *  Entity nodes are scoped by user+project exactly like Memory nodes, so
+   *  the isolation boundary is identical — an entity name never joins two
+   *  tenants' memories. Idempotent via MERGE. */
+  async linkEntities(
+    userId: string,
+    memoryId: string,
+    entities: string[],
+    projectId: string | null = null,
+  ): Promise<void> {
+    if (!this.graph || entities.length === 0) return;
+    await this.query(
+      "MERGE (m:Memory {id: $id, user: $user, project: $project}) " +
+        "WITH m UNWIND $entities AS name " +
+        "MERGE (e:Entity {name: name, user: $user, project: $project}) " +
+        "MERGE (m)-[:MENTIONS]->(e)",
+      { params: { id: memoryId, user: userId, project: projectId ?? "", entities } },
+    );
+  }
+
+  /** Find memories mentioning any of `entities`, ranked by how many of
+   *  them each memory shares with the query.
+   *
+   *  This is the graph tier's one genuinely independent signal. The
+   *  `co_occurs` edges are derived from vector similarity, so traversing
+   *  them re-finds what the vector tier already returned; entity overlap
+   *  instead bridges on exact identifiers, which is where embeddings are
+   *  weakest. `excludeId` keeps the seed memory out of its own results. */
+  async memoriesByEntities(
+    userId: string,
+    entities: string[],
+    limit = 20,
+    projectId: string | null = null,
+    excludeId?: string,
+  ): Promise<Array<{ id: string; score: number }>> {
+    if (!this.graph || entities.length === 0) return [];
+    validateGraphParams(1, limit);
+    limit = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const r = await this.query<{ id: string; shared: number }>(
+      `UNWIND $entities AS name
+       MATCH (e:Entity {name: name, user: $user, project: $project})<-[:MENTIONS]-(m:Memory)
+       WHERE m.user = $user AND m.project = $project AND m.id <> $exclude
+       WITH m.id AS id, count(DISTINCT name) AS shared
+       RETURN id, shared
+       ORDER BY shared DESC
+       LIMIT ${limit}`,
+      {
+        params: {
+          entities,
+          user: userId,
+          project: projectId ?? "",
+          exclude: excludeId ?? "",
+        },
+      },
+    );
+    // Normalise overlap into [0,1] against the number of query entities so
+    // the score is comparable with the cosine-derived edge strengths the
+    // other graph path produces.
+    const denom = Math.max(1, entities.length);
+    return (r.data ?? []).map((row) => ({
+      id: row.id,
+      score: Math.min(1, Number(row.shared ?? 0) / denom),
+    }));
+  }
+
   /** Drop a node and all its incident edges. Called on `forget()` so graph
    *  state stays consistent with warm/cold deletions. */
   async removeNode(userId: string, id: string): Promise<void> {
     if (!this.graph) return;
-    await this.graph.query("MATCH (n:Memory {id: $id, user: $user}) DETACH DELETE n", {
+    await this.query("MATCH (n:Memory {id: $id, user: $user}) DETACH DELETE n", {
       params: { id, user: userId },
     });
   }
@@ -317,26 +474,52 @@ export class GraphStore {
       asOfMs === null
         ? ""
         : " AND ALL(rel IN relationships(p) WHERE coalesce(rel.validFrom, 0) <= $asOf AND (coalesce(rel.validTo, 0) = 0 OR coalesce(rel.validTo, 0) >= $asOf))";
+    // `ORDER BY score DESC` before `LIMIT` is load-bearing, not cosmetic:
+    // without it FalkorDB returns whichever `limit` neighbours it happens
+    // to emit first, so a seed with more neighbours than `limit` (the
+    // normal case once co_occurs fanout and co_inferred promotion have
+    // accumulated) silently drops its strongest edges and keeps weak
+    // ones. That degrades both the graph tier of hybrid search and the
+    // `memory_neighbors` tool.
     const cypher =
       depth <= 1
         ? `MATCH (a:Memory {id: $id, user: $user, project: $project})-[r:RELATES]-(b:Memory)
              WHERE b.user = $user AND b.project = $project AND b.id <> $id${tempCond}
              RETURN b.id AS id, MAX(r.strength) AS score
+             ORDER BY score DESC
              LIMIT ${limit}`
         : `MATCH p = (a:Memory {id: $id, user: $user, project: $project})-[:RELATES*1..${depth}]-(b:Memory)
              WHERE b.user = $user AND b.project = $project AND b.id <> $id${tempCondPath}
              WITH b.id AS id,
                   reduce(s = 1.0, x IN [rel IN relationships(p) | rel.strength] | s * x) AS pathScore
              RETURN id, MAX(pathScore) AS score
+             ORDER BY score DESC
              LIMIT ${limit}`;
-    const r = await this.graph.query<{ id: string; score: number }>(cypher, {
+    const r = await this.query<{ id: string; score: number }>(cypher, {
       params: { id: seedId, user: userId, project, asOf: asOfMs ?? 0 },
     });
     return (r.data ?? []).map((row) => ({ id: row.id, score: Number(row.score ?? 0) }));
   }
 
+  /** Liveness probe. Actually issues a query rather than reporting the
+   *  cached connect-time flag — the old form returned `this.connected`,
+   *  so once FalkorDB died after boot `/health`, `/ready`, and the deep
+   *  admin health check all kept reporting the graph as healthy while
+   *  every traversal threw. A failed probe also flips `connected` false
+   *  so the engine starts reporting `degraded` and the reconnect loop
+   *  takes over. */
   async ping(): Promise<boolean> {
-    return this.connected;
+    if (!this.graph) return false;
+    try {
+      await this.withTimeout(this.graph.query("RETURN 1"), "ping");
+      this.connected = true;
+      return true;
+    } catch (err) {
+      this.logger.warn({ err: (err as Error).message }, "graph-store ping failed");
+      this.connected = false;
+      this.scheduleReconnect();
+      return false;
+    }
   }
 
   /** Drop every Memory node belonging to a project. Returns `true` only
@@ -355,7 +538,7 @@ export class GraphStore {
       // layer verifies the caller owns the project, double-keying the
       // delete on `user` ensures a malformed Cypher template or a future
       // caller mistake can't reach across user boundaries.
-      await this.graph.query(
+      await this.query(
         "MATCH (n:Memory {user: $user, project: $project}) DETACH DELETE n",
         { params: { user: userId, project: projectId } },
       );
@@ -375,7 +558,7 @@ export class GraphStore {
   async edgeCount(): Promise<number | null> {
     if (!this.graph || !this.connected) return null;
     try {
-      const r = await this.graph.query<{ count: number }>(
+      const r = await this.query<{ count: number }>(
         "MATCH ()-[r:RELATES]->() RETURN count(r) AS count",
       );
       const n = Number(r.data?.[0]?.count ?? 0);
@@ -386,6 +569,13 @@ export class GraphStore {
   }
 
   async close(): Promise<void> {
+    // Mark closed first so an in-flight failure can't schedule a
+    // reconnect that resurrects the store after shutdown.
+    this.closed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.db) await this.db.close();
     this.db = null;
     this.graph = null;

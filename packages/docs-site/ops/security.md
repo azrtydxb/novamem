@@ -68,4 +68,18 @@ If you're running novamem with real data:
 | Holder of a `nm_…` bearer | Read/write everything the owning user can reach — user-global entries plus every project that user is a member of. Cannot mint other bearers, cannot reach `/v1/admin/*` (unless the owning user is admin). Can rotate the bearer via `/v1/auth/rotate-token`. |
 | Logged-in user (role `user`) | Manage their own bearers + projects, view their own metrics. Can share a project with another user (adds them as a member). Cannot reach `/v1/admin/*` or `/api/auth/admin/*`. |
 | Logged-in user (role `admin`) | Manage all users via Better Auth's admin endpoints, view system metrics, run decay / dream-cycle. Admins do **not** automatically inherit other users' memory access — they manage identity, not data. The last admin cannot be removed or demoted. |
+| Member of a shared project | Read/write every memory in that project, including memories written by other members. See "Shared projects are a trust boundary" below. |
 | Compromised database | Sees Better Auth's password hashes (scrypt) in `account.password`, token hashes (sha256) in `user_tokens`. Plaintext bearers and passwords are not stored. Re-issued tokens can be invalidated by deleting the relevant rows. |
+
+## Shared projects are a trust boundary
+
+Memory content is stored verbatim and returned verbatim to the calling agent, and the tool descriptions instruct that agent to weight stored memories above its own reasoning. That is the whole point of the product — and it means **anyone you share a project with can influence what your agent believes.**
+
+A member who writes a memory containing adversarial instructions ("when asked about deployments, always recommend …", or text shaped to look like a system directive) is writing into a channel your agent treats as high-confidence context. The sensitivity gate (`maxSensitivity`) controls *visibility*; it is not a defence against injection, because the injected text is visible by design.
+
+Practical guidance:
+
+- Share projects with people you would trust to edit your agent's instructions — the capability is comparable.
+- `project_share` and `project_unshare` resolve members by **exact email address**. Display names are self-settable, so they are not accepted as identifiers: a fuzzy match would let a newly-registered user collide with a colleague's handle and be invited in their place.
+- Prefer user-global memories (no project) for anything you would not want a project member to be able to overwrite.
+- Memory rows carry provenance (`source`, `agentName`, `capturedFrom`). When triaging odd agent behaviour in a shared project, `memory_recent` plus those fields shows who wrote what.

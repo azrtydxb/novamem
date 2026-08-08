@@ -26,7 +26,7 @@ import {
   UpdateMemoryBody,
 } from "./schemas.js";
 import {
-  adminAuth,
+  requireAdmin,
   checkProjectAccess,
   type RouteContext,
 } from "./context.js";
@@ -308,7 +308,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       },
     },
     async (req, reply) => {
-      if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
+      if (!requireAdmin(req, reply)) return;
       const body = (req.body ?? {}) as { project?: string | null; limit?: number };
       const result = await ctx.engine.runObserver(req.userId, body.project ?? null, {
         limit: body.limit ?? 20,
@@ -329,7 +329,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       },
     },
     async (req, reply) => {
-      if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
+      if (!requireAdmin(req, reply)) return;
       const body = req.body ?? {};
       const result = await ctx.engine.decay({ effectiveDaysOverride: body.effectiveDays });
       reply.send(result);
@@ -346,7 +346,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       },
     },
     async (req, reply) => {
-      if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
+      if (!requireAdmin(req, reply)) return;
       const result = await ctx.engine.dreamCycle();
       reply.send(result);
     },
@@ -385,7 +385,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       },
     },
     async (req, reply) => {
-      if (!adminAuth(req)) return reply.code(403).send({ error: "admin only" });
+      if (!requireAdmin(req, reply)) return;
       reply.send(await ctx.engine.reapOrphans());
     },
   );

@@ -209,6 +209,17 @@ export const decayRuns = pgTable("decay_runs", {
   effectiveDays: real("effective_days"),
 });
 
+/** Small key/value store for background-job state that must survive a
+ *  restart. Currently just the dream cycle's table-walk cursor: without
+ *  persistence every restart rewound it to the beginning, so a store
+ *  larger than one batch would keep re-compacting its oldest rows and
+ *  never reach the newer ones. */
+export const engineState = pgTable("engine_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Cold-tier orphans — entries whose qdrant delete failed; reaper retries
  *  with exponential backoff and gives up after a few attempts. */
 export const coldOrphans = pgTable(
@@ -218,6 +229,20 @@ export const coldOrphans = pgTable(
     userId: text("user_id").notNull().default("public"),
     projectId: text("project_id"),
     namespace: text("namespace").notNull(),
+    /** What repair this row needs.
+     *
+     *  - `delete`  — the warm row is gone but its Qdrant vector survived
+     *    (the original orphan case): the reaper retries the delete.
+     *  - `backfill` — the warm row exists but its vector was never
+     *    written, because the embedder or Qdrant failed *after* the warm
+     *    insert committed. Without this the entry stays permanently
+     *    invisible to vector search: the content-hash dedup fast-path
+     *    short-circuits every retry, so nothing ever re-embeds it. The
+     *    reaper re-embeds and upserts instead of deleting.
+     *
+     *  Defaults to `delete` so rows written before this column existed
+     *  keep their original meaning. */
+    kind: text("kind").notNull().default("delete"),
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
     firstSeen: timestamp("first_seen", { withTimezone: true }).notNull().defaultNow(),

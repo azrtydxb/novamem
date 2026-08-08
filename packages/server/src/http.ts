@@ -199,13 +199,23 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
   //   ["*"]           → reflect-any (true) — legacy permissive
   //   [origins…]      → exact allow-list
   const corsList = opts.corsOrigins;
+  const wildcardCors = corsList?.length === 1 && corsList[0] === "*";
   const corsOrigin: boolean | string[] =
-    !corsList || corsList.length === 0
-      ? false
-      : corsList.length === 1 && corsList[0] === "*"
-        ? true
-        : corsList;
-  app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false });
+    !corsList || corsList.length === 0 ? false : wildcardCors ? true : corsList;
+  // `credentials: true` alongside a reflect-any origin is the classic
+  // dangerous CORS combination: any site could read authenticated
+  // responses from this API. Cookies are SameSite=Lax and bearer auth
+  // isn't ambient, so it was never trivially exploitable — but the
+  // wildcard is a legacy escape hatch, and pairing it with credentials
+  // has no legitimate use. Credentialed CORS now requires an explicit
+  // origin allow-list.
+  if (wildcardCors) {
+    app.log.warn(
+      'NOVAMEM_CORS_ORIGINS="*" reflects every origin; credentialed cross-origin ' +
+        "requests are disabled. Set an explicit origin allow-list to use cookie/session auth from a browser.",
+    );
+  }
+  app.register(cors, { origin: corsOrigin, credentials: corsOrigin !== false && !wildcardCors });
 
   // Cookie support for HttpOnly session storage. Cookies are
   // signed with a server-side secret so any bit-flip / tamper invalidates
@@ -607,14 +617,17 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       app.register(fastifyStatic, {
         root: uiRoot,
         prefix: "/admin/",
-        setHeaders: (res) => {
+        // @fastify/static v10 hands `setHeaders` a FastifyReply (v9 gave
+        // the raw Node ServerResponse), so headers are set with
+        // `.header()` rather than `.setHeader()`.
+        setHeaders: (reply) => {
           // `unsafe-inline` for style-src is intentional: Tailwind v4 +
           // React inline-style props produce inline <style>/style="…"
           // attributes that no static hash list can cover. The exploitable
           // vector (iframe embedding for clickjacking / CSRF) is closed
           // by `frame-ancestors 'none'` + the global `X-Frame-Options:
           // DENY` set by the onSend hook below.
-          res.setHeader(
+          reply.header(
             "Content-Security-Policy",
             [
               "default-src 'self'",
@@ -626,8 +639,8 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
               "frame-ancestors 'none'",
             ].join("; "),
           );
-          res.setHeader("X-Content-Type-Options", "nosniff");
-          res.setHeader("Referrer-Policy", "no-referrer");
+          reply.header("X-Content-Type-Options", "nosniff");
+          reply.header("Referrer-Policy", "no-referrer");
         },
       });
       app.get("/admin", async (_req, reply) => reply.sendFile("index.html"));

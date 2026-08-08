@@ -91,6 +91,11 @@ export interface SearchRequest {
    *  both the compressed fact and the supporting raw conversation.
    *  Default true. */
   expandSourceChunks?: boolean;
+  /** Absolute cosine floor below which a vector-only candidate is treated
+   *  as noise rather than a hit. Defaults to the server's configured
+   *  value (NOVAMEM_SEARCH_MIN_VECTOR_SCORE, default 0.25). Pass 0 to
+   *  disable and see every nearest neighbour. */
+  minVectorScore?: number;
 }
 
 export interface SearchResult {

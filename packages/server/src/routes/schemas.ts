@@ -58,9 +58,19 @@ export const UsernameRule = z
 
 // ─── Memory data-plane bodies ──────────────────────────────────────────
 
-/** Namespace shelf names. Same charset as project ids — we accept
- *  reasonably-shaped strings; the value is opaque to the engine. */
-const NamespaceRule = z.string().min(1).max(128);
+/** Namespace shelf names. Same charset discipline as project ids: the
+ *  value is opaque to the engine but it *is* concatenated into Qdrant
+ *  collection names, so control characters, whitespace and slashes have
+ *  no business here even though the `u_`/`p_` prefixes already make
+ *  cross-tenant collisions structurally impossible. */
+const NamespaceRule = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-z0-9][a-z0-9._:-]*$/i, {
+    message:
+      "namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash",
+  });
 export const SensitivityRule = z.enum(["public", "internal", "private", "sensitive"]);
 
 /** Hard caps on caller-supplied metadata bags (issue #23):

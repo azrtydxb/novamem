@@ -47,6 +47,10 @@ export interface ColdStoreConfig {
   url: string;
   /** Embedding vector dimensionality. Configurable for swappable embedders. */
   vectorSize: number;
+  /** Per-request timeout in ms. Without it a stalled Qdrant holds every
+   *  search open — the engine's per-tier `.catch` degrades on errors,
+   *  not on hangs. Default 15s. */
+  timeoutMs?: number;
 }
 
 export class ColdStore {
@@ -55,7 +59,11 @@ export class ColdStore {
   private readonly vectorSize: number;
 
   constructor(cfg: ColdStoreConfig) {
-    this.client = new QdrantClient({ url: cfg.url });
+    // NOTE: the *client constructor's* `timeout` is milliseconds (it
+    // feeds `setTimeout(() => controller.abort(), timeout)`, default
+    // 300_000). Don't confuse it with the per-request `timeout` option on
+    // individual search calls, which Qdrant defines in seconds.
+    this.client = new QdrantClient({ url: cfg.url, timeout: cfg.timeoutMs ?? 15_000 });
     this.vectorSize = cfg.vectorSize;
   }
 
@@ -88,32 +96,45 @@ export class ColdStore {
     return `novamem_${userId}_${namespace}`;
   }
 
-  /** Resolve the collection to read from. Prefers the new `u_` form;
-   *  falls back to the legacy form only when the new one doesn't exist
-   *  yet AND the legacy one does. Returns null when neither exists, so
-   *  callers can short-circuit empty searches without creating an empty
-   *  collection. */
-  private async resolveReadCollection(
+  /** Resolve every collection that may hold vectors for this scope.
+   *
+   *  Returns the new `u_`/`p_`-prefixed collection and, for user-scoped
+   *  reads, the legacy unprefixed one — *both* when both exist, not just
+   *  the preferred one. The previous "prefer primary, fall back to
+   *  legacy only if primary is absent" rule created a silent data-loss
+   *  window on any cluster that predates the issue-#20 rename: the first
+   *  post-migration write created the `u_` collection, and from that
+   *  moment every pre-migration vector became unsearchable *and*
+   *  undeletable (delete resolved to the new collection and no-oped,
+   *  orphaning the old vector permanently).
+   *
+   *  Empty array when nothing exists yet, so callers can short-circuit a
+   *  read without creating an empty collection. */
+  private async resolveReadCollections(
     userId: string,
     namespace: string,
     projectId: string | null,
-  ): Promise<string | null> {
+  ): Promise<string[]> {
     const primary = this.collectionFor(userId, namespace, projectId);
-    if (this.seenCollections.has(primary)) return primary;
+    const legacy = projectId ? null : this.legacyUserCollectionFor(userId, namespace);
+    // Fast path: once both names are known-present we never need to list
+    // collections again. (`seenCollections` only ever holds names we have
+    // observed to exist.)
+    if (this.seenCollections.has(primary) && (!legacy || this.seenCollections.has(legacy))) {
+      return legacy ? [primary, legacy] : [primary];
+    }
     const existing = await this.client.getCollections();
     const names = new Set(existing.collections.map((c) => c.name));
+    const out: string[] = [];
     if (names.has(primary)) {
       this.seenCollections.add(primary);
-      return primary;
+      out.push(primary);
     }
-    if (!projectId) {
-      const legacy = this.legacyUserCollectionFor(userId, namespace);
-      if (names.has(legacy)) {
-        this.seenCollections.add(legacy);
-        return legacy;
-      }
+    if (legacy && names.has(legacy)) {
+      this.seenCollections.add(legacy);
+      out.push(legacy);
     }
-    return null;
+    return out;
   }
 
   private async ensureCollection(
@@ -181,29 +202,66 @@ export class ColdStore {
     k: number;
   }): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> {
     const projectId = args.projectId ?? null;
-    // Read-side falls back to the legacy unprefixed user-collection name
-    // when the new `novamem_u_…` collection doesn't exist yet (migration
-    // for issue #20). When neither exists, return empty rather than
-    // creating an empty collection on a pure read path.
-    const collection = await this.resolveReadCollection(args.userId, args.namespace, projectId);
-    if (!collection) return [];
-    const r = await this.client.search(collection, {
-      vector: args.embedding,
-      limit: args.k,
-      with_payload: true,
-    });
-    return r.map((p) => {
+    // Reads union the new `novamem_u_…` collection with the legacy
+    // unprefixed one (migration for issue #20) so entries written before
+    // the rename stay findable after the first post-rename write. When
+    // neither exists, return empty rather than creating an empty
+    // collection on a pure read path.
+    const collections = await this.resolveReadCollections(args.userId, args.namespace, projectId);
+    if (collections.length === 0) return [];
+    // Uses the Query API rather than the legacy `search()` method.
+    //
+    // This is not cosmetic. `search()` was removed in
+    // @qdrant/js-client-rest 1.19.0, and the production image installs
+    // without a lockfile (`npm install --no-package-lock` in the runtime
+    // stage), so it resolves the declared range fresh instead of reusing
+    // the version the tests pin. With the old `^1.12.0` range that meant
+    // tests ran 1.17.0 (where `search()` exists) while the shipped image
+    // got 1.19.0 (where it does not) — every vector search in production
+    // would have thrown `this.client.search is not a function`, with a
+    // fully green test suite.
+    //
+    // `query()` exists in both, so the call no longer depends on which
+    // version resolves. Passing the raw embedding as `query` is a plain
+    // nearest-neighbour lookup — `QueryInterface` accepts a `VectorInput`
+    // (i.e. `number[]`) directly — exactly what `search({ vector })` did.
+    // The response is `{ points }` rather than a bare array.
+    const perCollection = await Promise.all(
+      collections.map((collection) =>
+        this.client
+          .query(collection, {
+            query: args.embedding,
+            limit: args.k,
+            with_payload: true,
+          })
+          .then((r) => r.points),
+      ),
+    );
+    // Merge by resolved entry id, keeping the best score per entry,
+    // THEN sort and re-apply the caller's k.
+    //
+    // Deduplicating before the slice is load-bearing whenever the primary
+    // and legacy collections both hold a vector for the same entry —
+    // which is the normal state mid-migration, since a re-upsert of a
+    // pre-rename entry writes to the primary collection while the legacy
+    // copy remains. Slicing a merged-but-undeduplicated list would let
+    // one entry occupy two of the k slots and push a genuinely different
+    // memory out of the results.
+    const best = new Map<string, { id: string; score: number; payload: Record<string, unknown> }>();
+    for (const p of perCollection.flat()) {
       const payload = (p.payload ?? {}) as Record<string, unknown>;
       const id = typeof payload.entryId === "string" ? payload.entryId : String(p.id);
       // Cosine similarity ranges over [-1, 1] but a negative score means
-      // "vectors point apart" → semantically unrelated. Clip to 0 so the
-      // fuse step's max-normalisation doesn't collapse a near-orthogonal
-      // hit's signal contribution to zero across the whole result set
-      // (when the only vector hit had score < 0, max.vector was 0 and
-      // every entry's vector signal got divided to 0).
+      // "vectors point apart" → semantically unrelated. Clip to 0 so a
+      // near-orthogonal hit contributes nothing rather than a negative
+      // weight (and so `fuse`'s keyword normalisation can't divide by a
+      // negative max).
       const raw = p.score ?? 0;
-      return { id, score: raw > 0 ? raw : 0, payload };
-    });
+      const score = raw > 0 ? raw : 0;
+      const prev = best.get(id);
+      if (!prev || score > prev.score) best.set(id, { id, score, payload });
+    }
+    return [...best.values()].sort((a, b) => b.score - a.score).slice(0, args.k);
   }
 
 
@@ -214,11 +272,12 @@ export class ColdStore {
     const out = new Set<string>();
     const groups = new Map<string, Array<{ id: string; userId: string; projectId: string | null; namespace: string }>>();
     for (const e of entries) {
-      const collection = await this.resolveReadCollection(e.userId, e.namespace, e.projectId);
-      if (!collection) continue;
-      const group = groups.get(collection) ?? [];
-      group.push(e);
-      groups.set(collection, group);
+      const collections = await this.resolveReadCollections(e.userId, e.namespace, e.projectId);
+      for (const collection of collections) {
+        const group = groups.get(collection) ?? [];
+        group.push(e);
+        groups.set(collection, group);
+      }
     }
     for (const [collection, group] of groups) {
       const points = await this.client.retrieve(collection, {
@@ -241,15 +300,19 @@ export class ColdStore {
     id: string,
     projectId: string | null = null,
   ): Promise<void> {
-    // Resolve to whichever collection actually holds the entry — the new
-    // `u_`-prefixed form by default, the legacy form for entries written
-    // before the issue-#20 rename. Skip when neither exists (delete is a
-    // no-op for never-written entries).
-    const collection = await this.resolveReadCollection(userId, namespace, projectId);
-    if (!collection) return;
-    await this.client.delete(collection, {
-      points: [ulidToUuid(id)],
-    });
+    // Delete from *every* collection that could hold the entry — the new
+    // `u_`-prefixed form and the legacy form for entries written before
+    // the issue-#20 rename. Deleting from only the preferred collection
+    // silently no-oped for legacy entries, leaving their vectors behind
+    // forever after the warm row was gone. Qdrant treats deleting an
+    // absent point as a no-op, so the extra call is harmless.
+    const collections = await this.resolveReadCollections(userId, namespace, projectId);
+    if (collections.length === 0) return;
+    await Promise.all(
+      collections.map((collection) =>
+        this.client.delete(collection, { points: [ulidToUuid(id)] }),
+      ),
+    );
   }
 
   /** Drop every project-scoped collection for the given project id. Used
