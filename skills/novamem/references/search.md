@@ -20,7 +20,8 @@ Useful weight overrides:
 - `{ vector: 1, keyword: 0 }` — semantic-only (concept over literal tokens)
 - `{ graph: 1 }` — neighbour-driven recall
 
-Hits below ~0.4 are misses.
+There is no model-independent "miss" threshold — the usable score range depends
+on the embedding model in use. Decide from the content.
 
 ## memory_recent — time-windowed feed
 

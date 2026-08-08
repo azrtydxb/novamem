@@ -70,7 +70,10 @@ Default weights are tuned for prose. Useful overrides:
 - `{ vector: 1, keyword: 0 }` — semantic-only (concept over literal tokens)
 - `{ graph: 1 }` — neighbour-driven recall ("what's adjacent to X?")
 
-If every hit is below ~0.4, treat it as a miss.
+Judge hits by content, not by an absolute score. The usable score range is a
+property of the deployed embedding model — on bge-m3, relevant and irrelevant
+hits both land around 0.45-0.65, so no fixed cutoff tells them apart. Treat a
+result as a miss when nothing in the returned text answers the question.
 
 ## When to call `memory_capture`
 

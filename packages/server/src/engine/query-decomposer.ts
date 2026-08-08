@@ -13,6 +13,11 @@
  */
 
 import { chatCompletionsURL } from "./endpoint-url.js";
+import {
+  chatCompletionBody,
+  readCompletionText,
+  type ChatCompletionResponse,
+} from "./llm-response.js";
 export interface QueryDecomposerConfig {
   endpoint: string;
   model: string;
@@ -98,11 +103,10 @@ export class QueryDecomposer {
       accept: "application/json",
     };
     if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
-    const body = JSON.stringify({
+    const body = chatCompletionBody({
       model: this.cfg.model,
       messages: [{ role: "user", content: DECOMP_PROMPT(orig, this.cfg.maxSubqueries) }],
-      temperature: 0,
-      max_tokens: 256,
+      maxTokens: 256,
     });
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
@@ -110,10 +114,13 @@ export class QueryDecomposer {
     try {
       const resp = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
       if (!resp.ok) return [orig];
-      const obj = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-      text = obj.choices?.[0]?.message?.content ?? "";
-    } catch {
-      return [orig];
+      const read = readCompletionText((await resp.json()) as ChatCompletionResponse);
+      // Falling back to the original query is correct and safe, but it is
+      // also indistinguishable from "the model saw nothing to decompose".
+      // Surface the reason so a decomposer that is configured but inert
+      // does not look like one that simply had nothing to do.
+      if (read.emptyReason) throw new Error(`decompose: ${read.emptyReason}`);
+      text = read.text;
     } finally {
       clearTimeout(timer);
     }
@@ -143,11 +150,12 @@ export class QueryDecomposer {
       accept: "application/json",
     };
     if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
-    const body = JSON.stringify({
+    const body = chatCompletionBody({
       model: this.cfg.model,
       messages: [{ role: "user", content: COHERENCE_PROMPT(query, candidates) }],
-      temperature: 0,
-      max_tokens: 200,
+      // One rank number per candidate, plus JSON punctuation. 200 was a
+      // fixed budget regardless of how many candidates were sent.
+      maxTokens: Math.max(200, candidates.length * 6 + 64),
     });
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
@@ -155,10 +163,9 @@ export class QueryDecomposer {
     try {
       const resp = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
       if (!resp.ok) return null;
-      const obj = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-      text = obj.choices?.[0]?.message?.content ?? "";
-    } catch {
-      return null;
+      const read = readCompletionText((await resp.json()) as ChatCompletionResponse);
+      if (read.emptyReason) throw new Error(`coherenceRerank: ${read.emptyReason}`);
+      text = read.text;
     } finally {
       clearTimeout(timer);
     }

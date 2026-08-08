@@ -203,6 +203,13 @@ const OVERFETCH_FACTOR = 3;
  *  restatements of one another; only the higher-ranked one is returned. */
 const RESULT_DIVERSITY_MAX_JACCARD = 0.75;
 
+/** Ceiling on how many candidates the coherence reranker is shown. The
+ *  prompt inlines 600 chars each and asks for a permutation back within a
+ *  200-token budget, so the list has to stay small enough for the model to
+ *  actually enumerate. Reranking beyond the caller's k is wasted work in
+ *  any case. */
+const COHERENCE_RERANK_MAX_CANDIDATES = 40;
+
 const SENSITIVITY_ORDER: Record<SensitivityLevel, number> = { public: 0, internal: 1, private: 2, sensitive: 3 };
 const DEFAULT_MAX_SENSITIVITY: SensitivityLevel = "private";
 
@@ -670,10 +677,19 @@ export class MemoryEngine {
     ) {
       return "conversational filler — not durable knowledge";
     }
-    // Embedding models silently truncate at their context window (~256
-    // word-pieces for the default MiniLM), so everything past the cut is
-    // invisible to vector search while keyword search still finds it.
-    // Reject rather than half-store, and say what to do about it.
+    return null;
+  }
+
+  /** Length check, split out of `shouldReject` because it applies even
+   *  under `force` — see the call site in `remember`.
+   *
+   *  The limit is a policy about what a memory *is* (one fact, not a
+   *  document), which is why it is well below any model's context window.
+   *  It is deliberately not the embedder's limit: `Embedder` truncates as
+   *  a last-resort backstop so that content slipping past this check can
+   *  still be embedded rather than parked forever. */
+  private contentTooLong(content: string): string | null {
+    const trimmed = content.trim();
     if (this.maxContentChars > 0 && trimmed.length > this.maxContentChars) {
       return `too long (${trimmed.length} chars, max ${this.maxContentChars}) — split into one fact per entry`;
     }
@@ -704,6 +720,20 @@ export class MemoryEngine {
           return { id: null, rejected: reason };
         }
       }
+      // The length limit is checked even under `force`. `force` means
+      // "skip the worthiness heuristics" — it is not a claim that the
+      // content will fit the embedder. It used to skip this too, and the
+      // result was not a stored-but-unworthy memory, it was a memory that
+      // could never be embedded at all: the provider rejects an
+      // over-length input with a 4xx, which is classified non-retryable,
+      // so the row is parked with `embedded_at` NULL and the reconciler
+      // retries it forever without ever succeeding. Invisible to vector
+      // search, permanently, with a repair queue that cannot drain.
+      const overLength = this.contentTooLong(req.content);
+      if (overLength) {
+        span.setAttribute("novamem.rejected", overLength);
+        return { id: null, rejected: overLength };
+      }
       req = withSensitivityMetadata(req);
       const namespace = req.namespace ?? "default";
       const projectId = req.project ?? null;
@@ -715,7 +745,7 @@ export class MemoryEngine {
       );
       if (existing) {
         span.setAttribute("novamem.deduplicated", true);
-        await traceAsync("WarmStore.bumpHits", { "novamem.entry_id": existing }, () => this.warm.bumpHits(existing));
+        await traceAsync("WarmStore.bumpHits", { "novamem.entry_id": existing.id }, () => this.warm.bumpHits(existing.id));
         // Self-heal the insert-side partial write. If a previous attempt
         // stored the warm row and then died before the cold upsert (embed
         // failure, Qdrant blip), the entry has no vector and is invisible
@@ -723,12 +753,19 @@ export class MemoryEngine {
         // return the id and bump hits without ever noticing. The delete
         // side has had a repair queue (`cold_orphans` + reaper) all
         // along; this is its missing twin.
-        await this.backfillMissingVector(userId, projectId, existing, namespace, req);
+        //
+        // Repair the entry where it actually lives. Dedup matches on
+        // (user, project, hash) with namespace excluded, so `existing`
+        // may sit on a different shelf than this request targets. Passing
+        // the *request's* namespace made this "repair" index the entry
+        // under a namespace it was never written to, and search scoped to
+        // that namespace then returned it — a cross-shelf leak.
+        await this.backfillMissingVector(userId, projectId, existing.id, existing.namespace, req);
         this.metrics?.recordRemember(userId, token);
         // The dedup target may itself be an outage-window row with no
         // vector. Report its real state rather than inheriting this
         // call's optimism.
-        return { id: existing, deduplicated: true, embedded: await this.warm.isEmbedded(existing) };
+        return { id: existing.id, deduplicated: true, embedded: await this.warm.isEmbedded(existing.id) };
       }
       const id = await traceAsync("WarmStore.insertEntry", { "novamem.namespace": namespace }, () =>
         this.warm.insertEntry({
@@ -880,7 +917,7 @@ export class MemoryEngine {
       const contentHash = sha256Hex(text.trim());
       const existing = await this.warm.findByContentHash(args.userId, args.projectId, contentHash);
       if (existing) {
-        await this.warm.bumpHits(existing);
+        await this.warm.bumpHits(existing.id);
         continue;
       }
       // ── Mem0-style updation (arch-plan gap #2) ───────────────────────
@@ -1186,21 +1223,28 @@ export class MemoryEngine {
       const reason = this.shouldReject(req.content);
       if (reason) return { id: null, rejected: reason };
     }
+    // Enforced under `force` as well — same reasoning as remember().
+    const overLength = this.contentTooLong(req.content);
+    if (overLength) return { id: null, rejected: overLength };
 
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
     const contentHash = sha256Hex(req.content.trim());
     const exact = await this.warm.findByContentHash(userId, projectId, contentHash);
     if (exact) {
-      await this.warm.bumpHits(exact);
+      await this.warm.bumpHits(exact.id);
       // Same self-heal as remember()'s dedup fast-path: an entry whose
       // cold upsert failed on an earlier attempt would otherwise stay
       // invisible to vector search forever, because this short-circuit
       // never re-embeds. capture() is the agent-facing write path, so
       // it matters most here.
-      await this.backfillMissingVector(userId, projectId, exact, namespace, req);
+      //
+      // Repaired in the entry's own namespace, not the request's — see
+      // the matching note in remember(). Dedup spans namespaces, so these
+      // can differ, and using the request's leaked entries across shelves.
+      await this.backfillMissingVector(userId, projectId, exact.id, exact.namespace, req);
       this.metrics?.recordRemember(userId, token);
-      return { id: exact, deduplicated: true, embedded: await this.warm.isEmbedded(exact) };
+      return { id: exact.id, deduplicated: true, embedded: await this.warm.isEmbedded(exact.id) };
     }
 
     // This embed only powers the near-duplicate lookup, and unlike
@@ -1611,7 +1655,19 @@ export class MemoryEngine {
     // Phase 4: per-sub-query keyword retrieval. Per-query promises are
     // independent so they run concurrently across the whole (queries ×
     // scopes) matrix; the resulting flat list is what feeds fuse().
-    const keywordsPromise = Promise.all(
+    // A tier weighted 0 contributes 0 to every fused score, so querying it
+    // is pure latency. This used to run regardless: a caller passing
+    // `{ keyword: 0, vector: 1 }` still paid for the full FTS fan-out
+    // across every namespace in scope, and only its *ranking* changed.
+    //
+    // The one behavioural difference is the noise floor in fuse(), which
+    // treats a keyword or graph hit as corroboration that rescues a
+    // low-cosine candidate. A candidate rescued that way scores ~0 under a
+    // 0 weight and sorts to the bottom regardless, so dropping it costs
+    // nothing a caller can observe.
+    const keywordsPromise = weights.keyword === 0
+      ? Promise.resolve([] as Array<Array<{ id: string; score: number }>>)
+      : Promise.all(
       queries.flatMap((q) =>
         scopes.map((projectId) =>
           traceAsync("WarmStore.ftsSearch", {
@@ -1668,7 +1724,14 @@ export class MemoryEngine {
     // Entity bridging works from the query text alone, so unlike the
     // neighbour walk it does not require the vector tier to have returned
     // anything — it still contributes when the embedder is down.
-    if (this.graph?.isConnected()) {
+    // Same reasoning as the keyword tier: a 0 weight makes the neighbour
+    // walk and the entity bridge pure cost. This one is worth more —  it
+    // is GRAPH_SEED_COUNT round-trips plus an entity lookup.
+    if (weights.graph === 0) {
+      // Not a degraded search: the caller asked for no graph signal, and
+      // got exactly that. Marking it degraded would make an intentional
+      // configuration look like an outage.
+    } else if (this.graph?.isConnected()) {
       try {
         // Seed from the top few vector hits rather than only the single
         // best one. With one seed, an off-topic top-1 dragged its whole
@@ -1802,16 +1865,30 @@ export class MemoryEngine {
     // candidates to rerank, ask the LLM to put the final top-k in the
     // order best supporting the question. Drops fused candidates the LLM
     // considers irrelevant or duplicative.
-    if (req.decompose && this.decomposer && fused.length >= 2) {
-      const memTexts = fused.map((f) => entryById.get(f.id)?.content ?? "");
+    // Rerank the head, not the whole over-fetch pool. `fused` holds up to
+    // k * OVERFETCH_FACTOR candidates — 600 at k=200 — and the rerank
+    // prompt inlines 600 chars of each, so passing all of them built a
+    // ~360KB prompt and asked for a 600-element permutation back inside a
+    // 200-token budget and a 12s timeout. It could only ever time out or
+    // come back truncated. Reranking is a top-of-list concern anyway:
+    // nothing below the cutoff can reach the caller.
+    //
+    // The head, not `fused`, is what decides whether there is anything to
+    // reorder: at k=1 the head is a single candidate even though `fused`
+    // holds many.
+    const rerankCount = Math.min(fused.length, k, COHERENCE_RERANK_MAX_CANDIDATES);
+    if (req.decompose && this.decomposer && rerankCount >= 2) {
+      const head = fused.slice(0, rerankCount);
+      const tail = fused.slice(rerankCount);
+      const memTexts = head.map((f) => entryById.get(f.id)?.content ?? "");
       try {
         const newOrder = await traceAsync(
           "QueryDecomposer.coherenceRerank",
-          { "novamem.candidate_count": fused.length },
+          { "novamem.candidate_count": head.length },
           () => this.decomposer!.coherenceRerank(req.query, memTexts),
         );
-        if (newOrder && newOrder.length === fused.length) {
-          fused = newOrder.map((i) => fused[i]!);
+        if (newOrder && newOrder.length === head.length) {
+          fused = [...newOrder.map((i) => head[i]!), ...tail];
         }
       } catch (err) {
         this.logger.warn({ err: (err as Error).message }, "coherenceRerank failed");

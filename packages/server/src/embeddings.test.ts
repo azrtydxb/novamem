@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeEmbedder } from "./embeddings.js";
+import { makeEmbedder, resolvePrefixes, resolvePrefixesWithSource } from "./embeddings.js";
 
 describe("embeddings: factory", () => {
   it("rejects unknown provider", () => {
@@ -73,5 +73,31 @@ describe("embeddings: openai-compatible adapter", () => {
       dimensions: 4,
     });
     await expect(embedder.embed("anything")).rejects.toThrow(/embeddings http 500/);
+  });
+});
+
+describe("Qwen3-Embedding prefix preset", () => {
+  it("gives Qwen3-Embedding its instruction envelope on the query side only", () => {
+    const p = resolvePrefixes("Qwen/Qwen3-Embedding-0.6B");
+    expect(p.query).toMatch(/^Instruct: /);
+    expect(p.query).toMatch(/\nQuery: $/);
+    expect(p.document).toBe("");
+  });
+
+  it("matches the served-model-name form too", () => {
+    expect(resolvePrefixes("qwen3-embedding-0.6b").query).toMatch(/^Instruct: /);
+  });
+
+  // bge-m3 is trained without prefixes, unlike the bge-*-en-v1.5 line.
+  it("does not prefix bge-m3", () => {
+    const p = resolvePrefixes("BAAI/bge-m3");
+    expect(p.query).toBe("");
+    expect(p.document).toBe("");
+  });
+
+  it("reports how the prefixes were resolved", () => {
+    expect(resolvePrefixesWithSource("Qwen/Qwen3-Embedding-0.6B").source).toBe("preset");
+    expect(resolvePrefixesWithSource("BAAI/bge-m3").source).toBe("none");
+    expect(resolvePrefixesWithSource("anything", { query: "q: " }).source).toBe("explicit");
   });
 });

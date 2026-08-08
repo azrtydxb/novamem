@@ -7,7 +7,7 @@ import { ColdStore } from "./cold-store.js";
 import { GraphStore } from "./graph-store.js";
 import { WarmStore } from "./warm-store/index.js";
 import { MemoryEngine } from "./engine/index.js";
-import { makeEmbedder } from "./embeddings.js";
+import { makeEmbedder, resolvePrefixesWithSource } from "./embeddings.js";
 import { buildHttpServer } from "./http.js";
 import { loadConfig } from "./config.js";
 import { MetricsCollector } from "./admin/metrics.js";
@@ -91,6 +91,31 @@ async function main() {
     queryPrefix: cfg.embeddings.queryPrefix,
     documentPrefix: cfg.embeddings.documentPrefix,
   });
+
+  // Say out loud how the retrieval prefixes were decided. An asymmetric
+  // model driven with empty prefixes loses a large slice of its accuracy
+  // — measured at 7.6pp Recall@10 on Qwen3-Embedding — and there is
+  // otherwise nothing at runtime to distinguish "this model wants no
+  // prefixes" from "nobody taught NovaMem about this model".
+  {
+    const { source } = resolvePrefixesWithSource(cfg.embeddings.model, {
+      query: cfg.embeddings.queryPrefix,
+      document: cfg.embeddings.documentPrefix,
+    });
+    const model = cfg.embeddings.model ?? "(provider default)";
+    if (source === "none") {
+      // console.* reserved for pre-logger bootstrap only — this runs
+      // before buildHttpServer creates the pino logger.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[novamem] no retrieval-prefix preset matched embedding model '${model}' — using empty ` +
+          "query/document prefixes. Correct for symmetric models (MiniLM, bge-m3); wrong for " +
+          "instruction-aware or asymmetric ones (e5, bge-*-en, Qwen3-Embedding), which lose " +
+          "accuracy silently when driven symmetrically. Set NOVAMEM_EMBEDDINGS_QUERY_PREFIX / " +
+          "_DOCUMENT_PREFIX if this model needs them.",
+      );
+    }
+  }
 
   const metrics = new MetricsCollector();
   metrics.bindGaugeSources({

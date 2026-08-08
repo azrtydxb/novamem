@@ -16,6 +16,11 @@
 
 import type { WarmStore } from "../warm-store/index.js";
 import { chatCompletionsURL } from "./endpoint-url.js";
+import {
+  chatCompletionBody,
+  readCompletionText,
+  type ChatCompletionResponse,
+} from "./llm-response.js";
 
 export interface ObserverConfig {
   endpoint: string;
@@ -87,24 +92,24 @@ export class Observer {
       accept: "application/json",
     };
     if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
-    const body = JSON.stringify({
+    const body = chatCompletionBody({
       model: this.cfg.model,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      temperature: 0,
-      max_tokens: maxTokens,
+      maxTokens,
     });
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
     try {
       const resp = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
       if (!resp.ok) return "";
-      const obj = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-      return stripFences(obj.choices?.[0]?.message?.content ?? "");
-    } catch {
-      return "";
+      const read = readCompletionText((await resp.json()) as ChatCompletionResponse);
+      // The observer's callers treat "" as "nothing to observe", so an
+      // unusable response has to be thrown to be distinguishable.
+      if (read.emptyReason) throw new Error(`observer: ${read.emptyReason}`);
+      return stripFences(read.text);
     } finally {
       clearTimeout(timer);
     }

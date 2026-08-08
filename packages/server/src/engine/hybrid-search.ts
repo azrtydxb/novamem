@@ -35,9 +35,22 @@ export const DEFAULT_WEIGHTS: HybridWeights = {
  *  cosine similarity always returns a nearest neighbour, even when nothing
  *  in the store is related to the query. Anything at or below this cosine
  *  with no keyword/graph corroboration is dropped rather than surfaced with
- *  a confident-looking fused score. Overridable per call (and via
- *  NOVAMEM_SEARCH_MIN_VECTOR_SCORE) because the right value depends on the
- *  embedding model's similarity distribution. */
+ *  a confident-looking fused score.
+ *
+ *  **This default is calibrated for MiniLM-class models and is not
+ *  portable.** Embedding spaces are anisotropic to very different degrees,
+ *  so the same number means different things per model. Measured on
+ *  nova-bench against `bge-m3`, question-to-chunk cosines were:
+ *
+ *    relevant chunks    0.455 – 0.651 (mean 0.576)
+ *    irrelevant chunks  0.448 – 0.564 (mean 0.518)
+ *
+ *  Two consequences. The bands overlap almost completely, so no absolute
+ *  floor separates them; and every candidate clears 0.25, so on bge-m3
+ *  this filter is inert rather than wrong. On a model with a wider spread
+ *  the same 0.25 would discard real hits. Calibrate against the deployed
+ *  model before trusting it — override per call or via
+ *  NOVAMEM_SEARCH_MIN_VECTOR_SCORE. */
 export const DEFAULT_MIN_VECTOR_SCORE = 0.25;
 
 export interface HybridInput {
@@ -74,8 +87,14 @@ function clamp01(n: number): number {
  *     to — destroyed exactly that meaning: the best hit always became 1.0
  *     even when the best cosine in the store was 0.28, so a query with no
  *     relevant memories still produced a top result with a high fused
- *     score. That made the documented "a top score below ~0.4 is a miss"
- *     heuristic (see mcp-instructions.ts / SKILL.md) impossible to apply.
+ *     score. That made any "a top score below X is a miss" heuristic
+ *     impossible to apply. Keeping the cosine raw is still right — a
+ *     per-query max-normalised score cannot be compared across queries at
+ *     all. But "absolute" here means *stable across queries for a given
+ *     model*, not comparable across models: the usable range is a
+ *     property of the embedding space. See DEFAULT_MIN_VECTOR_SCORE for
+ *     the measured bge-m3 distribution, where relevant and irrelevant
+ *     candidates overlap so heavily that no fixed cutoff separates them.
  *   - **graph** is an edge strength that was a cosine at write time, so
  *     it is used raw like the vector signal.
  *   - **recency** is already `exp(-ageDays / halfLife)` in [0,1] — an
