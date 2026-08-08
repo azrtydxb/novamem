@@ -710,6 +710,12 @@ export class MemoryEngine {
     const exact = await this.warm.findByContentHash(userId, projectId, contentHash);
     if (exact) {
       await this.warm.bumpHits(exact);
+      // Same self-heal as remember()'s dedup fast-path: an entry whose
+      // cold upsert failed on an earlier attempt would otherwise stay
+      // invisible to vector search forever, because this short-circuit
+      // never re-embeds. capture() is the agent-facing write path, so
+      // it matters most here.
+      await this.backfillMissingVector(userId, projectId, exact, namespace, req);
       this.metrics?.recordRemember(userId, token);
       return { id: exact, deduplicated: true };
     }
