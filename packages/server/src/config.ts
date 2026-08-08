@@ -70,6 +70,17 @@ export const ConfigSchema = z
       model: z.string().optional(),
       apiKey: z.string().optional(),
       dimensions: z.coerce.number().int().positive().default(384),
+      /** How often the reconciler looks for entries written without a
+       *  vector. 60s trades a minute of "stored but not yet semantically
+       *  findable" for a loop that is invisible when the backlog is
+       *  empty (one indexed count against a near-empty partial index). */
+      reconcileIntervalMs: z.coerce.number().int().positive().default(60_000),
+      /** Entries per reconciler tick. Bounds both the embedder load and
+       *  the tick duration while a large backlog drains — at the default
+       *  a 10k-entry outage clears in a couple of hours without ever
+       *  issuing a burst the embedder can't absorb. Raise it to drain
+       *  faster if the embedder has headroom. */
+      reconcileBatchSize: z.coerce.number().int().positive().max(1000).default(50),
     }),
     /** Arch-plan Phase 2: write-time LLM fact extraction. When enabled, every
      *  `/v1/remember` triggers a background LLM pass that distills the raw
@@ -246,6 +257,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       model: env.NOVAMEM_EMBEDDINGS_MODEL,
       apiKey: env.NOVAMEM_EMBEDDINGS_API_KEY,
       dimensions: env.NOVAMEM_EMBEDDINGS_DIM,
+      reconcileIntervalMs: env.NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS,
+      reconcileBatchSize: env.NOVAMEM_EMBEDDINGS_RECONCILE_BATCH,
     },
     extraction: {
       enabled: env.NOVAMEM_EXTRACTION_ENABLED ?? false,

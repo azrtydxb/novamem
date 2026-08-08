@@ -23,6 +23,9 @@ export interface FakeWarmRow {
   agentName: string | null;
   metadata: Record<string, unknown>;
   cold: boolean;
+  /** NULL = no vector yet. Mirrors memory_entries.embedded_at — the
+   *  pending-embedding queue lives on the row. */
+  embeddedAt: Date | null;
   createdAt: Date;
   hits: number;
   lastAccessed: Date;
@@ -209,6 +212,35 @@ export class FakeWarmStore {
   async ping(): Promise<boolean> { return true; }
   async close(): Promise<void> { /* no-op */ }
 
+  async setEmbeddedAt(id: string, at: Date | null): Promise<void> {
+    const r = this.rows.get(id);
+    if (r) r.embeddedAt = at;
+  }
+
+  async isEmbedded(id: string): Promise<boolean> {
+    return this.rows.get(id)?.embeddedAt != null;
+  }
+
+  async listPendingEmbedding(limit: number) {
+    return [...this.rows.values()]
+      .filter((r) => r.embeddedAt == null)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(0, limit)
+      .map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        projectId: r.projectId,
+        content: r.content,
+        namespace: r.namespace,
+        source: r.source,
+        agentName: r.agentName,
+      }));
+  }
+
+  async countPendingEmbedding(): Promise<number> {
+    return [...this.rows.values()].filter((r) => r.embeddedAt == null).length;
+  }
+
   async insertEntry(args: {
     userId: string;
     projectId?: string | null;
@@ -233,6 +265,7 @@ export class FakeWarmStore {
       agentName: args.agentName ?? null,
       metadata: args.metadata ?? {},
       cold: false,
+      embeddedAt: null,
       createdAt: new Date(),
       hits: 0,
       lastAccessed: new Date(),
@@ -1073,8 +1106,14 @@ export class FakeEmbedder implements Embedder {
   readonly dimensions = 4;
   /** Maps content text → embedding for predictable cosine results. */
   table = new Map<string, number[]>();
+  /** Simulate an unreachable embeddings host. The real adapter throws on
+   *  a failed fetch / non-2xx, so the fake throws too — a fake that
+   *  returned `[]` instead would let the code under test pass without
+   *  ever exercising the path that matters. */
+  fail = false;
 
   async embed(input: string | string[]): Promise<number[][]> {
+    if (this.fail) throw new Error("embeddings http 000: connection refused");
     const arr = Array.isArray(input) ? input : [input];
     return arr.map((s) => this.table.get(s) ?? this.deterministic(s));
   }
@@ -1131,6 +1170,7 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
       coldEntries: async () => [...warm.rows.values()].filter((r) => r.cold).length,
       graphEdges: async () => graph.edgeCount(),
       orphansPending: async () => warm.coldOrphans.size,
+      pendingEmbeddings: async () => warm.countPendingEmbedding(),
     });
   }
   const engine = new MemoryEngine({

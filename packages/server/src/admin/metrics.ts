@@ -41,6 +41,11 @@ export interface MetricsSnapshot {
     cold_entries: number | null;
     graph_edges: number | null;
     orphans_pending: number | null;
+    /** Entries stored with no vector yet. Non-zero is normal for a few
+     *  seconds after a write; a value that stays up means the embedder is
+     *  gone and the store is quietly losing semantic recall. This is the
+     *  gauge to alert on. */
+    pending_embeddings: number | null;
     last_decay_run_iso: string | null;
   };
   rates: {
@@ -90,6 +95,7 @@ export interface GaugeSources {
   /** Resolves to `null` when the graph is unreachable — never throws. */
   graphEdges(): Promise<number | null>;
   orphansPending(): Promise<number>;
+  pendingEmbeddings(): Promise<number>;
 }
 
 /** Source for per-user gauges. Same contract as GaugeSources but scoped. */
@@ -361,21 +367,24 @@ export class MetricsCollector {
       cold_entries: null,
       graph_edges: null,
       orphans_pending: null,
+      pending_embeddings: null,
       last_decay_run_iso: this.lastDecayAt ? this.lastDecayAt.toISOString() : null,
     };
 
     if (this.gaugeSources) {
-      const [warm, cold, edges, orphans] = await Promise.all([
+      const [warm, cold, edges, orphans, pendingEmbeddings] = await Promise.all([
         this.gaugeSources.warmEntries().catch(() => null),
         this.gaugeSources.coldEntries().catch(() => null),
         this.gaugeSources.graphEdges().catch(() => null),
         this.gaugeSources.orphansPending().catch(() => null),
+        this.gaugeSources.pendingEmbeddings().catch(() => null),
       ]);
       gauges = {
         warm_entries: warm,
         cold_entries: cold,
         graph_edges: edges,
         orphans_pending: orphans,
+        pending_embeddings: pendingEmbeddings,
         last_decay_run_iso: this.lastDecayAt ? this.lastDecayAt.toISOString() : null,
       };
     }
@@ -424,6 +433,11 @@ export class MetricsCollector {
     gauge("cold_entries", "Current cold-tier entry count", s.gauges.cold_entries);
     gauge("graph_edges", "Current graph edge count (NaN if FalkorDB unreachable)", s.gauges.graph_edges);
     gauge("orphans_pending", "Pending cold_orphans rows", s.gauges.orphans_pending);
+    gauge(
+      "pending_embeddings",
+      "Entries stored with no vector yet (embedded_at IS NULL) — alert if this stops falling",
+      s.gauges.pending_embeddings,
+    );
     gauge("queries_per_sec_60s", "Rolling 60s queries/sec", s.rates.queries_per_sec_60s);
     gauge("remembers_per_sec_60s", "Rolling 60s remembers/sec", s.rates.remembers_per_sec_60s);
     gauge("uptime_seconds", "Process uptime (seconds)", Math.floor(s.uptime_ms / 1000));

@@ -6,7 +6,7 @@
  * `fastify-type-provider-zod` runs validation at request time AND drives
  * the OpenAPI document — there is no separate spec to keep in sync.
  */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 
@@ -34,6 +34,32 @@ import { buildAdoptionReport } from "../adoption.js";
 
 export function register(app: FastifyInstance, ctx: RouteContext): void {
   const r = app.withTypeProvider<ZodTypeProvider>();
+
+  /**
+   * "I found nothing" and "I could not look" are different claims, and a
+   * 200 with `{results: [], degraded: true}` makes a client choose
+   * between them by guessing. When a tier failed *and* nothing came back,
+   * the response carries no evidence about the caller's memory at all, so
+   * it is an error (503) — a client that retries or surfaces a warning is
+   * behaving correctly, and one that concludes "no such memory" is not.
+   *
+   * Degraded *with* results stays a 200: those results are real, the
+   * `degraded` flag says the set may be incomplete, and failing the
+   * request would throw away answers we actually have.
+   */
+  const sendSearchResult = <T extends { results: unknown[]; degraded: boolean }>(
+    reply: FastifyReply,
+    result: T,
+  ): void => {
+    if (result.degraded && result.results.length === 0) {
+      reply.code(503).send({
+        ...result,
+        error: "search degraded: a backing tier was unavailable and no results could be produced",
+      });
+      return;
+    }
+    reply.send(result);
+  };
 
 
 
@@ -99,7 +125,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       const body = req.body;
       if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
       const result = await ctx.engine.search(req.userId, body, req.bearerToken);
-      reply.send(result);
+      sendSearchResult(reply, result);
     },
   );
 
@@ -395,14 +421,21 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       const body = req.body;
       if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
       try {
-        reply.send(await ctx.engine.neighbors(req.userId, body));
+        sendSearchResult(reply, await ctx.engine.neighbors(req.userId, body));
       } catch (err) {
         // Graph store occasionally returns Edge values the redis-client
         // decoder rejects ("Type mismatch: expected List or Null but was
         // Edge") — degrade to "no neighbours, graph degraded" so the SPA
         // still renders the seed inspector instead of a 500 modal.
         app.log?.warn?.({ err: (err as Error).message }, "[/v1/neighbors] degraded");
-        reply.send({ seed: body.id, results: [], degraded: true });
+        // Same rule as above: the walk failed and produced nothing, so the
+        // caller learns nothing about this seed's neighbours. Say so.
+        reply.code(503).send({
+          seed: body.id,
+          results: [],
+          degraded: true,
+          error: "neighbors degraded: graph traversal failed and no results could be produced",
+        });
       }
     },
   );

@@ -90,6 +90,10 @@ async function main() {
       );
       return Number(r.rows[0]?.count ?? 0);
     },
+    // Read-through on scrape rather than off the engine's cached tick, so
+    // the alerting signal is current even if the reconciler loop itself
+    // has wedged — which is one of the things it needs to catch.
+    pendingEmbeddings: async () => warm.countPendingEmbedding(),
   });
 
   metrics.bindUserGaugeSources({
@@ -322,6 +326,31 @@ async function main() {
   }, 24 * 60 * 60 * 1000);
   dreamTimer.unref?.();
 
+  // Embedding reconciler — drains entries whose vector was never written
+  // (embedded_at IS NULL). Same reentrancy contract as the loops above:
+  // a tick that overruns its interval is skipped rather than stacked, so
+  // a slow embedder can't pile up concurrent batches against itself.
+  // Errors are logged and the batch is simply retried next tick — the
+  // pending state lives on the row, so nothing is lost by giving up here.
+  let reconcileInFlight = false;
+  const reconcileTimer = setInterval(async () => {
+    if (reconcileInFlight) return;
+    reconcileInFlight = true;
+    try {
+      const r = await engine.reconcilePendingEmbeddings({
+        batchSize: cfg.embeddings.reconcileBatchSize,
+      });
+      if (r.scanned > 0) {
+        app.log.info({ ...r }, "reconciled pending embeddings");
+      }
+    } catch (err) {
+      app.log.error({ err: (err as Error).message }, "embedding reconciler error");
+    } finally {
+      reconcileInFlight = false;
+    }
+  }, cfg.embeddings.reconcileIntervalMs);
+  reconcileTimer.unref?.();
+
   // 24h persistent throughput: every minute, flush pending per-user
   // counters from the in-mem MetricsCollector to metrics_samples so the
   // history chart survives reboots. Same loop also prunes >25h-old rows
@@ -356,6 +385,7 @@ async function main() {
   const shutdown = async () => {
     clearInterval(decayTimer);
     clearInterval(dreamTimer);
+    clearInterval(reconcileTimer);
     clearInterval(metricsFlushTimer);
     await app.close();
     if (graph) await graph.close();

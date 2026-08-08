@@ -155,10 +155,20 @@ export interface MemoryStats {
 }
 
 export interface HealthSnapshot {
+  /** Readiness. Covers warm + cold only — see the asymmetry note in
+   *  `MemoryEngine.health()` for why a failing embedder is reported but
+   *  never removes the service from rotation. */
   ok: boolean;
   deps: {
     warm: "ok" | "unreachable";
     cold: "ok" | "unreachable";
     graph: "ok" | "unreachable" | "disabled";
+    /** "failing" when the embedder's most recent call threw. New writes
+     *  are still accepted; they land with no vector and queue for the
+     *  reconciler. */
+    embedder: "ok" | "failing";
   };
+  /** Entries awaiting a vector as of the last reconciler tick; null before
+   *  the first tick. A number that stops falling means the queue is stuck. */
+  pendingEmbeddings: number | null;
 }

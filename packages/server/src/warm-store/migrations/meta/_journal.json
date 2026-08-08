@@ -15,6 +15,13 @@
       "when": 1779467469337,
       "tag": "0001_closed_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786139994147,
+      "tag": "0002_add_embedded_at",
+      "breakpoints": true
     }
   ]
 }

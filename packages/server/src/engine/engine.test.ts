@@ -392,7 +392,7 @@ describe("engine.health", () => {
     const b = bench();
     const h = await b.engine.health();
     expect(h.ok).toBe(true);
-    expect(h.deps).toEqual({ warm: "ok", cold: "ok", graph: "ok" });
+    expect(h.deps).toEqual({ warm: "ok", cold: "ok", graph: "ok", embedder: "ok" });
   });
 
   it("flags graph disabled when no graph store passed", async () => {

@@ -368,6 +368,44 @@ export class MemoryEngine {
     this.logger.warn("graph store unreachable — search degraded to keyword + vector only");
   }
 
+  /** Last observed embedder outcomes. A destroyed embeddings host is
+   *  invisible in every other signal — the writes still succeed and the
+   *  searches still return rows — so the engine has to remember that it
+   *  failed in order to report it at all. */
+  private lastEmbedErrorAt: number | null = null;
+  private lastEmbedOkAt: number | null = null;
+  /** Backlog as of the last reconciler tick. Cached rather than counted
+   *  on demand because health() is on the k8s probe path and must not
+   *  add a query per probe. */
+  private pendingEmbeddingsSeen: number | null = null;
+  private lastEmbedErrorLoggedAt = 0;
+  private suppressedEmbedErrors = 0;
+
+  /** Log an embedder failure at ERROR — this is data becoming unfindable,
+   *  not a degraded nicety — but at most once a minute. A dead embeddings
+   *  host fails on *every* write, and an unthrottled ERROR per write turns
+   *  a two-day outage into a log volume incident on top of a search
+   *  incident. The suppressed count rides along so nothing is hidden. */
+  private recordEmbedFailure(err: unknown, context: Record<string, unknown>): void {
+    this.lastEmbedErrorAt = Date.now();
+    const now = Date.now();
+    if (now - this.lastEmbedErrorLoggedAt < 60_000) {
+      this.suppressedEmbedErrors++;
+      return;
+    }
+    const suppressed = this.suppressedEmbedErrors;
+    this.lastEmbedErrorLoggedAt = now;
+    this.suppressedEmbedErrors = 0;
+    this.logger.error(
+      { ...context, err: (err as Error).message, suppressedSinceLastLog: suppressed },
+      "embedder failed — entry stored without a vector and is not findable by semantic search until the reconciler drains it",
+    );
+  }
+
+  private recordEmbedSuccess(): void {
+    this.lastEmbedOkAt = Date.now();
+  }
+
   /** Hard-rule worthiness gate. Returns null when the content is fit to
    *  store, or a short reason string when it should be rejected. The
    *  caller is responsible for honouring `force: true` to bypass.
@@ -395,7 +433,7 @@ export class MemoryEngine {
     userId: string,
     req: RememberRequest,
     token?: TokenIdentity,
-  ): Promise<{ id: string | null; rejected?: string; deduplicated?: boolean }> {
+  ): Promise<{ id: string | null; rejected?: string; deduplicated?: boolean; embedded?: boolean }> {
     return traceAsync("MemoryEngine.remember", {
       "novamem.namespace": req.namespace ?? "default",
       "novamem.project": req.project ?? "",
@@ -423,7 +461,10 @@ export class MemoryEngine {
         span.setAttribute("novamem.deduplicated", true);
         await traceAsync("WarmStore.bumpHits", { "novamem.entry_id": existing }, () => this.warm.bumpHits(existing));
         this.metrics?.recordRemember(userId, token);
-        return { id: existing, deduplicated: true };
+        // The dedup target may itself be an outage-window row with no
+        // vector. Report its real state rather than inheriting this
+        // call's optimism.
+        return { id: existing, deduplicated: true, embedded: await this.warm.isEmbedded(existing) };
       }
       const id = await traceAsync("WarmStore.insertEntry", { "novamem.namespace": namespace }, () =>
         this.warm.insertEntry({
@@ -441,10 +482,22 @@ export class MemoryEngine {
         }),
       );
       span.setAttribute("novamem.entry_id", id);
-      const [embedding] = await traceAsync("Embedder.embed.remember", {
-        "novamem.content_chars": req.content.length,
-      }, () => this.embedder.embed(req.content));
+      // The row is already committed. If the embedder is unreachable we
+      // keep it that way and leave `embedded_at` NULL: losing the memory
+      // outright is a worse failure than a memory that is temporarily
+      // findable by keyword and graph only, and the NULL is what lets the
+      // reconciler finish the job later.
+      let embedding: number[] | undefined;
+      try {
+        [embedding] = await traceAsync("Embedder.embed.remember", {
+          "novamem.content_chars": req.content.length,
+        }, () => this.embedder.embed(req.content));
+        this.recordEmbedSuccess();
+      } catch (err) {
+        this.recordEmbedFailure(err, { entryId: id, op: "remember" });
+      }
       span.setAttribute("novamem.embedding_present", Boolean(embedding));
+      let embedded = false;
       if (embedding) {
         await traceAsync("ColdStore.upsert", { "novamem.namespace": namespace, "novamem.embedding_dim": embedding.length }, () =>
           this.cold.upsert({
@@ -456,6 +509,12 @@ export class MemoryEngine {
             payload: { source: req.source ?? "manual", agentName: req.agentName ?? null },
           }),
         );
+        // Stamp only after the vector is durably in the cold store. The
+        // marker means "a vector exists", so ordering it after the upsert
+        // is what keeps it from lying when the cold store is the tier
+        // that failed.
+        await this.warm.setEmbeddedAt(id, new Date());
+        embedded = true;
         if (this.graphLinkFanout > 0) {
           await traceAsync("MemoryEngine.linkVectorNeighbors", {
             "novamem.namespace": namespace,
@@ -463,6 +522,7 @@ export class MemoryEngine {
           }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding));
         }
       }
+      span.setAttribute("novamem.embedded", embedded);
       this.metrics?.recordRemember(userId, token);
       // Arch-plan Phase 2: schedule LLM fact extraction in the background.
       // Fire-and-forget — never blocks the write. Errors are logged only.
@@ -489,7 +549,7 @@ export class MemoryEngine {
           );
         });
       }
-      return { id };
+      return { id, embedded };
     });
   }
 
@@ -728,6 +788,10 @@ export class MemoryEngine {
     deduplicated?: boolean;
     updated?: boolean;
     superseded?: string[];
+    /** False when the entry is stored but has no vector yet. Callers need
+     *  this to tell "stored and searchable" from "stored but not yet
+     *  findable semantically" — a 201 alone cannot say which. */
+    embedded?: boolean;
   }> {
     req = withSensitivityMetadata(req);
     if (!req.force) {
@@ -742,10 +806,23 @@ export class MemoryEngine {
     if (exact) {
       await this.warm.bumpHits(exact);
       this.metrics?.recordRemember(userId, token);
-      return { id: exact, deduplicated: true };
+      return { id: exact, deduplicated: true, embedded: await this.warm.isEmbedded(exact) };
     }
 
-    const [embedding] = await this.embedder.embed(req.content);
+    // This embed only powers the near-duplicate lookup, and unlike
+    // remember() it runs *before* anything is written. An unguarded throw
+    // here would drop the caller's memory on the floor for the duration
+    // of an embedder outage — the one outcome worse than storing it
+    // unembedded. On failure we skip dedup and fall through to the plain
+    // insert; the cost is a possible duplicate row, which the dream
+    // cycle merges later.
+    let embedding: number[] | undefined;
+    try {
+      [embedding] = await this.embedder.embed(req.content);
+      this.recordEmbedSuccess();
+    } catch (err) {
+      this.recordEmbedFailure(err, { op: "capture.dedup-probe" });
+    }
     if (embedding) {
       const nearby = await this.cold.search({
         userId,
@@ -785,7 +862,7 @@ export class MemoryEngine {
                 supersededAt: new Date().toISOString(),
               },
             });
-            return { id: created.id, superseded: supersededIds };
+            return { id: created.id, superseded: supersededIds, embedded: created.embedded ?? false };
           }
           return created;
         }
@@ -808,7 +885,12 @@ export class MemoryEngine {
         });
         if (updated.updated) {
           this.metrics?.recordRemember(userId, token);
-          return { id: candidate.id, deduplicated: true, updated: true };
+          return {
+            id: candidate.id,
+            deduplicated: true,
+            updated: true,
+            embedded: updated.embeddingChanged,
+          };
         }
       }
     }
@@ -865,7 +947,13 @@ export class MemoryEngine {
       // may have omitted it from the update body).
       const entry = await this.warm.getEntry(userId, id, { projectId });
       if (!entry) return { updated: true, embeddingChanged: false };
-      const [embedding] = await this.embedder.embed(req.content);
+      let embedding: number[] | undefined;
+      try {
+        [embedding] = await this.embedder.embed(req.content);
+        this.recordEmbedSuccess();
+      } catch (err) {
+        this.recordEmbedFailure(err, { entryId: id, op: "update" });
+      }
       if (embedding) {
         await this.cold.upsert({
           userId,
@@ -875,7 +963,14 @@ export class MemoryEngine {
           embedding,
           payload: { source: entry.source, agentName: entry.agentName ?? null },
         });
+        await this.warm.setEmbeddedAt(id, new Date());
         embeddingChanged = true;
+      } else {
+        // The content moved but the vector didn't. Re-queue rather than
+        // leave the entry marked embedded: the stale vector now describes
+        // text that no longer exists, so semantic search would surface
+        // this entry for the *old* wording and miss it for the new.
+        await this.warm.setEmbeddedAt(id, null);
       }
     }
     return { updated: true, embeddingChanged };
@@ -1004,10 +1099,23 @@ export class MemoryEngine {
 
     // Embed every query (one batch). Different sub-queries → different
     // vector candidates, which is the whole point of decomposition.
-    const queryEmbeddings = await traceAsync("Embedder.embed.search", {
-      "novamem.query_chars": req.query.length,
-      "novamem.subqueries": queries.length,
-    }, () => this.embedder.embed(queries));
+    //
+    // A dead embedder is a failed tier, not a failed request: the caller
+    // still gets keyword + graph. It must however mark the search
+    // degraded, or an outage looks exactly like "nothing matched" — the
+    // confusion that let a half-blind store pass for a healthy one.
+    let degraded = false;
+    let queryEmbeddings: number[][] = [];
+    try {
+      queryEmbeddings = await traceAsync("Embedder.embed.search", {
+        "novamem.query_chars": req.query.length,
+        "novamem.subqueries": queries.length,
+      }, () => this.embedder.embed(queries));
+      this.recordEmbedSuccess();
+    } catch (err) {
+      degraded = true;
+      this.recordEmbedFailure(err, { op: "search" });
+    }
     const embedding = queryEmbeddings[0] ?? null;
     // FTS supports multi-namespace via `namespace = ANY(...)` in one query
     // per scope, so we fan out only across scopes (not namespaces).
@@ -1017,7 +1125,8 @@ export class MemoryEngine {
     // still returns whatever the surviving tiers produced, and `degraded`
     // becomes meaningful for warm/cold (not just graph). Without this,
     // one Postgres or Qdrant blip rejects the whole top-level Promise.all.
-    let degraded = false;
+    // (`degraded` is declared above — the query-embed step is the first
+    // tier that can set it.)
     // Phase 4: per-sub-query keyword retrieval. Per-query promises are
     // independent so they run concurrently across the whole (queries ×
     // scopes) matrix; the resulting flat list is what feeds fuse().
@@ -2091,6 +2200,62 @@ export class MemoryEngine {
     };
   }
 
+  /** Drain one bounded batch of entries whose vector was never written.
+   *
+   *  Deliberately dumb: take the oldest N pending rows, embed, upsert,
+   *  stamp. There is no retry counter, no backoff and no dead-letter
+   *  state, because the failure this exists for is a *shared* one — the
+   *  embedder is either up or it isn't. Per-entry backoff would only
+   *  stagger the recovery of entries that will all succeed on the same
+   *  tick; when the embedder returns, the backlog drains at batch-size
+   *  per interval with no thundering retry. The batch bound is what
+   *  keeps a two-day backlog from becoming one enormous request.
+   *
+   *  Entries that fail keep `embedded_at` NULL and are simply picked up
+   *  again next tick, which is the whole point of putting the state on
+   *  the row. */
+  async reconcilePendingEmbeddings(
+    opts: { batchSize?: number } = {},
+  ): Promise<{ scanned: number; embedded: number; failed: number; pending: number }> {
+    const batchSize = opts.batchSize ?? 50;
+    const rows = await this.warm.listPendingEmbedding(batchSize);
+    let embedded = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const [embedding] = await this.embedder.embed(row.content);
+        if (!embedding) {
+          failed++;
+          continue;
+        }
+        await this.cold.upsert({
+          userId: row.userId,
+          projectId: row.projectId,
+          id: row.id,
+          namespace: row.namespace,
+          embedding,
+          payload: { source: row.source, agentName: row.agentName },
+        });
+        await this.warm.setEmbeddedAt(row.id, new Date());
+        this.recordEmbedSuccess();
+        embedded++;
+      } catch (err) {
+        failed++;
+        this.recordEmbedFailure(err, { entryId: row.id, op: "reconcile" });
+      }
+    }
+    // Count after the batch so the gauge reflects the post-drain backlog;
+    // reading it here also keeps health() off the query path.
+    const pending = await this.warm.countPendingEmbedding();
+    this.pendingEmbeddingsSeen = pending;
+    return { scanned: rows.length, embedded, failed, pending };
+  }
+
+  /** Backlog as of the last reconciler tick, or null before the first. */
+  pendingEmbeddingBacklog(): number | null {
+    return this.pendingEmbeddingsSeen;
+  }
+
   async health(): Promise<HealthSnapshot> {
     const [warmOk, coldOk] = await Promise.all([this.warm.ping(), this.cold.ping()]);
     const graphState: HealthSnapshot["deps"]["graph"] = !this.graph
@@ -2098,13 +2263,30 @@ export class MemoryEngine {
       : this.graph.isConnected()
         ? "ok"
         : "unreachable";
+    // The embedder is "failing" only if its most recent outcome was a
+    // failure — a single blip that later succeeded is not an outage.
+    const embedderState: HealthSnapshot["deps"]["embedder"] =
+      this.lastEmbedErrorAt !== null &&
+      (this.lastEmbedOkAt === null || this.lastEmbedErrorAt > this.lastEmbedOkAt)
+        ? "failing"
+        : "ok";
     return {
+      // Deliberate asymmetry: a failing embedder and a pending backlog are
+      // reported, but neither enters `ok` — and `ok` is what /ready
+      // returns. Keyword and graph search still work with a dead embedder,
+      // so pulling the whole service out of rotation would convert a
+      // partial loss of recall into a total loss of memory for every
+      // caller. warm/cold are different: without them there is nothing to
+      // serve at all. Alert on `pendingEmbeddings` (also exposed as a
+      // metrics gauge); do not gate traffic on it.
       ok: warmOk && coldOk,
       deps: {
         warm: warmOk ? "ok" : "unreachable",
         cold: coldOk ? "ok" : "unreachable",
         graph: graphState,
+        embedder: embedderState,
       },
+      pendingEmbeddings: this.pendingEmbeddingsSeen,
     };
   }
 }

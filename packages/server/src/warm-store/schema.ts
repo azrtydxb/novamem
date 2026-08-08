@@ -10,6 +10,7 @@
  * named user has been created yet.
  */
 
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -107,6 +108,15 @@ export const memoryEntries = pgTable(
     /** Sha256 of trimmed content. Powers the exact-duplicate fast-path
      *  in the worthiness gate. */
     contentHash: text("content_hash"),
+    /** When this entry's vector was written to the cold store. NULL means
+     *  "no vector exists yet" — and that NULL *is* the pending-embedding
+     *  queue. Keeping the state on the row rather than in a side table is
+     *  what makes it crash-safe: there is no window in which a queue row
+     *  and the entry it describes can disagree, and a process killed
+     *  between INSERT and embed leaves a row the reconciler will pick up
+     *  rather than an entry that is silently unfindable by semantic
+     *  search forever. */
+    embeddedAt: timestamp("embedded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -120,6 +130,14 @@ export const memoryEntries = pgTable(
     index("idx_entries_confidence").on(table.confidence),
     index("idx_entries_content_hash").on(table.userId, table.contentHash),
     index("idx_entries_user_cold").on(table.userId, table.cold),
+    // Partial index: the reconciler's only query is
+    // `WHERE embedded_at IS NULL ORDER BY created_at` and the healthy
+    // steady state is zero matching rows. A partial index stays
+    // near-empty in that state, so draining a backlog costs an index
+    // scan instead of a seq scan over every entry ever written.
+    index("idx_entries_pending_embedding")
+      .on(table.createdAt)
+      .where(sql`${table.embeddedAt} IS NULL`),
   ],
 );
 
