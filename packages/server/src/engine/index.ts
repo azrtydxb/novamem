@@ -113,6 +113,16 @@ export function tokenJaccard(a: string, b: string): number {
 }
 
 const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
+
+/** Cosine a stored fact must reach to be worth asking the LLM whether a
+ *  newly-extracted fact updates or supersedes it.
+ *
+ *  Lower than SEMANTIC_DUPLICATE_THRESHOLD on purpose: a *duplicate* is
+ *  collapsed outright, whereas an *update* ("prefers oat milk" replacing
+ *  "prefers soy milk") is deliberately not identical and would never
+ *  clear 0.92. It still has to be a near-restatement of the same fact —
+ *  two merely same-topic facts are both true and both worth keeping. */
+const FACT_UPDATION_CANDIDATE_THRESHOLD = 0.85;
 const CAPTURE_CANDIDATE_K = 5;
 /** Words that look like entities by capitalisation but carry no identity —
  *  sentence openers and calendar words dominate this list. */
@@ -910,8 +920,24 @@ export class MemoryEngine {
     if (facts.length === 0) return;
     const { factToText } = await import("./fact-extractor.js");
     const capped = facts.slice(0, this.extractorMaxFacts);
-    for (const fact of capped) {
-      const text = factToText(fact);
+    // One embed call for the whole chunk's facts instead of one per fact.
+    // The embedder already takes an array; issuing them singly inside the
+    // loop cost N round-trips to the model host per chunk for no reason.
+    // A failure here is not fatal — each fact falls back to no similarity
+    // check, which is the same degradation the per-fact path had.
+    const factTexts = capped.map((f) => factToText(f));
+    let factEmbeddings: Array<number[] | null> = capped.map(() => null);
+    try {
+      const embedded = await this.embedder.embed(factTexts);
+      factEmbeddings = capped.map((_, i) => embedded[i] ?? null);
+    } catch (err) {
+      this.logger.warn(
+        { err: (err as Error).message, chunkId: args.chunkId },
+        "batch-embedding facts failed (storing as ADD without similarity checks)",
+      );
+    }
+    for (const [factIndex, fact] of capped.entries()) {
+      const text = factTexts[factIndex]!;
       // Each fact gets its own content-hash so dedup behaves correctly
       // (an identical fact ingested from a different chunk won't double-store).
       const contentHash = sha256Hex(text.trim());
@@ -927,26 +953,32 @@ export class MemoryEngine {
       // dedup + supersedence vs uncurated ADD-only. We pay one extra
       // LLM call per new fact when the similarity gate fires; the
       // semaphore in FactExtractor keeps upstream queue depth bounded.
-      let factEmbedding: number[] | null = null;
-      try {
-        const embedded = await this.embedder.embed(text);
-        factEmbedding = embedded[0] ?? null;
-      } catch (err) {
-        this.logger.warn(
-          { err: (err as Error).message, chunkId: args.chunkId },
-          "embedding fact failed (will store as ADD without similarity check)",
-        );
-      }
+      const factEmbedding = factEmbeddings[factIndex] ?? null;
       let similar: Array<{ id: string; text: string; factType?: string; importance?: number }> = [];
       if (factEmbedding) {
         try {
-          const hits = await this.cold.search({
+          const hits = (await this.cold.search({
             userId: args.userId,
             projectId: args.projectId,
             namespace: args.namespace,
             embedding: factEmbedding,
             k: 5,
-          });
+          }))
+            // Cosine always returns k neighbours whether or not anything
+            // is actually related — the same property the search noise
+            // floor exists for. Without a floor here, `similar` was
+            // non-empty for essentially every fact once a namespace had
+            // any content, so the updation LLM call fired every time: ~6
+            // LLM round-trips per chunk, and capture ran ~11x slower per
+            // chunk than remember.
+            //
+            // Measured on a seeded namespace, a fact's cosine to its
+            // nearest *other* fact runs p50 0.798 / p90 0.876 — i.e. most
+            // pairs are merely same-topic, not restatements. Only a genuine
+            // near-restatement can be an UPDATE/DELETE target, so anything
+            // below the threshold is an ADD and needs no LLM at all. At
+            // 0.85 that skips ~79% of these calls.
+            .filter((h) => h.score >= FACT_UPDATION_CANDIDATE_THRESHOLD);
           if (hits.length > 0) {
             const ids = hits.map((h) => h.id);
             const rows = await this.warm.getEntries(args.userId, ids, {
