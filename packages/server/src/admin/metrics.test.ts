@@ -108,6 +108,7 @@ describe("MetricsCollector: gauges via injected sources", () => {
       graphEdges: async () => 9,
       orphansPending: async () => 1,
       pendingEmbeddings: async () => 3,
+      pendingFacts: async () => 2,
     });
     const s = await m.snapshot();
     expect(s.gauges.warm_entries).toBe(42);
@@ -115,6 +116,7 @@ describe("MetricsCollector: gauges via injected sources", () => {
     expect(s.gauges.graph_edges).toBe(9);
     expect(s.gauges.orphans_pending).toBe(1);
     expect(s.gauges.pending_embeddings).toBe(3);
+    expect(s.gauges.pending_facts).toBe(2);
   });
 
   it("graph_edges is null when source returns null (graph unreachable)", async () => {
@@ -125,6 +127,7 @@ describe("MetricsCollector: gauges via injected sources", () => {
       graphEdges: async () => null,
       orphansPending: async () => 0,
       pendingEmbeddings: async () => 0,
+      pendingFacts: async () => 0,
     });
     expect((await m.snapshot()).gauges.graph_edges).toBeNull();
   });
@@ -137,6 +140,7 @@ describe("MetricsCollector: gauges via injected sources", () => {
       graphEdges: async () => 1,
       orphansPending: async () => 0,
       pendingEmbeddings: async () => 0,
+      pendingFacts: async () => 0,
     });
     const s = await m.snapshot();
     expect(s.gauges.warm_entries).toBe(5);

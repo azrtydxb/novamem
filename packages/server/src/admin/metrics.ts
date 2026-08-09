@@ -98,6 +98,12 @@ export interface MetricsSnapshot {
      *  gone and the store is quietly losing semantic recall. This is the
      *  gauge to alert on. */
     pending_embeddings: number | null;
+    /** Chunks whose fact extraction has not completed
+     *  (facts_pending_at IS NOT NULL). Same alerting logic as
+     *  pending_embeddings: a value that stops falling while the
+     *  extraction endpoint is up means facts are quietly not being
+     *  produced. */
+    pending_facts: number | null;
     last_decay_run_iso: string | null;
   };
   rates: {
@@ -148,6 +154,8 @@ export interface GaugeSources {
   graphEdges(): Promise<number | null>;
   orphansPending(): Promise<number>;
   pendingEmbeddings(): Promise<number>;
+  /** Chunks whose fact extraction has not completed. */
+  pendingFacts(): Promise<number>;
 }
 
 /** Source for per-user gauges. Same contract as GaugeSources but scoped. */
@@ -486,16 +494,18 @@ export class MetricsCollector {
       graph_edges: null,
       orphans_pending: null,
       pending_embeddings: null,
+      pending_facts: null,
       last_decay_run_iso: this.lastDecayAt ? this.lastDecayAt.toISOString() : null,
     };
 
     if (this.gaugeSources) {
-      const [warm, cold, edges, orphans, pendingEmbeddings] = await Promise.all([
+      const [warm, cold, edges, orphans, pendingEmbeddings, pendingFacts] = await Promise.all([
         this.gaugeSources.warmEntries().catch(() => null),
         this.gaugeSources.coldEntries().catch(() => null),
         this.gaugeSources.graphEdges().catch(() => null),
         this.gaugeSources.orphansPending().catch(() => null),
         this.gaugeSources.pendingEmbeddings().catch(() => null),
+        this.gaugeSources.pendingFacts().catch(() => null),
       ]);
       gauges = {
         warm_entries: warm,
@@ -503,6 +513,7 @@ export class MetricsCollector {
         graph_edges: edges,
         orphans_pending: orphans,
         pending_embeddings: pendingEmbeddings,
+        pending_facts: pendingFacts,
         last_decay_run_iso: this.lastDecayAt ? this.lastDecayAt.toISOString() : null,
       };
     }
@@ -555,6 +566,11 @@ export class MetricsCollector {
       "pending_embeddings",
       "Entries stored with no vector yet (embedded_at IS NULL) — alert if this stops falling",
       s.gauges.pending_embeddings,
+    );
+    gauge(
+      "pending_facts",
+      "Chunks whose fact extraction has not completed (facts_pending_at IS NOT NULL) — alert if this stops falling",
+      s.gauges.pending_facts,
     );
     gauge("queries_per_sec_60s", "Rolling 60s queries/sec", s.rates.queries_per_sec_60s);
     gauge("remembers_per_sec_60s", "Rolling 60s remembers/sec", s.rates.remembers_per_sec_60s);

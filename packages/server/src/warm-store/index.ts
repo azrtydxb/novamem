@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { ulid } from "ulid";
@@ -904,6 +904,11 @@ export class WarmStore {
     capturedFrom?: string | null;
     confidence?: number;
     contentHash?: string | null;
+    /** Set when this chunk owes a fact-extraction pass. Written in the
+     *  same transaction as the row so a crash between INSERT and the
+     *  extraction schedule leaves work the reconciler finds, never a
+     *  chunk whose facts are silently owed by nobody. */
+    factsPendingAt?: Date | null;
   }): Promise<string> {
     const id = ulid();
     // All three rows in one transaction. Previously these were three
@@ -932,6 +937,7 @@ export class WarmStore {
           capturedFrom: args.capturedFrom ?? null,
           ...(args.confidence !== undefined ? { confidence: args.confidence } : {}),
           contentHash: args.contentHash ?? null,
+          factsPendingAt: args.factsPendingAt ?? null,
         })
         .onConflictDoNothing()
         .returning({ id: schema.memoryEntries.id });
@@ -1616,6 +1622,70 @@ export class WarmStore {
       .select({ n: count() })
       .from(schema.memoryEntries)
       .where(isNull(schema.memoryEntries.embeddedAt));
+    return Number(row?.n ?? 0);
+  }
+
+  // ─── Pending fact-extraction queue ────────────────────────────────────
+  // `facts_pending_at IS NOT NULL` is the queue — polarity inverted from
+  // the embedding queue on purpose; see the schema comment. State lives on
+  // the row for the same crash-safety reason.
+
+  /** Clear (or re-arm) a chunk's pending-extraction marker. */
+  async setFactsPendingAt(id: string, at: Date | null): Promise<void> {
+    await this.db
+      .update(schema.memoryEntries)
+      .set({ factsPendingAt: at })
+      .where(eq(schema.memoryEntries.id, id));
+  }
+
+  /** One bounded reconciler batch, oldest-marked first, so an outage
+   *  window's gap in fact coverage closes from its start. Returns the
+   *  fields `storeFactsForChunk` needs to re-run extraction: sensitivity
+   *  travels inside metadata, source is the parent provenance. */
+  async listPendingFacts(limit: number): Promise<
+    Array<{
+      id: string;
+      userId: string;
+      projectId: string | null;
+      content: string;
+      namespace: string;
+      source: string;
+      metadata: Record<string, unknown> | null;
+    }>
+  > {
+    return this.db
+      .select({
+        id: schema.memoryEntries.id,
+        userId: schema.memoryEntries.userId,
+        projectId: schema.memoryEntries.projectId,
+        content: schema.memoryEntries.content,
+        namespace: schema.memoryEntries.namespace,
+        source: schema.memoryEntries.source,
+        metadata: schema.memoryEntries.metadata,
+      })
+      .from(schema.memoryEntries)
+      .where(isNotNull(schema.memoryEntries.factsPendingAt))
+      .orderBy(asc(schema.memoryEntries.factsPendingAt))
+      .limit(limit) as Promise<
+      Array<{
+        id: string;
+        userId: string;
+        projectId: string | null;
+        content: string;
+        namespace: string;
+        source: string;
+        metadata: Record<string, unknown> | null;
+      }>
+    >;
+  }
+
+  /** Size of the pending-extraction backlog. A number that stops falling
+   *  while the extraction endpoint is up is the alertable signal. */
+  async countPendingFacts(): Promise<number> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(schema.memoryEntries)
+      .where(isNotNull(schema.memoryEntries.factsPendingAt));
     return Number(row?.n ?? 0);
   }
 

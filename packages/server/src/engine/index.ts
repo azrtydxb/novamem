@@ -651,6 +651,7 @@ export class MemoryEngine {
    *  on demand because health() is on the k8s probe path and must not
    *  add a query per probe. */
   private pendingEmbeddingsSeen: number | null = null;
+  private pendingFactsSeen: number | null = null;
   private lastEmbedErrorLoggedAt = 0;
   private suppressedEmbedErrors = 0;
 
@@ -802,6 +803,14 @@ export class MemoryEngine {
           capturedFrom: req.capturedFrom ?? null,
           confidence: req.confidence,
           contentHash,
+          // Written in the same transaction as the row: this chunk owes a
+          // fact-extraction pass, and the debt must survive a crash in
+          // the window between INSERT and the fire-and-forget schedule
+          // below. Before this marker existed, a pod restart mid-drain
+          // silently lost the facts of every in-flight chunk — measured
+          // at 10,446 chunks in one incident — with nothing recording
+          // that they were owed.
+          factsPendingAt: this.extractor ? new Date() : null,
         }),
       );
       span.setAttribute("novamem.entry_id", id);
@@ -929,7 +938,13 @@ export class MemoryEngine {
       { "novamem.chunk_id": args.chunkId, "novamem.content_chars": args.chunkContent.length },
       () => this.extractor!.extract(args.chunkContent),
     );
-    if (facts.length === 0) return;
+    if (facts.length === 0) {
+      // A chunk with nothing durable in it is a *completed* extraction,
+      // not a failed one — clear the debt or the reconciler would re-run
+      // the LLM against it forever.
+      await this.warm.setFactsPendingAt(args.chunkId, null);
+      return;
+    }
     const { factToText } = await import("./fact-extractor.js");
     const capped = facts.slice(0, this.extractorMaxFacts);
     // One embed call for the whole chunk's facts instead of one per fact.
@@ -1149,6 +1164,11 @@ export class MemoryEngine {
         }
       }
     }
+    // Extraction completed and every fact row is committed — settle the
+    // debt. On any throw above the marker survives and the reconciler
+    // retries the chunk; a partial re-run is near-idempotent because each
+    // fact dedups on its content hash.
+    await this.warm.setFactsPendingAt(args.chunkId, null);
   }
 
   /** Record a warm row whose cold vector is missing, so `reapOrphans()`
@@ -3108,6 +3128,64 @@ export class MemoryEngine {
   /** Backlog as of the last reconciler tick, or null before the first. */
   pendingEmbeddingBacklog(): number | null {
     return this.pendingEmbeddingsSeen;
+  }
+
+  /** Drain one batch of chunks whose fact extraction never completed —
+   *  the extraction twin of `reconcilePendingEmbeddings`, and the repair
+   *  path for the failure that used to be unrecoverable: a pod restart,
+   *  deploy or OOM while extractions were in flight silently dropped
+   *  them, because the schedule was a `void` promise with no durable
+   *  record (measured cost of one such restart: 10,446 chunks' facts).
+   *
+   *  Same design choices as the embedding reconciler, for the same
+   *  reasons: no retry counter, no backoff, no dead-letter — extraction
+   *  failures are shared (the LLM endpoint is up or it isn't), so
+   *  per-row backoff would only stagger a recovery in which every row
+   *  succeeds on the same tick. The batch runs concurrently and the
+   *  extractor's own semaphore meters the LLM, exactly as live writes do.
+   *
+   *  With no extractor configured this is a no-op that leaves markers in
+   *  place: the operator turned the feature off, and the debt should
+   *  still be there if they turn it back on. */
+  async reconcilePendingFacts(
+    opts: { batchSize?: number } = {},
+  ): Promise<{ scanned: number; extracted: number; failed: number; pending: number }> {
+    if (!this.extractor) return { scanned: 0, extracted: 0, failed: 0, pending: 0 };
+    const batchSize = opts.batchSize ?? 50;
+    const rows = await this.warm.listPendingFacts(batchSize);
+    let extracted = 0;
+    let failed = 0;
+    await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const meta = (row.metadata ?? {}) as { sensitivity?: SensitivityLevel };
+          await this.storeFactsForChunk({
+            userId: row.userId,
+            projectId: row.projectId,
+            chunkId: row.id,
+            chunkContent: row.content,
+            namespace: row.namespace,
+            sensitivity: meta.sensitivity,
+            parentSource: row.source,
+          });
+          extracted++;
+        } catch (err) {
+          failed++;
+          this.logger.warn(
+            { err: (err as Error).message, chunkId: row.id },
+            "fact-extraction reconcile failed (marker kept, will retry)",
+          );
+        }
+      }),
+    );
+    const pending = await this.warm.countPendingFacts();
+    this.pendingFactsSeen = pending;
+    return { scanned: rows.length, extracted, failed, pending };
+  }
+
+  /** Backlog as of the last reconciler tick, or null before the first. */
+  pendingFactsBacklog(): number | null {
+    return this.pendingFactsSeen;
   }
 
   async health(): Promise<HealthSnapshot> {

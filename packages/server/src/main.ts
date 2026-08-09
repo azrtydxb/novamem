@@ -142,6 +142,7 @@ async function main() {
     // the alerting signal is current even if the reconciler loop itself
     // has wedged — which is one of the things it needs to catch.
     pendingEmbeddings: async () => warm.countPendingEmbedding(),
+    pendingFacts: async () => warm.countPendingFacts(),
   });
 
   metrics.bindUserGaugeSources({
@@ -400,6 +401,16 @@ async function main() {
       });
       if (r.scanned > 0) {
         app.log.info({ ...r }, "reconciled pending embeddings");
+      }
+      // Same tick, same in-flight guard: the fact-extraction twin. Runs
+      // after embeddings so a shared outage recovers vectors (cheap)
+      // before facts (LLM-bound). The extractor's semaphore meters the
+      // batch's LLM concurrency exactly as it does for live writes.
+      const f = await engine.reconcilePendingFacts({
+        batchSize: cfg.embeddings.reconcileBatchSize,
+      });
+      if (f.scanned > 0) {
+        app.log.info({ ...f }, "reconciled pending fact extractions");
       }
     } catch (err) {
       app.log.error({ err: (err as Error).message }, "embedding reconciler error");

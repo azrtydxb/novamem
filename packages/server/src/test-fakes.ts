@@ -34,6 +34,10 @@ export interface FakeWarmRow {
    *  or that branch silently never runs. */
   sourceType: string | null;
   confidence?: number;
+  /** NOT NULL = this chunk owes a fact-extraction pass. Mirrors the
+   *  durable queue column; the reconciler tests depend on it surviving
+   *  "restarts" (fresh engine over the same store). */
+  factsPendingAt: Date | null;
 }
 
 export class FakeWarmStore {
@@ -294,6 +298,41 @@ export class FakeWarmStore {
       }));
   }
 
+  async setFactsPendingAt(id: string, at: Date | null): Promise<void> {
+    const r = this.rows.get(id);
+    if (r) r.factsPendingAt = at;
+  }
+
+  async listPendingFacts(limit: number): Promise<
+    Array<{
+      id: string;
+      userId: string;
+      projectId: string | null;
+      content: string;
+      namespace: string;
+      source: string;
+      metadata: Record<string, unknown> | null;
+    }>
+  > {
+    return [...this.rows.values()]
+      .filter((r) => r.factsPendingAt != null)
+      .sort((a, b) => a.factsPendingAt!.getTime() - b.factsPendingAt!.getTime())
+      .slice(0, limit)
+      .map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        projectId: r.projectId,
+        content: r.content,
+        namespace: r.namespace,
+        source: r.source,
+        metadata: r.metadata,
+      }));
+  }
+
+  async countPendingFacts(): Promise<number> {
+    return [...this.rows.values()].filter((r) => r.factsPendingAt != null).length;
+  }
+
   async countPendingEmbedding(): Promise<number> {
     return [...this.rows.values()].filter((r) => r.embeddedAt == null).length;
   }
@@ -310,6 +349,7 @@ export class FakeWarmStore {
     capturedFrom?: string | null;
     confidence?: number;
     contentHash?: string | null;
+    factsPendingAt?: Date | null;
   }): Promise<string> {
     const id = ulid();
     this.rows.set(id, {
@@ -332,6 +372,7 @@ export class FakeWarmStore {
       // never run under test.
       sourceType: args.sourceType ?? null,
       confidence: args.confidence,
+      factsPendingAt: args.factsPendingAt ?? null,
     });
     if (args.contentHash) {
       this.contentHashIdx.set(
@@ -1363,6 +1404,7 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
       graphEdges: async () => graph.edgeCount(),
       orphansPending: async () => warm.coldOrphans.size,
       pendingEmbeddings: async () => warm.countPendingEmbedding(),
+      pendingFacts: async () => warm.countPendingFacts(),
     });
   }
   const engine = new MemoryEngine({
