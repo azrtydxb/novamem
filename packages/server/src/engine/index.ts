@@ -2022,7 +2022,18 @@ export class MemoryEngine {
     // Measured on the same slice, k=10 ranged from ~500 to ~7,500 tokens
     // depending only on what happened to be stored.
     const tokenBudget = req.maxTokens && req.maxTokens > 0 ? req.maxTokens : null;
-    const preferFacts = req.preferFacts !== false;
+    // Opt-in, not default. Measured on a LongMemEval slice, suppressing a
+    // source chunk in favour of its fact cost accuracy in every pairing —
+    // 83.3% -> 58.3% at top_20 on otherwise identical settings — because a
+    // fact is a *lossy* summary: it keeps the claim and drops the
+    // specifics (times, quantities, qualifiers) that temporal and counting
+    // questions need. Mem0, whose numbers motivated this work, likewise
+    // keeps extracted facts and raw conversation coexisting rather than
+    // replacing one with the other.
+    //
+    // `expandSourceChunks` already encodes the opposite and better
+    // instinct: give the answerer the fact *and* its supporting chunk.
+    const preferFacts = req.preferFacts === true;
     const sourceChunkOf = (c: (typeof visible)[number]): string | null => {
       const id = (c.result.metadata as { source_chunk_id?: string } | undefined)?.source_chunk_id;
       return typeof id === "string" ? id : null;

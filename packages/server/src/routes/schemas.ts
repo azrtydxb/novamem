@@ -148,8 +148,11 @@ export const SearchBody = z.object({
    *  number of results, which is not what a caller needs to control — the
    *  same k costs wildly different amounts depending on what is stored. */
   maxTokens: z.number().int().positive().max(1_000_000).optional(),
-  /** Drop a source chunk when the fact extracted from it is already
-   *  returned. Defaults to true. */
+  /** Opt-in: drop a source chunk when the fact extracted from it is
+   *  already returned. Defaults to false — facts are lossy summaries, and
+   *  enabling this measured worse on answer accuracy in every
+   *  configuration tried; it trades fidelity for fitting more memories
+   *  under a tight `maxTokens`. */
   preferFacts: z.boolean().optional(),
 });
 
