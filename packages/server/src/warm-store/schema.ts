@@ -117,6 +117,17 @@ export const memoryEntries = pgTable(
      *  rather than an entry that is silently unfindable by semantic
      *  search forever. */
     embeddedAt: timestamp("embedded_at", { withTimezone: true }),
+    /** When set, this chunk owes a fact-extraction pass — the durable
+     *  twin of the `embedded_at` queue, with the polarity deliberately
+     *  inverted (`NOT NULL` = pending). `embedded_at IS NULL` works as a
+     *  queue because every entry owes a vector; extraction is owed only
+     *  by chunks written while the extractor was enabled. Fact rows must
+     *  never re-enter the queue (extraction of an extraction), and a
+     *  store upgraded from a pre-column version must not suddenly owe a
+     *  pass for every entry ever written. Set at insert time by the
+     *  write path, cleared by the extraction worker on completion —
+     *  including a completion that legitimately produced zero facts. */
+    factsPendingAt: timestamp("facts_pending_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -138,6 +149,13 @@ export const memoryEntries = pgTable(
     index("idx_entries_pending_embedding")
       .on(table.createdAt)
       .where(sql`${table.embeddedAt} IS NULL`),
+    // Same reasoning as the pending-embedding index: the extraction
+    // reconciler's only query is `WHERE facts_pending_at IS NOT NULL
+    // ORDER BY facts_pending_at`, and the healthy steady state is zero
+    // matching rows, so the partial index stays near-empty.
+    index("idx_entries_facts_pending")
+      .on(table.factsPendingAt)
+      .where(sql`${table.factsPendingAt} IS NOT NULL`),
   ],
 );
 
