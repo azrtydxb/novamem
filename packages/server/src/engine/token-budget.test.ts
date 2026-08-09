@@ -88,19 +88,26 @@ describe("preferFacts", () => {
     return chunkId;
   }
 
-  it("drops the source chunk when its fact is already returned", async () => {
+  it("drops the source chunk when explicitly enabled", async () => {
     const b = quiet(makeEngine());
     const chunkId = await seedPair(b);
-    const r = await b.engine.search("u1", { query: "oat milk coffee", k: 10 });
+    const r = await b.engine.search("u1", { query: "oat milk coffee", k: 10, preferFacts: true });
     const ids = r.results.map((x) => x.id);
     expect(ids).not.toContain(chunkId);
     expect(r.results.some((x) => x.content.startsWith("[preference]"))).toBe(true);
   });
 
-  it("returns both when explicitly disabled", async () => {
+  // The default matters more than the feature: a fact is a lossy summary,
+  // and dropping its chunk measured worse on answer accuracy in every
+  // configuration tried.
+  it("returns both by default", async () => {
     const b = quiet(makeEngine());
     const chunkId = await seedPair(b);
-    const r = await b.engine.search("u1", { query: "oat milk coffee", k: 10, preferFacts: false });
+    const r = await b.engine.search("u1", { query: "oat milk coffee", k: 10 });
+    // Both halves matter: the chunk (fidelity) AND the fact (the compact
+    // form). Asserting only the chunk would let a regression that drops
+    // the fact slip through.
     expect(r.results.map((x) => x.id)).toContain(chunkId);
+    expect(r.results.some((x) => x.content.startsWith("[preference]"))).toBe(true);
   });
 });

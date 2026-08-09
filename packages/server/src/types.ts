@@ -106,9 +106,15 @@ export interface SearchRequest {
    *  exceeds the budget). `k` still applies as an upper bound. */
   maxTokens?: number;
   /** When a fact and the chunk it was extracted from would both be
-   *  returned, keep only the fact. Both are relevant, but they carry the
-   *  same information and the fact is far cheaper. Defaults to true; set
-   *  false to receive both. */
+   *  returned, keep only the fact.
+   *
+   *  **Defaults to false, and measurement says leave it there.** The
+   *  premise — that a fact and its chunk carry the same information — is
+   *  wrong: a fact keeps the claim and drops the specifics. Enabling this
+   *  cost answer accuracy in every configuration tried. The real tradeoff
+   *  it offers is compactness over fidelity: under a tight `maxTokens` it
+   *  fits more distinct memories into the budget by dropping the detail-
+   *  bearing chunks. The top hit is always returned either way. */
   preferFacts?: boolean;
 }
 

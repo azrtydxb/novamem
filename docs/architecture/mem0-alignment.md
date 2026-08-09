@@ -1,0 +1,218 @@
+# Mem0 alignment: target architecture and migration plan
+
+Written 2026-08-09, from a measurement campaign against the `nova-bench`
+deployment (LongMemEval slices, bge-m3 embeddings, qwen3-6-35b answerer and
+judge with thinking enabled). Every NovaMem number in this document was
+measured in that campaign; nothing about NovaMem is projected. Mem0's
+figures (their benchmark scores, token budgets, and the 60–70% write-cost
+reduction) are their published claims, reproduced here as the reference
+point — not independently verified. Where a NovaMem claim rests on n=12,
+that is said explicitly — at n=12 one question is 8.3 percentage points, so
+single-question differences are noise.
+
+The goal: adopt Mem0's architecture — the highest-scoring published memory
+system on the benchmarks we care about — while keeping the NovaMem features
+that are genuinely differentiating, **strictly off the hot paths**.
+
+## 1. What Mem0 does
+
+Reconstructed from Mem0's 2026 published material.
+
+**Write (`add()`), one LLM call total:**
+
+1. One "single-pass hierarchical extraction" call: structured facts *and*
+   entities extracted together. ADD-only — no conflict check, no
+   update/merge decision. Agent-generated facts carry equal weight to user
+   statements.
+2. Facts batch-embedded and inserted. Entities go into a parallel
+   `{collection}_entities` collection. Raw episodic messages persist
+   alongside the facts — **facts and raw conversation coexist**.
+3. The `relations` field from earlier versions is **gone**: explicit graph
+   relations were deliberately removed in favour of implicit ranking
+   signals.
+
+Mem0's own framing: the traditional pipeline of *extract → check conflicts
+→ update or merge* costs three sequential LLM calls per memory; collapsing
+it to one ADD-only call cut write-time LLM usage 60–70%.
+
+**Read (`search()`):**
+
+1. Three candidate signals in parallel: vector similarity, BM25 keyword,
+   and **entity match against the entity collection** — the entity index is
+   a candidate *source*, not just a re-ranking signal.
+2. Scores normalised and fused.
+3. A second-pass reranker (Cohere / HF / sentence-transformers / LLM).
+4. Results trimmed to a **token budget** — ~6,800 tokens per query is their
+   headline metric across LoCoMo, LongMemEval and BEAM.
+
+**No write-time supersession anywhere.** Memories accumulate; retrieval
+ranking and the budget sort it out. Published scores: 93.4–94.4%
+LongMemEval (judge model unpublished, so not directly comparable to our
+qwen3-judged numbers — our own 2×2 showed the answerer alone swings results
+18–24pp).
+
+## 2. Where NovaMem stands (measured)
+
+| Axis | Mem0 | NovaMem today | Verdict |
+|---|---|---|---|
+| Write LLM calls per chunk | **1** | ~2 (was ~6 before the 0.85 updation floor) | Behind, structurally |
+| Write durability | — | **None for facts**: extraction is `void`-scheduled, in-process. A mid-drain pod restart permanently lost 10,446 chunks' facts. Embeddings have had a reconciler (`embedded_at`) all along. | Behind our own embeddings path |
+| Write paths | one `add()` | two (`remember`, `capture`) with divergent semantics | Behind — a recurring source of confusion and double cost |
+| Fusion | 3 signals | 5 signals, same normalise-and-fuse shape | Convergent — equivalent design reached independently |
+| Entity retrieval | candidate source | ranking signal over already-found candidates only; a true source (`memoriesByEntities`) exists but is welded to the neighbour walk | Behind by wiring, not capability |
+| Token budget | default, headline metric | `maxTokens` exists (PR #161), not defaulted | Behind by one config |
+| Reranker | second-pass, standard | none (one measurement, harmful — but in the wrong setting: re-ordering an already-good top-k rather than trimming a pool to budget) | Open question |
+| Supersession | none at write | LLM ADD/UPDATE/DELETE at write | We pay ~2× their write cost for a mechanism they measured as not worth its position |
+
+Supporting measurements:
+
+- Retrieval quality is **not** the bottleneck: hit@10 100%, MRR 1.0 on the
+  n=50 remember corpus; session coverage 96.5% at top-20.
+- The graph **neighbour walk** contributed zero to ranking in every arm and
+  sits on the critical path (it runs after the vector tier resolves).
+  Skipping it: 154→76 ms mean, 318→114 ms p95.
+- Facts are the token-efficient representation: at matched answer accuracy,
+  the fact-bearing corpus needed **1,439 tokens where raw chunks needed
+  5,576** (83.3%), and **7,434 vs 11,480** (91.7%). n=12 — treat as strong
+  direction, not a precise ratio.
+- `preferFacts` (drop the chunk when its fact is returned — a NovaMem
+  invention, not a Mem0 mechanism) was harmful in every configuration:
+  facts are *lossy* summaries and the dropped chunk carries the
+  specifics. 83.3%→58.3% at top_20. Default reverted; deleted in Phase 4.
+- Budget-filled retrieval returns ~127 memories in ~7,000 tokens where
+  k-bounded retrieval returned 10 chunks for the same spend.
+- bge-m3 beat Qwen3-Embedding-0.6B on every retrieval metric at n=50 and is
+  2.1× faster. Embedding model: settled, keep bge-m3.
+- Absolute cosine thresholds are not portable across embedding models
+  (bge-m3 relevant 0.455–0.651 vs irrelevant 0.448–0.564 — overlapping
+  bands); all "score < X is a miss" guidance was removed.
+
+## 3. Target architecture
+
+```
+WRITE — one path. capture = remember + optional worthiness gate.
+  store raw chunk (durable, immediate)  →  mark facts_pending (durable)
+    └─ background reconciler (restart-safe, mirrors embedded_at):
+         ONE LLM call → { facts[], entities[] }     ADD-only, hierarchical
+         batch-embed facts → insert; entities → entity index
+         content-hash dedup only. No decideOperation. No per-fact search.
+
+READ — search / context
+  candidates:  vector (bge-m3)  ∥  FTS keyword  ∥  entity-index lookup
+    → fuse (existing) → rank prior → diversity
+    → [gated experiment: cross-encoder rerank of a 3–5× pool]
+    → TOKEN-BUDGET trim   (context defaults 6,000 tokens; k is a ceiling)
+    → facts and chunks coexist; expandSourceChunks preserved
+
+BACKGROUND — dream-cycle (scheduled, off every hot path)
+  consolidation: cluster near-duplicate facts → batch LLM merge/supersede
+    → bitemporal (asOf) edges written here, never at write time
+  decay / warm-cold tiering (unchanged)
+```
+
+**Kept, because differentiating and off the hot path:** projects,
+namespaces, sensitivity tiers; typed facts with `occurred_at`; bitemporal
+`asOf` (moved to dream-cycle); warm/cold tiering and decay; the diagnostics
+surface (`hygiene`, `evaluate`, `adoption`); `expandSourceChunks`
+(historically +10pp — it hands the answerer the fact *and* its chunk, the
+opposite and correct instinct to `preferFacts`).
+
+**Removed:** write-time supersession (`decideOperation` and the per-fact
+similarity search); capture's synchronous semantic near-dup probe; the
+search-time neighbour walk; `preferFacts`; the second write path's
+divergent semantics.
+
+## 4. Migration plan
+
+One variable per phase. One deploy per phase. Every gate is answer
+accuracy at **n≥50** (retrieval metrics are diagnostics only — they pointed
+the opposite way from answer accuracy three separate times in the
+campaign). Measurements on warm pods only; no rollouts while a measurement
+or ingest is in flight (a mid-drain rollout is what destroyed the n=50
+corpus).
+
+| Phase | Change | Gate |
+|---|---|---|
+| **1. Durability** | `facts_pending` marker + reconciler, cloned from the `embedded_at` pattern. No behavioural change. | Kill pods mid-drain → queue drains to zero after restart; 0 chunks lost. `factsPending` gauge exposed. |
+| **2. Single-pass write** | One LLM call emits facts+entities; write-time updation deleted (manifest below). | ≥2× extraction throughput; facts/chunk within ±20%; n=50 answer accuracy not below Phase-1 baseline. |
+| **3. Dream-cycle consolidation** | Supersession + bitemporal edges move into dream-cycle as batch work (new batch-shaped prompt, not the old per-fact one). | knowledge-update accuracy unchanged; duplicate-fact rate falls; no overall regression. |
+| **4. Read alignment + unification** | Entity index becomes a default candidate source; neighbour walk deleted from `search()`; `/v1/context` defaults `maxTokens=6000`; capture collapses to remember+gate; `preferFacts` deleted. | Matched-budget capture ≥ remember at n=50; p95 latency ≤ the current 76 ms class. |
+| **5. Reranker (experiment)** | Pool 3–5× budget → cross-encoder → budget trim, behind a flag. | Adopted only if it beats Phase 4 at n=50; otherwise the flag and code are removed, not left dormant. |
+| **6. Publish** | Full 500-question LongMemEval, comparable report. | The number quoted next to Mem0's, with judge model stated. |
+
+Phase ordering note: Phase 2 removes write-time supersession *before*
+Phase 3 adds batch consolidation. The interim state — ADD-only with
+content-hash dedup — is where Mem0 lives permanently, and the Phase 3 gate
+confirms nothing was lost.
+
+## 5. Removal manifest
+
+Rule: **a removal PR deletes the implementation, its types and schema
+fields, its tests, its fakes, its docs, and its agent-facing instructions
+in the same PR.** Moves are moves: the old call site dies in the PR where
+the new home lands. Gate for every removal: repo-wide grep for the removed
+identifiers returns zero; `tsc --noEmit` clean; full suite green.
+
+**Phase 2 deletes**
+
+- `engine/fact-extractor.ts`: `decideOperation()`, `OP_SYSTEM_PROMPT`,
+  `OP_USER_PROMPT`, `parseOperation`, `UpdationDecision`,
+  `SimilarExistingFact`
+- `engine/index.ts`: the per-fact embed → `cold.search` → similar-rows →
+  decide block; UPDATE/NOOP branches; `FACT_UPDATION_CANDIDATE_THRESHOLD`
+- `engine/fact-updation-threshold.test.ts` (whole file — it locks a call
+  that no longer exists)
+- `test-fakes.ts`: the extractor stub's `decideOperation` member and its
+  `Pick<>` type
+
+**Phase 3 moves**
+
+- `SEMANTIC_DUPLICATE_THRESHOLD` and supersession / bitemporal-edge writing
+  relocate into dream-cycle; the capture-path call sites are deleted in the
+  same PR.
+
+**Phase 4 deletes**
+
+- The seeded neighbour walk inside `search()`, `GRAPH_SEED_COUNT`, and the
+  walk assertions in `zero-weight-tier-skip.test.ts` (the FTS-skip
+  assertions stay). `/v1/neighbors` and the `memory_neighbors` MCP tool
+  survive: explicit traversal is a user-facing feature; the implicit
+  search-time walk is what measured zero.
+- `preferFacts`, entirely: `types.ts`, `routes/schemas.ts`, engine logic,
+  and its describe-block in `token-budget.test.ts` (the `maxTokens` tests
+  stay).
+- `captureInner`'s synchronous near-dup probe and the capture/remember
+  duplication.
+- Agent-facing truth updated in the same PR: `mcp-instructions.ts`
+  currently promises *"the capture path handles near-duplicate update and
+  contradiction supersession; prefer it over raw memory_remember"* — that
+  becomes false at Phase 4 and is rewritten (one write path; consolidation
+  runs in dream-cycle), together with `skills/novamem/SKILL.md`,
+  `skills/novamem/references/remember.md`,
+  `integrations/claude-code/CLAUDE.md`, `docs/usage.md`, and the
+  capture-vs-remember guardrail in `docs/evaluation-benchmarks.md`.
+
+No deployment env vars are tied to any removed feature. `QUERY_DECOMP` and
+`OBSERVER` are opt-in features outside this plan's scope and keep working.
+
+## 6. Process rules (the failures these encode)
+
+1. **One variable per phase.** Two simultaneous changes (weights +
+   preferFacts) cost a full measurement cycle to untangle.
+2. **Answer accuracy gates; retrieval metrics are diagnostics.** Recall
+   and nDCG penalised compaction by construction and mis-ranked configs
+   three times.
+3. **n≥50.** At n=12, config differences of one question (8.3pp) were
+   repeatedly over-interpreted.
+4. **Feed the answerer what the server returned.** Uniform cutoffs
+   re-truncate a deliberately variable budgeted result set (this halved the
+   context in one run and made a working config look broken). The harness's
+   `--cutoffs all` mode exists for this.
+5. **Warm pods; no rollouts during runs.** Cold-start noise produced one
+   false regression; a mid-drain rollout destroyed a corpus.
+6. **No unmeasured defaults.** `preferFacts` shipped default-on with no
+   answer-accuracy measurement. Never again: a default changes only with a
+   gate result attached.
+7. **Copying Mem0 is not a gate exemption.** The reranker is theirs and
+   still enters behind a flag, because our only measurement of one was
+   harmful and their evidence is not our workload.
