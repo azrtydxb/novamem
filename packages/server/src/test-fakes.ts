@@ -1373,10 +1373,7 @@ export interface MakeEngineOpts {
    *  Typed against the real contract — a stub that drifts from
    *  `FactExtractor` should fail to compile rather than fail at runtime.
    *  Only the two methods the engine calls are required. */
-  extractor?: Pick<
-    import("./engine/fact-extractor.js").FactExtractor,
-    "extract" | "decideOperation"
-  >;
+  extractor?: Pick<import("./engine/fact-extractor.js").FactExtractor, "extract">;
 }
 
 export interface MakeEngineResult {

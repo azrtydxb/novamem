@@ -40,9 +40,6 @@ function flakyExtractor() {
         },
       ];
     },
-    async decideOperation() {
-      return { op: "ADD" as const };
-    },
   };
 }
 
