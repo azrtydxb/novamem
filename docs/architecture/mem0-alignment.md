@@ -2,9 +2,12 @@
 
 Written 2026-08-09, from a measurement campaign against the `nova-bench`
 deployment (LongMemEval slices, bge-m3 embeddings, qwen3-6-35b answerer and
-judge with thinking enabled). Every number in this document was measured in
-that campaign; nothing is projected. Where a claim rests on n=12, that is
-said explicitly — at n=12 one question is 8.3 percentage points, so
+judge with thinking enabled). Every NovaMem number in this document was
+measured in that campaign; nothing about NovaMem is projected. Mem0's
+figures (their benchmark scores, token budgets, and the 60–70% write-cost
+reduction) are their published claims, reproduced here as the reference
+point — not independently verified. Where a NovaMem claim rests on n=12,
+that is said explicitly — at n=12 one question is 8.3 percentage points, so
 single-question differences are noise.
 
 The goal: adopt Mem0's architecture — the highest-scoring published memory
