@@ -144,6 +144,13 @@ export const SearchBody = z.object({
    *  handler saw it and the only way to move the noise floor was an env
    *  var and a redeploy. 0 disables the filter. */
   minVectorScore: z.number().min(0).max(1).optional(),
+  /** Cap the returned content at roughly this many tokens. `k` bounds the
+   *  number of results, which is not what a caller needs to control — the
+   *  same k costs wildly different amounts depending on what is stored. */
+  maxTokens: z.number().int().positive().max(1_000_000).optional(),
+  /** Drop a source chunk when the fact extracted from it is already
+   *  returned. Defaults to true. */
+  preferFacts: z.boolean().optional(),
 });
 
 export const ContextBody = z.object({

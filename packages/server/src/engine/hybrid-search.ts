@@ -23,12 +23,44 @@ export interface HybridWeights {
   entity: number;
 }
 
+/** Recalibrated against a strong embedder (bge-m3) on a LongMemEval
+ *  slice, validated on a disjoint 60-question set.
+ *
+ *  What moved and why:
+ *
+ *   - **vector up (0.45 → 0.65).** A vector-dominant arm beat the previous
+ *     defaults on every retrieval metric — hit@5 92% → 100%, Recall@10
+ *     50.3% → 56.9%, MRR 0.9 → 1.0 — and held on the held-out set. The old
+ *     split was calibrated when the default embedder was MiniLM-class.
+ *   - **keyword down (0.25 → 0.15), not to zero.** `ts_rank` is
+ *     max-normalised per query, so the best lexical match always scores
+ *     1.0 however weak it is, which is enough to outrank a strong semantic
+ *     hit. It stays non-zero because exact identifiers — ids, symbols,
+ *     hashes — are a real recall path that this benchmark's prose does not
+ *     exercise.
+ *   - **entity down (0.15 → 0.05).** Measured mildly harmful, and a
+ *     non-zero entity match also lets a candidate bypass the vector noise
+ *     floor, so a spurious match promotes noise.
+ *   - **graph unchanged.** The neighbour walk contributed nothing
+ *     measurable to ranking in any arm, and it sits on the critical path —
+ *     it runs after the vector tier resolves, so it is latency paid for no
+ *     ranking change. Zeroing it by default is still wrong, because the
+ *     same tier also performs *entity bridging*: linking a query to
+ *     memories sharing a rare exact identifier, which neither cosine nor
+ *     stemmed FTS reaches. This benchmark is conversational prose and
+ *     cannot exercise that path, so the measurement says nothing about it.
+ *     Callers who know their workload is prose can pass `graph: 0` and
+ *     skip the tier entirely — measured 2x faster end to end.
+ *   - **recency unchanged.** Deliberately: every entry in a batch-imported
+ *     corpus shares an `updated_at`, so the benchmark cannot measure this
+ *     signal at all. Changing a weight the evidence says nothing about
+ *     would be overfitting to the benchmark's shape. */
 export const DEFAULT_WEIGHTS: HybridWeights = {
-  keyword: 0.25,
-  vector: 0.45,
+  keyword: 0.15,
+  vector: 0.65,
   graph: 0.05,
   recency: 0.10,
-  entity: 0.15,
+  entity: 0.05,
 };
 
 /** Candidates whose *only* evidence is a weak vector neighbour are noise:
