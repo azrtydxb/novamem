@@ -104,6 +104,10 @@ describe("preferFacts", () => {
     const b = quiet(makeEngine());
     const chunkId = await seedPair(b);
     const r = await b.engine.search("u1", { query: "oat milk coffee", k: 10 });
+    // Both halves matter: the chunk (fidelity) AND the fact (the compact
+    // form). Asserting only the chunk would let a regression that drops
+    // the fact slip through.
     expect(r.results.map((x) => x.id)).toContain(chunkId);
+    expect(r.results.some((x) => x.content.startsWith("[preference]"))).toBe(true);
   });
 });
