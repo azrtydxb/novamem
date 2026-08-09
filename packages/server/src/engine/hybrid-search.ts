@@ -28,7 +28,7 @@ export interface HybridWeights {
  *
  *  What moved and why:
  *
- *   - **vector up (0.45 → 0.70).** A vector-dominant arm beat the previous
+ *   - **vector up (0.45 → 0.65).** A vector-dominant arm beat the previous
  *     defaults on every retrieval metric — hit@5 92% → 100%, Recall@10
  *     50.3% → 56.9%, MRR 0.9 → 1.0 — and held on the held-out set. The old
  *     split was calibrated when the default embedder was MiniLM-class.
