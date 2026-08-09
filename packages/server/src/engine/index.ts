@@ -998,6 +998,7 @@ export class MemoryEngine {
         contentHash,
       });
       if (factEmbedding) {
+        let upserted = false;
         try {
           await this.cold.upsert({
             userId: args.userId,
@@ -1007,12 +1008,26 @@ export class MemoryEngine {
             embedding: factEmbedding,
             payload: { source: args.parentSource, agentName: null },
           });
-          await this.warm.setEmbeddedAt(factId, new Date());
+          upserted = true;
         } catch (err) {
           this.logger.warn(
             { err: (err as Error).message, factId, chunkId: args.chunkId },
             "cold.upsert for fact failed (warm row kept; embedding reconciler will retry)",
           );
+        }
+        // Stamped separately so a stamp failure is reported as what it is.
+        // The vector is already durable at this point; an unstamped row
+        // just gets redundantly re-embedded by the reconciler, which is
+        // idempotent — but the log must not claim the upsert failed.
+        if (upserted) {
+          try {
+            await this.warm.setEmbeddedAt(factId, new Date());
+          } catch (err) {
+            this.logger.warn(
+              { err: (err as Error).message, factId, chunkId: args.chunkId },
+              "embedded_at stamp for fact failed (vector stored; reconciler will re-stamp)",
+            );
+          }
         }
       }
     }
