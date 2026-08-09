@@ -413,7 +413,7 @@ async function main() {
         app.log.info({ ...f }, "reconciled pending fact extractions");
       }
     } catch (err) {
-      app.log.error({ err: (err as Error).message }, "embedding reconciler error");
+      app.log.error({ err: (err as Error).message }, "reconciler error (embeddings or fact extraction)");
     } finally {
       reconcileInFlight = false;
     }

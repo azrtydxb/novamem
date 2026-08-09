@@ -1653,7 +1653,7 @@ export class WarmStore {
       metadata: Record<string, unknown> | null;
     }>
   > {
-    return this.db
+    const rows = await this.db
       .select({
         id: schema.memoryEntries.id,
         userId: schema.memoryEntries.userId,
@@ -1666,17 +1666,14 @@ export class WarmStore {
       .from(schema.memoryEntries)
       .where(isNotNull(schema.memoryEntries.factsPendingAt))
       .orderBy(asc(schema.memoryEntries.factsPendingAt))
-      .limit(limit) as Promise<
-      Array<{
-        id: string;
-        userId: string;
-        projectId: string | null;
-        content: string;
-        namespace: string;
-        source: string;
-        metadata: Record<string, unknown> | null;
-      }>
-    >;
+      .limit(limit);
+    // Only metadata needs normalising — jsonb comes back untyped. Mapping
+    // it here keeps the select's own typing honest instead of casting the
+    // whole query, which would silently absorb future schema drift.
+    return rows.map((r) => ({
+      ...r,
+      metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+    }));
   }
 
   /** Size of the pending-extraction backlog. A number that stops falling

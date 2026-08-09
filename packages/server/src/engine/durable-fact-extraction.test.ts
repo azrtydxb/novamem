@@ -46,8 +46,15 @@ function flakyExtractor() {
   };
 }
 
-async function settle(ms = 30) {
-  await new Promise((r) => setTimeout(r, ms));
+/** Fire-and-forget extraction exposes no handle to await, so poll for
+ *  the side effect. A fixed sleep is either flaky on a loaded runner or
+ *  slow on every run. */
+async function until(cond: () => Promise<boolean> | boolean, ms = 2000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (await cond()) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
 }
 
 describe("durable fact-extraction queue", () => {
@@ -58,7 +65,7 @@ describe("durable fact-extraction queue", () => {
     // The marker is written with the row, before the background pass runs.
     // (It may already be cleared if the void chain won the race, so assert
     // the end state rather than the transient.)
-    await settle();
+    await until(async () => (await b.warm.countPendingFacts()) === 0);
     expect(b.warm.rows.get(r.id!)?.factsPendingAt).toBeNull();
     expect(await b.warm.countPendingFacts()).toBe(0);
     expect([...b.warm.rows.values()].some((x) => x.sourceType === "fact")).toBe(true);
@@ -69,7 +76,9 @@ describe("durable fact-extraction queue", () => {
     ex.state.fail = true;
     const b = quiet(makeEngine({ extractor: ex }));
     const r = await b.engine.remember("u1", { content: "user: I take oat milk in my coffee", force: true });
-    await settle();
+    // The failing extraction has fired (calls advanced) yet the debt
+    // remains — that pair is the durable-queue invariant.
+    await until(() => ex.state.calls >= 1);
     expect(b.warm.rows.get(r.id!)?.factsPendingAt).not.toBeNull();
     expect(await b.warm.countPendingFacts()).toBe(1);
   });
@@ -80,7 +89,7 @@ describe("durable fact-extraction queue", () => {
     const b = quiet(makeEngine({ extractor: ex }));
     await b.engine.remember("u1", { content: "user: I take oat milk in my coffee", force: true });
     await b.engine.remember("u1", { content: "user: my 5K personal best is 25:50", force: true });
-    await settle();
+    await until(() => ex.state.calls >= 2);
     expect(await b.warm.countPendingFacts()).toBe(2);
 
     // Outage ends. Nothing re-triggers the lost extractions except the
@@ -97,7 +106,7 @@ describe("durable fact-extraction queue", () => {
     const ex = flakyExtractor();
     const b = quiet(makeEngine({ extractor: ex }));
     await b.engine.remember("u1", { content: "user: nothing durable here, just chit-chat", force: true });
-    await settle();
+    await until(async () => (await b.warm.countPendingFacts()) === 0);
     expect(await b.warm.countPendingFacts()).toBe(0);
     const calls = ex.state.calls;
     const r = await b.engine.reconcilePendingFacts({ batchSize: 50 });
@@ -109,7 +118,7 @@ describe("durable fact-extraction queue", () => {
     const ex = flakyExtractor();
     const b = quiet(makeEngine({ extractor: ex }));
     await b.engine.remember("u1", { content: "user: I take oat milk in my coffee", force: true });
-    await settle();
+    await until(() => [...b.warm.rows.values()].some((x) => x.sourceType === "fact"));
     const factRows = [...b.warm.rows.values()].filter((x) => x.sourceType === "fact");
     expect(factRows.length).toBeGreaterThan(0);
     for (const f of factRows) expect(f.factsPendingAt).toBeNull();
@@ -132,7 +141,7 @@ describe("durable fact-extraction queue", () => {
     ex.state.fail = true;
     const b = quiet(makeEngine({ extractor: ex }));
     await b.engine.remember("u1", { content: "user: I take oat milk in my coffee", force: true });
-    await settle();
+    await until(() => ex.state.calls >= 1);
     expect(await b.warm.countPendingFacts()).toBe(1);
 
     ex.state.fail = false;
