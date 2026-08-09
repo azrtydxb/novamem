@@ -96,6 +96,20 @@ export interface SearchRequest {
    *  value (NOVAMEM_SEARCH_MIN_VECTOR_SCORE, default 0.25). Pass 0 to
    *  disable and see every nearest neighbour. */
   minVectorScore?: number;
+  /** Cap the returned set at roughly this many tokens of content.
+   *
+   *  `k` bounds the number of results, which is not the thing a caller
+   *  needs to control: the same k can cost 500 or 7,500 tokens depending
+   *  only on whether the store holds one-line facts or conversation
+   *  chunks. When set, results are admitted in score order until the
+   *  budget is spent (the top hit is always returned, even if it alone
+   *  exceeds the budget). `k` still applies as an upper bound. */
+  maxTokens?: number;
+  /** When a fact and the chunk it was extracted from would both be
+   *  returned, keep only the fact. Both are relevant, but they carry the
+   *  same information and the fact is far cheaper. Defaults to true; set
+   *  false to receive both. */
+  preferFacts?: boolean;
 }
 
 export interface SearchResult {

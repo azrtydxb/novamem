@@ -220,6 +220,18 @@ const RESULT_DIVERSITY_MAX_JACCARD = 0.75;
  *  any case. */
 const COHERENCE_RERANK_MAX_CANDIDATES = 40;
 
+/** Rough token cost of a piece of content.
+ *
+ *  Deliberately a cheap character-based estimate rather than a real
+ *  tokenizer: the budget only has to be approximately right to stop a
+ *  result set from blowing a context window, and pulling a tokenizer onto
+ *  the search hot path would cost more than the imprecision does. ~4
+ *  chars/token is the usual English approximation and errs slightly
+ *  high on prose, which is the safe direction for a budget. */
+export function estimateTokens(content: string): number {
+  return Math.ceil(content.length / 4);
+}
+
 const SENSITIVITY_ORDER: Record<SensitivityLevel, number> = { public: 0, internal: 1, private: 2, sensitive: 3 };
 const DEFAULT_MAX_SENSITIVITY: SensitivityLevel = "private";
 
@@ -1996,19 +2008,54 @@ export class MemoryEngine {
       }
       return t;
     };
+    // A fact and the chunk it was distilled from are both relevant, and
+    // returning both spends the caller's context twice on one piece of
+    // information. Under a token budget that is the difference between
+    // fitting the evidence and not: measured on a LongMemEval slice, the
+    // fact-bearing corpus reached the same answer accuracy as the raw one
+    // on roughly a quarter of the tokens. Drop the source chunk when its
+    // own fact is already selected — never the reverse, since the fact is
+    // the compact form.
+    if (req.preferFacts !== false) {
+      const factSourceIds = new Set(
+        visible
+          .map((v) => (v.result.metadata as { source_chunk_id?: string } | undefined)?.source_chunk_id)
+          .filter((x): x is string => typeof x === "string"),
+      );
+      if (factSourceIds.size > 0) {
+        for (let i = visible.length - 1; i >= 0; i--) {
+          if (factSourceIds.has(visible[i]!.result.id)) visible.splice(i, 1);
+        }
+      }
+    }
+
+    // Budget in tokens, not item count. `k` alone cannot express what a
+    // caller actually needs to control: ten 2,000-character chunks and ten
+    // one-line facts are the same k and a 10x different context cost.
+    // Measured on the same slice, k=10 ranged from ~500 to ~7,500 tokens
+    // depending only on what happened to be stored.
+    const tokenBudget = req.maxTokens && req.maxTokens > 0 ? req.maxTokens : null;
+    let spent = 0;
     const selected: typeof visible = [];
     for (const cand of visible) {
       if (selected.length >= k) break;
+      const cost = estimateTokens(cand.result.content);
+      // Always admit the first result: a budget smaller than the top hit
+      // should return that hit rather than nothing at all.
+      if (tokenBudget !== null && selected.length > 0 && spent + cost > tokenBudget) break;
       const candTokens = tokensFor(cand.result.content);
       const redundant = selected.some(
         (s) => jaccardOf(tokensFor(s.result.content), candTokens) >= RESULT_DIVERSITY_MAX_JACCARD,
       );
-      if (!redundant) selected.push(cand);
+      if (!redundant) {
+        selected.push(cand);
+        spent += cost;
+      }
     }
     // If diversification starved the result set (a store legitimately
     // full of similar short facts), backfill from what it dropped rather
     // than under-returning.
-    if (selected.length < k) {
+    if (selected.length < k && tokenBudget === null) {
       const chosen = new Set(selected.map((s) => s.result.id));
       for (const cand of visible) {
         if (selected.length >= k) break;
