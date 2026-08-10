@@ -1376,6 +1376,8 @@ export interface MakeEngineOpts {
    *  consolidation phase being configured off. */
   extractor?: Pick<import("./engine/fact-extractor.js").FactExtractor, "extract"> &
     Partial<Pick<import("./engine/fact-extractor.js").FactExtractor, "consolidate">>;
+  /** Inject a Phase 5 reranker stub; absent = feature unconfigured. */
+  reranker?: import("./engine/reranker.js").SearchReranker;
 }
 
 export interface MakeEngineResult {
@@ -1407,6 +1409,7 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
     });
   }
   const engine = new MemoryEngine({
+    reranker: opts.reranker,
     warm: asWarm(warm),
     cold: asCold(cold),
     graph: asGraph(graph),

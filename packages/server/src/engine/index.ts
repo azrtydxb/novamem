@@ -457,6 +457,11 @@ export interface EngineConfig {
    *  provided AND the caller opts in via SearchRequest.decompose=true,
    *  the query is rewritten into ≤N parallel sub-queries before retrieval. */
   decomposer?: import("./query-decomposer.js").QueryDecomposer;
+  /** Mem0-alignment Phase 5 EXPERIMENT: optional cross-encoder reranker
+   *  for /v1/search. When unset, `rerank: true` requests are ignored. */
+  reranker?: import("./reranker.js").SearchReranker;
+  /** Candidate pool = poolMultiplier × k when reranking. */
+  rerankPoolMultiplier?: number;
   /** Arch-plan Phase 5: optional observer/reflector for /v1/context-prefix. */
   observer?: import("./observer.js").Observer;
   /** Deployment-specific high-relevance vocabulary (operator name,
@@ -487,6 +492,8 @@ export class MemoryEngine {
   private readonly extractor: import("./fact-extractor.js").FactExtractor | null;
   private readonly extractorMaxFacts: number;
   private readonly decomposer: import("./query-decomposer.js").QueryDecomposer | null;
+  private readonly reranker: import("./reranker.js").SearchReranker | null;
+  private readonly rerankPoolMultiplier: number;
   private readonly observer: import("./observer.js").Observer | null;
   private readonly personalTerms: readonly string[];
   private readonly minVectorScore: number;
@@ -521,6 +528,8 @@ export class MemoryEngine {
     this.extractor = cfg.extractor ?? null;
     this.extractorMaxFacts = cfg.extractorMaxFacts ?? 5;
     this.decomposer = cfg.decomposer ?? null;
+    this.reranker = cfg.reranker ?? null;
+    this.rerankPoolMultiplier = cfg.rerankPoolMultiplier ?? 4;
     this.observer = cfg.observer ?? null;
     this.personalTerms = cfg.personalTerms ?? [];
     this.minVectorScore = cfg.minVectorScore ?? DEFAULT_MIN_VECTOR_SCORE;
@@ -1860,6 +1869,39 @@ export class MemoryEngine {
     }
     visible.sort((a, b) => b.result.score - a.result.score);
 
+    // ── Phase 5 EXPERIMENT: second-pass cross-encoder rerank ──────────
+    // Opt-in per request AND requires a configured service; anyone else
+    // pays nothing. Scores the top (poolMultiplier × k) candidates
+    // against the query and re-orders them by cross-encoder relevance
+    // before the diversity + budget selection below; candidates outside
+    // the pool (and any the service failed to score) keep their fused
+    // order behind the scored ones. A rerank failure falls back to the
+    // fused order — like decomposition, an enhancement outage must not
+    // fail the search.
+    if (req.rerank && this.reranker && visible.length > 1) {
+      const pool = Math.min(visible.length, k * this.rerankPoolMultiplier);
+      try {
+        const scores = await this.reranker.rerank(
+          req.query,
+          visible.slice(0, pool).map((v) => v.result.content),
+        );
+        const order = new Map<string, number>();
+        visible.forEach((v, i) => order.set(v.result.id, i));
+        visible.sort((a, b) => {
+          const ia = order.get(a.result.id)!;
+          const ib = order.get(b.result.id)!;
+          const sa = ia < pool ? scores[ia] : undefined;
+          const sb = ib < pool ? scores[ib] : undefined;
+          if (sa !== undefined && sb !== undefined) return sb - sa;
+          if (sa !== undefined) return -1;
+          if (sb !== undefined) return 1;
+          return ia - ib;
+        });
+      } catch (err) {
+        this.logger.warn({ err: (err as Error).message }, "rerank failed; using fused order");
+      }
+    }
+
     // Greedy redundancy filter (MMR-style, using token overlap as the
     // similarity measure so no extra vector fetches are needed): keep a
     // candidate only if it isn't a restatement of one already selected.
@@ -1874,14 +1916,6 @@ export class MemoryEngine {
       }
       return t;
     };
-    // A fact and the chunk it was distilled from are both relevant, and
-    // returning both spends the caller's context twice on one piece of
-    // information. Under a token budget that is the difference between
-    // fitting the evidence and not: measured on a LongMemEval slice, the
-    // fact-bearing corpus reached the same answer accuracy as the raw one
-    // on roughly a quarter of the tokens. Drop the source chunk when its
-    // own fact is already selected — never the reverse, since the fact is
-    // the compact form.
     // Budget in tokens, not item count. `k` alone cannot express what a
     // caller actually needs to control: ten 2,000-character chunks and ten
     // one-line facts are the same k and a 10x different context cost.

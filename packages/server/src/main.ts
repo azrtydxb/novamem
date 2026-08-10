@@ -195,6 +195,16 @@ async function main() {
       timeoutMs: cfg.queryDecomp.timeoutMs,
     });
   }
+  let reranker: import("./engine/reranker.js").SearchReranker | undefined;
+  if (cfg.rerank.enabled && cfg.rerank.endpoint && cfg.rerank.model) {
+    const { SearchReranker } = await import("./engine/reranker.js");
+    reranker = new SearchReranker({
+      endpoint: cfg.rerank.endpoint,
+      model: cfg.rerank.model,
+      apiKey: cfg.rerank.apiKey,
+      timeoutMs: cfg.rerank.timeoutMs,
+    });
+  }
   let observer: import("./engine/observer.js").Observer | undefined;
   if (cfg.observer.enabled && cfg.observer.endpoint && cfg.observer.model) {
     const { Observer } = await import("./engine/observer.js");
@@ -221,6 +231,8 @@ async function main() {
     extractor,
     extractorMaxFacts: cfg.extraction.maxFactsPerChunk,
     decomposer,
+    reranker,
+    rerankPoolMultiplier: cfg.rerank.poolMultiplier,
     observer,
     personalTerms: cfg.search.personalTerms,
     minVectorScore: cfg.search.minVectorScore,
