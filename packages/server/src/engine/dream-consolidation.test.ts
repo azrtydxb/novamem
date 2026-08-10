@@ -81,6 +81,26 @@ describe("dream-cycle fact consolidation", () => {
     expect(ids).not.toContain(supersededRow!.id);
   });
 
+  it("supersession preserves the fact's existing metadata", async () => {
+    // updateEntry replaces the metadata column wholesale; the verdict
+    // application must merge, or retiring a fact would erase its
+    // occurred_at / sensitivity / source_chunk_id provenance. (The old
+    // write-time DELETE branch had exactly this latent bug.)
+    const ex = consolidatingExtractor((ids) =>
+      ids.length >= 2 ? [{ supersededId: ids[1]!, byId: ids[0]! }] : [],
+    );
+    const b = quiet(makeEngine({ extractor: ex }));
+    await seedFact(b, "the user lives in Dubai Marina", "2026-08-01");
+    await seedFact(b, "the user lives in Berlin Mitte", "2024-02-01");
+    await b.engine.dreamCycle({ maxEntries: 0, factClusterMinCosine: 0.1 });
+    const retired = [...b.warm.rows.values()].find(
+      (x) => (x.metadata as Record<string, unknown>)?.fact_inactive === true,
+    );
+    expect(retired).toBeTruthy();
+    const meta = retired!.metadata as { fact?: { occurred_at?: string } };
+    expect(meta.fact?.occurred_at).toBeTruthy(); // provenance survived
+  });
+
   it("judges clusters in one batched call, not per fact", async () => {
     const ex = consolidatingExtractor(() => []);
     const b = quiet(makeEngine({ extractor: ex }));

@@ -2671,7 +2671,11 @@ export class MemoryEngine {
     minCosine: number;
     maxEntries: number;
   }): Promise<{ factsWalked: number; clustersJudged: number; superseded: number }> {
-    if (!this.extractor) return { factsWalked: 0, clustersJudged: 0, superseded: 0 };
+    // `consolidate` is optional on injected extractors (tests stub only
+    // `extract`); a missing method is a configured-off phase, not a crash.
+    if (!this.extractor || typeof this.extractor.consolidate !== "function") {
+      return { factsWalked: 0, clustersJudged: 0, superseded: 0 };
+    }
     if (this.dreamFactCursor === null) {
       this.dreamFactCursor =
         (await this.warm.getEngineState(DREAM_FACT_CURSOR_KEY).catch(() => null)) ?? "";
@@ -2695,7 +2699,14 @@ export class MemoryEngine {
     );
     this.dreamFactCursor =
       rows.rows.length < args.maxEntries ? "" : (rows.rows[rows.rows.length - 1]?.id ?? "");
-    await this.warm.setEngineState(DREAM_FACT_CURSOR_KEY, this.dreamFactCursor).catch(() => {});
+    await this.warm.setEngineState(DREAM_FACT_CURSOR_KEY, this.dreamFactCursor).catch((err) => {
+      // Same visibility as the dedup cursor: a persist failure means this
+      // slice repeats after a restart, and silence would hide why.
+      this.logger.warn(
+        { err: (err as Error).message },
+        "could not persist dream fact-consolidation cursor",
+      );
+    });
 
     let factsWalked = 0;
     let clustersJudged = 0;
@@ -2705,6 +2716,11 @@ export class MemoryEngine {
     for (const row of rows.rows) {
       factsWalked++;
       if (clustered.has(row.id)) continue;
+      // The SQL predicate only excludes `fact_inactive`; isInactiveMemory
+      // also treats lifecycleStatus superseded/deprecated as inactive, and
+      // re-judging an already-retired fact wastes an embed, a vector
+      // search and LLM budget.
+      if (isInactiveMemory((row.metadata ?? {}) as Record<string, unknown>)) continue;
       let embedding: number[] | undefined;
       try {
         [embedding] = await this.embedder.embed(row.content);
@@ -2782,17 +2798,30 @@ export class MemoryEngine {
         const ownerRow = rows.rows.find((r) => home.some((f) => f.id === r.id));
         if (!ownerRow) continue;
         try {
-          await this.warm.updateEntry({
+          // updateEntry REPLACES the metadata column — merge over the
+          // current row or supersession would erase `fact.occurred_at`,
+          // `sensitivity` and `source_chunk_id` from the retired fact.
+          // (The old write-time DELETE branch had this same latent bug.)
+          const current = await this.warm.getEntry(ownerRow.user_id, pair.supersededId, {
+            projectId: ownerRow.project_id,
+          });
+          const ok = await this.warm.updateEntry({
             userId: ownerRow.user_id,
             id: pair.supersededId,
             projectId: ownerRow.project_id,
             metadata: {
+              ...((current?.metadata ?? {}) as Record<string, unknown>),
               fact_inactive: true,
               superseded_at: new Date().toISOString(),
               superseded_by: pair.byId,
               superseded_via: "dream_cycle_consolidation",
             } as Record<string, unknown>,
           });
+          if (!ok) {
+            // Row gone or out of scope — no edge, no count: recording a
+            // supersession that never landed would lie to the metrics.
+            continue;
+          }
           await this.warm.addRelation(
             ownerRow.user_id,
             pair.byId,

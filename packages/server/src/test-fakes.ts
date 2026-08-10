@@ -1369,10 +1369,11 @@ export interface MakeEngineOpts {
    *  fake stores and wires it into the engine. Default false. */
   withMetrics?: boolean;
   /** Inject a fact extractor to exercise the single-pass write-time
-   *  extraction, which is otherwise disabled in tests. Typed against the
-   *  real contract — a stub that drifts from `FactExtractor` should fail
-   *  to compile rather than fail at runtime. `extract` is the only
-   *  method the engine calls. */
+   *  extraction and, optionally, dream-cycle consolidation. Typed against
+   *  the real contract — a stub that drifts from `FactExtractor` should
+   *  fail to compile rather than fail at runtime. `extract` is required;
+   *  `consolidate` is optional, and the engine treats its absence as the
+   *  consolidation phase being configured off. */
   extractor?: Pick<import("./engine/fact-extractor.js").FactExtractor, "extract"> &
     Partial<Pick<import("./engine/fact-extractor.js").FactExtractor, "consolidate">>;
 }
