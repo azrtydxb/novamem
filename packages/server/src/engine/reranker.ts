@@ -72,9 +72,11 @@ export class SearchReranker {
       for (const r of body.results) {
         if (
           typeof r.index === "number" &&
+          Number.isInteger(r.index) &&
           r.index >= 0 &&
           r.index < documents.length &&
-          typeof r.relevance_score === "number"
+          typeof r.relevance_score === "number" &&
+          Number.isFinite(r.relevance_score)
         ) {
           scores[r.index] = r.relevance_score;
         }

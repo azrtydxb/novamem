@@ -29,7 +29,7 @@ async function seed(b: ReturnType<typeof makeEngine>) {
   }
 }
 
-/** A reranker that scores by position in `preferred` — last wins. */
+/** A reranker that scores any document containing `preferred` above the rest. */
 function fakeReranker(preferred: string): Pick<SearchReranker, "rerank"> {
   return {
     async rerank(_query: string, documents: string[]) {

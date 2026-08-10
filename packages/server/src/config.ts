@@ -175,7 +175,7 @@ export const ConfigSchema = z
      *  the Phase 4 configuration at n>=50; deleted otherwise. */
     rerank: z
       .object({
-        enabled: z.coerce.boolean().default(false),
+        enabled: EnvBoolean.default(false),
         endpoint: z.string().optional(),
         model: z.string().optional(),
         apiKey: z.string().optional(),
