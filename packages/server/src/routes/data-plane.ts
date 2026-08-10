@@ -324,7 +324,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
             limit: z.number().int().positive().max(200).optional(),
           })
           .optional(),
-        security: [{ SessionCookie: [] }],
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
       },
     },
     async (req, reply) => {
@@ -345,7 +345,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         tags: ["lifecycle"],
         summary: "Trigger a decay sweep (operator)",
         body: DecayBody.optional(),
-        security: [{ SessionCookie: [] }],
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
       },
     },
     async (req, reply) => {
@@ -362,7 +362,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       schema: {
         tags: ["lifecycle"],
         summary: "Trigger the dedup-merge + edge-promotion pass (operator)",
-        security: [{ SessionCookie: [] }],
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
       },
     },
     async (req, reply) => {
@@ -401,7 +401,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       schema: {
         tags: ["lifecycle"],
         summary: "Trigger the cold-orphan reaper (operator)",
-        security: [{ SessionCookie: [] }],
+        security: [{ UserBearer: [] }, { SessionCookie: [] }],
       },
     },
     async (req, reply) => {

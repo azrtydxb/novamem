@@ -1151,10 +1151,12 @@ export class MemoryEngine {
     embedded?: boolean;
   }> {
     // Capture is remember plus one thing: the contradiction/superset
-    // guard below (Mem0 alignment, Phase 4). Everything else — the
-    // worthiness gate, the length gate, exact-hash dedup with its
-    // backfill self-heal, metrics — happens inside remember(), exactly
-    // once. This path used to clone all of it, and the clones drifted:
+    // guard below (Mem0 alignment, Phase 4). The checks that also run
+    // here (worthiness, length, exact-hash lookup) are cheap pre-filters
+    // that keep junk and exact duplicates away from the paid embed — the
+    // *handling* of every outcome (rejection wording, dedup fast-path
+    // with its backfill self-heal, metrics) lives in remember() alone.
+    // This path used to clone the handling too, and the clones drifted:
     // the cross-namespace backfill-leak fix had to be applied twice.
     req = withSensitivityMetadata(req);
     if (!req.force) {
