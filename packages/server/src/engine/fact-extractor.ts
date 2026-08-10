@@ -229,58 +229,6 @@ export class FactExtractor {
     return parseFacts(text, this.cfg.maxFactsPerChunk);
   }
 
-  /** Arch-plan Phase 2 v2: Mem0 ADD/UPDATE/DELETE/NOOP decision.
-   *  Called by the engine for each newly-extracted fact AFTER similar
-   *  existing facts have been retrieved. Returns the operation the
-   *  caller should apply.
-   *
-   *  Goes through the same concurrency semaphore as extract() so the
-   *  upstream LLM queue depth stays bounded regardless of how many
-   *  extractions+updations are in flight. */
-  async decideOperation(
-    newText: string,
-    existing: SimilarExistingFact[],
-  ): Promise<UpdationDecision> {
-    if (!existing.length) return { op: "ADD" };
-    await this.sem.acquire();
-    try {
-      const url = chatCompletionsURL(this.cfg.endpoint);
-      const headers: Record<string, string> = {
-        "content-type": "application/json",
-        accept: "application/json",
-      };
-      if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
-      // 128 tokens was too tight to be reliable even without a reasoning
-      // model in the way; with one it could not emit a single content
-      // token, so every decision silently fell back to ADD and the
-      // supersession path never ran.
-      const body = chatCompletionBody({
-        model: this.cfg.model,
-        messages: [
-          { role: "system", content: OP_SYSTEM_PROMPT },
-          { role: "user", content: OP_USER_PROMPT(newText, existing) },
-        ],
-        maxTokens: 256,
-      });
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
-      try {
-        const resp = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
-        if (!resp.ok) return { op: "ADD" };
-        const read = readCompletionText((await resp.json()) as ChatCompletionResponse);
-        // ADD stays the fallback for an unusable response: it is the only
-        // option that cannot lose an existing memory.
-        if (read.emptyReason) return { op: "ADD" };
-        return parseOperation(read.text, new Set(existing.map((e) => e.id)));
-      } catch {
-        return { op: "ADD" };
-      } finally {
-        clearTimeout(timer);
-      }
-    } finally {
-      this.sem.release();
-    }
-  }
 }
 
 // ─── Mem0-style updation: ADD/UPDATE/DELETE/NOOP ──────────────────────
@@ -301,67 +249,7 @@ export class FactExtractor {
 
 export type FactOperation = "ADD" | "UPDATE" | "DELETE" | "NOOP";
 
-export interface UpdationDecision {
-  op: FactOperation;
-  targetId?: string;
-  reason?: string;
-}
 
-export interface SimilarExistingFact {
-  id: string;
-  text: string;
-  /** Optional metadata snapshot for context — type, subject, predicate, etc. */
-  factType?: string;
-  importance?: number;
-}
-
-const OP_SYSTEM_PROMPT = `You compare a NEW memory fact against the most semantically similar EXISTING facts already in the user's memory store, and decide what to do.
-
-Output exactly one JSON object on a single line:
-{"op": "ADD"|"UPDATE"|"DELETE"|"NOOP", "targetId": "<id>" | null, "reason": "<one short sentence>"}
-
-Rules:
-- ADD: the new fact is genuinely new information; none of the existing facts cover it.
-- UPDATE: the new fact REFINES or AUGMENTS one existing fact (same subject + same predicate, but the new fact has more or more-specific info). targetId = that fact's id.
-- DELETE: the new fact CONTRADICTS an existing fact (e.g. user moved cities — the old location is no longer true). targetId = the fact to mark obsolete.
-- NOOP: the new fact is essentially identical to an existing one. targetId = the duplicate.
-
-When in doubt, prefer ADD over UPDATE, and UPDATE over DELETE. NOOP only for near-identical text.`;
-
-const OP_USER_PROMPT = (newText: string, existing: SimilarExistingFact[]) =>
-  `NEW fact:
-${newText}
-
-EXISTING similar facts (id then text):
-${existing.map((e) => `${e.id}: ${e.text}`).join("\n")}
-
-Decide ADD / UPDATE / DELETE / NOOP. Output ONLY one JSON object:`;
-
-function parseOperation(raw: string, validIds: Set<string>): UpdationDecision {
-  let s = (raw || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  s = s.replace(/^\s*```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  const m = s.match(/\{[\s\S]*\}/);
-  if (!m) return { op: "ADD" };
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(m[0]) as Record<string, unknown>;
-  } catch {
-    return { op: "ADD" };
-  }
-  const opRaw = typeof obj.op === "string" ? obj.op.toUpperCase().trim() : "";
-  const ops: FactOperation[] = ["ADD", "UPDATE", "DELETE", "NOOP"];
-  const op = ops.find((o) => o === opRaw) ?? "ADD";
-  const targetId =
-    typeof obj.targetId === "string" && validIds.has(obj.targetId)
-      ? obj.targetId
-      : undefined;
-  // Tighten the schema: UPDATE / DELETE / NOOP require a real targetId
-  // from the existing set. If the LLM hallucinated, fall back to ADD.
-  if ((op === "UPDATE" || op === "DELETE" || op === "NOOP") && !targetId) {
-    return { op: "ADD", reason: "model returned op without valid targetId" };
-  }
-  return { op, targetId, reason: typeof obj.reason === "string" ? obj.reason : undefined };
-}
 
 // Re-export the parser for unit tests.
-export const __test = { parseFacts, parseOperation };
+export const __test = { parseFacts };

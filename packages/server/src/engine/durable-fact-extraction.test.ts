@@ -40,9 +40,6 @@ function flakyExtractor() {
         },
       ];
     },
-    async decideOperation() {
-      return { op: "ADD" as const };
-    },
   };
 }
 
@@ -112,6 +109,20 @@ describe("durable fact-extraction queue", () => {
     const r = await b.engine.reconcilePendingFacts({ batchSize: 50 });
     expect(r.scanned).toBe(0);
     expect(ex.state.calls).toBe(calls); // no re-extraction of settled chunks
+  });
+
+  it("fact rows get embedded_at stamped once their vector lands", async () => {
+    // Regression: fact rows were inserted with embedded_at NULL and never
+    // stamped after their cold upsert, silently parking every fact in the
+    // pending-embedding queue for the reconciler to redundantly re-embed.
+    const ex = flakyExtractor();
+    const b = quiet(makeEngine({ extractor: ex }));
+    await b.engine.remember("u1", { content: "user: I take oat milk in my coffee", force: true });
+    await until(() => [...b.warm.rows.values()].some((x) => x.sourceType === "fact" && x.embeddedAt != null));
+    const factRows = [...b.warm.rows.values()].filter((x) => x.sourceType === "fact");
+    expect(factRows.length).toBeGreaterThan(0);
+    for (const f of factRows) expect(f.embeddedAt).not.toBeNull();
+    expect(await b.warm.countPendingEmbedding()).toBe(0);
   });
 
   it("fact rows themselves never enter the queue", async () => {

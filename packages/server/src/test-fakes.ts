@@ -1368,15 +1368,12 @@ export interface MakeEngineOpts {
   /** When true, builds a `MetricsCollector`, binds gauge sources to the
    *  fake stores and wires it into the engine. Default false. */
   withMetrics?: boolean;
-  /** Inject a fact extractor to exercise the write-time extraction and
-   *  Mem0-style updation path, which is otherwise disabled in tests.
-   *  Typed against the real contract — a stub that drifts from
-   *  `FactExtractor` should fail to compile rather than fail at runtime.
-   *  Only the two methods the engine calls are required. */
-  extractor?: Pick<
-    import("./engine/fact-extractor.js").FactExtractor,
-    "extract" | "decideOperation"
-  >;
+  /** Inject a fact extractor to exercise the single-pass write-time
+   *  extraction, which is otherwise disabled in tests. Typed against the
+   *  real contract — a stub that drifts from `FactExtractor` should fail
+   *  to compile rather than fail at runtime. `extract` is the only
+   *  method the engine calls. */
+  extractor?: Pick<import("./engine/fact-extractor.js").FactExtractor, "extract">;
 }
 
 export interface MakeEngineResult {
