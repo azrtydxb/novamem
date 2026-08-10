@@ -110,6 +110,31 @@ export function requireAdmin(
   return true;
 }
 
+/** Operator gate for the maintenance routes (decay, dream-cycle,
+ *  reap-orphans, observer). In `user` auth mode these are admin-only —
+ *  same rule as requireAdmin. In `bearer` mode there ARE no dashboard
+ *  users: the whole server is guarded by one shared operator token, and
+ *  any request that reached a handler already presented it (the global
+ *  onRequest hook 401s otherwise) — so the token holder is the operator
+ *  by definition, and gating on `dashUser` made these routes unreachable
+ *  (the gap found running the Phase 3 gate: /v1/dream-cycle answered 401
+ *  to the very token that could freely read and delete every memory).
+ *  `none` mode is an open server; hiding maintenance behind a login that
+ *  cannot exist protects nothing. */
+export function requireOperator(
+  ctx: { auth: { mode: "none" | "bearer" | "user" } },
+  req: { dashUser?: DashboardUser },
+  reply: FastifyReply,
+): boolean {
+  // A logged-in identity is always role-checked, whatever the auth mode —
+  // issue #45's invariant: a non-admin dashboard user must not trigger
+  // cross-user maintenance just because the server also allows anonymous
+  // access.
+  if (req.dashUser) return requireAdmin(req, reply);
+  if (ctx.auth.mode !== "user") return true;
+  return requireAdmin(req, reply);
+}
+
 /** Resolve `req.dashUser` for handlers that require a logged-in user.
  *  Replies 401 + returns null when missing so the handler can `if (!u) return;`.
  *  Centralises what was a sprinkling of `req.dashUser!` non-null assertions. */

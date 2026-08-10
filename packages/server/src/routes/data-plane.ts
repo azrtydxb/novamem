@@ -26,7 +26,7 @@ import {
   UpdateMemoryBody,
 } from "./schemas.js";
 import {
-  requireAdmin,
+  requireOperator,
   checkProjectAccess,
   type RouteContext,
 } from "./context.js";
@@ -152,6 +152,9 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         includeProjects: body.includeProjects,
         weights: body.weights,
         maxSensitivity: body.maxSensitivity,
+        // Prompt-assembly endpoint, so the token budget defaults ON —
+        // see the ContextBody schema note.
+        maxTokens: body.maxTokens ?? 6000,
       }, req.bearerToken);
       const recent = await ctx.engine.recent(req.userId, {
         k: Math.min(k, 10),
@@ -314,7 +317,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     {
       schema: {
         tags: ["memory"],
-        summary: "Trigger an observer+reflector pass over recent memories (admin only)",
+        summary: "Trigger an observer+reflector pass over recent memories (operator)",
         body: z
           .object({
             project: z.string().max(128).optional().nullable(),
@@ -325,7 +328,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       },
     },
     async (req, reply) => {
-      if (!requireAdmin(req, reply)) return;
+      if (!requireOperator(ctx, req, reply)) return;
       const body = (req.body ?? {}) as { project?: string | null; limit?: number };
       const result = await ctx.engine.runObserver(req.userId, body.project ?? null, {
         limit: body.limit ?? 20,
@@ -340,13 +343,13 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     {
       schema: {
         tags: ["lifecycle"],
-        summary: "Trigger a decay sweep (admin only)",
+        summary: "Trigger a decay sweep (operator)",
         body: DecayBody.optional(),
         security: [{ SessionCookie: [] }],
       },
     },
     async (req, reply) => {
-      if (!requireAdmin(req, reply)) return;
+      if (!requireOperator(ctx, req, reply)) return;
       const body = req.body ?? {};
       const result = await ctx.engine.decay({ effectiveDaysOverride: body.effectiveDays });
       reply.send(result);
@@ -358,12 +361,12 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     {
       schema: {
         tags: ["lifecycle"],
-        summary: "Trigger the dedup-merge + edge-promotion pass (admin only)",
+        summary: "Trigger the dedup-merge + edge-promotion pass (operator)",
         security: [{ SessionCookie: [] }],
       },
     },
     async (req, reply) => {
-      if (!requireAdmin(req, reply)) return;
+      if (!requireOperator(ctx, req, reply)) return;
       const result = await ctx.engine.dreamCycle();
       reply.send(result);
     },
@@ -397,12 +400,12 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     {
       schema: {
         tags: ["lifecycle"],
-        summary: "Trigger the cold-orphan reaper (admin only)",
+        summary: "Trigger the cold-orphan reaper (operator)",
         security: [{ SessionCookie: [] }],
       },
     },
     async (req, reply) => {
-      if (!requireAdmin(req, reply)) return;
+      if (!requireOperator(ctx, req, reply)) return;
       reply.send(await ctx.engine.reapOrphans());
     },
   );
