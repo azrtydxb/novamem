@@ -92,6 +92,58 @@ ${content}
 
 Output ONLY a JSON array of fact objects. No prose, no explanation, no markdown.`;
 
+const CONSOLIDATE_SYSTEM_PROMPT = `You maintain a fact store. You are given numbered GROUPS of similar stored facts. For each group decide whether any fact is an OUTDATED VERSION of another fact in the same group.
+
+A fact supersedes another ONLY when both describe the same subject and the same attribute, and one is clearly the newer or corrected value (changed number, date, location, status, preference). Facts about different people, different attributes, or merely related topics MUST coexist — when unsure, do nothing.
+
+Output ONLY a JSON array of objects {"group": n, "superseded": "<id>", "by": "<id>"}. Empty array if nothing is superseded. No prose.`;
+
+const CONSOLIDATE_USER_PROMPT = (
+  clusters: Array<Array<{ id: string; text: string; occurredAt?: string | null }>>,
+) =>
+  clusters
+    .map(
+      (c, i) =>
+        `GROUP ${i + 1}:\n` +
+        c.map((f) => `  id=${f.id} occurred_at=${f.occurredAt ?? "?"} :: ${f.text.slice(0, 400)}`).join("\n"),
+    )
+    .join("\n\n");
+
+/** Parse {group, superseded, by} rows, keeping only pairs whose ids both
+ *  belong to the same input cluster — the model inventing ids or crossing
+ *  groups must not mark unrelated facts inactive. */
+function parseConsolidations(
+  raw: string,
+  clusters: Array<Array<{ id: string; text: string; occurredAt?: string | null }>>,
+): Array<{ supersededId: string; byId: string }> {
+  const cleaned = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/^\s*```(?:json)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+  const m = cleaned.match(/\[[\s\S]*\]/);
+  if (!m) return [];
+  let arr: unknown;
+  try {
+    arr = JSON.parse(m[0]);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(arr)) return [];
+  const out: Array<{ supersededId: string; byId: string }> = [];
+  for (const item of arr) {
+    const o = item as { superseded?: unknown; by?: unknown };
+    const sup = typeof o.superseded === "string" ? o.superseded : null;
+    const by = typeof o.by === "string" ? o.by : null;
+    if (!sup || !by || sup === by) continue;
+    const ok = clusters.some(
+      (c) => c.some((f) => f.id === sup) && c.some((f) => f.id === by),
+    );
+    if (ok) out.push({ supersededId: sup, byId: by });
+  }
+  return out;
+}
+
 function stripCodeFences(text: string): string {
   return text
     .replace(/^\s*```(?:json)?\s*/i, "")
@@ -195,6 +247,57 @@ export class FactExtractor {
     }
   }
 
+  /** Batch consolidation decision (Mem0 alignment, Phase 3 — runs from
+   *  the dream-cycle, never from the write path). Takes clusters of
+   *  semantically-similar ACTIVE facts and decides, per cluster, which
+   *  facts are outdated versions superseded by another member. ONE LLM
+   *  call judges the whole batch — this is deliberately batch-shaped,
+   *  not the deleted per-fact decideOperation resurrected.
+   *
+   *  Only near-restatements about the same subject+predicate whose value
+   *  or currency changed are supersessions; related-but-distinct facts
+   *  must coexist (the false-collapse risk that made write-time
+   *  similarity thresholds unsafe — "wife's birthday" vs "daughter's
+   *  birthday" clear any cosine gate). The model sees full texts and
+   *  occurred_at stamps, which the thresholds never had. */
+  async consolidate(
+    clusters: Array<Array<{ id: string; text: string; occurredAt?: string | null }>>,
+  ): Promise<Array<{ supersededId: string; byId: string }>> {
+    if (clusters.length === 0) return [];
+    await this.sem.acquire();
+    try {
+      const url = chatCompletionsURL(this.cfg.endpoint);
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+        accept: "application/json",
+      };
+      if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
+      const body = chatCompletionBody({
+        model: this.cfg.model,
+        messages: [
+          { role: "system", content: CONSOLIDATE_SYSTEM_PROMPT },
+          { role: "user", content: CONSOLIDATE_USER_PROMPT(clusters) },
+        ],
+        // Output is a JSON array of {superseded, by} id pairs — small,
+        // but scale with the number of clusters judged.
+        maxTokens: Math.max(256, clusters.length * 96),
+      });
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
+      try {
+        const resp = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
+        if (!resp.ok) return [];
+        const read = readCompletionText((await resp.json()) as ChatCompletionResponse);
+        if (read.emptyReason) throw new Error(`consolidate: ${read.emptyReason}`);
+        return parseConsolidations(read.text, clusters);
+      } finally {
+        clearTimeout(timer);
+      }
+    } finally {
+      this.sem.release();
+    }
+  }
+
   private async extractUnlimited(content: string): Promise<ExtractedFact[]> {
     const url = chatCompletionsURL(this.cfg.endpoint);
     const headers: Record<string, string> = {
@@ -245,11 +348,5 @@ export class FactExtractor {
 //
 // This is the single difference between Mem0 v1 (~67% LongMemEval) and
 // v2 (93%): write-time dedup/supersede vs uncurated ADD-only. We pay
-// one extra LLM call per new fact when the similarity gate fires.
-
-export type FactOperation = "ADD" | "UPDATE" | "DELETE" | "NOOP";
-
-
-
 // Re-export the parser for unit tests.
-export const __test = { parseFacts };
+export const __test = { parseFacts, parseConsolidations };

@@ -190,6 +190,7 @@ export function extractEntities(content: string, max = 12): string[] {
 
 /** `engine_state` key holding the dream cycle's table-walk cursor. */
 const DREAM_CURSOR_KEY = "dream_cycle_cursor";
+const DREAM_FACT_CURSOR_KEY = "dream_fact_cursor";
 
 /** `engine_state` key holding the embedding model id that produced the
  *  vectors currently in the cold store. */
@@ -503,6 +504,7 @@ export class MemoryEngine {
    *  the newer ones never reached. Cached here to keep the hot path free
    *  of a read per cycle. */
   private dreamCursor: string | null = null;
+  private dreamFactCursor: string | null = null;
 
   constructor(cfg: EngineConfig) {
     this.warm = cfg.warm;
@@ -2505,10 +2507,21 @@ export class MemoryEngine {
     /** Cap rows-walked-per-run so a huge store doesn't pin a worker
      *  for an hour. Default 5000. */
     maxEntries?: number;
+    /** Cosine floor for grouping facts into consolidation clusters.
+     *  Measured on nova-bench (bge-m3): a fact's nearest other fact runs
+     *  p50 0.798 / p90 0.876, so 0.85 keeps merely-same-topic pairs out
+     *  of the LLM's lap while catching value-changed restatements. */
+    factClusterMinCosine?: number;
+    /** Cap facts walked by the consolidation phase per run. Default 1000
+     *  (each needs an embed + a vector search; clusters cost LLM). */
+    maxFactEntries?: number;
   } = {}): Promise<{
     walked: number;
     merged: number;
     edgesPromoted: number;
+    factsWalked: number;
+    factClustersJudged: number;
+    factsSuperseded: number;
     durationMs: number;
   }> {
     const cosineMin = opts.cosineThreshold ?? 0.97;
@@ -2619,6 +2632,18 @@ export class MemoryEngine {
       }
     }
 
+    // ── Phase 1.5: fact consolidation (Mem0 alignment, Phase 3) ─────
+    // Batch LLM supersession, moved OFF the write path: the write side is
+    // ADD-only since single-pass extraction, and this is where semantic
+    // "value changed" restatements get resolved. The 0.97+Jaccard merge
+    // above collapses literal restatements without an LLM; this phase
+    // handles the band below it, where only a model can tell "updated
+    // value" from "different fact about the same topic".
+    const consolidation = await this.consolidateFactsSlice({
+      minCosine: opts.factClusterMinCosine ?? 0.85,
+      maxEntries: opts.maxFactEntries ?? 1000,
+    });
+
     // ── Phase 2: edge promotion ─────────────────────────────────────
     const promoted = await this.promoteCommonNeighborEdges(minCommon);
 
@@ -2626,8 +2651,166 @@ export class MemoryEngine {
       walked,
       merged,
       edgesPromoted: promoted,
+      factsWalked: consolidation.factsWalked,
+      factClustersJudged: consolidation.clustersJudged,
+      factsSuperseded: consolidation.superseded,
       durationMs: Date.now() - startedAt,
     };
+  }
+
+  /** One bounded consolidation slice over ACTIVE fact rows, cursor-walked
+   *  like the dedup pass so coverage loops the whole store across runs.
+   *
+   *  Shape: embed each fact, pull vector neighbours, keep neighbours that
+   *  are themselves active facts in the same scope within
+   *  [minCosine, ~restatement), cluster, and ask the extractor's batched
+   *  `consolidate` for supersession pairs. Superseded facts get the same
+   *  metadata convention the old write-time DELETE branch used (search
+   *  already filters on it) plus a bitemporal `supersedes` edge. */
+  private async consolidateFactsSlice(args: {
+    minCosine: number;
+    maxEntries: number;
+  }): Promise<{ factsWalked: number; clustersJudged: number; superseded: number }> {
+    if (!this.extractor) return { factsWalked: 0, clustersJudged: 0, superseded: 0 };
+    if (this.dreamFactCursor === null) {
+      this.dreamFactCursor =
+        (await this.warm.getEngineState(DREAM_FACT_CURSOR_KEY).catch(() => null)) ?? "";
+    }
+    const rows = await this.warm.pool.query<{
+      id: string;
+      user_id: string;
+      project_id: string | null;
+      namespace: string;
+      content: string;
+      metadata: Record<string, unknown> | null;
+    }>(
+      `SELECT id, user_id, project_id, namespace, content, metadata
+         FROM memory_entries
+        WHERE id > $2
+          AND source_type = 'fact'
+          AND (metadata->>'fact_inactive') IS NULL
+        ORDER BY id ASC
+        LIMIT $1`,
+      [args.maxEntries, this.dreamFactCursor],
+    );
+    this.dreamFactCursor =
+      rows.rows.length < args.maxEntries ? "" : (rows.rows[rows.rows.length - 1]?.id ?? "");
+    await this.warm.setEngineState(DREAM_FACT_CURSOR_KEY, this.dreamFactCursor).catch(() => {});
+
+    let factsWalked = 0;
+    let clustersJudged = 0;
+    let superseded = 0;
+    const clusters: Array<Array<{ id: string; text: string; occurredAt?: string | null }>> = [];
+    const clustered = new Set<string>();
+    for (const row of rows.rows) {
+      factsWalked++;
+      if (clustered.has(row.id)) continue;
+      let embedding: number[] | undefined;
+      try {
+        [embedding] = await this.embedder.embed(row.content);
+      } catch {
+        continue;
+      }
+      if (!embedding) continue;
+      let neighbours: Array<{ id: string; score: number }> = [];
+      try {
+        neighbours = await this.cold.search({
+          userId: row.user_id,
+          projectId: row.project_id,
+          namespace: row.namespace,
+          embedding,
+          k: 6,
+        });
+      } catch {
+        continue;
+      }
+      const memberIds = neighbours
+        .filter((n) => n.id !== row.id && n.score >= args.minCosine && !clustered.has(n.id))
+        .map((n) => n.id);
+      if (memberIds.length === 0) continue;
+      const members = await this.warm.getEntries(row.user_id, memberIds, {
+        projectId: row.project_id,
+      });
+      const cluster: Array<{ id: string; text: string; occurredAt?: string | null }> = [
+        {
+          id: row.id,
+          text: row.content,
+          occurredAt: (((row.metadata ?? {}) as { fact?: { occurred_at?: string } }).fact
+            ?.occurred_at ?? null),
+        },
+      ];
+      for (let i = 0; i < memberIds.length; i++) {
+        const m = members[i];
+        if (!m) continue;
+        if (m.sourceType !== "fact") continue;
+        const meta = (m.metadata ?? {}) as Record<string, unknown>;
+        if (isInactiveMemory(meta)) continue;
+        cluster.push({
+          id: memberIds[i]!,
+          text: m.content,
+          occurredAt: ((meta.fact as { occurred_at?: string } | undefined)?.occurred_at ?? null),
+        });
+      }
+      if (cluster.length < 2) continue;
+      for (const c of cluster) clustered.add(c.id);
+      clusters.push(cluster);
+    }
+
+    // Judge in batches so one call covers many clusters; apply verdicts.
+    const BATCH = 8;
+    for (let i = 0; i < clusters.length; i += BATCH) {
+      const batch = clusters.slice(i, i + BATCH);
+      let pairs: Array<{ supersededId: string; byId: string }> = [];
+      try {
+        pairs = await traceAsync(
+          "FactExtractor.consolidate",
+          { "novamem.cluster_count": batch.length },
+          () => this.extractor!.consolidate(batch),
+        );
+      } catch (err) {
+        this.logger.warn(
+          { err: (err as Error).message },
+          "fact consolidation batch failed (clusters left as-is; next cycle retries)",
+        );
+        continue;
+      }
+      clustersJudged += batch.length;
+      for (const pair of pairs) {
+        // Resolve the superseded row's owner from the batch's clusters.
+        const home = batch.find((c) => c.some((f) => f.id === pair.supersededId));
+        if (!home) continue;
+        const ownerRow = rows.rows.find((r) => home.some((f) => f.id === r.id));
+        if (!ownerRow) continue;
+        try {
+          await this.warm.updateEntry({
+            userId: ownerRow.user_id,
+            id: pair.supersededId,
+            projectId: ownerRow.project_id,
+            metadata: {
+              fact_inactive: true,
+              superseded_at: new Date().toISOString(),
+              superseded_by: pair.byId,
+              superseded_via: "dream_cycle_consolidation",
+            } as Record<string, unknown>,
+          });
+          await this.warm.addRelation(
+            ownerRow.user_id,
+            pair.byId,
+            pair.supersededId,
+            "supersedes",
+            1,
+            ownerRow.project_id,
+          );
+          superseded++;
+        } catch (err) {
+          this.logger.warn(
+            { err: (err as Error).message, supersededId: pair.supersededId },
+            "applying consolidation verdict failed",
+          );
+        }
+      }
+    }
+    return { factsWalked, clustersJudged, superseded };
   }
 
   /** Helper for dreamCycle: merge `dropId` into `keepId`. Sums hits,

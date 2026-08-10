@@ -1373,7 +1373,8 @@ export interface MakeEngineOpts {
    *  real contract — a stub that drifts from `FactExtractor` should fail
    *  to compile rather than fail at runtime. `extract` is the only
    *  method the engine calls. */
-  extractor?: Pick<import("./engine/fact-extractor.js").FactExtractor, "extract">;
+  extractor?: Pick<import("./engine/fact-extractor.js").FactExtractor, "extract"> &
+    Partial<Pick<import("./engine/fact-extractor.js").FactExtractor, "consolidate">>;
 }
 
 export interface MakeEngineResult {
