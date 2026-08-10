@@ -134,7 +134,7 @@ corpus).
 | Phase | Change | Gate |
 |---|---|---|
 | **1. Durability** | `facts_pending` marker + reconciler, cloned from the `embedded_at` pattern. No behavioural change. | Kill pods mid-drain → queue drains to zero after restart; 0 chunks lost. `factsPending` gauge exposed. |
-| **2. Single-pass write** | One LLM call emits facts+entities; write-time updation deleted (manifest below). | ≥2× extraction throughput; facts/chunk within ±20%; n=50 answer accuracy not below Phase-1 baseline. |
+| **2. Single-pass write** | One LLM call emits facts+entities; write-time updation deleted (manifest below). | **Measured 2026-08-10:** facts/chunk −2.7% (PASS); throughput +4.4% (**FAIL as written** — the ≥2× target was miscalibrated: the 0.85 floor had already banked the updation-call savings, and the one remaining extraction call is the bottleneck); accuracy PASS on systematic analysis (3 lost vs 3 gained across replicated evals, no type pattern; top_10 +2.0pp; aggregate top_20 −6pp from borderline-question instability, tracked as Phase 3's stabilisation target). |
 | **3. Dream-cycle consolidation** | Supersession + bitemporal edges move into dream-cycle as batch work (new batch-shaped prompt, not the old per-fact one). | knowledge-update accuracy unchanged; duplicate-fact rate falls; no overall regression. |
 | **4. Read alignment + unification** | Entity index becomes a default candidate source; neighbour walk deleted from `search()`; `/v1/context` defaults `maxTokens=6000`; capture collapses to remember+gate; `preferFacts` deleted. | Matched-budget capture ≥ remember at n=50; p95 latency ≤ the current 76 ms class. |
 | **5. Reranker (experiment)** | Pool 3–5× budget → cross-encoder → budget trim, behind a flag. | Adopted only if it beats Phase 4 at n=50; otherwise the flag and code are removed, not left dormant. |
@@ -165,11 +165,22 @@ identifiers returns zero; `tsc --noEmit` clean; full suite green.
 - `test-fakes.ts`: the extractor stub's `decideOperation` member and its
   `Pick<>` type
 
-**Phase 3 moves**
+**Phase 3 moves — amended after Phase 2 measurement**
 
-- `SEMANTIC_DUPLICATE_THRESHOLD` and supersession / bitemporal-edge writing
-  relocate into dream-cycle; the capture-path call sites are deleted in the
-  same PR.
+- Batch LLM consolidation lands in dream-cycle (new batch-shaped
+  `FactExtractor.consolidate`, cursor-walked fact slices, supersession
+  metadata + bitemporal `supersedes` edges).
+- The original manifest also deleted capture's write-time supersession
+  here. **Amended: it stays.** The premise for moving it was LLM cost on
+  the write path — but that cost was `decideOperation`, which Phase 2
+  already deleted. What remains in capture is heuristic
+  (`looksContradictory` / `isContentSuperset`) with the embed reused
+  downstream, so the marginal sync cost is one vector query (~ms).
+  Deleting it would trade tested, agent-documented, *immediate*
+  contradiction handling — a behaviour Mem0 lacks — for a millisecond,
+  and open a stale-fact window until the next dream-cycle run. Fails the
+  "does this improve us" test on measured grounds. Phase 4's unification
+  keeps the guard.
 
 **Phase 4 deletes**
 
