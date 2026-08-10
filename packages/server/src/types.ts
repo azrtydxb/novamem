@@ -96,6 +96,11 @@ export interface SearchRequest {
    *  value (NOVAMEM_SEARCH_MIN_VECTOR_SCORE, default 0.25). Pass 0 to
    *  disable and see every nearest neighbour. */
   minVectorScore?: number;
+  /** Phase 5 EXPERIMENT: opt-in second-pass cross-encoder rerank of the
+   *  candidate pool before selection. Requires the server to be
+   *  configured with a rerank service (NOVAMEM_RERANK_*); otherwise
+   *  ignored, like `decompose`. */
+  rerank?: boolean;
   /** Cap the returned set at roughly this many tokens of content.
    *
    *  `k` bounds the number of results, which is not the thing a caller

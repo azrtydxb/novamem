@@ -138,6 +138,9 @@ export const SearchBody = z.object({
   asOf: z.string().datetime().optional().nullable(),
   decompose: z.boolean().optional(),
   expandSourceChunks: z.boolean().optional(),
+  /** Phase 5 experiment: cross-encoder rerank; ignored unless the server
+   *  configures a rerank service. */
+  rerank: z.boolean().optional(),
   /** Cosine floor for vector-only candidates. The engine has always
    *  honoured `SearchRequest.minVectorScore`, but the field was not part
    *  of this schema, so zod stripped it from every request body before the

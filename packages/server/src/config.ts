@@ -167,6 +167,26 @@ export const ConfigSchema = z
         message: "queryDecomp.enabled = true requires endpoint + model",
         path: ["endpoint"],
       }),
+    /** Mem0-alignment Phase 5 EXPERIMENT: second-pass cross-encoder
+     *  reranker. Off by default — set NOVAMEM_RERANK_ENABLED=1 to opt in
+     *  per request via the `rerank: true` body field. Endpoint is the
+     *  full URL of a Jina/Cohere-compatible /rerank service (vLLM or TEI
+     *  serving e.g. BAAI/bge-reranker-v2-m3). Adopted only if it beats
+     *  the Phase 4 configuration at n>=50; deleted otherwise. */
+    rerank: z
+      .object({
+        enabled: EnvBoolean.default(false),
+        endpoint: z.string().optional(),
+        model: z.string().optional(),
+        apiKey: z.string().optional(),
+        poolMultiplier: z.coerce.number().int().min(2).max(10).default(4),
+        timeoutMs: z.coerce.number().int().positive().default(5_000),
+      })
+      .default({ enabled: false, poolMultiplier: 4, timeoutMs: 5_000 })
+      .refine((v) => !v.enabled || (!!v.endpoint && !!v.model), {
+        message: "rerank.enabled = true requires endpoint + model",
+        path: ["endpoint"],
+      }),
     /** Arch-plan Phase 5: Observer/Reflector background distillation worker.
      *  Produces a single per-(user, project) markdown blob that callers can
      *  fetch via /v1/context-prefix. Cheaper-than-retrieval path for agents
@@ -332,6 +352,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       maxSubqueries: env.NOVAMEM_QUERY_DECOMP_MAX_SUBQUERIES,
       coherenceRerank: env.NOVAMEM_QUERY_DECOMP_COHERENCE_RERANK ?? true,
       timeoutMs: env.NOVAMEM_QUERY_DECOMP_TIMEOUT_MS,
+    },
+    rerank: {
+      enabled: env.NOVAMEM_RERANK_ENABLED ?? false,
+      endpoint: env.NOVAMEM_RERANK_ENDPOINT,
+      model: env.NOVAMEM_RERANK_MODEL,
+      apiKey: env.NOVAMEM_RERANK_API_KEY,
+      poolMultiplier: env.NOVAMEM_RERANK_POOL_MULTIPLIER,
+      timeoutMs: env.NOVAMEM_RERANK_TIMEOUT_MS,
     },
     observer: {
       enabled: env.NOVAMEM_OBSERVER_ENABLED ?? false,
