@@ -197,7 +197,6 @@ const DREAM_FACT_CURSOR_KEY = "dream_fact_cursor";
 const EMBEDDING_MODEL_KEY = "embedding_model_id";
 
 /** How many of the top vector hits seed the graph traversal. */
-const GRAPH_SEED_COUNT = 3;
 /** Candidates fetched per requested result, so post-fusion visibility
  *  filtering and diversification have material to work with. */
 const OVERFETCH_FACTOR = 3;
@@ -1151,33 +1150,32 @@ export class MemoryEngine {
     superseded?: string[];
     embedded?: boolean;
   }> {
+    // Capture is remember plus one thing: the contradiction/superset
+    // guard below (Mem0 alignment, Phase 4). The checks that also run
+    // here (worthiness, length, exact-hash lookup) are cheap pre-filters
+    // that keep junk and exact duplicates away from the paid embed — the
+    // *handling* of every outcome (rejection wording, dedup fast-path
+    // with its backfill self-heal, metrics) lives in remember() alone.
+    // This path used to clone the handling too, and the clones drifted:
+    // the cross-namespace backfill-leak fix had to be applied twice.
     req = withSensitivityMetadata(req);
     if (!req.force) {
       const reason = this.shouldReject(req.content);
       if (reason) return { id: null, rejected: reason };
     }
-    // Enforced under `force` as well — same reasoning as remember().
+    // Checked here as well as in remember(): both gates sit in front of
+    // the paid embed below, not to enforce policy twice.
     const overLength = this.contentTooLong(req.content);
     if (overLength) return { id: null, rejected: overLength };
 
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
+    // Exact duplicate: skip the embed and let remember()'s own dedup
+    // fast-path do the bump + vector self-heal.
     const contentHash = sha256Hex(req.content.trim());
     const exact = await this.warm.findByContentHash(userId, projectId, contentHash);
     if (exact) {
-      await this.warm.bumpHits(exact.id);
-      // Same self-heal as remember()'s dedup fast-path: an entry whose
-      // cold upsert failed on an earlier attempt would otherwise stay
-      // invisible to vector search forever, because this short-circuit
-      // never re-embeds. capture() is the agent-facing write path, so
-      // it matters most here.
-      //
-      // Repaired in the entry's own namespace, not the request's — see
-      // the matching note in remember(). Dedup spans namespaces, so these
-      // can differ, and using the request's leaked entries across shelves.
-      await this.backfillMissingVector(userId, projectId, exact.id, exact.namespace, req);
-      this.metrics?.recordRemember(userId, token);
-      return { id: exact.id, deduplicated: true, embedded: await this.warm.isEmbedded(exact.id) };
+      return this.remember(userId, { ...req, namespace }, token);
     }
 
     // This embed only powers the near-duplicate lookup, and unlike
@@ -1650,63 +1648,42 @@ export class MemoryEngine {
     // (entries / neighbors). Multi-scope path uses null + per-id resolution.
     const projectId = scopes.length === 1 ? scopes[0]! : null;
 
-    // Arch-plan Phase 3: parse optional asOf into milliseconds for the
-    // graph traversal's bitemporal filter.
-    const asOfMs = req.asOf ? Date.parse(req.asOf) : null;
+    // `req.asOf` used to feed the neighbour walk's bitemporal edge
+    // filter; with the walk deleted (Phase 4) search-time asOf has no
+    // effect. The field stays accepted for wire compatibility, and
+    // bitemporal filtering lives where the edges do: /v1/neighbors.
     let graphHits: Array<{ id: string; score: number }> = [];
     // Entity bridging works from the query text alone, so unlike the
     // neighbour walk it does not require the vector tier to have returned
     // anything — it still contributes when the embedder is down.
-    // Same reasoning as the keyword tier: a 0 weight makes the neighbour
-    // walk and the entity bridge pure cost. This one is worth more —  it
-    // is GRAPH_SEED_COUNT round-trips plus an entity lookup.
+    // Same reasoning as the keyword tier: a 0 weight makes the entity
+    // bridge pure cost.
     if (weights.graph === 0) {
       // Not a degraded search: the caller asked for no graph signal, and
       // got exactly that. Marking it degraded would make an intentional
       // configuration look like an outage.
     } else if (this.graph?.isConnected()) {
       try {
-        // Seed from the top few vector hits rather than only the single
-        // best one. With one seed, an off-topic top-1 dragged its whole
-        // (wrong) neighbourhood into the results, and a correct-but-
-        // second-place hit contributed no graph signal at all.
-        const seeds = [...vectorHits]
-          .sort((a, b) => b.score - a.score)
-          .slice(0, GRAPH_SEED_COUNT)
-          .map((h) => h.id);
-        // Graph neighbours scope: when in active-project mode the seed is
-        // ambiguous, so skip the project scope (project_id is null) — entry
-        // resolution below will still filter to the visible scope set.
+        // Entity bridging is the graph tier's sole retrieval contribution
+        // (Mem0 alignment, Phase 4): it links the query to memories that
+        // share a rare exact identifier — a candidate SOURCE reaching
+        // rows neither cosine nor stemmed FTS surfaces, the same role
+        // Mem0's entity collection plays in their search. The seeded
+        // neighbour walk that used to run alongside it is deleted:
+        // measured across every benchmark arm it contributed zero ranking
+        // change while sitting on the critical path (it could only start
+        // after the vector tier resolved), and skipping the tier measured
+        // ~2x faster end to end. Explicit traversal survives as
+        // /v1/neighbors and the memory_neighbors MCP tool — a user-facing
+        // feature; the implicit search-time walk is what measured dead.
         const seedScope = scopes.length === 1 ? scopes[0]! : null;
-        const asOfFilter = asOfMs !== null && Number.isFinite(asOfMs) ? asOfMs : null;
-        const perSeed = seeds.length > 0
-          ? await Promise.all(
-              seeds.map((seed) => this.graph!.neighbors(userId, seed, 1, k, seedScope, asOfFilter)),
-            )
+        const bridgeEntities = extractEntities(req.query);
+        graphHits = bridgeEntities.length > 0
+          ? await this.graph.memoriesByEntities(userId, bridgeEntities, k * 2, seedScope)
           : [];
-        // Entity bridging, straight from the query text. This is the one
-        // graph signal that isn't downstream of the vector tier: it links
-        // on exact identifiers, so a query naming `novanas` or
-        // `PostgreSQL` reaches memories that neither cosine nor stemmed
-        // FTS would surface. Runs alongside the neighbour walk and is
-        // unioned into the same signal.
-        const queryEntities = extractEntities(req.query);
-        const entityHits = queryEntities.length > 0
-          ? await this.graph.memoriesByEntities(userId, queryEntities, k * 2, seedScope)
-          : [];
-
-        // Union everything, keeping the strongest evidence per id.
-        const best = new Map<string, number>();
-        for (const hits of [...perSeed, entityHits]) {
-          for (const h of hits) {
-            const prev = best.get(h.id);
-            if (prev === undefined || h.score > prev) best.set(h.id, h.score);
-          }
-        }
-        graphHits = [...best].map(([id, score]) => ({ id, score }));
       } catch (err) {
         degraded = true;
-        this.logger.warn({ err: (err as Error).message }, "graph neighbours failed");
+        this.logger.warn({ err: (err as Error).message }, "graph entity bridging failed");
       }
     } else {
       degraded = true;
@@ -1911,64 +1888,22 @@ export class MemoryEngine {
     // Measured on the same slice, k=10 ranged from ~500 to ~7,500 tokens
     // depending only on what happened to be stored.
     const tokenBudget = req.maxTokens && req.maxTokens > 0 ? req.maxTokens : null;
-    // Opt-in, not default. Measured on a LongMemEval slice, suppressing a
-    // source chunk in favour of its fact cost accuracy in every pairing —
-    // 83.3% -> 58.3% at top_20 on otherwise identical settings — because a
-    // fact is a *lossy* summary: it keeps the claim and drops the
-    // specifics (times, quantities, qualifiers) that temporal and counting
-    // questions need. Mem0, whose numbers motivated this work, likewise
-    // keeps extracted facts and raw conversation coexisting rather than
-    // replacing one with the other.
-    //
-    // `expandSourceChunks` already encodes the opposite and better
-    // instinct: give the answerer the fact *and* its supporting chunk.
-    const preferFacts = req.preferFacts === true;
-    const sourceChunkOf = (c: (typeof visible)[number]): string | null => {
-      const id = (c.result.metadata as { source_chunk_id?: string } | undefined)?.source_chunk_id;
-      return typeof id === "string" ? id : null;
-    };
 
     let spent = 0;
     const selected: typeof visible = [];
-    // Source-chunk ids of facts already selected, so a chunk arriving
-    // later can be skipped. Resolved during selection rather than by
-    // pre-filtering `visible`: a fact may never be selected at all (it can
-    // lose to k, the budget, or the diversity filter), and dropping its
-    // chunk up front would then lose the information entirely instead of
-    // compacting it.
-    const selectedFactSources = new Set<string>();
     for (const cand of visible) {
       if (selected.length >= k) break;
-
-      if (preferFacts && selectedFactSources.has(cand.result.id)) continue;
-
       const cost = estimateTokens(cand.result.content);
       const candTokens = tokensFor(cand.result.content);
       const redundant = selected.some(
         (s) => jaccardOf(tokensFor(s.result.content), candTokens) >= RESULT_DIVERSITY_MAX_JACCARD,
       );
       if (redundant) continue;
-
-      // The other ordering: this candidate is a fact whose source chunk
-      // was already admitted (the chunk outranked it). Swap the chunk out
-      // for the fact — same information, a fraction of the tokens — and
-      // refund the difference to the budget.
-      const src = preferFacts ? sourceChunkOf(cand) : null;
-      if (src) {
-        const at = selected.findIndex((s) => s.result.id === src);
-        if (at >= 0) {
-          spent -= estimateTokens(selected[at]!.result.content);
-          selected.splice(at, 1);
-        }
-      }
-
       // Always admit the first result: a budget smaller than the top hit
       // should return that hit rather than nothing at all.
       if (tokenBudget !== null && selected.length > 0 && spent + cost > tokenBudget) break;
-
       selected.push(cand);
       spent += cost;
-      if (src) selectedFactSources.add(src);
     }
     // If diversification starved the result set (a store legitimately
     // full of similar short facts), backfill from what it dropped rather
@@ -1978,10 +1913,6 @@ export class MemoryEngine {
       for (const cand of visible) {
         if (selected.length >= k) break;
         if (chosen.has(cand.result.id)) continue;
-        // Backfill must honour preferFacts too, or a chunk suppressed
-        // during selection is simply re-added here and the caller pays
-        // for the same information twice after all.
-        if (preferFacts && selectedFactSources.has(cand.result.id)) continue;
         selected.push(cand);
       }
       // Backfilled candidates are appended after the diversified set, so

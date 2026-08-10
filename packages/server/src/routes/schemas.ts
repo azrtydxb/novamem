@@ -148,12 +148,6 @@ export const SearchBody = z.object({
    *  number of results, which is not what a caller needs to control — the
    *  same k costs wildly different amounts depending on what is stored. */
   maxTokens: z.number().int().positive().max(1_000_000).optional(),
-  /** Opt-in: drop a source chunk when the fact extracted from it is
-   *  already returned. Defaults to false — facts are lossy summaries, and
-   *  enabling this measured worse on answer accuracy in every
-   *  configuration tried; it trades fidelity for fitting more memories
-   *  under a tight `maxTokens`. */
-  preferFacts: z.boolean().optional(),
 });
 
 export const ContextBody = z.object({
@@ -177,6 +171,11 @@ export const ContextBody = z.object({
   asOf: z.string().datetime().optional().nullable(),
   decompose: z.boolean().optional(),
   expandSourceChunks: z.boolean().optional(),
+  /** Token budget for the `relevant` set. Unlike /v1/search this endpoint
+   *  is *for* prompt assembly, so the budget defaults ON (6000 tokens —
+   *  the Mem0-class retrieval budget) rather than unbounded; `k` stays as
+   *  a count ceiling. Pass a larger number to raise it. */
+  maxTokens: z.number().int().positive().max(1_000_000).optional(),
 });
 
 

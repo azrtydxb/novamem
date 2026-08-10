@@ -2,8 +2,8 @@
  * A tier weighted 0 contributes 0 to every fused score, so querying it is
  * pure latency. It used to be queried anyway: `{ keyword: 0, vector: 1 }`
  * still paid for the full FTS fan-out across every namespace in scope,
- * and the graph tier still paid GRAPH_SEED_COUNT neighbour walks plus an
- * entity bridge, before both were multiplied by zero.
+ * and the graph tier still paid its entity-bridge lookup before being
+ * multiplied by zero.
  *
  * These lock the skip in, because the cost is invisible from the results:
  * the ranking is identical either way, which is exactly why it went
@@ -60,19 +60,21 @@ describe("zero-weight tiers are not queried", () => {
     const b = quiet(makeEngine());
     await seed(b);
 
-    let neighborCalls = 0;
-    const realNeighbors = b.graph.neighbors.bind(b.graph);
-    b.graph.neighbors = async (...args: Parameters<typeof realNeighbors>) => {
-      neighborCalls++;
-      return realNeighbors(...args);
+    let bridgeCalls = 0;
+    const realBridge = b.graph.memoriesByEntities.bind(b.graph);
+    b.graph.memoriesByEntities = async (...args: Parameters<typeof realBridge>) => {
+      bridgeCalls++;
+      return realBridge(...args);
     };
 
     const r = await b.engine.search("u1", {
-      query: "deploy target",
+      // An IP literal so extractEntities yields a bridge entity — the
+      // skip must win even when there is genuinely something to look up.
+      query: "deploy target 192.168.10.121",
       k: 5,
       weights: { keyword: 0.25, vector: 0.75, graph: 0, recency: 0, entity: 0 },
     });
-    expect(neighborCalls).toBe(0);
+    expect(bridgeCalls).toBe(0);
     // Asking for no graph signal is a configuration, not an outage.
     expect(r.degraded).toBe(false);
   });

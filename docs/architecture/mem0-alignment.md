@@ -192,16 +192,35 @@ identifiers returns zero; `tsc --noEmit` clean; full suite green.
 - `preferFacts`, entirely: `types.ts`, `routes/schemas.ts`, engine logic,
   and its describe-block in `token-budget.test.ts` (the `maxTokens` tests
   stay).
-- `captureInner`'s synchronous near-dup probe and the capture/remember
-  duplication.
-- Agent-facing truth updated in the same PR: `mcp-instructions.ts`
-  currently promises *"the capture path handles near-duplicate update and
-  contradiction supersession; prefer it over raw memory_remember"* — that
-  becomes false at Phase 4 and is rewritten (one write path; consolidation
-  runs in dream-cycle), together with `skills/novamem/SKILL.md`,
-  `skills/novamem/references/remember.md`,
-  `integrations/claude-code/CLAUDE.md`, `docs/usage.md`, and the
-  capture-vs-remember guardrail in `docs/evaluation-benchmarks.md`.
+- The capture/remember duplication — **amended to match the Phase 3
+  amendment above.** The near-dup probe itself STAYS: it is the candidate
+  source for the kept contradiction/superset guard (this bullet predates
+  the amendment and contradicted it as written). What Phase 4 deletes is
+  the *clone*: captureInner's copy of the exact-hash dedup fast-path and
+  its backfill self-heal — the block where the cross-namespace leak fix
+  had to be applied twice — now delegates to remember(). One write path;
+  capture = remember + guard.
+- Agent-facing truth: because the guard stays, the `mcp-instructions.ts`
+  promise ("capture handles near-duplicate update and contradiction
+  supersession; prefer it over raw memory_remember") remains TRUE and is
+  kept as-is. Repo-wide sweep for `preferFacts` / walk references in
+  agent-facing docs came back clean — nothing documented either feature.
+
+**Phase 4 additions (found running the Phase 3 gate)**
+
+- `requireOperator` on the maintenance routes (`/v1/dream-cycle`,
+  `/v1/decay`, `/v1/reap-orphans`, observer): in `bearer` auth mode the
+  shared-token holder is the operator by definition, but the routes gated
+  on a dashboard user that cannot exist in that mode — the Phase 3 gate
+  had to drive dream-cycle from *inside the pod*. Logged-in identities
+  are still role-checked (issue #45 invariant unchanged in `user` mode).
+- `/v1/context` accepts `maxTokens` and defaults it to **6000** (the
+  Mem0-class retrieval budget); `k` stays as a count ceiling. `/v1/search`
+  stays unbounded by default — search is a query surface, context is a
+  prompt-assembly surface.
+- Search-time `asOf` is now a documented no-op (its only consumer was the
+  walk's edge filter); the field stays accepted for wire compatibility
+  and bitemporal filtering lives on `/v1/neighbors`.
 
 No deployment env vars are tied to any removed feature. `QUERY_DECOMP` and
 `OBSERVER` are opt-in features outside this plan's scope and keep working.
