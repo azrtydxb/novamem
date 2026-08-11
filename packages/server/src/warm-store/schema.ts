@@ -128,6 +128,15 @@ export const memoryEntries = pgTable(
      *  write path, cleared by the extraction worker on completion —
      *  including a completion that legitimately produced zero facts. */
     factsPendingAt: timestamp("facts_pending_at", { withTimezone: true }),
+    /** Graph-enrichment debt marker — third clone of the embedded_at /
+     *  facts_pending_at pattern (NOT NULL = pending). Set at insert when
+     *  the engine owes vector-neighbour edges + entity links; cleared by
+     *  the enrichment worker on completion. The write path attempts
+     *  enrichment immediately (async, bounded in-flight); when the bound
+     *  is hit the attempt is deferred, not skipped — the marker survives
+     *  restarts and the reconciler drains it, so no edge is silently
+     *  lost the way a fire-and-forget skip would lose it. */
+    graphPendingAt: timestamp("graph_pending_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -156,6 +165,10 @@ export const memoryEntries = pgTable(
     index("idx_entries_facts_pending")
       .on(table.factsPendingAt)
       .where(sql`${table.factsPendingAt} IS NOT NULL`),
+    // Third instance of the pending-marker partial-index reasoning.
+    index("idx_entries_graph_pending")
+      .on(table.graphPendingAt)
+      .where(sql`${table.graphPendingAt} IS NOT NULL`),
   ],
 );
 

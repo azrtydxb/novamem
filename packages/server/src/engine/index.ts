@@ -832,6 +832,10 @@ export class MemoryEngine {
           // at 10,446 chunks in one incident — with nothing recording
           // that they were owed.
           factsPendingAt: this.extractor ? new Date() : null,
+          // Same in-transaction debt rule as facts_pending_at: this row
+          // owes vector-neighbour edges + entity links, and the debt must
+          // survive a crash between INSERT and the async attempt below.
+          graphPendingAt: this.graphLinkFanout > 0 && this.graph ? new Date() : null,
         }),
       );
       span.setAttribute("novamem.entry_id", id);
@@ -899,17 +903,21 @@ export class MemoryEngine {
         // cycle's edge promotion re-derives co-occurrence over time.
         if (this.graphLinkFanout > 0) {
           if (this.enrichInFlight >= MAX_ENRICH_IN_FLIGHT) {
+            // Deferred, not skipped: the row's graph_pending_at marker is
+            // already set, so the reconciler drains it later. The cap
+            // exists only so a bulk load cannot pile unbounded promises
+            // onto FalkorDB's single thread.
             this.maybeWarnEnrichSaturated();
           } else {
             this.enrichInFlight++;
             void traceAsync("MemoryEngine.linkVectorNeighbors", {
               "novamem.namespace": namespace,
               "novamem.graph_link_fanout": this.graphLinkFanout,
-            }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, req.content))
+            }, () => this.enrichEntry(userId, projectId, id, namespace, embedding, req.content))
               .catch((err: unknown) => {
                 this.logger.warn(
                   { entryId: id, err: (err as Error).message },
-                  "async graph enrichment failed (entry persisted, no edges)",
+                  "async graph enrichment failed (marker kept, reconciler will retry)",
                 );
               })
               .finally(() => {
@@ -3247,6 +3255,55 @@ export class MemoryEngine {
    *  With no extractor configured this is a no-op that leaves markers in
    *  place: the operator turned the feature off, and the debt should
    *  still be there if they turn it back on. */
+  /** Run enrichment for one entry and clear its debt marker — the
+   *  marker is cleared only after the graph writes succeeded, same
+   *  ordering rule as embedded_at. */
+  private async enrichEntry(
+    userId: string,
+    projectId: string | null,
+    id: string,
+    namespace: string,
+    embedding: number[],
+    content: string,
+  ): Promise<void> {
+    await this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, content);
+    await this.warm.setGraphPendingAt(id, null);
+  }
+
+  /** Drain a batch of deferred graph enrichment (rows whose write-time
+   *  attempt was capped, failed, or died in a crash). Re-embeds content —
+   *  the vector is not stored warm-side and an extra 40 ms embed per
+   *  backlog row beats a Qdrant point-fetch API dependency. */
+  async reconcilePendingEnrichment(
+    opts: { batchSize?: number } = {},
+  ): Promise<{ scanned: number; enriched: number; failed: number; pending: number }> {
+    if (this.graphLinkFanout <= 0 || !this.graph) {
+      return { scanned: 0, enriched: 0, failed: 0, pending: 0 };
+    }
+    const rows = await this.warm.listPendingEnrichment(opts.batchSize ?? 50);
+    let enriched = 0;
+    let failed = 0;
+    // Sequential on purpose: the whole point of the queue is that
+    // FalkorDB is single-threaded — a parallel drain would recreate the
+    // pile-up the cap exists to prevent.
+    for (const row of rows) {
+      try {
+        const [embedding] = await this.embedder.embed(row.content, "document");
+        if (!embedding) throw new Error("embedder returned no vector");
+        await this.enrichEntry(row.userId, row.projectId, row.id, row.namespace, embedding, row.content);
+        enriched++;
+      } catch (err) {
+        failed++;
+        this.logger.warn(
+          { err: (err as Error).message, entryId: row.id },
+          "enrichment reconcile failed (marker kept, will retry)",
+        );
+      }
+    }
+    const pending = await this.warm.countPendingEnrichment();
+    return { scanned: rows.length, enriched, failed, pending };
+  }
+
   async reconcilePendingFacts(
     opts: { batchSize?: number } = {},
   ): Promise<{ scanned: number; extracted: number; failed: number; pending: number }> {

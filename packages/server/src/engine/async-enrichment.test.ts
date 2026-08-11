@@ -43,6 +43,48 @@ describe("async graph enrichment", () => {
     expect(entityCalls).toBe(1);
   });
 
+  it("keeps the debt marker when enrichment fails, and the reconciler drains it", async () => {
+    const b = quiet(makeEngine());
+    let fail = true;
+    let entityCalls = 0;
+    b.graph.linkEntities = async () => {
+      entityCalls++;
+      if (fail) throw new Error("falkordb down");
+    };
+    const r = await b.engine.remember("u1", {
+      content: "the deploy target kube-vip-bench runs on NodePool7",
+      force: true,
+    });
+    // Wait for the write-time attempt to fail.
+    const deadline = Date.now() + 2_000;
+    while (entityCalls === 0 && Date.now() < deadline) {
+      await new Promise((r2) => setTimeout(r2, 10));
+    }
+    expect(await b.warm.countPendingEnrichment()).toBe(1);
+
+    fail = false;
+    const rec = await b.engine.reconcilePendingEnrichment({ batchSize: 10 });
+    expect(rec.enriched).toBe(1);
+    expect(rec.pending).toBe(0);
+    expect(await b.warm.countPendingEnrichment()).toBe(0);
+    // The row is findable regardless — enrichment is an enhancement.
+    const s = await b.engine.search("u1", { query: "kube-vip-bench deploy target", k: 3 });
+    expect(s.results.some((x) => x.id === r.id)).toBe(true);
+  });
+
+  it("clears the debt marker after a successful write-time attempt", async () => {
+    const b = quiet(makeEngine());
+    await b.engine.remember("u1", {
+      content: "the deploy target kube-vip-bench runs on NodePool7",
+      force: true,
+    });
+    const deadline = Date.now() + 2_000;
+    while ((await b.warm.countPendingEnrichment()) > 0 && Date.now() < deadline) {
+      await new Promise((r2) => setTimeout(r2, 10));
+    }
+    expect(await b.warm.countPendingEnrichment()).toBe(0);
+  });
+
   it("skips enrichment entirely at fanout 0", async () => {
     const b = quiet(makeEngine({ graphLinkFanout: 0 }));
     let entityCalls = 0;
