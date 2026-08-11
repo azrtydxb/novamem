@@ -205,7 +205,8 @@ const OVERFETCH_FACTOR = 3;
 const RESULT_DIVERSITY_MAX_JACCARD = 0.75;
 
 /** Cap on concurrently-running background graph-enrichment tasks. Writes
- *  beyond the cap skip enrichment instead of queueing: FalkorDB is
+ *  beyond the cap defer enrichment to the reconciler (their
+ *  graph_pending_at marker stays set) instead of queueing promises: FalkorDB is
  *  single-threaded, so a queue here can only grow during a bulk load. */
 const MAX_ENRICH_IN_FLIGHT = 16;
 
@@ -658,7 +659,7 @@ export class MemoryEngine {
     this.lastEnrichSaturatedWarnAt = now;
     this.logger.warn(
       { inFlight: this.enrichInFlight },
-      "graph enrichment saturated — writes are skipping edge creation (dream-cycle edge promotion recovers co-occurrence over time)",
+      "graph enrichment saturated — write-time attempts deferred to the reconciler (graph_pending_at markers remain set; no edges are lost)",
     );
   }
 
@@ -3284,7 +3285,7 @@ export class MemoryEngine {
       } catch (err) {
         failed++;
         this.logger.warn(
-          { err: (err as Error).message, entryId: row.id },
+          { err: err instanceof Error ? err.message : String(err), entryId: row.id },
           "enrichment reconcile failed (marker kept, will retry)",
         );
       }

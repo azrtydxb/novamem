@@ -1655,25 +1655,40 @@ export class WarmStore {
       metadata: Record<string, unknown> | null;
     }>
   > {
-    const rows = await this.db
-      .select({
-        id: schema.memoryEntries.id,
-        userId: schema.memoryEntries.userId,
-        projectId: schema.memoryEntries.projectId,
-        content: schema.memoryEntries.content,
-        namespace: schema.memoryEntries.namespace,
-        source: schema.memoryEntries.source,
-        metadata: schema.memoryEntries.metadata,
-      })
-      .from(schema.memoryEntries)
-      .where(isNotNull(schema.memoryEntries.factsPendingAt))
-      .orderBy(asc(schema.memoryEntries.factsPendingAt))
-      .limit(limit);
-    // Only metadata needs normalising — jsonb comes back untyped. Mapping
-    // it here keeps the select's own typing honest instead of casting the
-    // whole query, which would silently absorb future schema drift.
-    return rows.map((r) => ({
-      ...r,
+    // Claim-on-read: re-arm the marker to now() in the same statement
+    // that selects the batch, with SKIP LOCKED so replicas racing on the
+    // same tick claim DISJOINT rows. Without this every pod fetched the
+    // same oldest-N slice, tripled the LLM spend, and the duplicates
+    // were only discarded at content-hash time — measured during the
+    // Phase 6 drain as a ~3× throughput loss. Re-arming (rather than
+    // clearing) keeps the crash contract: a worker that dies mid-batch
+    // leaves the marker set, and the row simply comes back once it
+    // reaches the front of the oldest-first queue again.
+    // CTE keeps the claimed batch deterministically oldest-first:
+    // UPDATE ... RETURNING makes no row-order guarantee, so the final
+    // SELECT re-orders by the pre-update marker captured in the CTE.
+    const res = await this.db.execute(sql`
+      WITH claimed AS (
+        SELECT id, facts_pending_at AS claimed_at FROM memory_entries
+        WHERE facts_pending_at IS NOT NULL
+        ORDER BY facts_pending_at ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      ), updated AS (
+        UPDATE memory_entries m SET facts_pending_at = now()
+        FROM claimed c WHERE m.id = c.id
+        RETURNING m.id, m.user_id, m.project_id, m.content, m.namespace, m.source, m.metadata
+      )
+      SELECT u.* FROM updated u JOIN claimed c ON c.id = u.id
+      ORDER BY c.claimed_at ASC
+    `);
+    return (res.rows as Array<Record<string, unknown>>).map((r) => ({
+      id: r.id as string,
+      userId: r.user_id as string,
+      projectId: (r.project_id ?? null) as string | null,
+      content: r.content as string,
+      namespace: r.namespace as string,
+      source: r.source as string,
       metadata: (r.metadata ?? null) as Record<string, unknown> | null,
     }));
   }
@@ -1698,18 +1713,30 @@ export class WarmStore {
       namespace: string;
     }>
   > {
-    return this.db
-      .select({
-        id: schema.memoryEntries.id,
-        userId: schema.memoryEntries.userId,
-        projectId: schema.memoryEntries.projectId,
-        content: schema.memoryEntries.content,
-        namespace: schema.memoryEntries.namespace,
-      })
-      .from(schema.memoryEntries)
-      .where(isNotNull(schema.memoryEntries.graphPendingAt))
-      .orderBy(asc(schema.memoryEntries.graphPendingAt))
-      .limit(limit);
+    // Same claim-on-read + SKIP LOCKED discipline as listPendingFacts —
+    // see the comment there.
+    const res = await this.db.execute(sql`
+      WITH claimed AS (
+        SELECT id, graph_pending_at AS claimed_at FROM memory_entries
+        WHERE graph_pending_at IS NOT NULL
+        ORDER BY graph_pending_at ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      ), updated AS (
+        UPDATE memory_entries m SET graph_pending_at = now()
+        FROM claimed c WHERE m.id = c.id
+        RETURNING m.id, m.user_id, m.project_id, m.content, m.namespace
+      )
+      SELECT u.* FROM updated u JOIN claimed c ON c.id = u.id
+      ORDER BY c.claimed_at ASC
+    `);
+    return (res.rows as Array<Record<string, unknown>>).map((r) => ({
+      id: r.id as string,
+      userId: r.user_id as string,
+      projectId: (r.project_id ?? null) as string | null,
+      content: r.content as string,
+      namespace: r.namespace as string,
+    }));
   }
 
   /** Size of the pending-enrichment backlog. */
