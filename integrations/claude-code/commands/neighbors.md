@@ -8,7 +8,8 @@ Call `mcp__novamem__memory_neighbors` with `id: <first arg>`. If the
 user passed extra positional args, parse them as `depth` and `k` (both
 integers). Default `depth: 1, k: 10`.
 
-degraded, the response carries `degraded: true` — surface that briefly.
+Traversal runs over the server's SQL relations table; if that query
+fails, the response carries `degraded: true` — surface that briefly.
 
 ARGUMENTS:
 $ARGUMENTS

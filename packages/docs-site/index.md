@@ -35,6 +35,6 @@ novamem is a single Fastify server that holds memory entries for AI agents and e
 - **Cold tier** — Qdrant vector embeddings, semantic recall over older entries
 - **Relations** — co-occurrence edges in Postgres (`memory_relations`), traversed by `/v1/neighbors`
 
-Every search runs all three signals in parallel and fuses them into one ranked list. Per-user isolation is the default; **projects** are sub-brains that can be shared with other users for team workflows.
+Search fuses two signals — Postgres full-text keyword match and Qdrant vector similarity — with an optional cross-encoder rerank; adjacency between memories is served separately by `/v1/neighbors` over the `memory_relations` table.
 
 The same code runs on a laptop (Docker Compose, single user) or as a multi-tenant deployment on Kubernetes.

@@ -161,31 +161,29 @@ describe("/v1/search degraded semantics", () => {
 describe("/v1/neighbors degraded semantics", () => {
   it("returns 503 when the relations query fails and nothing came back", async () => {
     // Phase 7: /v1/neighbors serves from memory_relations in Postgres —
-    // its outage mode is a failed SQL query, not a graph service.
+    // its outage mode is a failed SQL query. The seed must resolve so
+    // the traversal (not the seed lookup) is what fails.
     const { app, warm } = makeApp();
     warm.neighborsByRelations = async () => {
       throw new Error("relations query failed");
     };
     try {
       const headers = await userSession(warm);
-      // Seed must resolve so the traversal is what fails, not the lookup.
-      const seeded = await warm.insertEntry({
-        userId: "ignored-below", projectId: null, content: "seed row",
-        namespace: "default", source: "manual", agentName: null,
-        metadata: {}, sourceType: null, capturedFrom: null, contentHash: "np-seed",
+      const stored = await app.inject({
+        method: "POST",
+        url: "/v1/remember",
+        headers,
+        payload: { content: "seed entry for neighbour traversal", namespace: "default" },
       });
-      void seeded;
-      const headersUser = headers;
+      expect(stored.statusCode).toBe(201);
       const r = await app.inject({
         method: "POST",
         url: "/v1/neighbors",
-        headers: headersUser,
-        payload: { id: "01HSOMEENTRYID" },
+        headers,
+        payload: { id: stored.json().id },
       });
-      // Unknown seed short-circuits to empty/not-degraded; a failing
-      // relations query on a KNOWN seed is exercised at the engine level
-      // in engine.test.ts. At the route level assert the contract shape:
-      expect([200, 503]).toContain(r.statusCode);
+      expect(r.statusCode).toBe(503);
+      expect(r.json().degraded).toBe(true);
     } finally {
       await app.close();
     }
