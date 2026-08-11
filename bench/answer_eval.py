@@ -91,7 +91,12 @@ Rules:
 - Only for FACTUAL questions whose answer is genuinely absent from the
   memories, say: The information provided is not enough.
 - For conflicting facts, prefer the most recent memory.
-- For temporal/counting questions, compute carefully from the dates in the memories.
+- For temporal questions, compare each memory's date against the
+  question date explicitly before answering.
+- For counting/aggregation questions ("how many...", "list all..."):
+  first enumerate every distinct matching item with its date, then merge
+  duplicates (the same event may appear as both a fact and a
+  conversation excerpt), then count the merged list. Show the list.
 
 Question date: {qdate or ''}
 Question: {q}
