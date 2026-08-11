@@ -255,6 +255,7 @@ def do_ingest(args, token, items, out_dir):
 
     started = time.time()
     done = 0
+    failures = 0
     with ThreadPoolExecutor(max_workers=args.max_workers) as pool:
         futs = {pool.submit(one, e): e for e in items}
         for fut in as_completed(futs):
@@ -276,9 +277,15 @@ def do_ingest(args, token, items, out_dir):
                 log(f"[{done}/{len(items)}] ingested {qid} chunks={n} in {secs:.0f}s "
                     f"(elapsed {(time.time()-started)/60:.1f}m)")
             except Exception as e:
+                failures += 1
                 log(f"ERROR ingest {qid}: {e}")
     state_path.write_text(json.dumps(state, indent=2))
     log(f"ingest complete: {done} questions, {(time.time()-started)/60:.1f} min")
+    if failures:
+        # State is written (resume covers the gap), but a partial corpus
+        # must not look like a successful run to callers like quick-gate.
+        raise SystemExit(f"ingest finished with {failures} failed questions — "
+                         f"re-run to resume; state saved")
 
 
 def do_search(args, token, out_dir):
@@ -288,6 +295,7 @@ def do_search(args, token, out_dir):
     cfg = json.loads(args.config) if args.config else {}
     rel_override = json.loads(Path(args.relevant_counts).read_text()) if args.relevant_counts else {}
     per_q = []
+    search_failures = 0
     lat = []
 
     def one(qid, meta):
@@ -348,6 +356,7 @@ def do_search(args, token, out_dir):
                 per_q.append(res)
                 lat.append(ms)
             except Exception as e:
+                search_failures += 1
                 log(f"ERROR search {futs[fut]}: {e}")
 
     lat.sort()
@@ -371,6 +380,10 @@ def do_search(args, token, out_dir):
     log(json.dumps({"config": args.name, "latency_p95_ms": report["latency_ms"]["p95"],
                     "metrics": {k: v["overall"] for k, v in report["metrics_by_cutoff"].items()}}, indent=2))
     log(f"wrote {path}")
+    if search_failures:
+        raise SystemExit(f"search finished with {search_failures} failed questions — "
+                         f"report written but the run is INVALID for verdicts")
+
 
 
 def do_purge(args, token, out_dir):

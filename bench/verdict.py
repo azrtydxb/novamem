@@ -14,7 +14,7 @@ import pathlib
 
 
 def load_scores(path: str) -> dict[str, bool]:
-    d = json.load(open(path))
+    d = json.loads(pathlib.Path(path).read_text())
     return {
         r["question_id"]: bool(r["cutoffs"]["top_all"]["score"])
         for r in d["evaluations"]
@@ -77,8 +77,11 @@ def main() -> None:
         "label": args.label,
         "mean": mean,
         "reps": accs,
-        # Majority vote across replications, so the stored per-question
-        # baseline is the stable signal, not one replication's coin-flips.
+        # Strict-majority vote across replications; with an even rep
+        # count a tie stores False — deliberately conservative, so a
+        # question must be reliably correct to count for the baseline.
+        # (The verdict's flip analysis is unaffected: it already demands
+        # unanimity across replications in both directions.)
         "scores": {q: sum(r.get(q, False) for r in runs) * 2 > len(runs)
                    for q in set().union(*runs)},
     }
