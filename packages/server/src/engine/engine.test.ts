@@ -339,6 +339,14 @@ describe("engine.remember: graph auto-linking", () => {
     const c = await b.engine.remember("public", { content: "alpha alpha beta", force: true });
     // c was just inserted with the most-similar prior entry being a;
     // expect an outgoing edge c → a in both graph and warm relations.
+    // Enrichment is fire-and-forget off the write path, so poll briefly.
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      const edgeUp = (b.graph.edges.get(`public:_:${c.id}`) ?? []).some((e) => e.to === a.id);
+      const relUp = b.warm.relations.some((r) => r.fromId === c.id && r.toId === a.id);
+      if (edgeUp && relUp) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
     const cEdges = b.graph.edges.get(`public:_:${c.id}`) ?? [];
     expect(cEdges.some((e) => e.to === a.id)).toBe(true);
     expect(b.warm.relations.some((r) => r.fromId === c.id && r.toId === a.id)).toBe(true);

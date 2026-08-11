@@ -233,6 +233,7 @@ async function main() {
     decomposer,
     reranker,
     rerankPoolMultiplier: cfg.rerank.poolMultiplier,
+    graphLinkFanout: cfg.graphLinkFanout,
     observer,
     personalTerms: cfg.search.personalTerms,
     minVectorScore: cfg.search.minVectorScore,

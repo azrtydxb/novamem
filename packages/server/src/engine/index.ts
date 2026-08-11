@@ -204,6 +204,11 @@ const OVERFETCH_FACTOR = 3;
  *  restatements of one another; only the higher-ranked one is returned. */
 const RESULT_DIVERSITY_MAX_JACCARD = 0.75;
 
+/** Cap on concurrently-running background graph-enrichment tasks. Writes
+ *  beyond the cap skip enrichment instead of queueing: FalkorDB is
+ *  single-threaded, so a queue here can only grow during a bulk load. */
+const MAX_ENRICH_IN_FLIGHT = 16;
+
 /** Ceiling on how many candidates the coherence reranker is shown. The
  *  prompt inlines 600 chars each and asks for a permutation back within a
  *  200-token budget, so the list has to stay small enough for the model to
@@ -488,6 +493,9 @@ export class MemoryEngine {
   private readonly defaultDecayDays: number;
   private logger: EngineLogger;
   private readonly graphLinkFanout: number;
+  /** Enrichment tasks currently in flight — see MAX_ENRICH_IN_FLIGHT. */
+  private enrichInFlight = 0;
+  private lastEnrichSaturatedWarnAt = 0;
   private readonly metrics: MetricsCollector | null;
   private readonly extractor: import("./fact-extractor.js").FactExtractor | null;
   private readonly extractorMaxFacts: number;
@@ -640,6 +648,18 @@ export class MemoryEngine {
     if (now - this.lastGraphWarn < 5 * 60 * 1000) return;
     this.lastGraphWarn = now;
     this.logger.warn("graph store unreachable — search degraded to keyword + vector only");
+  }
+
+  /** Rate-limited (60s) warning when writes are skipping graph enrichment
+   *  because MAX_ENRICH_IN_FLIGHT tasks are already running. */
+  private maybeWarnEnrichSaturated(): void {
+    const now = Date.now();
+    if (now - this.lastEnrichSaturatedWarnAt < 60_000) return;
+    this.lastEnrichSaturatedWarnAt = now;
+    this.logger.warn(
+      { inFlight: this.enrichInFlight },
+      "graph enrichment saturated — writes are skipping edge creation (dream-cycle edge promotion recovers co-occurrence over time)",
+    );
   }
 
   /** Last observed embedder outcomes. A destroyed embeddings host is
@@ -866,11 +886,36 @@ export class MemoryEngine {
         // that failed.
         await this.warm.setEmbeddedAt(id, new Date());
         embedded = true;
+        // Graph enrichment (vector-neighbour edges + entity links) is
+        // fire-and-forget, like fact extraction below: a write's contract
+        // is "insert + queue the enrichment debts", and FalkorDB is
+        // single-threaded, so awaiting two serialized graph queries here
+        // put every concurrent writer in one queue — profiled at 179 ms
+        // mean per query during a bulk load, it WAS the write-path
+        // ceiling (~3.5 captures/s). Best-effort by contract ("enrichment
+        // must never fail a write"), so on the cap being hit the write
+        // skips enrichment rather than queueing unboundedly; a lost edge
+        // costs a /v1/neighbors hop, not durability — and the dream
+        // cycle's edge promotion re-derives co-occurrence over time.
         if (this.graphLinkFanout > 0) {
-          await traceAsync("MemoryEngine.linkVectorNeighbors", {
-            "novamem.namespace": namespace,
-            "novamem.graph_link_fanout": this.graphLinkFanout,
-          }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, req.content));
+          if (this.enrichInFlight >= MAX_ENRICH_IN_FLIGHT) {
+            this.maybeWarnEnrichSaturated();
+          } else {
+            this.enrichInFlight++;
+            void traceAsync("MemoryEngine.linkVectorNeighbors", {
+              "novamem.namespace": namespace,
+              "novamem.graph_link_fanout": this.graphLinkFanout,
+            }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, req.content))
+              .catch((err: unknown) => {
+                this.logger.warn(
+                  { entryId: id, err: (err as Error).message },
+                  "async graph enrichment failed (entry persisted, no edges)",
+                );
+              })
+              .finally(() => {
+                this.enrichInFlight--;
+              });
+          }
         }
       } else if (!embedderDown) {
         // The embedder answered but handed back nothing — a bad response,
