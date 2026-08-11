@@ -1,0 +1,80 @@
+{
+ "current": {
+  "label": "phase5-capture-rerank-b6000",
+  "mean": 83.0,
+  "reps": [
+   84.0,
+   82.0
+  ],
+  "scores": {
+   "gpt4_f49edff3": true,
+   "89941a93": true,
+   "d7c942c3": true,
+   "0bc8ad92": true,
+   "gpt4_59149c77": true,
+   "195a1a1b": true,
+   "1903aded": true,
+   "aae3761f": true,
+   "32260d93": false,
+   "e9327a54": true,
+   "7e00a6cb": true,
+   "118b2229": true,
+   "852ce960": true,
+   "75832dbd": false,
+   "6ade9755": true,
+   "ce6d2d27": true,
+   "6f9b354f": true,
+   "945e3d21": true,
+   "830ce83f": true,
+   "89527b6b": true,
+   "58bf7951": true,
+   "4c36ccef": true,
+   "1e043500": true,
+   "6aeb4375": true,
+   "0a995998": false,
+   "06878be2": true,
+   "e47becba": true,
+   "afdc33df": true,
+   "gpt4_d84a3211": false,
+   "c5e8278d": true,
+   "7161e7e2": true,
+   "gpt4_59c863d7": false,
+   "gpt4_4929293a": true,
+   "b46e15ed": true,
+   "71017276": false,
+   "e831120c": true,
+   "6a1eabeb": true,
+   "6ae235be": true,
+   "51a45a95": false,
+   "af082822": true,
+   "gpt4_fa19884c": true,
+   "gpt4_f2262a51": true,
+   "6d550036": false,
+   "8a2466db": true,
+   "b5ef892d": true,
+   "0edc2aef": false,
+   "3a704032": true,
+   "35a27287": false,
+   "c4f10528": true,
+   "71315a70": true
+  }
+ },
+ "history": [
+  {
+   "label": "phase4-capture-b6000",
+   "mean": 71.0,
+   "reps": [
+    70.0,
+    72.0
+   ]
+  },
+  {
+   "label": "phase5-capture-rerank-b6000",
+   "mean": 83.0,
+   "reps": [
+    84.0,
+    82.0
+   ]
+  }
+ ]
+}
