@@ -72,6 +72,24 @@ describe("async graph enrichment", () => {
     expect(s.results.some((x) => x.id === r.id)).toBe(true);
   });
 
+  it("keeps the debt marker while the graph is disconnected (review bug in #179)", async () => {
+    const b = quiet(makeEngine({ graphConnected: false }));
+    const r = await b.engine.remember("u1", {
+      content: "the deploy target kube-vip-bench runs on NodePool7",
+      force: true,
+    });
+    expect(r.id).toBeTruthy();
+    // Give the write-time attempt time to run and fail.
+    for (let i = 0; i < 10; i++) await new Promise((r2) => setImmediate(r2));
+    // linkVectorNeighbors used to silently no-op here and the marker was
+    // cleared with zero graph writes performed. Now the attempt throws
+    // and the debt survives for the reconciler.
+    expect(await b.warm.countPendingEnrichment()).toBe(1);
+    const rec = await b.engine.reconcilePendingEnrichment({ batchSize: 10 });
+    expect(rec.failed).toBe(1);
+    expect(await b.warm.countPendingEnrichment()).toBe(1);
+  });
+
   it("clears the debt marker after a successful write-time attempt", async () => {
     const b = quiet(makeEngine());
     await b.engine.remember("u1", {

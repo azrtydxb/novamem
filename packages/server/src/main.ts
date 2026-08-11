@@ -434,7 +434,8 @@ async function main() {
         app.log.info({ ...g }, "reconciled pending graph enrichment");
       }
     } catch (err) {
-      app.log.error({ err: (err as Error).message }, "reconciler error (embeddings or fact extraction)");
+      const e = err instanceof Error ? err : new Error(String(err));
+      app.log.error({ err: e }, "reconciler error (embeddings, fact extraction, or graph enrichment)");
     } finally {
       reconcileInFlight = false;
     }

@@ -1477,6 +1477,12 @@ export class MemoryEngine {
    *  the graph store (for traversal) and `memory_relations` (for audit /
    *  fallback if the graph is offline). Self-links are filtered. Errors are
    *  logged and swallowed — failures to enrich shouldn't fail the write. */
+  /** The enrichment work itself: vector-neighbour edges, entity links,
+   *  warm relations. THROWS on any failure — including a disconnected
+   *  graph — because the caller's contract is "clear the debt marker
+   *  only when every write actually happened". Swallowing here is what
+   *  let the marker be cleared with FalkorDB down (silently lost edges,
+   *  caught in review of #179). */
   private async linkVectorNeighbors(
     userId: string,
     projectId: string | null,
@@ -1485,73 +1491,53 @@ export class MemoryEngine {
     embedding: number[],
     content: string,
   ): Promise<void> {
-    try {
-      const hits = await traceAsync("ColdStore.search.linkVectorNeighbors", {
-        "novamem.namespace": namespace,
-        "novamem.k": this.graphLinkFanout + 1,
-      }, () => this.cold.search({
-        userId,
-        projectId,
-        namespace,
-        embedding,
-        k: this.graphLinkFanout + 1,
-      }));
-      const neighbours = hits.filter((h) => h.id !== id).slice(0, this.graphLinkFanout);
-      // One batched Cypher round-trip instead of fanout-many.
-      if (neighbours.length > 0 && this.graph?.isConnected()) {
-        try {
-          await traceAsync("GraphStore.addEdgesBatch", {
-            "novamem.neighbour_count": neighbours.length,
-          }, () => this.graph!.addEdgesBatch(
-            userId,
-            id,
-            neighbours.map((n) => ({ to: n.id, relation: "co_occurs", strength: n.score })),
-            projectId,
-          ));
-        } catch (err) {
-          this.logger.warn(
-            { entryId: id, err: (err as Error).message },
-            "graph addEdgesBatch failed",
-          );
-        }
-      }
-      // Entity edges. Independent of the vector neighbours above — this
-      // is what gives the graph tier a signal embeddings don't already
-      // have. Failures are non-fatal: enrichment must never fail a write.
-      if (this.graph?.isConnected()) {
-        const entities = extractEntities(content);
-        if (entities.length > 0) {
-          try {
-            await traceAsync("GraphStore.linkEntities", {
-              "novamem.entity_count": entities.length,
-            }, () => this.graph!.linkEntities(userId, id, entities, projectId));
-          } catch (err) {
-            this.logger.warn(
-              { entryId: id, err: (err as Error).message },
-              "graph linkEntities failed",
-            );
-          }
-        }
-      }
-      // Warm relations are per-row in SQL but issued in parallel so the
-      // span name "addRelation.batch" actually corresponds to one
-      // synchronous round of pool-concurrent INSERTs instead of N
-      // sequential round-trips. Each call hits a different
-      // (from,to,relation) row so the ON CONFLICT DO UPDATE upsert
-      // semantics are independent — no need for a transaction.
-      await traceAsync("WarmStore.addRelation.batch", {
-        "novamem.neighbour_count": neighbours.length,
-      }, () => Promise.all(
-        neighbours.map((n) =>
-          this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId),
-        ),
-      ));
-    } catch (err) {
-      this.logger.warn(
-        { entryId: id, err: (err as Error).message },
-        "linkVectorNeighbors failed",
-      );
+    if (!this.graph?.isConnected()) {
+      throw new Error("graph disconnected — enrichment deferred");
     }
+    const hits = await traceAsync("ColdStore.search.linkVectorNeighbors", {
+      "novamem.namespace": namespace,
+      "novamem.k": this.graphLinkFanout + 1,
+    }, () => this.cold.search({
+      userId,
+      projectId,
+      namespace,
+      embedding,
+      k: this.graphLinkFanout + 1,
+    }));
+    const neighbours = hits.filter((h) => h.id !== id).slice(0, this.graphLinkFanout);
+    // One batched Cypher round-trip instead of fanout-many.
+    if (neighbours.length > 0) {
+      await traceAsync("GraphStore.addEdgesBatch", {
+        "novamem.neighbour_count": neighbours.length,
+      }, () => this.graph!.addEdgesBatch(
+        userId,
+        id,
+        neighbours.map((n) => ({ to: n.id, relation: "co_occurs", strength: n.score })),
+        projectId,
+      ));
+    }
+    // Entity edges. Independent of the vector neighbours above — this
+    // is what gives the graph tier a signal embeddings don't already
+    // have.
+    const entities = extractEntities(content);
+    if (entities.length > 0) {
+      await traceAsync("GraphStore.linkEntities", {
+        "novamem.entity_count": entities.length,
+      }, () => this.graph!.linkEntities(userId, id, entities, projectId));
+    }
+    // Warm relations are per-row in SQL but issued in parallel so the
+    // span name "addRelation.batch" actually corresponds to one
+    // synchronous round of pool-concurrent INSERTs instead of N
+    // sequential round-trips. Each call hits a different
+    // (from,to,relation) row so the ON CONFLICT DO UPDATE upsert
+    // semantics are independent — no need for a transaction.
+    await traceAsync("WarmStore.addRelation.batch", {
+      "novamem.neighbour_count": neighbours.length,
+    }, () => Promise.all(
+      neighbours.map((n) =>
+        this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId),
+      ),
+    ));
   }
 
   async search(
