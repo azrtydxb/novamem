@@ -185,7 +185,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         relevant,
         recent,
         contextPack: ctx.engine.buildContextPack(relevant.results, recent.results),
-        guidance: "Use this context before answering. Prefer contextPack sections over loose hits. If relevant is empty, proceed but avoid asking the user to repeat context until targeted memory_search also misses.",
+        guidance: "Use this context before answering. Prefer contextPack sections over loose hits. For suggestion/recommendation/advice asks, DO answer: ground suggestions in the user's stored preferences, plans, and constraints from this context rather than declining or answering generically — measured on LongMemEval, declining these was the answerer's single largest error class. If the context holds nothing relevant about the user, say so briefly and give best general advice; never invent preferences. If relevant is empty, proceed but avoid asking the user to repeat context until targeted memory_search also misses.",
       });
     },
   );
