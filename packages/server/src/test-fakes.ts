@@ -38,6 +38,7 @@ export interface FakeWarmRow {
    *  durable queue column; the reconciler tests depend on it surviving
    *  "restarts" (fresh engine over the same store). */
   factsPendingAt: Date | null;
+  graphPendingAt: Date | null;
 }
 
 export class FakeWarmStore {
@@ -303,6 +304,29 @@ export class FakeWarmStore {
     if (r) r.factsPendingAt = at;
   }
 
+  async setGraphPendingAt(id: string, at: Date | null): Promise<void> {
+    const r = this.rows.get(id);
+    if (r) r.graphPendingAt = at;
+  }
+
+  async listPendingEnrichment(limit: number) {
+    return [...this.rows.values()]
+      .filter((r) => r.graphPendingAt != null)
+      .sort((a, b) => a.graphPendingAt!.getTime() - b.graphPendingAt!.getTime())
+      .slice(0, limit)
+      .map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        projectId: r.projectId,
+        content: r.content,
+        namespace: r.namespace,
+      }));
+  }
+
+  async countPendingEnrichment(): Promise<number> {
+    return [...this.rows.values()].filter((r) => r.graphPendingAt != null).length;
+  }
+
   async listPendingFacts(limit: number): Promise<
     Array<{
       id: string;
@@ -350,6 +374,7 @@ export class FakeWarmStore {
     confidence?: number;
     contentHash?: string | null;
     factsPendingAt?: Date | null;
+    graphPendingAt?: Date | null;
   }): Promise<string> {
     const id = ulid();
     this.rows.set(id, {
@@ -373,6 +398,7 @@ export class FakeWarmStore {
       sourceType: args.sourceType ?? null,
       confidence: args.confidence,
       factsPendingAt: args.factsPendingAt ?? null,
+      graphPendingAt: args.graphPendingAt ?? null,
     });
     if (args.contentHash) {
       this.contentHashIdx.set(
