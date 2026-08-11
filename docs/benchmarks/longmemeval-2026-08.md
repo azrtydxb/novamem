@@ -30,6 +30,22 @@ mode is answer style (the answerer states the preference without the
 requested justification), not retrieval, and it is the obvious next
 target.
 
+## Addendum (2026-08-11, same day): answer-prompt fix — 79.8–80.4%
+
+Error analysis of the 16 missed preference questions found 9 were
+prompt-mandated abstentions ("If the answer is not supported, say: The
+information provided is not enough" — recommendation-style questions
+never have a literally-supported answer) and 7 were generic answers that
+ignored the retrieved preferences; only 1 was a retrieval gap. The
+answer prompt now instructs the model to ground suggestions in the
+user's stored preferences instead of declining. Re-run on the identical
+search results (only the prompt changed), two replications:
+**80.4% / 79.8% overall**, preference 76.7% / 66.7% (from 46.7%), every
+other type within noise and knowledge-update / multi-session /
+assistant identical across replications — no abstention-to-hallucination
+bleed on factual types. The fix also ships product-side in
+`/v1/context`'s guidance text (PR #184).
+
 ## Setup (everything named)
 
 - **Server**: novamem `sha-80ff428`, nova-bench deployment (3 replicas) on the kw cluster.
