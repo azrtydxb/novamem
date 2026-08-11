@@ -66,12 +66,6 @@ def chat(base, key, model, prompt, max_tokens=256, timeout=240, attempts=3, thin
     raise RuntimeError(f"chat failed: {last}")
 
 
-import re as _re
-def _mem_date(m):
-    t = m.get("content") or ""
-    mm = _re.search(r"Date: (\d{4})/(\d{2})/(\d{2})", t) or _re.search(r"\((\d{4})-(\d{2})-(\d{2})", t)
-    return (mm.group(1), mm.group(2), mm.group(3)) if mm else ("9999", "99", "99")
-
 def answer_prompt(q, qdate, mems):
     lines, total = [], 0
     for i, m in enumerate(mems, 1):
@@ -90,7 +84,10 @@ Rules:
   DO give them. Ground every suggestion in the user's stated preferences,
   plans, possessions, and constraints from the memories (mention which),
   and tailor it to them specifically — a generic answer that ignores what
-  the memories say about the user is wrong. Never refuse these.
+  the memories DO say about the user is wrong. If the memories genuinely
+  contain nothing about the user relevant to the ask, say so in one line
+  and then give your best general advice — NEVER invent preferences or
+  facts the memories don't contain.
 - Only for FACTUAL questions whose answer is genuinely absent from the
   memories, say: The information provided is not enough.
 - For conflicting facts, prefer the most recent memory.
