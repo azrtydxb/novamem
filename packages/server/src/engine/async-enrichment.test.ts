@@ -87,16 +87,24 @@ describe("async graph enrichment", () => {
 
   it("skips enrichment entirely at fanout 0", async () => {
     const b = quiet(makeEngine({ graphLinkFanout: 0 }));
-    let entityCalls = 0;
-    b.graph.linkEntities = async () => {
-      entityCalls++;
+    // Spy on the enrichment ENTRYPOINT: linkVectorNeighbors always begins
+    // with a cold.search, whereas linkEntities is conditional on entity
+    // extraction — asserting on it could false-pass.
+    let coldSearches = 0;
+    const orig = b.cold.search.bind(b.cold);
+    b.cold.search = async (args: Parameters<typeof orig>[0]) => {
+      coldSearches++;
+      return orig(args);
     };
     const r = await b.engine.remember("u1", {
       content: "the archive tier retention is 30 days per the ops runbook",
       force: true,
     });
     expect(r.id).toBeTruthy();
-    await new Promise((r2) => setTimeout(r2, 100));
-    expect(entityCalls).toBe(0);
+    // Yield a few macrotasks instead of a fixed sleep.
+    for (let i = 0; i < 5; i++) await new Promise((r2) => setImmediate(r2));
+    expect(coldSearches).toBe(0);
+    // And the write owes no enrichment debt at fanout 0.
+    expect(await b.warm.countPendingEnrichment()).toBe(0);
   });
 });

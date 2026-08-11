@@ -915,8 +915,11 @@ export class MemoryEngine {
               "novamem.graph_link_fanout": this.graphLinkFanout,
             }, () => this.enrichEntry(userId, projectId, id, namespace, embedding, req.content))
               .catch((err: unknown) => {
+                // `err` is unknown by contract; a non-Error rejection must
+                // not blow up the handler that exists to absorb failures.
+                const message = err instanceof Error ? err.message : String(err);
                 this.logger.warn(
-                  { entryId: id, err: (err as Error).message },
+                  { entryId: id, err: message },
                   "async graph enrichment failed (marker kept, reconciler will retry)",
                 );
               })
