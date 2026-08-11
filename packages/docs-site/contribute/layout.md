@@ -44,7 +44,6 @@ src/
 ├── engine/              — MemoryEngine: search, remember, neighbors, decay…
 ├── warm-store/          — Postgres + drizzle layer
 ├── cold-store.ts        — Qdrant client wrapper
-├── graph-store.ts       — FalkorDB client wrapper
 ├── routes/              — per-section route registration (data-plane, admin, me, mcp-sse, auth)
 ├── admin/               — metrics + audit-log helpers
 └── *.test.ts            — colocated vitest specs

@@ -26,11 +26,9 @@ import type { FastifyInstance } from "fastify";
 import { buildHttpServer } from "./http.js";
 import {
   asCold,
-  asGraph,
   asWarm,
   FakeColdStore,
   FakeEmbedder,
-  FakeGraphStore,
   FakeWarmStore,
   makeEngine,
 } from "./test-fakes.js";
@@ -195,11 +193,9 @@ describe("security: MCP SSE session ownership (#57)", () => {
   beforeAll(async () => {
     warm = new FakeWarmStore();
     const cold = new FakeColdStore();
-    const graph = new FakeGraphStore();
     const engine = new MemoryEngine({
       warm: asWarm(warm),
       cold: asCold(cold),
-      graph: asGraph(graph),
       embedder: new FakeEmbedder(),
       defaultEffectiveDays: 7,
     });

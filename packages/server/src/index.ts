@@ -1,7 +1,6 @@
 export * from "./types.js";
 export * from "./engine/index.js";
 export { ColdStore } from "./cold-store.js";
-export { GraphStore } from "./graph-store.js";
 export { WarmStore } from "./warm-store/index.js";
 export { makeEmbedder } from "./embeddings.js";
 export type { Embedder, EmbeddingsConfig } from "./embeddings.js";

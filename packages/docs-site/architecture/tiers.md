@@ -4,13 +4,13 @@ title: Tiered storage
 
 # Tiered storage
 
-Three storage layers, three roles. Every memory entry lives in some combination of them, and search reads from all three in parallel.
+Three storage layers, three roles. Every memory entry lives in some combination of them: search reads warm + cold in parallel, and `/v1/neighbors` walks the relations layer.
 
 ```mermaid
 flowchart LR
     R[remember] --> WARM[(warm tier<br/>Postgres FTS)]
     R --> COLD[(cold tier<br/>Qdrant vectors)]
-    R --> GRAPH[(graph tier<br/>FalkorDB edges)]
+    R --> REL[(relations<br/>memory_relations in Postgres)]
     WARM -. decay .-> COLD
     COLD -. search hit .-> WARM
 ```
@@ -31,26 +31,29 @@ flowchart LR
 - Vector dim: `NOVAMEM_COLD_VECTOR_SIZE` (default 384, matching the local `all-MiniLM-L6-v2` embedder). Must match `NOVAMEM_EMBEDDINGS_DIM`.
 - Reactive promotion: a cold entry whose accumulated lifespan now exceeds its idle time is moved back to warm on the same call that hit it. Without this, useful entries would slowly disappear forever.
 
-## Graph — FalkorDB
+## Relations — Postgres
 
-**Job**: surface adjacent context — "what was related to this hit that I forgot to ask about."
-
-- Storage: `Memory {id, user, project}` nodes with `RELATES {kind, strength}` edges.
-- Auto-link: every `remember()` calls `linkVectorNeighbors()` which connects the new node to its top-N vector neighbours (default `graphLinkFanout=3`). One round-trip via the batch `addEdgesBatch`.
-- Traversal: depth 1 (hot path), 2, or 3 — controlled by an allowlist so cost is bounded. Cypher path-product aggregates strengths along multi-hop walks.
-- Optional: `NOVAMEM_GRAPH_ENABLED=false` skips graph entirely; engine emits `degraded: true` on every search.
+Co-occurrence edges between memories live in the `memory_relations`
+table (bitemporal `valid_from`/`valid_to`), written asynchronously after
+each memory (durable `graph_pending_at` marker + reconciler) and
+traversed by `/v1/neighbors` with a recursive CTE (undirected, depth
+1–3, score = MAX over paths of the product of edge strengths). The
+dedicated graph-database service was removed in Phase 7 of the
+Mem0-alignment plan: its single-threaded writes were the ingest
+bottleneck (179 ms mean per query), and the read tier it powered
+measured zero contribution in the winning search calibration.
 
 ## Why three?
 
-Each tier alone has a failure mode:
+Each layer alone has a failure mode:
 
-| Tier | Strength | Weakness |
+| Layer | Strength | Weakness |
 |---|---|---|
 | Warm only | Exact ids, function names, hashes | Misses paraphrases ("I want to eat" vs "I'm hungry") |
 | Cold only | Semantic similarity | Misses literals; a single typo'd identifier can fail to match |
-| Graph only | Adjacent context | No initial seed; needs an entry to walk from |
+| Relations only | Adjacent context | No initial seed; needs an entry to walk from |
 
-Hybrid fusion picks the strengths from each, normalises (min-max) to a 0..1 scale, then weighted-sums with defaults `keyword: 0.3, vector: 0.6, graph: 0.1`. Override per call when you have a specific reason — `{keyword:1, vector:0}` for exact-id lookups, `{vector:1}` for pure semantic.
+Hybrid search fuses the keyword and vector signals, normalises (min-max) to a 0..1 scale, then weighted-sums with defaults `keyword: 0.3, vector: 0.6`. `weights.graph` / `weights.entity` are still accepted on the wire but contribute nothing — the winning calibration ran them at 0. Override per call when you have a specific reason — `{keyword:1, vector:0}` for exact-id lookups, `{vector:1}` for pure semantic. Adjacency is served separately by `/v1/neighbors` over `memory_relations`.
 
 ## Decay maths
 

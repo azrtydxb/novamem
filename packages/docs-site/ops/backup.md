@@ -4,17 +4,16 @@ title: Backup & restore
 
 # Backup & restore
 
-novamem's source of truth is **Postgres**. The cold-tier (Qdrant) and graph-tier (FalkorDB) are reconstructible from the warm-tier embeddings and edge auto-link logic.
+novamem's source of truth is **Postgres** — including the `memory_relations` co-occurrence edges, which ride along with every Postgres backup. Only the cold-tier (Qdrant) lives outside it, and it is reconstructible from the warm-tier embeddings.
 
 ## What to back up
 
 | Store | Importance | Recovery |
 |---|---|---|
-| **Postgres** | Critical | Required for any restore. Holds memory_entries, users, sessions, tokens, projects, audit log. |
+| **Postgres** | Critical | Required for any restore. Holds memory_entries, memory_relations, users, sessions, tokens, projects, audit log. |
 | **Qdrant** | Optional | Re-index from warm-tier entries via `/v1/admin/reindex` (planned). Until then, snapshot and restore. |
-| **FalkorDB** | Optional | Re-link from warm-tier on next dream cycle. Edges with `kind = "vector_neighbour"` will reform; manually-added edges (`kind = "co_occurs"`) are lost without a backup. |
 
-In practice, back up all three. Postgres restoration without Qdrant + FalkorDB works (search degrades to keyword + vector with `degraded: true` for graph) but you want all three for full fidelity.
+In practice, back up both. Postgres restoration without Qdrant works (search degrades to keyword-only with `degraded: true`) but you want both for full fidelity.
 
 ## Postgres
 
@@ -64,24 +63,18 @@ curl -X PUT http://qdrant:6333/collections/novamem_acme_default/snapshots/upload
 
 Snapshot every collection (one per user/project scope × namespace). If your tenant count is large, automate via the [Qdrant snapshot API](https://qdrant.tech/documentation/concepts/snapshots/).
 
-## FalkorDB / Redis
+## Relations (memory_relations)
 
-Standard Redis persistence:
-
-- **AOF** (append-only file) — `appendonly yes` in `redis.conf`. Replay-based recovery, lower data-loss risk.
-- **RDB** (point-in-time dump) — `save 900 1` style. Smaller files, larger possible data loss.
-
-Both can be combined. Restore by replacing `dump.rdb` / `appendonly.aof` and restarting.
+Nothing extra to do: the co-occurrence edges live in the `memory_relations` Postgres table (bitemporal `valid_from`/`valid_to`), so `pg_dump` / WAL archiving above covers them. Edges are also self-healing — new `remember` calls write fresh vector-neighbour edges via the async reconciler.
 
 ## Disaster scenarios
 
 | Scenario | Recovery procedure |
 |---|---|
-| Postgres lost (no backup) | Total memory loss. Don't run without a backup strategy. |
+| Postgres lost (no backup) | Total memory loss — entries and relations alike. Don't run without a backup strategy. |
 | Postgres corrupt | Restore latest dump → restart novamem → cold-tier still has older vectors but new writes are coherent. |
 | Qdrant lost | Restart with empty Qdrant → `/v1/admin/reindex` (planned) re-embeds every warm entry from `content`. Slow but lossless. |
-| FalkorDB lost | Restart empty → next remember rebuilds edges via `linkVectorNeighbors`. Older entries lose graph-tier hits until they get re-linked. |
-| Whole cluster lost | Restore Postgres dump → Qdrant snapshots → FalkorDB AOF → start novamem. Verify with `GET /health`. |
+| Whole cluster lost | Restore Postgres dump → Qdrant snapshots → start novamem. Verify with `GET /health`. |
 
 ## Operational tip
 

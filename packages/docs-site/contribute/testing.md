@@ -35,7 +35,7 @@ src/
 ├── routes/mcp-sse.ts
 ├── routes/mcp-sse.test.ts       — real SSE handshake via fetch
 ├── ...
-└── test-fakes.ts                — in-memory FakeWarmStore / FakeColdStore / FakeGraphStore
+└── test-fakes.ts                — in-memory FakeWarmStore / FakeColdStore / FakeEmbedder
 ```
 
 The fakes implement the same interfaces as the real stores. Tests usually wire them into a `MemoryEngine` and exercise the full call path without a database.
@@ -105,10 +105,10 @@ Use sparingly. The fakes-backed inject path is faster and covers most logic.
 When a bug is fixed, add a test that fails on the bad version and passes on the fix. Keep the test commented to point at the bug:
 
 ```ts
-// Regression for the FalkorDB driver-decode error path
-// ("expected List or Null but was Path/Edge"). The engine catches the
-// throw and surfaces it as a degraded result.
-it("degrades when graph.neighbors throws", async () => {
+// Regression for the cold-tier error path. The engine catches the
+// throw and surfaces it as a degraded result instead of failing
+// the whole search.
+it("degrades when the cold store throws", async () => {
   // ...
 });
 ```

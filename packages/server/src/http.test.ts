@@ -15,7 +15,7 @@ function makeApp(
     withMetrics?: boolean;
   } = {},
 ) {
-  const { engine, warm, cold, graph, metrics } = makeEngine({
+  const { engine, warm, cold, metrics } = makeEngine({
     defaultEffectiveDays: 7,
     withMetrics: opts.withMetrics !== false,
   });
@@ -44,7 +44,7 @@ function makeApp(
     adminDashboard: opts.adminDashboard,
     betterAuth: fakeBA,
   });
-  return { app, warm, cold, graph, metrics };
+  return { app, warm, cold, metrics };
 }
 
 /** Mint a session-admin Bearer header directly via the fake warm store —
@@ -132,7 +132,7 @@ describe("http: health probes", () => {
     expect(r.statusCode).toBe(200);
     expect(r.json()).toEqual({
       ok: true,
-      deps: { warm: "ok", cold: "ok", graph: "ok", embedder: "ok" },
+      deps: { warm: "ok", cold: "ok", graph: "disabled", embedder: "ok" },
       pendingEmbeddings: null,
     });
   });
@@ -604,17 +604,17 @@ describe("http: /v1/admin/metrics", () => {
     expect(r.statusCode).toBe(404);
   });
 
-  it("graph_edges is null when graph store is unreachable", async () => {
-    const { app, graph, warm } = makeApp({});
+  it("graph_edges counts SQL relations (Phase 7: no graph service)", async () => {
+    const { app, warm } = makeApp({});
     const adminH = await adminAuth(warm);
-    graph.connected = false;
     const r = await app.inject({
       method: "GET",
       url: "/v1/admin/metrics",
       headers: adminH,
     });
     expect(r.statusCode).toBe(200);
-    expect(r.json().gauges.graph_edges).toBeNull();
+    expect(typeof r.json().gauges.graph_edges).toBe("number");
+    expect(r.json().gauges.graph_edges).toBe(warm.relations.length);
   });
 });
 

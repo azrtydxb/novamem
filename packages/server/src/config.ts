@@ -68,25 +68,6 @@ export const ConfigSchema = z
       /** Per-request Qdrant timeout in ms. */
       timeoutMs: z.coerce.number().int().positive().default(15_000),
     }),
-    graph: z
-      .object({
-        // NOT `z.coerce.boolean()`: that is JS truthiness, under which the
-        // *string* "false" (and "0", and "no") is `true`. Operators who
-        // set NOVAMEM_GRAPH_ENABLED=false got a fully enabled graph that
-        // then tried to reach redis://localhost:6379, marked every search
-        // `degraded`, and warn-spammed — the exact opposite of the
-        // documented behaviour. Parse env-style booleans explicitly, the
-        // way `admin.dashboard` below already did.
-        enabled: EnvBoolean.default(true),
-        url: z.string().optional(),
-        /** Per-query FalkorDB timeout in ms. */
-        queryTimeoutMs: z.coerce.number().int().positive().default(10_000),
-      })
-      .default({ enabled: true, queryTimeoutMs: 10_000 })
-      .refine((v) => !v.enabled || !!v.url, {
-        message: "graph.enabled = true requires graph.url (NOVAMEM_GRAPH_URL)",
-        path: ["url"],
-      }),
     embeddings: z.object({
       provider: z.enum(["openai-compatible", "local-transformers"]).default("local-transformers"),
       endpoint: z.string().optional(),
@@ -314,11 +295,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       url: env.NOVAMEM_COLD_URL ?? "http://localhost:6333",
       vectorSize: env.NOVAMEM_COLD_VECTOR_SIZE,
       timeoutMs: env.NOVAMEM_COLD_TIMEOUT_MS,
-    },
-    graph: {
-      enabled: env.NOVAMEM_GRAPH_ENABLED ?? "true",
-      url: env.NOVAMEM_GRAPH_URL ?? "redis://localhost:6379",
-      queryTimeoutMs: env.NOVAMEM_GRAPH_TIMEOUT_MS,
     },
     embeddings: {
       provider: env.NOVAMEM_EMBEDDINGS_PROVIDER,

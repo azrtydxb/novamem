@@ -5,7 +5,6 @@ import { ConfigSchema, loadConfig } from "./config.js";
 const baseEnv = {
   NOVAMEM_WARM_URL: "postgres://x@y:5432/z",
   NOVAMEM_COLD_URL: "http://qdrant:6333",
-  NOVAMEM_GRAPH_URL: "redis://falkordb:6379",
   // Schema default for auth.mode is "user" (safe-by-default), which
   // requires NOVAMEM_COOKIE_SECRET. Tests that exercise unrelated config
   // surfaces want the dev path; pin to none + supply a secret so they
@@ -181,32 +180,3 @@ describe("config: cookie secret (#13)", () => {
   });
 });
 
-describe("config: graph.enabled requires url", () => {
-  it("throws when graph.enabled but graph.url is missing", () => {
-    expect(() =>
-      ConfigSchema.parse({
-        service: {},
-        auth: { mode: "none" },
-        warm: { url: baseEnv.NOVAMEM_WARM_URL },
-        cold: { url: baseEnv.NOVAMEM_COLD_URL },
-        graph: { enabled: true }, // no url
-        embeddings: {},
-        decay: {},
-      }),
-    ).toThrow(/graph\.enabled/);
-  });
-
-  it("allows graph disabled with no url", () => {
-    const cfg = ConfigSchema.parse({
-      service: {},
-      auth: { mode: "none" },
-      warm: { url: baseEnv.NOVAMEM_WARM_URL },
-      cold: { url: baseEnv.NOVAMEM_COLD_URL },
-      graph: { enabled: false },
-      embeddings: {},
-      decay: {},
-      cookieSecret: TEST_COOKIE_SECRET,
-    });
-    expect(cfg.graph.enabled).toBe(false);
-  });
-});

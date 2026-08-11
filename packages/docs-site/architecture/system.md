@@ -23,7 +23,7 @@ flowchart TB
     subgraph stores["Storage"]
         PG[("Postgres<br/>warm + audit + auth")]
         QD[("Qdrant<br/>cold · vector")]
-        FK[("FalkorDB<br/>graph")]
+        REL[("memory_relations<br/>(Postgres)")]
     end
 
     DASH --> ROUTES
@@ -31,7 +31,7 @@ flowchart TB
     CLI --> ROUTES
     ENGINE --> PG
     ENGINE --> QD
-    ENGINE --> FK
+    ENGINE --> REL
     BA --> PG
 ```
 
@@ -43,16 +43,13 @@ sequenceDiagram
     participant S as Server (engine.search)
     participant W as Warm (Postgres FTS)
     participant K as Cold (Qdrant)
-    participant G as Graph (FalkorDB)
     C->>S: query, weights, scope
     par parallel signals
         S->>W: ftsSearch
         S->>K: vector cosine
-        S->>G: neighbours of recent hits
     end
     W-->>S: keyword hits
     K-->>S: cosine hits
-    G-->>S: graph hits
     S->>S: min-max normalise → weighted fuse
     S->>W: bumpHits (batched)
     S-->>C: top-K hits + per-signal subscores
@@ -68,7 +65,7 @@ flowchart LR
     C -- yes --> Y["{ id: existing, deduplicated: true }"]
     C -- no --> D[insert warm row<br/>+ FTS]
     D --> E[embed + upsert<br/>cold vector]
-    E --> F[link top-3 vector neighbours<br/>RELATES edges in graph]
+    E --> F["mark graph_pending_at<br/>reconciler links vector neighbours<br/>→ memory_relations (Postgres)"]
     F --> X["{ id: new ULID }"]
 ```
 
@@ -91,13 +88,13 @@ stateDiagram-v2
 
 ## Data tiering
 
-A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-indexed) until the decay loop demotes it to the **cold** tier (Qdrant, vector-only). A search hits all three signals in parallel (warm FTS keyword, cold cosine vector, graph neighbours) and fuses with `min-max-normalised weighted scoring`.
+A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-indexed) until the decay loop demotes it to the **cold** tier (Qdrant, vector-only). A search hits both signals in parallel (warm FTS keyword, cold cosine vector) and fuses with `min-max-normalised weighted scoring`. Adjacency queries are served separately by `/v1/neighbors` over `memory_relations`.
 
 - **Decay** — `effectiveDays(hits) = 7 × log₂(hits + 1)`. An entry idle for longer than its lifespan gets demoted. The decay loop runs every 6h by default; one bulk SQL UPDATE per loop tick.
 - **Promotion** — reactive: a search that hits a cold entry whose accumulated lifespan now exceeds the pre-hit idle gap re-promotes it to warm.
-- **Auto-linking** — every `remember()` finds the top-3 vector neighbours and writes `RELATES` edges to them in FalkorDB + a row in `memory_relations`. Populates the third search signal organically.
+- **Auto-linking** — every `remember()` marks the entry with a durable `graph_pending_at`; a reconciler drains the marker asynchronously, finding the top vector neighbours (`NOVAMEM_GRAPH_LINK_FANOUT`, `0` disables) and writing co-occurrence rows to `memory_relations`. Populates `/v1/neighbors` organically without blocking the write path.
 - **Worthiness gate** — `engine.shouldReject` runs before every insert: rejects content < 12 chars or matching the conversational-filler regex; sha256-of-content fast-path returns the existing id when an exact duplicate already lives in the same `(user, project)`. Bypassed by `force: true`.
-- **Dream cycle** — daily compaction pass. Walks every entry, queries qdrant for top-3 neighbours, merges duplicates at cosine ≥ 0.97 + token Jaccard ≥ 0.5; promotes A→B edges when the pair shares ≥3 graph neighbours (`relation: co_inferred`). Manual trigger at `POST /v1/dream-cycle`.
+- **Dream cycle** — daily compaction pass. Walks every entry, queries qdrant for top-3 neighbours, merges duplicates at cosine ≥ 0.97 + token Jaccard ≥ 0.5; promotes A→B edges in `memory_relations` when the pair shares ≥3 neighbours (`relation: co_inferred`). Manual trigger at `POST /v1/dream-cycle`.
 
 ## Ownership model
 
@@ -115,7 +112,7 @@ Enforced in three places:
   - User-wide: `novamem_u_<userId>_<namespace>` (the older unprefixed `novamem_<userId>_<namespace>` form is kept only as a read fallback for collections that pre-date the rename)
   - Project: `novamem_p_<projectId>_<namespace>`
   - The `u_` / `p_` prefixes guarantee user and project namespaces can't collide.
-- **Graph store** — every `Memory` node carries `user` + `project` properties. `addEdge`/`neighbors`/`removeAllForUser` filter on the appropriate one.
+- **Relations** — `memory_relations` edges join `memory_entries` rows, so the `/v1/neighbors` recursive CTE inherits the warm store's user / project scoping on every hop.
 
 ### Active project
 
@@ -160,7 +157,7 @@ Every memory entry carries:
 | `memory_entries` | novamem | content + user_id + optional project_id + provenance |
 | `memory_access` | novamem | hits + lastAccessed (per entry) |
 | `memory_fts` | novamem | tsvector shadow table |
-| `memory_relations` | novamem | edge audit log (graph store is authoritative) |
+| `memory_relations` | novamem | co-occurrence edges (bitemporal `valid_from`/`valid_to`); authoritative source for `/v1/neighbors` |
 | `cold_orphans` | novamem | failed cold-deletes; reaper retries |
 | `decay_runs` | novamem | per-loop summary |
 | `admin_audit_log` | novamem | every admin action |
@@ -201,9 +198,9 @@ The first migration (`0000_*.sql`) uses `CREATE … IF NOT EXISTS` so it's a no-
 
 One collection per (scope, namespace) pair. Collection names embed the scope id, so cross-scope queries are structurally impossible.
 
-### FalkorDB (graph)
+### Relations (`memory_relations` in Postgres)
 
-Single graph (`novamem`) with `Memory` nodes + `RELATES` edges. Node properties: `id`, `user`, `project`. Edge `relation` is `co_occurs` for vector-neighbour auto-links and `co_inferred` for dream-cycle edge promotion. The graph store is optional — when unreachable, search degrades to keyword + vector and reports `degraded: true`.
+Co-occurrence edges live in the bitemporal `memory_relations` table (`valid_from`/`valid_to`), written asynchronously after each memory behind a durable `graph_pending_at` marker drained by a reconciler. Edge `relation` is `co_occurs` for vector-neighbour auto-links and `co_inferred` for dream-cycle edge promotion. `/v1/neighbors` (and the `memory_neighbors` MCP tool) traverses them with a recursive CTE — undirected, depth 1–3, score = MAX over paths of the product of edge strengths. For wire compatibility, `/health` reports `deps.graph` as `"disabled"` permanently.
 
 ## Transports
 
@@ -234,7 +231,7 @@ Dark: `--bg: #0a0d12` · `--panel: #11151c` · `--subtle: #161b24` · `--ink: #e
 - `--accent` (primary action) — light `oklch(58% 0.15 250)` / dark `oklch(70% 0.16 250)`
 - `--warm` (warm-tier signal) — light `oklch(62% 0.16 35)` / dark `oklch(72% 0.17 35)`
 - `--cold` (cold-tier signal) — light `oklch(58% 0.13 220)` / dark `oklch(72% 0.14 220)`
-- `--graph` (graph-tier, ok status) — light `oklch(60% 0.16 165)` / dark `oklch(72% 0.16 165)`
+- `--graph` (relations / ok status) — light `oklch(60% 0.16 165)` / dark `oklch(72% 0.16 165)`
 - `--err` (error) — light `oklch(58% 0.20 25)` / dark `oklch(70% 0.20 25)`
 - `--warn` (degraded) — light `oklch(70% 0.16 80)` / dark `oklch(78% 0.16 80)`
 
@@ -257,7 +254,7 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - pnpm workspaces. `pnpm -r build` builds in dependency order (client → mcp → admin-ui → server).
 - The runtime Dockerfile drops privileges, ships only `dist/` + production deps, and declares `HEALTHCHECK`.
 - Default port 7778 on both host + container.
-- k3s manifests live under `deploy/k8s/` — single-replica StatefulSets for Postgres / Qdrant / FalkorDB on local-path PVCs, plus a `ClusterIP` Service for novamem fronted by a TLS-terminating Ingress (`deploy/k8s/ingress.yaml`). The ConfigMap pins `NOVAMEM_BASE_URL` to the public Ingress origin so Better Auth's trusted-origin check accepts the SPA.
+- k3s manifests live under `deploy/k8s/` — single-replica StatefulSets for Postgres / Qdrant on local-path PVCs, plus a `ClusterIP` Service for novamem fronted by a TLS-terminating Ingress (`deploy/k8s/ingress.yaml`). The ConfigMap pins `NOVAMEM_BASE_URL` to the public Ingress origin so Better Auth's trusted-origin check accepts the SPA.
 
 ## Things that aren't here yet
 

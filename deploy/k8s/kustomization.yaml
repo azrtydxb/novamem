@@ -5,6 +5,5 @@ resources:
   - namespace.yaml
   - postgres.yaml
   - qdrant.yaml
-  - falkordb.yaml
   - novamem.yaml
   - ingress.yaml

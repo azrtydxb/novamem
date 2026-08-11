@@ -31,8 +31,7 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 
 - [ ] Postgres backups enabled (pg_dump nightly + WAL archive for PITR if you need it). Test the restore.
 - [ ] Postgres `max_connections` ≥ `NOVAMEM_PG_POOL_MAX` × replica count + headroom.
-- [ ] Qdrant collections backed up (snapshots), or accept that they're rebuildable from warm-tier embeddings.
-- [ ] FalkorDB persistence enabled (Redis AOF / RDB) — graph state is recoverable from warm via reindex but downtime is unpleasant.
+- [ ] Qdrant collections backed up (snapshots), or accept that they're rebuildable from warm-tier embeddings. Co-occurrence edges live in the `memory_relations` table, so they are covered by the Postgres backup.
 
 ## Dashboard
 

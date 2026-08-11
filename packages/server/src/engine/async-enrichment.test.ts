@@ -1,9 +1,10 @@
 /**
- * Graph enrichment must not sit on the write path. FalkorDB is
- * single-threaded, so when the two enrichment queries were awaited,
- * every concurrent writer queued behind one graph thread — profiled at
- * ~179 ms mean per query during a bulk load, it capped ingest at ~3.5
- * captures/s regardless of client concurrency.
+ * Relation enrichment must not sit on the write path, and its debt
+ * marker must survive failures. Historically the enrichment stage wrote
+ * to FalkorDB (single-threaded; awaiting it capped ingest at ~3.5
+ * captures/s) — Phase 7 removed the graph service, so enrichment is now
+ * a cold-store neighbour lookup plus SQL relation upserts, still
+ * fire-and-forget behind the durable `graph_pending_at` marker.
  */
 import { describe, expect, it } from "vitest";
 
@@ -14,15 +15,17 @@ function quiet(b: ReturnType<typeof makeEngine>) {
   return b;
 }
 
-describe("async graph enrichment", () => {
-  it("returns the write before a slow graph finishes enrichment", async () => {
+describe("async relation enrichment", () => {
+  it("returns the write before a slow enrichment finishes", async () => {
     const b = quiet(makeEngine());
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
-    let entityCalls = 0;
-    b.graph.linkEntities = async () => {
-      entityCalls++;
-      await gate; // a graph stall must not stall the caller
+    let stalled = 0;
+    const orig = b.cold.search.bind(b.cold);
+    b.cold.search = async (args: Parameters<typeof orig>[0]) => {
+      stalled++;
+      await gate; // enrichment's neighbour lookup hangs; the write must not
+      return orig(args);
     };
 
     const t0 = Date.now();
@@ -33,61 +36,42 @@ describe("async graph enrichment", () => {
     const wallMs = Date.now() - t0;
 
     expect(r.id).toBeTruthy();
-    expect(wallMs).toBeLessThan(1_000); // write returned while graph hangs
+    expect(wallMs).toBeLessThan(1_000);
     release();
-    // Enrichment still ran in the background — poll, don't sleep-and-hope.
     const deadline = Date.now() + 2_000;
-    while (entityCalls === 0 && Date.now() < deadline) {
+    while (stalled === 0 && Date.now() < deadline) {
       await new Promise((r2) => setTimeout(r2, 10));
     }
-    expect(entityCalls).toBe(1);
+    expect(stalled).toBeGreaterThan(0);
   });
 
   it("keeps the debt marker when enrichment fails, and the reconciler drains it", async () => {
     const b = quiet(makeEngine());
+    // A first entry so the second has a neighbour and enrichment reaches
+    // the relation write.
+    await b.engine.remember("u1", { content: "alpha alpha alpha", force: true });
     let fail = true;
-    let entityCalls = 0;
-    b.graph.linkEntities = async () => {
-      entityCalls++;
-      if (fail) throw new Error("falkordb down");
+    const origRel = b.warm.addRelation.bind(b.warm);
+    b.warm.addRelation = async (...args: Parameters<typeof origRel>) => {
+      if (fail) throw new Error("relations insert failed");
+      return origRel(...args);
     };
-    const r = await b.engine.remember("u1", {
-      content: "the deploy target kube-vip-bench runs on NodePool7",
-      force: true,
-    });
-    // Wait for the write-time attempt to fail.
+    const r = await b.engine.remember("u1", { content: "alpha alpha beta", force: true });
+    // Wait for the write-time attempt to run and fail — the marker stays.
     const deadline = Date.now() + 2_000;
-    while (entityCalls === 0 && Date.now() < deadline) {
+    while ((await b.warm.countPendingEnrichment()) === 0 && Date.now() < deadline) {
       await new Promise((r2) => setTimeout(r2, 10));
     }
-    expect(await b.warm.countPendingEnrichment()).toBe(1);
+    expect(await b.warm.countPendingEnrichment()).toBeGreaterThanOrEqual(1);
 
     fail = false;
     const rec = await b.engine.reconcilePendingEnrichment({ batchSize: 10 });
-    expect(rec.enriched).toBe(1);
+    expect(rec.failed).toBe(0);
     expect(rec.pending).toBe(0);
     expect(await b.warm.countPendingEnrichment()).toBe(0);
     // The row is findable regardless — enrichment is an enhancement.
-    const s = await b.engine.search("u1", { query: "kube-vip-bench deploy target", k: 3 });
+    const s = await b.engine.search("u1", { query: "alpha beta", k: 3 });
     expect(s.results.some((x) => x.id === r.id)).toBe(true);
-  });
-
-  it("keeps the debt marker while the graph is disconnected (review bug in #179)", async () => {
-    const b = quiet(makeEngine({ graphConnected: false }));
-    const r = await b.engine.remember("u1", {
-      content: "the deploy target kube-vip-bench runs on NodePool7",
-      force: true,
-    });
-    expect(r.id).toBeTruthy();
-    // Give the write-time attempt time to run and fail.
-    for (let i = 0; i < 10; i++) await new Promise((r2) => setImmediate(r2));
-    // linkVectorNeighbors used to silently no-op here and the marker was
-    // cleared with zero graph writes performed. Now the attempt throws
-    // and the debt survives for the reconciler.
-    expect(await b.warm.countPendingEnrichment()).toBe(1);
-    const rec = await b.engine.reconcilePendingEnrichment({ batchSize: 10 });
-    expect(rec.failed).toBe(1);
-    expect(await b.warm.countPendingEnrichment()).toBe(1);
   });
 
   it("clears the debt marker after a successful write-time attempt", async () => {
@@ -105,9 +89,6 @@ describe("async graph enrichment", () => {
 
   it("skips enrichment entirely at fanout 0", async () => {
     const b = quiet(makeEngine({ graphLinkFanout: 0 }));
-    // Spy on the enrichment ENTRYPOINT: linkVectorNeighbors always begins
-    // with a cold.search, whereas linkEntities is conditional on entity
-    // extraction — asserting on it could false-pass.
     let coldSearches = 0;
     const orig = b.cold.search.bind(b.cold);
     b.cold.search = async (args: Parameters<typeof orig>[0]) => {
@@ -119,10 +100,8 @@ describe("async graph enrichment", () => {
       force: true,
     });
     expect(r.id).toBeTruthy();
-    // Yield a few macrotasks instead of a fixed sleep.
     for (let i = 0; i < 5; i++) await new Promise((r2) => setImmediate(r2));
     expect(coldSearches).toBe(0);
-    // And the write owes no enrichment debt at fanout 0.
     expect(await b.warm.countPendingEnrichment()).toBe(0);
   });
 });

@@ -142,7 +142,6 @@ Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` 
 
 ## Graph traversal (`memory_neighbors`)
 
-Walks the FalkorDB graph from a seed entry id and returns the same hit shape as `search`, scored by graph proximity. `depth` defaults to 1; **prefer 1**, larger depths are exponential and noisy.
 
 Edges come from two sources:
 

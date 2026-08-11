@@ -6,7 +6,6 @@
 import { createHash } from "node:crypto";
 
 import type { ColdStore } from "./cold-store.js";
-import type { GraphStore } from "./graph-store.js";
 import type { Embedder } from "./embeddings.js";
 import type { WarmStore } from "./warm-store/index.js";
 import { MemoryEngine } from "./engine/index.js";
@@ -323,6 +322,37 @@ export class FakeWarmStore {
         content: r.content,
         namespace: r.namespace,
       }));
+  }
+
+  async neighborsByRelations(
+    userId: string,
+    seedId: string,
+    depth: number,
+    limit: number,
+    projectId: string | null,
+    _asOfMs: number | null = null,
+  ): Promise<Array<{ id: string; score: number }>> {
+    const d = Math.max(1, Math.min(3, Math.trunc(depth)));
+    const edges = this.relations.filter(
+      (r) => r.userId === userId && (r.projectId ?? null) === (projectId ?? null),
+    );
+    const best = new Map<string, number>();
+    const walk = (from: string, score: number, hop: number, path: Set<string>) => {
+      if (hop > d) return;
+      for (const e of edges) {
+        const nxt = e.fromId === from ? e.toId : e.toId === from ? e.fromId : null;
+        if (!nxt || path.has(nxt)) continue;
+        const sc = score * e.strength;
+        if ((best.get(nxt) ?? -1) < sc) best.set(nxt, sc);
+        walk(nxt, sc, hop + 1, new Set([...path, nxt]));
+      }
+    };
+    walk(seedId, 1, 1, new Set([seedId]));
+    best.delete(seedId);
+    return [...best.entries()]
+      .map(([id, score]) => ({ id, score }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.max(1, Math.min(200, limit)));
   }
 
   async countPendingEnrichment(): Promise<number> {
@@ -1221,126 +1251,6 @@ export class FakeColdStore {
   }
 }
 
-export class FakeGraphStore {
-  // Edges keyed by `${userId}:${projectId ?? "_"}:${fromId}` so cross-
-  // user + cross-project traversal is structurally impossible — same
-  // approach as the real graph store's user + project node properties.
-  edges = new Map<
-    string,
-    Array<{ userId: string; projectId: string | null; to: string; strength: number }>
-  >();
-  connected = true;
-
-  private key(userId: string, projectId: string | null, id: string): string {
-    return `${userId}:${projectId ?? "_"}:${id}`;
-  }
-
-  /** memoryId -> lowercase entity names, mirroring the MENTIONS edges. */
-  entities = new Map<string, Set<string>>();
-
-  async linkEntities(
-    _userId: string,
-    memoryId: string,
-    names: string[],
-    _projectId: string | null = null,
-  ): Promise<void> {
-    if (!this.connected) return;
-    const set = this.entities.get(memoryId) ?? new Set<string>();
-    for (const n of names) set.add(n.toLowerCase());
-    this.entities.set(memoryId, set);
-  }
-
-  async memoriesByEntities(
-    _userId: string,
-    names: string[],
-    limit = 20,
-    _projectId: string | null = null,
-    excludeId?: string,
-  ): Promise<Array<{ id: string; score: number }>> {
-    if (!this.connected || names.length === 0) return [];
-    const wanted = names.map((n) => n.toLowerCase());
-    const out: Array<{ id: string; score: number }> = [];
-    for (const [id, set] of this.entities) {
-      if (id === excludeId) continue;
-      const shared = wanted.filter((n) => set.has(n)).length;
-      if (shared > 0) out.push({ id, score: Math.min(1, shared / Math.max(1, names.length)) });
-    }
-    return out.sort((a, b) => b.score - a.score).slice(0, limit);
-  }
-
-  isConnected(): boolean { return this.connected; }
-  async ping(): Promise<boolean> { return this.connected; }
-
-  async addEdge(
-    userId: string,
-    from: string,
-    to: string,
-    _relation: string,
-    strength = 1,
-    projectId: string | null = null,
-  ): Promise<void> {
-    const k = this.key(userId, projectId, from);
-    const cur = this.edges.get(k) ?? [];
-    cur.push({ userId, projectId, to, strength });
-    this.edges.set(k, cur);
-  }
-
-  async addEdgesBatch(
-    userId: string,
-    from: string,
-    edges: Array<{ to: string; relation: string; strength?: number }>,
-    projectId: string | null = null,
-  ): Promise<void> {
-    for (const e of edges) {
-      await this.addEdge(userId, from, e.to, e.relation, e.strength ?? 1, projectId);
-    }
-  }
-
-  async removeNode(userId: string, id: string): Promise<void> {
-    for (const k of [...this.edges.keys()]) {
-      if (k.startsWith(`${userId}:`) && k.endsWith(`:${id}`)) this.edges.delete(k);
-    }
-    for (const [k, list] of this.edges) {
-      this.edges.set(k, list.filter((e) => e.to !== id));
-    }
-  }
-
-  async neighbors(
-    userId: string,
-    seedId: string,
-    _depth = 1,
-    k = 10,
-    projectId: string | null = null,
-  ): Promise<Array<{ id: string; score: number }>> {
-    const cur = this.edges.get(this.key(userId, projectId, seedId)) ?? [];
-    return cur.slice(0, k).map((e) => ({ id: e.to, score: e.strength }));
-  }
-
-  async edgeCount(): Promise<number | null> {
-    if (!this.connected) return null;
-    let n = 0;
-    for (const list of this.edges.values()) n += list.length;
-    return n;
-  }
-
-  async removeAllForProject({
-    userId,
-    projectId,
-  }: {
-    userId: string;
-    projectId: string;
-  }): Promise<boolean> {
-    if (!this.connected) return false;
-    for (const [k, list] of [...this.edges.entries()]) {
-      // Edge-list keys are `user:project:from`. Only purge entries that
-      // match BOTH user and project — mirrors the real graph store's
-      // user+project scoping (issue #45).
-      if (k.startsWith(`${userId}:${projectId}:`)) this.edges.delete(k);
-      else this.edges.set(k, list.filter((e) => e.projectId !== projectId));
-    }
-    return true;
-  }
-}
 
 export class FakeEmbedder implements Embedder {
   readonly dimensions = 4;
@@ -1383,7 +1293,6 @@ export class FakeEmbedder implements Embedder {
  *  cast our fakes through `unknown`. The structural surface matches. */
 export const asWarm = (f: FakeWarmStore): WarmStore => f as unknown as WarmStore;
 export const asCold = (f: FakeColdStore): ColdStore => f as unknown as ColdStore;
-export const asGraph = (f: FakeGraphStore): GraphStore => f as unknown as GraphStore;
 
 export interface MakeEngineOpts {
   /** Absolute cosine floor for vector-only search candidates. Defaults
@@ -1393,8 +1302,6 @@ export interface MakeEngineOpts {
   maxContentChars?: number;
   /** Deployment-specific high-relevance terms for the worthiness scorer. */
   personalTerms?: readonly string[];
-  /** Set false to simulate a disconnected graph store. Default true. */
-  graphConnected?: boolean;
   /** Forwarded to `MemoryEngine`. */
   defaultEffectiveDays?: number;
   /** When true, builds a `MetricsCollector`, binds gauge sources to the
@@ -1418,7 +1325,6 @@ export interface MakeEngineResult {
   engine: MemoryEngine;
   warm: FakeWarmStore;
   cold: FakeColdStore;
-  graph: FakeGraphStore;
   embedder: FakeEmbedder;
   metrics: MetricsCollector | undefined;
 }
@@ -1428,15 +1334,13 @@ export interface MakeEngineResult {
 export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
   const warm = new FakeWarmStore();
   const cold = new FakeColdStore();
-  const graph = new FakeGraphStore();
-  graph.connected = opts.graphConnected ?? true;
   const embedder = new FakeEmbedder();
   const metrics = opts.withMetrics ? new MetricsCollector() : undefined;
   if (metrics) {
     metrics.bindGaugeSources({
       warmEntries: async () => [...warm.rows.values()].filter((r) => !r.cold).length,
       coldEntries: async () => [...warm.rows.values()].filter((r) => r.cold).length,
-      graphEdges: async () => graph.edgeCount(),
+      graphEdges: async () => warm.relations.length,
       orphansPending: async () => warm.coldOrphans.size,
       pendingEmbeddings: async () => warm.countPendingEmbedding(),
       pendingFacts: async () => warm.countPendingFacts(),
@@ -1447,7 +1351,6 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
     graphLinkFanout: opts.graphLinkFanout,
     warm: asWarm(warm),
     cold: asCold(cold),
-    graph: asGraph(graph),
     embedder,
     defaultEffectiveDays: opts.defaultEffectiveDays,
     metrics,
@@ -1462,5 +1365,5 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
     // by MakeEngineOpts above.
     extractor: opts.extractor as import("./engine/fact-extractor.js").FactExtractor | undefined,
   });
-  return { engine, warm, cold, graph, embedder, metrics };
+  return { engine, warm, cold, embedder, metrics };
 }

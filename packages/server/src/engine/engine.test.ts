@@ -10,9 +10,8 @@ import {
   makeEngine,
 } from "../test-fakes.js";
 
-function bench(opts: { graphConnected?: boolean } = {}) {
+function bench() {
   return makeEngine({
-    graphConnected: opts.graphConnected ?? true,
     defaultEffectiveDays: 7,
   });
 }
@@ -76,12 +75,6 @@ describe("engine.search", () => {
     expect(r.results[0]!.id).not.toBe(c.id);
   });
 
-  it("returns degraded:true when graph is disconnected", async () => {
-    const b = bench({ graphConnected: false });
-    await b.engine.remember("public", { content: "hello", force: true });
-    const r = await b.engine.search("public", { query: "hello" });
-    expect(r.degraded).toBe(true);
-  });
 
   it("filters keyword search by agentName when provided", async () => {
     const b = bench();
@@ -172,29 +165,26 @@ describe("engine.neighbors", () => {
     const b = bench();
     const a = await b.engine.remember("public", { content: "alpha", force: true });
     const c = await b.engine.remember("public", { content: "beta", force: true });
-    await b.graph.addEdge("public", a.id, c.id, "co_occurs", 0.8);
+    await b.warm.addRelation("public", a.id, c.id, "co_occurs", 0.8, null);
     const r = await b.engine.neighbors("public", { id: a.id });
     expect(r.results.map((x) => x.id)).toEqual([c.id]);
-    expect(r.results[0]!.signals.graph).toBeCloseTo(0.8);
+    // The explicit 0.8 relation plus the write path's own auto-link (its
+    // strength is the cosine similarity) both connect a↔c; the traversal
+    // scores MAX over paths, so assert the floor, not an exact value.
+    expect(r.results[0]!.signals.graph).toBeGreaterThanOrEqual(0.8);
     expect(r.degraded).toBe(false);
   });
 
-  it("returns degraded when graph is disconnected", async () => {
-    const b = bench({ graphConnected: false });
-    const r = await b.engine.neighbors("public", { id: "anything" });
-    expect(r.degraded).toBe(true);
-    expect(r.results).toEqual([]);
-  });
 
   // Regression for the FalkorDB driver-decode error path
   // ("expected List or Null but was Path/Edge"). The engine now
   // catches the throw and surfaces it as a degraded result instead of
   // letting it bubble to /v1/neighbors / the MCP tool.
-  it("degrades to {results:[], degraded:true} when graph.neighbors throws", async () => {
+  it("degrades to {results:[], degraded:true} when the relations query throws", async () => {
     const b = bench();
     const a = await b.engine.remember("public", { content: "alpha", force: true });
-    // Stub the FakeGraphStore to throw, mirroring a driver-decode error.
-    b.graph.neighbors = async () => {
+    // Stub the relations traversal to throw, mirroring a SQL failure.
+    b.warm.neighborsByRelations = async () => {
       throw new Error("Type mismatch: expected List or Null but was Path");
     };
     const r = await b.engine.neighbors("public", { id: a.id });
@@ -342,22 +332,19 @@ describe("engine.remember: graph auto-linking", () => {
     // Enrichment is fire-and-forget off the write path, so poll briefly.
     const deadline = Date.now() + 2_000;
     while (Date.now() < deadline) {
-      const edgeUp = (b.graph.edges.get(`public:_:${c.id}`) ?? []).some((e) => e.to === a.id);
-      const relUp = b.warm.relations.some((r) => r.fromId === c.id && r.toId === a.id);
-      if (edgeUp && relUp) break;
+      if (b.warm.relations.some((r) => r.fromId === c.id && r.toId === a.id)) break;
       await new Promise((r) => setTimeout(r, 10));
     }
-    const cEdges = b.graph.edges.get(`public:_:${c.id}`) ?? [];
-    expect(cEdges.some((e) => e.to === a.id)).toBe(true);
     expect(b.warm.relations.some((r) => r.fromId === c.id && r.toId === a.id)).toBe(true);
     // First insert had nothing to link to.
-    expect(b.graph.edges.get(`public:_:${a.id}`) ?? []).toEqual([]);
+    expect(b.warm.relations.some((r) => r.fromId === a.id)).toBe(false);
   });
 
   it("does not link to self", async () => {
     const b = bench();
     const a = await b.engine.remember("public", { content: "solitary", force: true });
-    expect(b.graph.edges.get(`public:_:${a.id}`) ?? []).toEqual([]);
+    // Allow the async enrichment attempt to run before asserting absence.
+    await new Promise((r) => setTimeout(r, 50));
     expect(b.warm.relations.find((r) => r.fromId === a.id && r.toId === a.id)).toBeUndefined();
   });
 });
@@ -400,7 +387,8 @@ describe("engine.health", () => {
     const b = bench();
     const h = await b.engine.health();
     expect(h.ok).toBe(true);
-    expect(h.deps).toEqual({ warm: "ok", cold: "ok", graph: "ok", embedder: "ok" });
+    // Phase 7: no graph service exists; the field is wire-compat only.
+    expect(h.deps).toEqual({ warm: "ok", cold: "ok", graph: "disabled", embedder: "ok" });
   });
 
   it("flags graph disabled when no graph store passed", async () => {
@@ -480,10 +468,9 @@ describe("engine: user isolation", () => {
     const c = await b.engine.remember("user_b", { content: "alpha alpha alpha", force: true });
     // c should not be linked to a even though their vectors are identical —
     // cold.search is user-scoped, so c sees no neighbours.
-    const aEdges = b.graph.edges.get(`user_a:${a.id}`) ?? [];
-    const cEdges = b.graph.edges.get(`user_b:${c.id}`) ?? [];
-    expect(aEdges).toEqual([]);
-    expect(cEdges).toEqual([]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(b.warm.relations.some((r) => r.fromId === a.id || r.toId === a.id)).toBe(false);
+    expect(b.warm.relations.some((r) => r.fromId === c.id || r.toId === c.id)).toBe(false);
   });
 
   it("user-scoped stats only count one user's entries", async () => {
@@ -827,37 +814,7 @@ describe("extractEntities", () => {
   });
 });
 
-describe("engine.search: entity bridging (graph signal independent of vectors)", () => {
-  it("surfaces a memory sharing a rare identifier with the query", async () => {
-    const { engine, embedder, graph } = bench();
-    // Make the two texts vector-DISSIMILAR so only the entity link can
-    // connect them — this is the case embeddings are worst at.
-    embedder.table.set("deployment target is the `novanas` cluster", [1, 0, 0, 0]);
-    embedder.table.set("what runs on `novanas`", [0, 0, 0, 1]);
-
-    const stored = await engine.remember("u1", {
-      content: "deployment target is the `novanas` cluster",
-      force: true,
-    });
-    expect(graph.entities.get(stored.id)?.has("novanas")).toBe(true);
-
-    const r = await engine.search("u1", { query: "what runs on `novanas`", k: 5 });
-    const hit = r.results.find((x) => x.id === stored.id);
-    expect(hit).toBeDefined();
-    expect(hit!.signals.graph).toBeGreaterThan(0);
-  });
-
-  it("contributes even when the vector tier returns nothing", async () => {
-    const { engine, cold, graph } = bench();
-    const stored = await engine.remember("u1", {
-      content: "the `novanas` cluster hosts the Qdrant instance",
-      force: true,
-    });
-    expect(graph.entities.get(stored.id)?.size).toBeGreaterThan(0);
-    // Vector tier down entirely.
-    cold.fail = true;
-    const r = await engine.search("u1", { query: "`novanas` Qdrant", k: 5 });
-    expect(r.degraded).toBe(true);
-    expect(r.results.some((x) => x.id === stored.id)).toBe(true);
-  });
-});
+// Phase 7: the entity-bridging tier was deleted with FalkorDB — the
+// winning calibration ran it at weight 0, and its candidate source
+// (linkEntities) is gone. Rare-identifier lookup is served by the
+// keyword tier's exact FTS match.

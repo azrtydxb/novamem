@@ -4,14 +4,13 @@
 #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
 #
 # This override hardens the dev-friendly base file for real deployments:
-#   - Datastore host ports (postgres 5432, qdrant 6333, falkordb 6379)
+#   - Datastore host ports (postgres 5432, qdrant 6333)
 #     are removed so those services stay reachable only on the internal
 #     compose network.
 #   - The novamem app port (7778) is NOT published here either: production
 #     deployments are expected to sit behind a TLS-terminating reverse
 #     proxy (Caddy, Traefik, nginx, …) on the same docker network. See
 #     docs/install/docker.md for the pattern.
-#   - falkordb is pinned to a stable release tag instead of `:edge`.
 #   - Session cookies are forced back to Secure-only.
 #
 # Anything not overridden here (volumes, healthchecks, env wiring) is
@@ -22,10 +21,6 @@ services:
     ports: !reset []
 
   qdrant:
-    ports: !reset []
-
-  falkordb:
-    image: falkordb/falkordb:v4.18.3
     ports: !reset []
 
   novamem:
