@@ -425,8 +425,17 @@ async function main() {
       if (f.scanned > 0) {
         app.log.info({ ...f }, "reconciled pending fact extractions");
       }
+      // Third twin: deferred graph enrichment. Last because it is the
+      // most deferrable — edges are a retrieval enhancement, not data.
+      const g = await engine.reconcilePendingEnrichment({
+        batchSize: cfg.embeddings.reconcileBatchSize,
+      });
+      if (g.scanned > 0) {
+        app.log.info({ ...g }, "reconciled pending graph enrichment");
+      }
     } catch (err) {
-      app.log.error({ err: (err as Error).message }, "reconciler error (embeddings or fact extraction)");
+      const e = err instanceof Error ? err : new Error(String(err));
+      app.log.error({ err: e }, "reconciler error (embeddings, fact extraction, or graph enrichment)");
     } finally {
       reconcileInFlight = false;
     }

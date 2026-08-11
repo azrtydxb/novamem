@@ -909,6 +909,7 @@ export class WarmStore {
      *  extraction schedule leaves work the reconciler finds, never a
      *  chunk whose facts are silently owed by nobody. */
     factsPendingAt?: Date | null;
+    graphPendingAt?: Date | null;
   }): Promise<string> {
     const id = ulid();
     // All three rows in one transaction. Previously these were three
@@ -938,6 +939,7 @@ export class WarmStore {
           ...(args.confidence !== undefined ? { confidence: args.confidence } : {}),
           contentHash: args.contentHash ?? null,
           factsPendingAt: args.factsPendingAt ?? null,
+          graphPendingAt: args.graphPendingAt ?? null,
         })
         .onConflictDoNothing()
         .returning({ id: schema.memoryEntries.id });
@@ -1674,6 +1676,49 @@ export class WarmStore {
       ...r,
       metadata: (r.metadata ?? null) as Record<string, unknown> | null,
     }));
+  }
+
+  /** Clear (or re-arm) an entry's pending-enrichment marker. */
+  async setGraphPendingAt(id: string, at: Date | null): Promise<void> {
+    await this.db
+      .update(schema.memoryEntries)
+      .set({ graphPendingAt: at })
+      .where(eq(schema.memoryEntries.id, id));
+  }
+
+  /** One bounded enrichment-reconciler batch, oldest-marked first. The
+   *  worker re-embeds content (the vector is not stored warm-side), so
+   *  only the fields linkVectorNeighbors needs come back. */
+  async listPendingEnrichment(limit: number): Promise<
+    Array<{
+      id: string;
+      userId: string;
+      projectId: string | null;
+      content: string;
+      namespace: string;
+    }>
+  > {
+    return this.db
+      .select({
+        id: schema.memoryEntries.id,
+        userId: schema.memoryEntries.userId,
+        projectId: schema.memoryEntries.projectId,
+        content: schema.memoryEntries.content,
+        namespace: schema.memoryEntries.namespace,
+      })
+      .from(schema.memoryEntries)
+      .where(isNotNull(schema.memoryEntries.graphPendingAt))
+      .orderBy(asc(schema.memoryEntries.graphPendingAt))
+      .limit(limit);
+  }
+
+  /** Size of the pending-enrichment backlog. */
+  async countPendingEnrichment(): Promise<number> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(schema.memoryEntries)
+      .where(isNotNull(schema.memoryEntries.graphPendingAt));
+    return Number(row?.n ?? 0);
   }
 
   /** Size of the pending-extraction backlog. A number that stops falling

@@ -832,6 +832,10 @@ export class MemoryEngine {
           // at 10,446 chunks in one incident — with nothing recording
           // that they were owed.
           factsPendingAt: this.extractor ? new Date() : null,
+          // Same in-transaction debt rule as facts_pending_at: this row
+          // owes vector-neighbour edges + entity links, and the debt must
+          // survive a crash between INSERT and the async attempt below.
+          graphPendingAt: this.graphLinkFanout > 0 && this.graph ? new Date() : null,
         }),
       );
       span.setAttribute("novamem.entry_id", id);
@@ -899,17 +903,24 @@ export class MemoryEngine {
         // cycle's edge promotion re-derives co-occurrence over time.
         if (this.graphLinkFanout > 0) {
           if (this.enrichInFlight >= MAX_ENRICH_IN_FLIGHT) {
+            // Deferred, not skipped: the row's graph_pending_at marker is
+            // already set, so the reconciler drains it later. The cap
+            // exists only so a bulk load cannot pile unbounded promises
+            // onto FalkorDB's single thread.
             this.maybeWarnEnrichSaturated();
           } else {
             this.enrichInFlight++;
             void traceAsync("MemoryEngine.linkVectorNeighbors", {
               "novamem.namespace": namespace,
               "novamem.graph_link_fanout": this.graphLinkFanout,
-            }, () => this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, req.content))
+            }, () => this.enrichEntry(userId, projectId, id, namespace, embedding, req.content))
               .catch((err: unknown) => {
+                // `err` is unknown by contract; a non-Error rejection must
+                // not blow up the handler that exists to absorb failures.
+                const message = err instanceof Error ? err.message : String(err);
                 this.logger.warn(
-                  { entryId: id, err: (err as Error).message },
-                  "async graph enrichment failed (entry persisted, no edges)",
+                  { entryId: id, err: message },
+                  "async graph enrichment failed (marker kept, reconciler will retry)",
                 );
               })
               .finally(() => {
@@ -1466,6 +1477,12 @@ export class MemoryEngine {
    *  the graph store (for traversal) and `memory_relations` (for audit /
    *  fallback if the graph is offline). Self-links are filtered. Errors are
    *  logged and swallowed — failures to enrich shouldn't fail the write. */
+  /** The enrichment work itself: vector-neighbour edges, entity links,
+   *  warm relations. THROWS on any failure — including a disconnected
+   *  graph — because the caller's contract is "clear the debt marker
+   *  only when every write actually happened". Swallowing here is what
+   *  let the marker be cleared with FalkorDB down (silently lost edges,
+   *  caught in review of #179). */
   private async linkVectorNeighbors(
     userId: string,
     projectId: string | null,
@@ -1474,73 +1491,53 @@ export class MemoryEngine {
     embedding: number[],
     content: string,
   ): Promise<void> {
-    try {
-      const hits = await traceAsync("ColdStore.search.linkVectorNeighbors", {
-        "novamem.namespace": namespace,
-        "novamem.k": this.graphLinkFanout + 1,
-      }, () => this.cold.search({
-        userId,
-        projectId,
-        namespace,
-        embedding,
-        k: this.graphLinkFanout + 1,
-      }));
-      const neighbours = hits.filter((h) => h.id !== id).slice(0, this.graphLinkFanout);
-      // One batched Cypher round-trip instead of fanout-many.
-      if (neighbours.length > 0 && this.graph?.isConnected()) {
-        try {
-          await traceAsync("GraphStore.addEdgesBatch", {
-            "novamem.neighbour_count": neighbours.length,
-          }, () => this.graph!.addEdgesBatch(
-            userId,
-            id,
-            neighbours.map((n) => ({ to: n.id, relation: "co_occurs", strength: n.score })),
-            projectId,
-          ));
-        } catch (err) {
-          this.logger.warn(
-            { entryId: id, err: (err as Error).message },
-            "graph addEdgesBatch failed",
-          );
-        }
-      }
-      // Entity edges. Independent of the vector neighbours above — this
-      // is what gives the graph tier a signal embeddings don't already
-      // have. Failures are non-fatal: enrichment must never fail a write.
-      if (this.graph?.isConnected()) {
-        const entities = extractEntities(content);
-        if (entities.length > 0) {
-          try {
-            await traceAsync("GraphStore.linkEntities", {
-              "novamem.entity_count": entities.length,
-            }, () => this.graph!.linkEntities(userId, id, entities, projectId));
-          } catch (err) {
-            this.logger.warn(
-              { entryId: id, err: (err as Error).message },
-              "graph linkEntities failed",
-            );
-          }
-        }
-      }
-      // Warm relations are per-row in SQL but issued in parallel so the
-      // span name "addRelation.batch" actually corresponds to one
-      // synchronous round of pool-concurrent INSERTs instead of N
-      // sequential round-trips. Each call hits a different
-      // (from,to,relation) row so the ON CONFLICT DO UPDATE upsert
-      // semantics are independent — no need for a transaction.
-      await traceAsync("WarmStore.addRelation.batch", {
-        "novamem.neighbour_count": neighbours.length,
-      }, () => Promise.all(
-        neighbours.map((n) =>
-          this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId),
-        ),
-      ));
-    } catch (err) {
-      this.logger.warn(
-        { entryId: id, err: (err as Error).message },
-        "linkVectorNeighbors failed",
-      );
+    if (!this.graph?.isConnected()) {
+      throw new Error("graph disconnected — enrichment deferred");
     }
+    const hits = await traceAsync("ColdStore.search.linkVectorNeighbors", {
+      "novamem.namespace": namespace,
+      "novamem.k": this.graphLinkFanout + 1,
+    }, () => this.cold.search({
+      userId,
+      projectId,
+      namespace,
+      embedding,
+      k: this.graphLinkFanout + 1,
+    }));
+    const neighbours = hits.filter((h) => h.id !== id).slice(0, this.graphLinkFanout);
+    // One batched Cypher round-trip instead of fanout-many.
+    if (neighbours.length > 0) {
+      await traceAsync("GraphStore.addEdgesBatch", {
+        "novamem.neighbour_count": neighbours.length,
+      }, () => this.graph!.addEdgesBatch(
+        userId,
+        id,
+        neighbours.map((n) => ({ to: n.id, relation: "co_occurs", strength: n.score })),
+        projectId,
+      ));
+    }
+    // Entity edges. Independent of the vector neighbours above — this
+    // is what gives the graph tier a signal embeddings don't already
+    // have.
+    const entities = extractEntities(content);
+    if (entities.length > 0) {
+      await traceAsync("GraphStore.linkEntities", {
+        "novamem.entity_count": entities.length,
+      }, () => this.graph!.linkEntities(userId, id, entities, projectId));
+    }
+    // Warm relations are per-row in SQL but issued in parallel so the
+    // span name "addRelation.batch" actually corresponds to one
+    // synchronous round of pool-concurrent INSERTs instead of N
+    // sequential round-trips. Each call hits a different
+    // (from,to,relation) row so the ON CONFLICT DO UPDATE upsert
+    // semantics are independent — no need for a transaction.
+    await traceAsync("WarmStore.addRelation.batch", {
+      "novamem.neighbour_count": neighbours.length,
+    }, () => Promise.all(
+      neighbours.map((n) =>
+        this.warm.addRelation(userId, id, n.id, "co_occurs", n.score, projectId),
+      ),
+    ));
   }
 
   async search(
@@ -3247,6 +3244,55 @@ export class MemoryEngine {
    *  With no extractor configured this is a no-op that leaves markers in
    *  place: the operator turned the feature off, and the debt should
    *  still be there if they turn it back on. */
+  /** Run enrichment for one entry and clear its debt marker — the
+   *  marker is cleared only after the graph writes succeeded, same
+   *  ordering rule as embedded_at. */
+  private async enrichEntry(
+    userId: string,
+    projectId: string | null,
+    id: string,
+    namespace: string,
+    embedding: number[],
+    content: string,
+  ): Promise<void> {
+    await this.linkVectorNeighbors(userId, projectId, id, namespace, embedding, content);
+    await this.warm.setGraphPendingAt(id, null);
+  }
+
+  /** Drain a batch of deferred graph enrichment (rows whose write-time
+   *  attempt was capped, failed, or died in a crash). Re-embeds content —
+   *  the vector is not stored warm-side and an extra 40 ms embed per
+   *  backlog row beats a Qdrant point-fetch API dependency. */
+  async reconcilePendingEnrichment(
+    opts: { batchSize?: number } = {},
+  ): Promise<{ scanned: number; enriched: number; failed: number; pending: number }> {
+    if (this.graphLinkFanout <= 0 || !this.graph) {
+      return { scanned: 0, enriched: 0, failed: 0, pending: 0 };
+    }
+    const rows = await this.warm.listPendingEnrichment(opts.batchSize ?? 50);
+    let enriched = 0;
+    let failed = 0;
+    // Sequential on purpose: the whole point of the queue is that
+    // FalkorDB is single-threaded — a parallel drain would recreate the
+    // pile-up the cap exists to prevent.
+    for (const row of rows) {
+      try {
+        const [embedding] = await this.embedder.embed(row.content, "document");
+        if (!embedding) throw new Error("embedder returned no vector");
+        await this.enrichEntry(row.userId, row.projectId, row.id, row.namespace, embedding, row.content);
+        enriched++;
+      } catch (err) {
+        failed++;
+        this.logger.warn(
+          { err: (err as Error).message, entryId: row.id },
+          "enrichment reconcile failed (marker kept, will retry)",
+        );
+      }
+    }
+    const pending = await this.warm.countPendingEnrichment();
+    return { scanned: rows.length, enriched, failed, pending };
+  }
+
   async reconcilePendingFacts(
     opts: { batchSize?: number } = {},
   ): Promise<{ scanned: number; extracted: number; failed: number; pending: number }> {

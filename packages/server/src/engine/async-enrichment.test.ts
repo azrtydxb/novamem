@@ -43,18 +43,86 @@ describe("async graph enrichment", () => {
     expect(entityCalls).toBe(1);
   });
 
-  it("skips enrichment entirely at fanout 0", async () => {
-    const b = quiet(makeEngine({ graphLinkFanout: 0 }));
+  it("keeps the debt marker when enrichment fails, and the reconciler drains it", async () => {
+    const b = quiet(makeEngine());
+    let fail = true;
     let entityCalls = 0;
     b.graph.linkEntities = async () => {
       entityCalls++;
+      if (fail) throw new Error("falkordb down");
+    };
+    const r = await b.engine.remember("u1", {
+      content: "the deploy target kube-vip-bench runs on NodePool7",
+      force: true,
+    });
+    // Wait for the write-time attempt to fail.
+    const deadline = Date.now() + 2_000;
+    while (entityCalls === 0 && Date.now() < deadline) {
+      await new Promise((r2) => setTimeout(r2, 10));
+    }
+    expect(await b.warm.countPendingEnrichment()).toBe(1);
+
+    fail = false;
+    const rec = await b.engine.reconcilePendingEnrichment({ batchSize: 10 });
+    expect(rec.enriched).toBe(1);
+    expect(rec.pending).toBe(0);
+    expect(await b.warm.countPendingEnrichment()).toBe(0);
+    // The row is findable regardless — enrichment is an enhancement.
+    const s = await b.engine.search("u1", { query: "kube-vip-bench deploy target", k: 3 });
+    expect(s.results.some((x) => x.id === r.id)).toBe(true);
+  });
+
+  it("keeps the debt marker while the graph is disconnected (review bug in #179)", async () => {
+    const b = quiet(makeEngine({ graphConnected: false }));
+    const r = await b.engine.remember("u1", {
+      content: "the deploy target kube-vip-bench runs on NodePool7",
+      force: true,
+    });
+    expect(r.id).toBeTruthy();
+    // Give the write-time attempt time to run and fail.
+    for (let i = 0; i < 10; i++) await new Promise((r2) => setImmediate(r2));
+    // linkVectorNeighbors used to silently no-op here and the marker was
+    // cleared with zero graph writes performed. Now the attempt throws
+    // and the debt survives for the reconciler.
+    expect(await b.warm.countPendingEnrichment()).toBe(1);
+    const rec = await b.engine.reconcilePendingEnrichment({ batchSize: 10 });
+    expect(rec.failed).toBe(1);
+    expect(await b.warm.countPendingEnrichment()).toBe(1);
+  });
+
+  it("clears the debt marker after a successful write-time attempt", async () => {
+    const b = quiet(makeEngine());
+    await b.engine.remember("u1", {
+      content: "the deploy target kube-vip-bench runs on NodePool7",
+      force: true,
+    });
+    const deadline = Date.now() + 2_000;
+    while ((await b.warm.countPendingEnrichment()) > 0 && Date.now() < deadline) {
+      await new Promise((r2) => setTimeout(r2, 10));
+    }
+    expect(await b.warm.countPendingEnrichment()).toBe(0);
+  });
+
+  it("skips enrichment entirely at fanout 0", async () => {
+    const b = quiet(makeEngine({ graphLinkFanout: 0 }));
+    // Spy on the enrichment ENTRYPOINT: linkVectorNeighbors always begins
+    // with a cold.search, whereas linkEntities is conditional on entity
+    // extraction — asserting on it could false-pass.
+    let coldSearches = 0;
+    const orig = b.cold.search.bind(b.cold);
+    b.cold.search = async (args: Parameters<typeof orig>[0]) => {
+      coldSearches++;
+      return orig(args);
     };
     const r = await b.engine.remember("u1", {
       content: "the archive tier retention is 30 days per the ops runbook",
       force: true,
     });
     expect(r.id).toBeTruthy();
-    await new Promise((r2) => setTimeout(r2, 100));
-    expect(entityCalls).toBe(0);
+    // Yield a few macrotasks instead of a fixed sleep.
+    for (let i = 0; i < 5; i++) await new Promise((r2) => setImmediate(r2));
+    expect(coldSearches).toBe(0);
+    // And the write owes no enrichment debt at fanout 0.
+    expect(await b.warm.countPendingEnrichment()).toBe(0);
   });
 });
