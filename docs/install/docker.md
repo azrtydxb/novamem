@@ -1,6 +1,5 @@
 # Docker Compose install
 
-Single-host all-in-one: novamem + Postgres + Qdrant + FalkorDB. The default for development and small deployments.
 
 ## Prerequisites
 
@@ -28,9 +27,8 @@ The compose file is the source of truth for ports + env wiring: [docker-compose.
 | `novamem` | built from `./Dockerfile` | **7778** |
 | `postgres` | `postgres:16-alpine` | 5432 |
 | `qdrant` | `qdrant/qdrant:v1.12.4` | 6333 |
-| `falkordb` | `falkordb/falkordb:edge` | 6379 |
 
-Volumes (named): `novamem_pg`, `novamem_qdrant`, `novamem_falkor`.
+Volumes (named): `novamem_pg`, `novamem_qdrant`.
 
 ## First-run bootstrap
 
@@ -63,7 +61,6 @@ To back up:
 
 ```bash
 docker compose exec postgres pg_dump -U novamem -d novamem -Fc > novamem-warm.dump
-docker compose exec falkordb redis-cli BGSAVE
 # Qdrant: take a snapshot per collection or tarball novamem_qdrant
 ```
 
@@ -98,18 +95,14 @@ For multi-node use [Kubernetes](kubernetes.md) instead.
 ## Production deploy
 
 `docker-compose.yaml` is intentionally dev-friendly: it publishes the
-Postgres (5432), Qdrant (6333), and FalkorDB (6379) ports on the host so
-you can poke at them from your laptop, and it pins FalkorDB to `:edge`.
 Neither is appropriate for a real deployment.
 
 The repo ships a `docker-compose.prod.yaml` override that:
 
-- Removes the host port publishes for postgres, qdrant, and falkordb so
   the datastores stay on the internal compose network only.
 - Removes the host port publish for the `novamem` app (port 7778) — the
   expectation is that a TLS-terminating reverse proxy on the same docker
   network forwards traffic to it.
-- Pins `falkordb/falkordb` to a stable release tag instead of `:edge`.
 
 Combine the two files when you bring the stack up:
 

@@ -30,27 +30,19 @@ Synaptic decay — the sweep that demotes warm entries past their effective life
 
 ## degraded
 
-Search response field set to `true` when one of the three retrieval tiers (warm / cold / graph) errored. The remaining tiers' results are still returned.
+Search response field set to `true` when one of the retrieval tiers (warm / cold) errored. The remaining tier's results are still returned.
 
 ## dream cycle
 
-The nightly compaction job: cosine + Jaccard dedup of similar entries, plus edge promotion for shared-neighbour clusters in the graph.
+The nightly compaction job: cosine + Jaccard dedup of similar entries, plus edge promotion for shared-neighbour clusters in `memory_relations`.
 
 ## entry
 
-A single memory record. Belongs to one user, optionally one project, lives in a namespace, has an embedding, has graph edges. Identified by a ULID.
-
-## FalkorDB
-
-The graph store. Redis-protocol on port 6379. Holds `Memory {id, user, project}` nodes and `RELATES {kind, strength}` edges.
-
-## graph tier
-
-The third retrieval signal in hybrid search — walks edges from any matching entry to its strongly-linked neighbours.
+A single memory record. Belongs to one user, optionally one project, lives in a namespace, has an embedding, has relation edges. Identified by a ULID.
 
 ## hybrid search
 
-Running keyword (FTS) + vector (cosine) + graph (neighbours) in parallel, normalising each score, then weighted-summing into one ranked list.
+Running keyword (FTS) + vector (cosine) in parallel, normalising each score, then weighted-summing into one ranked list. `weights.graph` / `weights.entity` are still accepted on the wire but contribute nothing.
 
 ## init / `novamem-init`
 
@@ -59,6 +51,10 @@ The CLI (`@azrtydxb/novamem-init`) that signs into a server, mints a bearer, det
 ## member
 
 A user who is in a project's `project_members` table. Members can read + write the project's memory but can't add / remove other members.
+
+## memory_relations
+
+The Postgres table holding co-occurrence edges between memories (bitemporal `valid_from`/`valid_to`, per-edge `kind` + `strength`). Written asynchronously after each memory behind a durable `graph_pending_at` marker; traversed by `/v1/neighbors` with a recursive CTE. Replaced the dedicated graph service in Phase 7.
 
 ## metadata
 
@@ -106,7 +102,7 @@ A `nm_…` bearer minted via the dashboard or `/v1/me/tokens`. Authorizes data-p
 
 ## tier
 
-One of warm / cold / graph. Each is a different storage layer; entries flow between them based on access patterns.
+One of warm / cold. Each is a different storage layer; entries flow between them based on access patterns.
 
 ## tsvector
 

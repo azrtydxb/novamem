@@ -140,16 +140,18 @@ Hard delete: removes warm row, FTS shadow, cold vector, and graph edges. There i
 
 Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` does); recall is non-mutating.
 
-## Graph traversal (`memory_neighbors`)
+## Neighbour traversal (`memory_neighbors`)
 
-Walks the FalkorDB graph from a seed entry id and returns the same hit shape as `search`, scored by graph proximity. `depth` defaults to 1; **prefer 1**, larger depths are exponential and noisy.
+Walks the relation edges around a seed entry (depth 1–3) and returns the
+connected memories, scored by edge strength along the path. Edges live in
+the server's Postgres `memory_relations` table and come from two sources:
 
-Edges come from two sources:
-
-- `co_occurs` — written automatically by `remember`, linking each new entry to its top-3 vector neighbours at write time
+- `co_occurs` — written asynchronously after each `remember`/`capture`,
+  linking the new entry to its top-3 vector neighbours (a durable marker
+  guarantees the edges arrive even if the write-time attempt fails)
 - `co_inferred` — written by the dream cycle when two entries share ≥3 common neighbours
 
-When the graph store is offline, the response carries `degraded: true` and the neighbour set is empty. Tell the user.
+If the relations query fails, the response carries `degraded: true` and the neighbour set is empty. Tell the user.
 
 ## Projects (sub-brains)
 
@@ -222,7 +224,7 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 | `{ id: <existing>, deduplicated: true }` | Exact-duplicate fast-path | Success — the existing entry was reinforced |
 | `{ id: <existing>, deduplicated: true, updated: true }` | `memory_capture` near-duplicate/refinement | Success — the existing active entry was rewritten in place |
 | `{ id: <new>, superseded: [<old>] }` | `memory_capture` contradiction | Success — the old active fact was marked superseded and hidden from normal recall |
-| `degraded: true` on `search`/`neighbors` | Graph store offline | Mention to the user; warm + cold paths still work |
+| `degraded: true` on `search`/`neighbors` | A backing tier failed (vector store, FTS, or the relations query) | Mention to the user; the tiers that answered still count |
 | `401` | Bearer missing / revoked | Don't retry; surface to the user |
 | `403 not a member` | Project exists but caller can't reach it | Distinct from `404`; the project name is right but you don't have access |
 | `404 no such project` | Project name/id doesn't resolve | Caller should `project_list` to see what's available |

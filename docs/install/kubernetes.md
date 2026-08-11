@@ -1,6 +1,5 @@
 # Kubernetes install
 
-Manifests under [`deploy/k8s/`](../../deploy/k8s) target k3s out of the box: single-replica StatefulSets for Postgres, Qdrant, and FalkorDB on `local-path` PVCs, a `ClusterIP` Service for the app, and a cert-manager-aware Ingress that terminates TLS in front of it. They work on any cluster with a default StorageClass and an Ingress controller.
 
 For a single host see [Docker Compose](docker.md). For local dev see [Manual](manual.md).
 
@@ -15,7 +14,6 @@ deploy/k8s/
 ├── secrets.yaml         # TEMPLATE — placeholders only, see "Secrets"
 ├── postgres.yaml        # StatefulSet · Service · PVC
 ├── qdrant.yaml          # StatefulSet · Service · PVC
-├── falkordb.yaml        # StatefulSet · Service · PVC
 ├── novamem.yaml         # ConfigMap · Deployment · ClusterIP Service
 └── ingress.yaml         # cert-manager Ingress with TLS
 ```
@@ -117,7 +115,6 @@ kubectl apply -k deploy/k8s/
 
 kubectl -n novamem rollout status statefulset/postgres
 kubectl -n novamem rollout status statefulset/qdrant
-kubectl -n novamem rollout status statefulset/falkordb
 kubectl -n novamem rollout status deploy/novamem
 ```
 
@@ -141,7 +138,6 @@ To back up:
 
 ```bash
 kubectl -n novamem exec sts/postgres -- pg_dump -U novamem -d novamem -Fc > novamem-warm.dump
-kubectl -n novamem exec sts/falkordb -- redis-cli BGSAVE
 # Qdrant: kubectl exec into the pod and POST /collections/<name>/snapshots
 ```
 

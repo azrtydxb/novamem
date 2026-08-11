@@ -14,11 +14,9 @@ import { buildHttpServer } from "../http.js";
 import { MemoryEngine } from "../engine/index.js";
 import {
   asCold,
-  asGraph,
   asWarm,
   FakeColdStore,
   FakeEmbedder,
-  FakeGraphStore,
   FakeWarmStore,
 } from "../test-fakes.js";
 
@@ -28,11 +26,9 @@ let baseUrl: string;
 beforeAll(async () => {
   const warm = new FakeWarmStore();
   const cold = new FakeColdStore();
-  const graph = new FakeGraphStore();
   const engine = new MemoryEngine({
     warm: asWarm(warm),
     cold: asCold(cold),
-    graph: asGraph(graph),
     embedder: new FakeEmbedder(),
     defaultEffectiveDays: 7,
   });

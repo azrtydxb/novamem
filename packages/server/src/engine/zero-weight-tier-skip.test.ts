@@ -56,28 +56,6 @@ describe("zero-weight tiers are not queried", () => {
     expect(ftsCalls).toBeGreaterThan(0);
   });
 
-  it("skips graph traversal when graph weight is 0, without marking the search degraded", async () => {
-    const b = quiet(makeEngine());
-    await seed(b);
-
-    let bridgeCalls = 0;
-    const realBridge = b.graph.memoriesByEntities.bind(b.graph);
-    b.graph.memoriesByEntities = async (...args: Parameters<typeof realBridge>) => {
-      bridgeCalls++;
-      return realBridge(...args);
-    };
-
-    const r = await b.engine.search("u1", {
-      // An IP literal so extractEntities yields a bridge entity — the
-      // skip must win even when there is genuinely something to look up.
-      query: "deploy target 192.168.10.121",
-      k: 5,
-      weights: { keyword: 0.25, vector: 0.75, graph: 0, recency: 0, entity: 0 },
-    });
-    expect(bridgeCalls).toBe(0);
-    // Asking for no graph signal is a configuration, not an outage.
-    expect(r.degraded).toBe(false);
-  });
 
   it("returns the same ranking with the tiers skipped as with them weighted 0", async () => {
     const b = quiet(makeEngine());

@@ -4,7 +4,6 @@
  */
 
 import { ColdStore } from "./cold-store.js";
-import { GraphStore } from "./graph-store.js";
 import { WarmStore } from "./warm-store/index.js";
 import { MemoryEngine } from "./engine/index.js";
 import { makeEmbedder, resolvePrefixesWithSource } from "./embeddings.js";
@@ -62,25 +61,6 @@ async function main() {
     timeoutMs: cfg.cold.timeoutMs,
   });
 
-  const graph =
-    cfg.graph.enabled && cfg.graph.url
-      ? new GraphStore({ url: cfg.graph.url, queryTimeoutMs: cfg.graph.queryTimeoutMs })
-      : null;
-  if (graph) {
-    // A failed connect is not fatal — search degrades to keyword+vector —
-    // but it must not be permanent either. GraphStore now schedules its
-    // own backoff reconnect, so a FalkorDB that is simply slower to boot
-    // than we are gets picked up without a restart.
-    const connected = await graph.connect();
-    if (!connected) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[novamem] graph store unavailable at start-up — search runs degraded " +
-          "(keyword + vector) and will reconnect automatically in the background.",
-      );
-    }
-  }
-
   const embedder = makeEmbedder({
     provider: cfg.embeddings.provider,
     endpoint: cfg.embeddings.endpoint,
@@ -131,7 +111,13 @@ async function main() {
       );
       return Number(r.rows[0]?.count ?? 0);
     },
-    graphEdges: async () => (graph ? graph.edgeCount() : null),
+    // Phase 7: edges live in SQL; count them there.
+    graphEdges: async () => {
+      const r = await warm.pool.query<{ count: string }>(
+        "SELECT COUNT(*)::text AS count FROM memory_relations",
+      );
+      return Number(r.rows[0]?.count ?? 0);
+    },
     orphansPending: async () => {
       const r = await warm.pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM cold_orphans",
@@ -224,7 +210,6 @@ async function main() {
   const engine = new MemoryEngine({
     warm,
     cold,
-    graph,
     embedder,
     defaultEffectiveDays: cfg.decay.defaultEffectiveDays,
     metrics,
@@ -340,7 +325,6 @@ async function main() {
   // loggers. Anything they log from this point on lands in the same
   // structured stream as request logs.
   engine.setLogger(app.log.child({ component: "engine" }));
-  if (graph) graph.setLogger(app.log.child({ component: "graph-store" }));
 
   // ─── Background timers ──────────────────────────────────────────────
   // Each timer wraps its async body in an `inFlight` reentrancy guard:
@@ -512,7 +496,6 @@ async function main() {
     // prevent the others from closing cleanly.
     const steps: Array<[string, () => Promise<unknown>]> = [
       ["http", () => app.close()],
-      ["graph", async () => graph?.close()],
       ["warm", () => warm.close()],
       ["tracing", () => shutdownTracing()],
     ];

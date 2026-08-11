@@ -30,7 +30,7 @@ Mixed and ranked by timestamp. Useful as a daily digest of "what did the agent l
 
 Visual neighbourhood of a seed entry. Pick an entry → it renders at the centre with strongly-linked neighbours arranged in a circle. Click any node to recenter on it; the inspector card on the right shows that node's content + signal scores.
 
-- **Depth slider** (1, 2, 3) — wider walks pull in further-out neighbours. The fix in v1.1.3 makes depth ≥ 2 reliable; the engine degrades to `degraded:true` if FalkorDB blips.
+- **Depth slider** (1, 2, 3) — wider walks pull in further-out neighbours. Served from the SQL relations table since Phase 7; the engine degrades to `degraded:true` only if the relations query itself fails.
 - **Edge weights** are the path-product of relationship strengths along the walk; nearer = stronger.
 
 The graph is built automatically: every new `remember` links to its top vector neighbours (configurable via `graphLinkFanout`, default 3). The nightly dream cycle promotes shared-neighbour edges.

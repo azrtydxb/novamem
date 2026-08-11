@@ -23,7 +23,6 @@ flowchart TB
     subgraph stores["Storage"]
         PG[("Postgres<br/>warm + audit + auth")]
         QD[("Qdrant<br/>cold · vector")]
-        FK[("FalkorDB<br/>graph")]
     end
 
     DASH --> ROUTES
@@ -43,7 +42,6 @@ sequenceDiagram
     participant S as Server (engine.search)
     participant W as Warm (Postgres FTS)
     participant K as Cold (Qdrant)
-    participant G as Graph (FalkorDB)
     C->>S: query, weights, scope
     par parallel signals
         S->>W: ftsSearch
@@ -95,7 +93,6 @@ A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-ind
 
 - **Decay** — `effectiveDays(hits) = 7 × log₂(hits + 1)`. An entry idle for longer than its lifespan gets demoted. The decay loop runs every 6h by default; one bulk SQL UPDATE per loop tick.
 - **Promotion** — reactive: a search that hits a cold entry whose accumulated lifespan now exceeds the pre-hit idle gap re-promotes it to warm.
-- **Auto-linking** — every `remember()` finds the top-3 vector neighbours and writes `RELATES` edges to them in FalkorDB + a row in `memory_relations`. Populates the third search signal organically.
 - **Worthiness gate** — `engine.shouldReject` runs before every insert: rejects content < 12 chars or matching the conversational-filler regex; sha256-of-content fast-path returns the existing id when an exact duplicate already lives in the same `(user, project)`. Bypassed by `force: true`.
 - **Dream cycle** — daily compaction pass. Walks every entry, queries qdrant for top-3 neighbours, merges duplicates at cosine ≥ 0.97 + token Jaccard ≥ 0.5; promotes A→B edges when the pair shares ≥3 graph neighbours (`relation: co_inferred`). Manual trigger at `POST /v1/dream-cycle`.
 
@@ -201,7 +198,6 @@ The first migration (`0000_*.sql`) uses `CREATE … IF NOT EXISTS` so it's a no-
 
 One collection per (scope, namespace) pair. Collection names embed the scope id, so cross-scope queries are structurally impossible.
 
-### FalkorDB (graph)
 
 Single graph (`novamem`) with `Memory` nodes + `RELATES` edges. Node properties: `id`, `user`, `project`. Edge `relation` is `co_occurs` for vector-neighbour auto-links and `co_inferred` for dream-cycle edge promotion. The graph store is optional — when unreachable, search degrades to keyword + vector and reports `degraded: true`.
 
@@ -257,7 +253,6 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - pnpm workspaces. `pnpm -r build` builds in dependency order (client → mcp → admin-ui → server).
 - The runtime Dockerfile drops privileges, ships only `dist/` + production deps, and declares `HEALTHCHECK`.
 - Default port 7778 on both host + container.
-- k3s manifests live under `deploy/k8s/` — single-replica StatefulSets for Postgres / Qdrant / FalkorDB on local-path PVCs, plus a `ClusterIP` Service for novamem fronted by a TLS-terminating Ingress (`deploy/k8s/ingress.yaml`). The ConfigMap pins `NOVAMEM_BASE_URL` to the public Ingress origin so Better Auth's trusted-origin check accepts the SPA.
 
 ## Things that aren't here yet
 

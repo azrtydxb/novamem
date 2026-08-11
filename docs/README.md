@@ -12,7 +12,6 @@ Tiered long-term memory for AI agents — keyword + vector + graph hybrid search
 
 ## Install
 
-- [Manual](install/manual.md) — pnpm + Postgres + Qdrant + FalkorDB on your own host
 - [Docker Compose](install/docker.md) — single-host all-in-one, recommended for development and small deployments
 - [Kubernetes](install/kubernetes.md) — k3s manifests under `deploy/k8s/`, single-replica StatefulSets
 

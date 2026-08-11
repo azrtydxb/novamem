@@ -21,11 +21,9 @@ import { buildHttpServer } from "../http.js";
 import { MemoryEngine } from "../engine/index.js";
 import {
   asCold,
-  asGraph,
   asWarm,
   FakeColdStore,
   FakeEmbedder,
-  FakeGraphStore,
   FakeWarmStore,
 } from "../test-fakes.js";
 
@@ -39,11 +37,9 @@ beforeAll(async () => {
   process.env.NOVAMEM_SSE_KEEPALIVE_MS = "100";
   const warm = new FakeWarmStore();
   const cold = new FakeColdStore();
-  const graph = new FakeGraphStore();
   const engine = new MemoryEngine({
     warm: asWarm(warm),
     cold: asCold(cold),
-    graph: asGraph(graph),
     embedder: new FakeEmbedder(),
     defaultEffectiveDays: 7,
   });
@@ -154,11 +150,9 @@ describe("mcp-sse: session-owner check on POST /mcp/messages (issue #57)", () =>
   it("returns 403 when user B posts to user A's sessionId", async () => {
     const warm = new FakeWarmStore();
     const cold = new FakeColdStore();
-    const graph = new FakeGraphStore();
     const engine = new MemoryEngine({
       warm: asWarm(warm),
       cold: asCold(cold),
-      graph: asGraph(graph),
       embedder: new FakeEmbedder(),
       defaultEffectiveDays: 7,
     });

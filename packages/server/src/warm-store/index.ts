@@ -1758,6 +1758,57 @@ export class WarmStore {
     return Number(row?.n ?? 0);
   }
 
+  /** Graph-style neighbourhood traversal over `memory_relations` —
+   *  Phase 7: this is what FalkorDB used to answer. Undirected, depth
+   *  1..3, score = MAX over paths of the product of edge strengths
+   *  (identical semantics to the old Cypher: depth-1 reduces to
+   *  MAX(strength)). Bitemporal: with `asOfMs`, only edges valid at that
+   *  instant are followed; otherwise only currently-valid edges
+   *  (valid_to IS NULL) are. Scope: edges are stored per (user,
+   *  project); `projectId` null = user-global. */
+  async neighborsByRelations(
+    userId: string,
+    seedId: string,
+    depth: number,
+    limit: number,
+    projectId: string | null,
+    asOfMs: number | null = null,
+  ): Promise<Array<{ id: string; score: number }>> {
+    const d = Math.max(1, Math.min(3, Math.trunc(depth)));
+    const lim = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const validity = asOfMs === null
+      ? sql`valid_to IS NULL`
+      : sql`valid_from <= to_timestamp(${asOfMs / 1000}) AND (valid_to IS NULL OR valid_to >= to_timestamp(${asOfMs / 1000}))`;
+    const scope = projectId === null ? sql`project_id IS NULL` : sql`project_id = ${projectId}`;
+    const res = await this.db.execute(sql`
+      WITH RECURSIVE edges AS (
+        SELECT from_id, to_id, strength FROM memory_relations
+        WHERE user_id = ${userId} AND ${scope} AND ${validity}
+        UNION ALL
+        SELECT to_id AS from_id, from_id AS to_id, strength FROM memory_relations
+        WHERE user_id = ${userId} AND ${scope} AND ${validity}
+      ), walk AS (
+        SELECT e.to_id AS id, e.strength::float8 AS score, 1 AS hop,
+               ARRAY[${seedId}::text, e.to_id] AS path
+        FROM edges e WHERE e.from_id = ${seedId}
+        UNION ALL
+        SELECT e.to_id, (w.score * e.strength)::float8, w.hop + 1,
+               w.path || e.to_id
+        FROM walk w JOIN edges e ON e.from_id = w.id
+        WHERE w.hop < ${d} AND NOT e.to_id = ANY(w.path)
+      )
+      SELECT id, MAX(score) AS score FROM walk
+      WHERE id <> ${seedId}
+      GROUP BY id
+      ORDER BY score DESC
+      LIMIT ${lim}
+    `);
+    return (res.rows as Array<Record<string, unknown>>).map((r) => ({
+      id: r.id as string,
+      score: Number(r.score),
+    }));
+  }
+
   async ping(): Promise<boolean> {
     try {
       await this.db.execute(sql`SELECT 1`);

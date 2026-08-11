@@ -4,7 +4,7 @@ What novamem does, when to use each tool, what the gates and decay loops mean fo
 
 ## Mental model
 
-A novamem instance holds **memory entries**. Every entry belongs to a single user. An entry can additionally belong to a **project** (a sub-brain) which can be shared with other users. Each entry lives in a **tier** — warm or cold — and each search runs three signals (keyword, vector, graph) in parallel.
+A novamem instance holds **memory entries**. Every entry belongs to a single user. An entry can additionally belong to a **project** (a sub-brain) which can be shared with other users. Each entry lives in a **tier** — warm or cold — and each search runs two signals (keyword, vector) in parallel.
 
 ```mermaid
 flowchart LR
@@ -23,21 +23,20 @@ A user-global entry is invisible to anyone else, period. A project entry is visi
 
 ## Searching (`memory_search`)
 
-Hybrid search runs **keyword (FTS)** + **vector (cosine)** + **graph (neighbour)** in parallel and fuses the three with weighted scoring:
+Hybrid search runs **keyword (FTS)** + **vector (cosine)** in parallel and fuses the two with weighted scoring:
 
 | Default weight | Signal | Best for |
 |---|---|---|
 | 0.6 | vector | concept-level questions, paraphrases |
 | 0.3 | keyword | literal symbol / id / file / hash matches |
-| 0.1 | graph | "what's adjacent to X?" once you have a seed |
 
-Override weights when a default doesn't fit the question:
+(`weights.graph` / `weights.entity` are still accepted but contribute nothing.) Override weights when a default doesn't fit the question:
 
 | Need | `weights` |
 |---|---|
 | Exact id / file path / commit hash | `{ keyword: 1, vector: 0 }` |
 | Pure semantic ("things like X" with no shared tokens) | `{ vector: 1, keyword: 0 }` |
-| Neighbour-driven recall around a known entry | `{ graph: 1 }` |
+| Neighbour-driven recall around a known entry | use [`memory_neighbors`](#graph-traversal-memory_neighbors) |
 
 Hits below \~0.4 are misses — treat them as "nothing relevant" rather than chasing low-confidence matches.
 
@@ -104,11 +103,11 @@ Set these on `remember` (and `update`) when known:
 
 ## Updating (`memory_update`)
 
-Facts evolve. When the user says "I now live in Singapore", search for the existing "lives in" memory and call `memory_update` instead of `forget` + `remember`. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
+Facts evolve. When the user says "I now live in Singapore", search for the existing "lives in" memory and call `memory_update` instead of `forget` + `remember`. Update preserves the entry's id, hit count, and relation edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
 
 ## Forgetting (`memory_forget`)
 
-Hard delete: removes warm row, FTS shadow, cold vector, and graph edges. There is no undo. Use when:
+Hard delete: removes warm row, FTS shadow, cold vector, and relation edges. There is no undo. Use when:
 
 - The user explicitly asks to forget
 - An entry is wrong and not just outdated (use `update` for outdated)
@@ -122,14 +121,14 @@ Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` 
 
 ## Graph traversal (`memory_neighbors`)
 
-Walks the FalkorDB graph from a seed entry id and returns the same hit shape as `search`, scored by graph proximity. `depth` defaults to 1; **prefer 1**, larger depths are exponential and noisy.
+Walks the co-occurrence edges in the `memory_relations` table (a recursive CTE in Postgres — undirected, depth 1–3, score = MAX over paths of the product of edge strengths) from a seed entry id and returns the same hit shape as `search`. `depth` defaults to 1; **prefer 1**, larger depths are exponential and noisy.
 
 Edges come from two sources:
 
-- `co_occurs` — written automatically by `remember`, linking each new entry to its top-3 vector neighbours at write time
+- `co_occurs` — written asynchronously after each `remember`, linking the new entry to its top vector neighbours
 - `co_inferred` — written by the dream cycle when two entries share ≥3 common neighbours
 
-When the graph store is offline, the response carries `degraded: true` and the neighbour set is empty. Tell the user.
+Edges are written behind a durable pending marker, so a neighbour query immediately after a `remember` may not see the newest edges yet — they arrive once the reconciler drains.
 
 ## Projects (sub-brains)
 
@@ -141,7 +140,7 @@ The seven `project_*` tools cover the full lifecycle:
 |---|---|---|
 | `project_list` | any user | list projects the caller owns or is a member of |
 | `project_create` | any user | create a new project; the caller becomes its owner. Returns the assigned ULID |
-| `project_delete` | owner only | delete the project and **every** memory entry, vector, and graph node in it. No undo |
+| `project_delete` | owner only | delete the project and **every** memory entry, vector, and relation edge in it. No undo |
 | `project_share` | owner only | add another user as a member by their **exact email address**. Member can read and write |
 | `project_unshare` | owner only | remove a member. The owner cannot unshare themselves — `project_delete` instead |
 | `project_activate` | any user | set the caller's active project (server-side per-user state) |
@@ -185,8 +184,8 @@ You don't need to manage this. Just know that frequently-relevant entries don't 
 
 A daily compaction pass — also triggerable on demand via `POST /v1/dream-cycle` — does two things:
 
-1. **Dedup-merge** — for each entry, query Qdrant for top-3 vector neighbours; merge a pair when **cosine ≥ 0.97 AND token-set Jaccard ≥ 0.5**. Both required so contradictions like "lives in X" / "lives in Y" don't collapse. Picks canonical by hit count (oldest tiebreak), redirects graph edges, sums hits, deletes the loser everywhere.
-2. **Edge promotion** — when two entries share ≥3 graph neighbours in common, add a direct A→B edge with `relation: "co_inferred"`. Tagged distinctly from `co_occurs` so search ranking can dial it back.
+1. **Dedup-merge** — for each entry, query Qdrant for top-3 vector neighbours; merge a pair when **cosine ≥ 0.97 AND token-set Jaccard ≥ 0.5**. Both required so contradictions like "lives in X" / "lives in Y" don't collapse. Picks canonical by hit count (oldest tiebreak), redirects relation edges, sums hits, deletes the loser everywhere.
+2. **Edge promotion** — when two entries share ≥3 neighbours in common in `memory_relations`, add a direct A→B edge with `relation: "co_inferred"`. Tagged distinctly from `co_occurs` so ranking can dial it back.
 
 Response: `{ walked, merged, edgesPromoted, durationMs }`.
 
@@ -200,7 +199,7 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 |---|---|---|
 | `{ id: null, rejected: <reason> }` | Worthiness gate | Surface the reason; retry with `force: true` only if the user asked |
 | `{ id: <existing>, deduplicated: true }` | Exact-duplicate fast-path | Success — the existing entry was reinforced |
-| `degraded: true` on `search`/`neighbors` | Graph store offline | Mention to the user; warm + cold paths still work |
+| `degraded: true` on `search` | A retrieval tier (usually Qdrant) errored | Mention to the user; the remaining tier's results still work |
 | `401` | Bearer missing / revoked | Don't retry; surface to the user |
 | `403 not a member` | Project exists but caller can't reach it | Distinct from `404`; the project name is right but you don't have access |
 | `404 no such project` | Project name/id doesn't resolve | Caller should `project_list` to see what's available |

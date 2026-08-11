@@ -19,7 +19,7 @@ This is the long-form documentation. For the marketing landing page see [novamem
 
 | Section | Goes deep on |
 |---|---|
-| **Install** | Docker Compose env reference, Kubernetes manifest walkthrough, manual Postgres + Qdrant + FalkorDB setup |
+| **Install** | Docker Compose env reference, Kubernetes manifest walkthrough, manual Postgres + Qdrant setup |
 | **Connect agents** | The `npx @azrtydxb/novamem-init` CLI in detail; per-host (Claude Code, Desktop, ChatGPT, Cursor, Cline, Continue, Kilo, others); custom HTTP integration |
 | **Dashboard** | Sign-in & roles, every page tour, projects + sharing, tenant + user admin, API tokens |
 | **Architecture** | System shape, tiered storage, hybrid search internals, worthiness gate + dedup, decay maths + dream cycle, multi-tenancy |
@@ -33,8 +33,8 @@ novamem is a single Fastify server that holds memory entries for AI agents and e
 
 - **Warm tier** — Postgres full-text search, low-latency hot path
 - **Cold tier** — Qdrant vector embeddings, semantic recall over older entries
-- **Graph tier** — FalkorDB edges between related memories, surfaces adjacent context
+- **Relations** — co-occurrence edges in Postgres (`memory_relations`), traversed by `/v1/neighbors`
 
-Every search runs all three signals in parallel and fuses them into one ranked list. Per-user isolation is the default; **projects** are sub-brains that can be shared with other users for team workflows.
+Search fuses two signals — Postgres full-text keyword match and Qdrant vector similarity — with an optional cross-encoder rerank; adjacency between memories is served separately by `/v1/neighbors` over the `memory_relations` table.
 
 The same code runs on a laptop (Docker Compose, single user) or as a multi-tenant deployment on Kubernetes.

@@ -30,18 +30,6 @@ services:
       timeout: 5s
       retries: 10
 
-  falkordb:
-    image: falkordb/falkordb:edge
-    ports:
-      - "6379:6379"
-    volumes:
-      - novamem_falkor:/data
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   novamem:
     build: .
     depends_on:
@@ -54,12 +42,9 @@ services:
       # disabled until the app was restarted.
       qdrant:
         condition: service_healthy
-      falkordb:
-        condition: service_healthy
     environment:
       NOVAMEM_WARM_URL: postgres://novamem:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/novamem
       NOVAMEM_COLD_URL: http://qdrant:6333
-      NOVAMEM_GRAPH_URL: redis://falkordb:6379
       NOVAMEM_EMBEDDINGS_PROVIDER: local-transformers
       NOVAMEM_AUTH_MODE: ${NOVAMEM_AUTH_MODE:-user}
       NOVAMEM_ADMIN_DASHBOARD: ${NOVAMEM_ADMIN_DASHBOARD:-1}

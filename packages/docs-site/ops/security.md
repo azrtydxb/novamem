@@ -42,7 +42,7 @@ If you're running novamem with real data:
 - [ ] Unset `NOVAMEM_INSECURE_COOKIES` (or set to `0`). Cookies are then `Secure` and require HTTPS.
 - [ ] Restrict CORS via `NOVAMEM_CORS_ORIGINS` (comma-separated allowlist; default is same-origin only). `*` re-enables permissive behaviour — don't use it in production.
 - [ ] Run the server behind a TLS-terminating reverse proxy or LoadBalancer with a real cert. `Authorization: Bearer …` and the session cookie over plain HTTP are plaintext.
-- [ ] Do **not** expose Postgres / Qdrant / FalkorDB on host ports in production. The bundled `docker-compose.yaml` does this for local dev convenience; remove the `ports:` blocks for those services in production compose files.
+- [ ] Do **not** expose Postgres / Qdrant on host ports in production. The bundled `docker-compose.yaml` does this for local dev convenience; remove the `ports:` blocks for those services in production compose files.
 - [ ] Change the Postgres password (the bundled `docker-compose.yaml` uses `novamem` as the default — fine for dev, dangerous in prod).
 - [ ] Configure log shipping. Pino emits JSON to stdout; `Authorization`, `password`, and created token values are redacted via `redact:` config.
 

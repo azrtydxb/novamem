@@ -17,7 +17,6 @@ data:
   # NOVAMEM_WARM_URL has moved to the Secret (it embeds the Postgres
   # password). See secrets.yaml.
   NOVAMEM_COLD_URL: "http://qdrant.novamem.svc.cluster.local:6333"
-  NOVAMEM_GRAPH_URL: "redis://falkordb.novamem.svc.cluster.local:6379"
   # TLS is terminated at the Ingress (see ingress.yaml), so cookies must
   # carry the Secure flag. Leave at "0" in production.
   NOVAMEM_INSECURE_COOKIES: "0"

@@ -25,13 +25,12 @@ pnpm install
 The cleanest path is to run only the datastores via Compose, and run novamem from source:
 
 ```bash
-# Start just postgres + qdrant + falkordb
-docker compose up -d postgres qdrant falkordb
+# Start just postgres + qdrant
+docker compose up -d postgres qdrant
 
 # Set env vars for the source-run server
 export NOVAMEM_WARM_URL=postgres://novamem:novamem@localhost:5432/novamem
 export NOVAMEM_COLD_URL=http://localhost:6333
-export NOVAMEM_GRAPH_URL=redis://localhost:6379
 export NOVAMEM_COOKIE_SECRET=$(openssl rand -hex 32)
 export NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 12)
 export NOVAMEM_BOOTSTRAP_ADMIN_EMAIL=dev@local
@@ -97,7 +96,6 @@ docker build -t novamem:dev .
 docker run --rm -p 7778:7778 \
   -e NOVAMEM_WARM_URL=postgres://novamem:novamem@host.docker.internal:5432/novamem \
   -e NOVAMEM_COLD_URL=http://host.docker.internal:6333 \
-  -e NOVAMEM_GRAPH_URL=redis://host.docker.internal:6379 \
   -e NOVAMEM_COOKIE_SECRET=dev \
   -e NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=dev \
   novamem:dev

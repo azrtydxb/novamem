@@ -38,7 +38,7 @@ NovaMem-owned project, token, lifecycle, and admin routes write `admin_audit_log
 - One server replica handles many users; the bottleneck is Postgres + Qdrant, not NovaMem itself.
 - HA: 2+ replicas behind a Service. Sessions are DB-backed so any replica handles any cookie.
 - Cold-tier collection count grows with projects × namespaces. Qdrant handles thousands cheaply; tens of thousands need bigger nodes.
-- Back up Postgres — it is the source of truth. Qdrant + FalkorDB are reconstructible from warm data once a reindex workflow is added.
+- Back up Postgres — it is the source of truth, including the `memory_relations` co-occurrence edges. Qdrant is reconstructible from warm data once a reindex workflow is added.
 
 ## See also
 

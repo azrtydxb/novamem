@@ -8,7 +8,6 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, gte, inArray, isNull, or } from "drizzle-orm";
 
 import { ColdStore } from "../cold-store.js";
-import { GraphStore } from "../graph-store.js";
 import { WarmStore } from "../warm-store/index.js";
 import type { Embedder } from "../embeddings.js";
 import type { MetricsCollector, TokenIdentity } from "../admin/metrics.js";
@@ -437,7 +436,6 @@ export interface EngineLogger {
 export interface EngineConfig {
   warm: WarmStore;
   cold: ColdStore;
-  graph: GraphStore | null;
   embedder: Embedder;
   /** Default decay schedule (in days). Used as the base when `effectiveDays`
    *  isn't overridden per call. */
@@ -489,7 +487,6 @@ export interface EngineConfig {
 export class MemoryEngine {
   private readonly warm: WarmStore;
   private readonly cold: ColdStore;
-  private readonly graph: GraphStore | null;
   private readonly embedder: Embedder;
   private readonly defaultDecayDays: number;
   private logger: EngineLogger;
@@ -524,7 +521,6 @@ export class MemoryEngine {
   constructor(cfg: EngineConfig) {
     this.warm = cfg.warm;
     this.cold = cfg.cold;
-    this.graph = cfg.graph;
     this.embedder = cfg.embedder;
     this.defaultDecayDays = cfg.defaultEffectiveDays ?? 7;
     // Default-to-console fallback. The cast is safe: console.warn /
@@ -836,7 +832,7 @@ export class MemoryEngine {
           // Same in-transaction debt rule as facts_pending_at: this row
           // owes vector-neighbour edges + entity links, and the debt must
           // survive a crash between INSERT and the async attempt below.
-          graphPendingAt: this.graphLinkFanout > 0 && this.graph ? new Date() : null,
+          graphPendingAt: this.graphLinkFanout > 0 ? new Date() : null,
         }),
       );
       span.setAttribute("novamem.entry_id", id);
@@ -1492,9 +1488,6 @@ export class MemoryEngine {
     embedding: number[],
     content: string,
   ): Promise<void> {
-    if (!this.graph?.isConnected()) {
-      throw new Error("graph disconnected — enrichment deferred");
-    }
     const hits = await traceAsync("ColdStore.search.linkVectorNeighbors", {
       "novamem.namespace": namespace,
       "novamem.k": this.graphLinkFanout + 1,
@@ -1506,32 +1499,10 @@ export class MemoryEngine {
       k: this.graphLinkFanout + 1,
     }));
     const neighbours = hits.filter((h) => h.id !== id).slice(0, this.graphLinkFanout);
-    // One batched Cypher round-trip instead of fanout-many.
-    if (neighbours.length > 0) {
-      await traceAsync("GraphStore.addEdgesBatch", {
-        "novamem.neighbour_count": neighbours.length,
-      }, () => this.graph!.addEdgesBatch(
-        userId,
-        id,
-        neighbours.map((n) => ({ to: n.id, relation: "co_occurs", strength: n.score })),
-        projectId,
-      ));
-    }
-    // Entity edges. Independent of the vector neighbours above — this
-    // is what gives the graph tier a signal embeddings don't already
-    // have.
-    const entities = extractEntities(content);
-    if (entities.length > 0) {
-      await traceAsync("GraphStore.linkEntities", {
-        "novamem.entity_count": entities.length,
-      }, () => this.graph!.linkEntities(userId, id, entities, projectId));
-    }
-    // Warm relations are per-row in SQL but issued in parallel so the
-    // span name "addRelation.batch" actually corresponds to one
-    // synchronous round of pool-concurrent INSERTs instead of N
-    // sequential round-trips. Each call hits a different
-    // (from,to,relation) row so the ON CONFLICT DO UPDATE upsert
-    // semantics are independent — no need for a transaction.
+    // Phase 7: relations live in SQL only — memory_relations is the
+    // single source /v1/neighbors and the dream cycle read all along.
+    // The FalkorDB twin writes (addEdgesBatch, linkEntities) are gone
+    // with the graph store.
     await traceAsync("WarmStore.addRelation.batch", {
       "novamem.neighbour_count": neighbours.length,
     }, () => Promise.all(
@@ -1714,32 +1685,12 @@ export class MemoryEngine {
       // Not a degraded search: the caller asked for no graph signal, and
       // got exactly that. Marking it degraded would make an intentional
       // configuration look like an outage.
-    } else if (this.graph?.isConnected()) {
-      try {
-        // Entity bridging is the graph tier's sole retrieval contribution
-        // (Mem0 alignment, Phase 4): it links the query to memories that
-        // share a rare exact identifier — a candidate SOURCE reaching
-        // rows neither cosine nor stemmed FTS surfaces, the same role
-        // Mem0's entity collection plays in their search. The seeded
-        // neighbour walk that used to run alongside it is deleted:
-        // measured across every benchmark arm it contributed zero ranking
-        // change while sitting on the critical path (it could only start
-        // after the vector tier resolved), and skipping the tier measured
-        // ~2x faster end to end. Explicit traversal survives as
-        // /v1/neighbors and the memory_neighbors MCP tool — a user-facing
-        // feature; the implicit search-time walk is what measured dead.
-        const seedScope = scopes.length === 1 ? scopes[0]! : null;
-        const bridgeEntities = extractEntities(req.query);
-        graphHits = bridgeEntities.length > 0
-          ? await this.graph.memoriesByEntities(userId, bridgeEntities, k * 2, seedScope)
-          : [];
-      } catch (err) {
-        degraded = true;
-        this.logger.warn({ err: (err as Error).message }, "graph entity bridging failed");
-      }
     } else {
-      degraded = true;
-      this.maybeWarnGraphDown();
+      // Phase 7: the graph tier is gone (FalkorDB removed). `weights.graph`
+      // and `weights.entity` stay accepted on the wire and simply
+      // contribute nothing — the winning calibration ran them at 0, and
+      // the entity-bridging experiment ended with the tier. Explicit
+      // traversal lives on /v1/neighbors, served from memory_relations.
     }
 
     // Pre-fetch entries for the UNION of all tier candidate ids so the
@@ -2246,7 +2197,9 @@ export class MemoryEngine {
     const k = args.k ?? 10;
     const projectId = args.project ?? null;
     const includeProjects = args.includeProjects;
-    if (!this.graph?.isConnected()) return { results: [], degraded: true };
+    // Phase 7: served from memory_relations in Postgres — same edges the
+    // engine has always co-written in SQL; FalkorDB (whose driver decode
+    // bugs this method used to guard against) is removed.
     // Cross-user + cross-project guard. In active-project mode the seed
     // may belong to user-global or any included project — resolve it once
     // and bind further traversal to its actual scope.
@@ -2256,20 +2209,13 @@ export class MemoryEngine {
     const seedEntry = seedRows[0];
     if (!seedEntry) return { results: [], degraded: false };
     const seedScope = seedEntry.projectId ?? null;
-    // FalkorDB occasionally surfaces driver-side decode errors for
-    // certain depth/topology combinations ("expected List or Null but
-    // was Path/Edge"). Treat those the same as an unreachable graph —
-    // return empty + degraded:true — so the data-plane (/v1/search)
-    // and /v1/neighbors don't 500. The Cypher we emit at depth
-    // ≤ 1 and ≥ 2 is structured to avoid these decode hits in the
-    // common case; this guard catches the long tail.
     let hits: Array<{ id: string; score: number }>;
     try {
-      hits = await this.graph.neighbors(userId, args.id, depth, k, seedScope);
+      hits = await this.warm.neighborsByRelations(userId, args.id, depth, k, seedScope);
     } catch (err) {
       this.logger.warn(
         { err: (err as Error).message, depth, seedId: args.id },
-        "[engine.neighbors] graph driver error — returning degraded",
+        "[engine.neighbors] relations query failed — returning degraded",
       );
       return { results: [], degraded: true };
     }
@@ -2350,16 +2296,6 @@ export class MemoryEngine {
       throw err;
     } finally {
       client.release();
-    }
-    if (this.graph?.isConnected()) {
-      try {
-        await this.graph.removeNode(userId, id);
-      } catch (err) {
-        this.logger.warn(
-          { entryId: id, err: (err as Error).message },
-          "forget: graph removeNode failed",
-        );
-      }
     }
     let coldDeleteOk = true;
     try {
@@ -2890,16 +2826,6 @@ export class MemoryEngine {
     // Caller already has the namespace — no SELECT needed.
     const namespace = dropNamespace;
     await pool.query(`DELETE FROM memory_entries WHERE id = $1`, [dropId]);
-    if (this.graph?.isConnected()) {
-      try {
-        await this.graph.removeNode(userId, dropId);
-      } catch (err) {
-        this.logger.warn(
-          { dropId, err: (err as Error).message },
-          "dream graph removeNode failed",
-        );
-      }
-    }
     try {
       await this.cold.delete(userId, namespace, dropId, projectId);
     } catch (err) {
@@ -2976,21 +2902,14 @@ export class MemoryEngine {
         "deleteProject: cold cleanup failed",
       );
     }
-    let graphCleared = false;
-    if (this.graph?.isConnected()) {
-      // Defence-in-depth: scope the delete to the owner's user namespace
-      // (issue #45). Project-scoped graph nodes outside the owner's
-      // namespace are left for the dream-cycle / orphan reaper to mop up.
-      graphCleared = await this.graph.removeAllForProject({
-        userId: ownerUserId,
-        projectId,
-      });
-    }
     return {
       deleted: true,
       entriesRemoved: warm.entriesRemoved,
       coldCollectionsDropped,
-      graphCleared,
+      // Phase 7: relations live in memory_entries' relations table and
+      // are removed with the rows by the warm delete above; the field is
+      // kept for wire compatibility.
+      graphCleared: true,
     };
   }
 
@@ -3267,7 +3186,7 @@ export class MemoryEngine {
   async reconcilePendingEnrichment(
     opts: { batchSize?: number } = {},
   ): Promise<{ scanned: number; enriched: number; failed: number; pending: number }> {
-    if (this.graphLinkFanout <= 0 || !this.graph) {
+    if (this.graphLinkFanout <= 0) {
       return { scanned: 0, enriched: 0, failed: 0, pending: 0 };
     }
     const rows = await this.warm.listPendingEnrichment(opts.batchSize ?? 50);
@@ -3337,11 +3256,9 @@ export class MemoryEngine {
 
   async health(): Promise<HealthSnapshot> {
     const [warmOk, coldOk] = await Promise.all([this.warm.ping(), this.cold.ping()]);
-    const graphState: HealthSnapshot["deps"]["graph"] = !this.graph
-      ? "disabled"
-      : this.graph.isConnected()
-        ? "ok"
-        : "unreachable";
+    // Phase 7: no graph service exists; the field stays for wire
+    // compatibility and reports the tier as permanently disabled.
+    const graphState: HealthSnapshot["deps"]["graph"] = "disabled";
     // The embedder is "failing" only if its most recent outcome was a
     // failure — a single blip that later succeeded is not an outage.
     const embedderState: HealthSnapshot["deps"]["embedder"] =

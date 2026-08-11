@@ -43,9 +43,6 @@ Every novamem-server config knob lives in env vars. The schema is enforced at st
 | `NOVAMEM_COLD_URL` | `http://localhost:6333` | Qdrant REST endpoint for the cold (vector) tier. |
 | `NOVAMEM_COLD_TIMEOUT_MS` | `15000` | Per-request Qdrant timeout. Bounds a stalled vector tier so it degrades instead of hanging every search. |
 | `NOVAMEM_COLD_VECTOR_SIZE` | `384` | Embedding dimension. Must match `NOVAMEM_EMBEDDINGS_DIM`. |
-| `NOVAMEM_GRAPH_ENABLED` | `true` | When `false`, the engine skips graph writes + reads and emits `degraded:true` on every search. |
-| `NOVAMEM_GRAPH_URL` | `redis://localhost:6379` | FalkorDB endpoint (Redis protocol). |
-| `NOVAMEM_GRAPH_TIMEOUT_MS` | `10000` | Per-query FalkorDB timeout. A failed or timed-out query marks the graph unhealthy and starts a backoff reconnect. |
 
 ## Embeddings
 

@@ -12,12 +12,18 @@ import { describe, expect, it } from "vitest";
 import { buildHttpServer } from "../http.js";
 import { asWarm, FakeWarmStore, makeEngine } from "../test-fakes.js";
 
-function makeApp(opts: { graphConnected?: boolean } = {}) {
-  const { engine, warm, embedder, metrics } = makeEngine({
-    graphConnected: opts.graphConnected ?? true,
+function makeApp(opts: { coldDown?: boolean } = {}) {
+  const { engine, warm, cold, embedder, metrics } = makeEngine({
     defaultEffectiveDays: 7,
     withMetrics: true,
   });
+  if (opts.coldDown) {
+    // Phase 7: the graph tier is gone, so "a tier failed" is exercised
+    // through the vector tier instead.
+    cold.search = async () => {
+      throw new Error("qdrant unreachable");
+    };
+  }
   engine.setLogger({ warn: () => {}, error: () => {}, info: () => {} });
   const fakeBA = {
     handler: async (_req: Request) => new Response("not-implemented", { status: 501 }),
@@ -61,7 +67,7 @@ async function userSession(warm: FakeWarmStore): Promise<{ authorization: string
 
 describe("/v1/search degraded semantics", () => {
   it("returns 503 when a tier failed and produced zero results", async () => {
-    const { app, warm } = makeApp({ graphConnected: false });
+    const { app, warm } = makeApp({ coldDown: true });
     try {
       const headers = await userSession(warm);
       const r = await app.inject({
@@ -83,7 +89,7 @@ describe("/v1/search degraded semantics", () => {
   });
 
   it("stays 200 with degraded:true when a tier failed but results survived", async () => {
-    const { app, warm } = makeApp({ graphConnected: false });
+    const { app, warm } = makeApp({ coldDown: true });
     try {
       const headers = await userSession(warm);
       // Store a memory as the session user so keyword search can reach it.
@@ -114,7 +120,7 @@ describe("/v1/search degraded semantics", () => {
   });
 
   it("returns 200 with degraded:false when every tier answered", async () => {
-    const { app, warm } = makeApp({ graphConnected: true });
+    const { app, warm } = makeApp();
     try {
       const headers = await userSession(warm);
       const r = await app.inject({
@@ -132,7 +138,7 @@ describe("/v1/search degraded semantics", () => {
   });
 
   it("marks the search degraded when the embedder is unreachable", async () => {
-    const { app, warm, embedder } = makeApp({ graphConnected: true });
+    const { app, warm, embedder } = makeApp();
     try {
       const headers = await userSession(warm);
       embedder.fail = true;
@@ -153,15 +159,28 @@ describe("/v1/search degraded semantics", () => {
 });
 
 describe("/v1/neighbors degraded semantics", () => {
-  it("returns 503 when the graph is unreachable and nothing came back", async () => {
-    const { app, warm } = makeApp({ graphConnected: false });
+  it("returns 503 when the relations query fails and nothing came back", async () => {
+    // Phase 7: /v1/neighbors serves from memory_relations in Postgres —
+    // its outage mode is a failed SQL query. The seed must resolve so
+    // the traversal (not the seed lookup) is what fails.
+    const { app, warm } = makeApp();
+    warm.neighborsByRelations = async () => {
+      throw new Error("relations query failed");
+    };
     try {
       const headers = await userSession(warm);
+      const stored = await app.inject({
+        method: "POST",
+        url: "/v1/remember",
+        headers,
+        payload: { content: "seed entry for neighbour traversal", namespace: "default" },
+      });
+      expect(stored.statusCode).toBe(201);
       const r = await app.inject({
         method: "POST",
         url: "/v1/neighbors",
         headers,
-        payload: { id: "01HSOMEENTRYID" },
+        payload: { id: stored.json().id },
       });
       expect(r.statusCode).toBe(503);
       expect(r.json().degraded).toBe(true);
@@ -178,7 +197,7 @@ describe("/v1/context degraded semantics", () => {
   // it actively instructs the agent to carry on as though the store held
   // nothing. That is the most costly place in the API for this ambiguity.
   it("returns 503 when a tier failed and produced no relevant memories", async () => {
-    const { app, warm } = makeApp({ graphConnected: false });
+    const { app, warm } = makeApp({ coldDown: true });
     try {
       const headers = await userSession(warm);
       const r = await app.inject({
