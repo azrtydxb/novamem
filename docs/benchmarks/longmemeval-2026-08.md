@@ -50,6 +50,17 @@ target.
 
 ## Comparability caveat — read before quoting
 
+**Write path**: the corpus was ingested through `/v1/capture` — the
+production agent-facing path, which adds an exact-hash fast path and a
+heuristic contradiction/superset guard that Mem0's benchmark runner has
+no equivalent of at the harness layer. That is a deliberate choice to
+measure the product as deployed (and the Phase 4 gate measured capture ≥
+remember at matched budgets), but corpus construction therefore differs
+from a bare `add()`-style harness; a strict harness-shape comparison
+would use `/v1/remember` ingestion (see
+`docs/evaluation-benchmarks.md`, "LongMemEval live comparison
+guardrails").
+
 Published memory-system numbers on LongMemEval (e.g. Zep's reported
 71.2%, and the LongMemEval paper's ~60–65% full-context GPT-4o
 baselines) use **GPT-4o-class answerers and judges**. Ours is a
@@ -67,6 +78,11 @@ with a different model.
 bench/quick-gate.sh <label>                    # 15-min loop, 50-q subset
 bench/bench_retrieval.py ingest|search + bench/answer_eval.py   # full run
 ```
+
+The `bench/` directory lands with PR #176 (this report and that PR are
+siblings); until it merges, the Mem0-shape concurrent runner at
+`packages/benchmarks/scripts/novamem_longmemeval_comparable_runner.py`
+remains the in-repo alternative.
 
 Raw artifacts: bench scratchpad `runs/p6/` (`search-p6-{ctl,rr}.json`,
 `answers-{ctl,rr}.json`), `runs/gate6/GATE6.txt`.
