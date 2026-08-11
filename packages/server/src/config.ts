@@ -90,7 +90,11 @@ export const ConfigSchema = z
        *  a 10k-entry outage clears in a couple of hours without ever
        *  issuing a burst the embedder can't absorb. Raise it to drain
        *  faster if the embedder has headroom. */
-      reconcileBatchSize: z.coerce.number().int().positive().max(1000).default(50),
+      /** 400, not 50: with claim-on-read batching (disjoint rows per
+       *  replica) a bigger batch keeps the extraction semaphore fed for
+       *  the whole tick instead of starving it — measured 3× drain
+       *  throughput during the Phase 6 backlog. */
+      reconcileBatchSize: z.coerce.number().int().positive().max(1000).default(400),
     }),
     search: z.object({
       /** Absolute cosine below which a vector-only candidate is treated as
@@ -117,15 +121,21 @@ export const ConfigSchema = z
         apiKey: z.string().optional(),
         maxFactsPerChunk: z.coerce.number().int().positive().default(8),
         /** Hard ceiling on the LLM call; if extraction times out the
-         *  raw chunk still gets stored (degraded-safe). */
-        timeoutMs: z.coerce.number().int().positive().default(15_000),
+         *  raw chunk still gets stored (degraded-safe, marker kept).
+         *  120s, not 15-30s: measured during the Phase 6 bulk load, a
+         *  short timeout aborted generations queued behind a busy vLLM
+         *  and re-queued them forever — an abort storm that cut drain
+         *  throughput while wasting GPU work already done. The durable
+         *  facts_pending marker makes patience free. */
+        timeoutMs: z.coerce.number().int().positive().default(120_000),
         /** Per-pod concurrency cap on extraction calls (semaphore). Tune
-         *  so {pod_count × this} stays below upstream LLM's effective
-         *  concurrency. With qwen3.6-35b max-num-seqs=10 on 3 pods, 3
-         *  here = 9 total — safely below 10. */
-        maxConcurrent: z.coerce.number().int().positive().default(3),
+         *  so {pod_count × this} sits at or below the upstream's
+         *  effective concurrency. Measured: 12/pod on 3 pods against a
+         *  64-seat vLLM pool was the healthy zone; pushing to 20/pod
+         *  inflated per-stream latency into the (old, shorter) timeout. */
+        maxConcurrent: z.coerce.number().int().positive().default(12),
       })
-      .default({ enabled: false, maxFactsPerChunk: 8, timeoutMs: 15_000, maxConcurrent: 3 })
+      .default({ enabled: false, maxFactsPerChunk: 8, timeoutMs: 120_000, maxConcurrent: 12 })
       .refine((v) => !v.enabled || (!!v.endpoint && !!v.model), {
         message: "extraction.enabled = true requires endpoint + model",
         path: ["endpoint"],

@@ -80,7 +80,13 @@ def answer_prompt(q, qdate, mems):
 
 Rules:
 - If the memories contain enough information, answer directly.
-- If the answer is not supported, say: The information provided is not enough.
+- If the question asks for suggestions, recommendations, tips, or advice:
+  DO give them. Ground every suggestion in the user's stated preferences,
+  plans, possessions, and constraints from the memories (mention which),
+  and tailor it to them specifically — a generic answer that ignores what
+  the memories say about the user is wrong. Never refuse these.
+- Only for FACTUAL questions whose answer is genuinely absent from the
+  memories, say: The information provided is not enough.
 - For conflicting facts, prefer the most recent memory.
 - For temporal/counting questions, compute carefully from the dates in the memories.
 
