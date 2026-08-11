@@ -158,11 +158,20 @@ Do not compare tiny-fixture `Recall@5` smoke-test numbers with public LongMemEva
 
 For NovaMem-vs-public LongMemEval comparisons:
 
-- Use the local OpenAI-compatible vLLM endpoint explicitly: `http://192.168.10.246:8888/v1` with model `qwen3.6-35b`.
-- Record that answerer and judge are `qwen3.6-35b`; do not label those scores as GPT-5/Gemini judged.
+- Use the fastllm-proxy OpenAI-compatible endpoint: `http://192.168.10.125/v1` with model `qwen3-6-35b-a3b-nvfp4` (the old direct-vLLM `:8888` endpoint is gone with gpustack).
+- Record that answerer and judge are `qwen3-6-35b-a3b-nvfp4`; do not label those scores as GPT-4o/GPT-5/Gemini judged.
 - Current NovaMem `/v1/search` accepts `k <= 200`, matching LongMemEval/Mem0 `top_200` reporting.
-- Use chunked `/v1/remember` user/assistant-pair ingestion for direct LongMemEval benchmark storage. This is NovaMem's closest equivalent to Mem0 `add()` for this benchmark shape.
-- Do **not** use `/v1/capture` for public-comparable LongMemEval runs. Capture performs semantic read-before-write dedupe/supersession logic on every chunk, which Mem0's benchmark runner does not do at the harness layer.
+- **Write-path choice is a reporting decision, not a rule.** `/v1/remember`
+  chunk ingestion is the closest shape to Mem0's benchmark runner (no
+  harness-layer read-before-write). `/v1/capture` is NovaMem's real
+  agent-facing write path — since the Phase 4 unification its extra
+  behaviour is an exact-hash fast path plus a *heuristic*
+  contradiction/superset guard (the old LLM supersession is gone), and
+  the Phase 4 gate measured capture ≥ remember on answer accuracy at
+  matched budgets. A capture-corpus run measures the product as
+  deployed; a remember-corpus run is the closer apples-to-apples shape
+  to Mem0's harness. Whichever is used **must be stated in the report**
+  (the 2026-08 report used capture and says so).
 
 ### Mem0-style concurrent LongMemEval runner
 
