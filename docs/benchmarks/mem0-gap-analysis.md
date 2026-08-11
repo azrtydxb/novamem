@@ -64,6 +64,38 @@ temporal edge is judge amnesty + model class, not ordering.
   "potlucks count as dinner parties") — that is benchmark overfitting,
   not memory engineering. We decline.
 
+## Verification round (Pascal's challenge): model and content controlled
+
+The claims above were then verified by swapping models and harnesses with
+retrieval frozen (no reingestion — the eval reruns from the stored search
+reports). GPT-5 was routed through fastllm-proxy via OpenRouter.
+
+| cell (all 500 questions, identical NovaMem corpus) | score |
+|---|---|
+| Qwen3-35B answer+judge, our strict prompt, k=20/6k | 80.4 → 82.8 with scaffold |
+| **GPT-5** answer+judge, our strict prompt, k=20/6k | **80.4** — frontier model buys nothing under honest judging |
+| GPT-5, mem0's **verbatim** harness (their overfit prompt + lenient judge), k=20/6k | 84.2 |
+| GPT-5, mem0's verbatim harness, **k=100** | **90.0 (n=498)** |
+| mem0's own OSS content, same harness (their published repro) | 91.0 |
+| mem0 closed platform | 94.4 |
+
+**Verdict: NovaMem's memory content is at statistical parity with mem0's
+OSS v3** (90.0 vs 91.0 is ~5 questions at n=500). The published 14-point
+gap decomposes as ≈4 pts prompt+judge style, ≈6 pts retrieval-window
+configuration (k=20/6k vs their top_200-class window — a frontier
+answerer converts width into correctness; note per-type: temporal 82.7→88.0,
+multi-session 72.2→80.5, preference 83.3→100 going k=20→k=100 under
+their harness), and ≈3–4 pts closed-platform opacity beyond their own
+OSS repro. An earlier draft of this analysis attributed nearly
+everything to the harness — the controlled cells corrected that:
+the window configuration mattered as much.
+
+**Deployment guidance that falls out:** k/maxTokens should scale with
+the answerer. For a 35B self-hosted answerer our measured optimum stays
+k=20/6k (wider windows were never measured to help qwen and the tight
+budget is what makes it cheap); for frontier-class answerers, serve
+k≈100 — the same store, one request parameter.
+
 **The honest ceiling:** with the scaffold adopted and our judge matched
 to theirs, NovaMem measures **86.8** self-hosted. The rest of the distance to
 91 is buying a frontier answerer, and to 94.4 is their private platform.
