@@ -167,6 +167,10 @@ export const ConfigSchema = z
         message: "queryDecomp.enabled = true requires endpoint + model",
         path: ["endpoint"],
       }),
+    /** Vector-neighbour edges created per remember (0 disables graph
+     *  enrichment entirely — useful for bulk loads). Enrichment runs
+     *  async off the write path either way. */
+    graphLinkFanout: z.coerce.number().int().min(0).max(10).default(3),
     /** Mem0-alignment Phase 5 EXPERIMENT: second-pass cross-encoder
      *  reranker. Off by default — set NOVAMEM_RERANK_ENABLED=1 to opt in
      *  per request via the `rerank: true` body field. Endpoint is the
@@ -353,6 +357,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       coherenceRerank: env.NOVAMEM_QUERY_DECOMP_COHERENCE_RERANK ?? true,
       timeoutMs: env.NOVAMEM_QUERY_DECOMP_TIMEOUT_MS,
     },
+    graphLinkFanout: env.NOVAMEM_GRAPH_LINK_FANOUT,
     rerank: {
       enabled: env.NOVAMEM_RERANK_ENABLED ?? false,
       endpoint: env.NOVAMEM_RERANK_ENDPOINT,
