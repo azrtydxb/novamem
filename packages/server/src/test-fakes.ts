@@ -310,10 +310,12 @@ export class FakeWarmStore {
   }
 
   async listPendingEnrichment(limit: number) {
-    return [...this.rows.values()]
+    const claimed = [...this.rows.values()]
       .filter((r) => r.graphPendingAt != null)
       .sort((a, b) => a.graphPendingAt!.getTime() - b.graphPendingAt!.getTime())
-      .slice(0, limit)
+      .slice(0, limit);
+    for (const r of claimed) r.graphPendingAt = new Date();
+    return claimed
       .map((r) => ({
         id: r.id,
         userId: r.userId,
@@ -338,10 +340,14 @@ export class FakeWarmStore {
       metadata: Record<string, unknown> | null;
     }>
   > {
-    return [...this.rows.values()]
+    // Mirrors the real store's claim-on-read: claimed rows are re-armed
+    // to now(), so a concurrent second caller draws different rows.
+    const claimed = [...this.rows.values()]
       .filter((r) => r.factsPendingAt != null)
       .sort((a, b) => a.factsPendingAt!.getTime() - b.factsPendingAt!.getTime())
-      .slice(0, limit)
+      .slice(0, limit);
+    for (const r of claimed) r.factsPendingAt = new Date();
+    return claimed
       .map((r) => ({
         id: r.id,
         userId: r.userId,
