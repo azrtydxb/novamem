@@ -85,15 +85,14 @@ export const ConfigSchema = z
        *  findable" for a loop that is invisible when the backlog is
        *  empty (one indexed count against a near-empty partial index). */
       reconcileIntervalMs: z.coerce.number().int().positive().default(60_000),
-      /** Entries per reconciler tick. Bounds both the embedder load and
-       *  the tick duration while a large backlog drains — at the default
-       *  a 10k-entry outage clears in a couple of hours without ever
-       *  issuing a burst the embedder can't absorb. Raise it to drain
-       *  faster if the embedder has headroom. */
-      /** 400, not 50: with claim-on-read batching (disjoint rows per
-       *  replica) a bigger batch keeps the extraction semaphore fed for
-       *  the whole tick instead of starving it — measured 3× drain
-       *  throughput during the Phase 6 backlog. */
+      /** Entries per reconciler tick — bounds embedder/LLM load and tick
+       *  duration while a backlog drains. 400, not 50: with claim-on-read
+       *  batching (disjoint rows per replica) a big batch keeps the
+       *  extraction semaphore fed for the whole tick instead of starving
+       *  it — measured 3× drain throughput during the Phase 6 backlog
+       *  (a 10k-entry backlog cleared in under an hour). The per-call
+       *  semaphores, not this number, are what actually cap upstream
+       *  burst load. */
       reconcileBatchSize: z.coerce.number().int().positive().max(1000).default(400),
     }),
     search: z.object({
