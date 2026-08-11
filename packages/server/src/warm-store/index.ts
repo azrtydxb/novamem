@@ -1664,16 +1664,23 @@ export class WarmStore {
     // clearing) keeps the crash contract: a worker that dies mid-batch
     // leaves the marker set, and the row simply comes back once it
     // reaches the front of the oldest-first queue again.
+    // CTE keeps the claimed batch deterministically oldest-first:
+    // UPDATE ... RETURNING makes no row-order guarantee, so the final
+    // SELECT re-orders by the pre-update marker captured in the CTE.
     const res = await this.db.execute(sql`
-      UPDATE memory_entries SET facts_pending_at = now()
-      WHERE id IN (
-        SELECT id FROM memory_entries
+      WITH claimed AS (
+        SELECT id, facts_pending_at AS claimed_at FROM memory_entries
         WHERE facts_pending_at IS NOT NULL
         ORDER BY facts_pending_at ASC
         LIMIT ${limit}
         FOR UPDATE SKIP LOCKED
+      ), updated AS (
+        UPDATE memory_entries m SET facts_pending_at = now()
+        FROM claimed c WHERE m.id = c.id
+        RETURNING m.id, m.user_id, m.project_id, m.content, m.namespace, m.source, m.metadata
       )
-      RETURNING id, user_id, project_id, content, namespace, source, metadata
+      SELECT u.* FROM updated u JOIN claimed c ON c.id = u.id
+      ORDER BY c.claimed_at ASC
     `);
     return (res.rows as Array<Record<string, unknown>>).map((r) => ({
       id: r.id as string,
@@ -1709,15 +1716,19 @@ export class WarmStore {
     // Same claim-on-read + SKIP LOCKED discipline as listPendingFacts —
     // see the comment there.
     const res = await this.db.execute(sql`
-      UPDATE memory_entries SET graph_pending_at = now()
-      WHERE id IN (
-        SELECT id FROM memory_entries
+      WITH claimed AS (
+        SELECT id, graph_pending_at AS claimed_at FROM memory_entries
         WHERE graph_pending_at IS NOT NULL
         ORDER BY graph_pending_at ASC
         LIMIT ${limit}
         FOR UPDATE SKIP LOCKED
+      ), updated AS (
+        UPDATE memory_entries m SET graph_pending_at = now()
+        FROM claimed c WHERE m.id = c.id
+        RETURNING m.id, m.user_id, m.project_id, m.content, m.namespace
       )
-      RETURNING id, user_id, project_id, content, namespace
+      SELECT u.* FROM updated u JOIN claimed c ON c.id = u.id
+      ORDER BY c.claimed_at ASC
     `);
     return (res.rows as Array<Record<string, unknown>>).map((r) => ({
       id: r.id as string,
