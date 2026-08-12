@@ -149,6 +149,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
+        with:
+          # The in-cluster Zot cache registry serves a self-signed cert;
+          # BuildKit runs in its own container and doesn't inherit the
+          # host's trust store, so cache-from/cache-to need this or they
+          # die with "x509: certificate signed by unknown authority".
+          buildkitd-config-inline: |
+            [registry."192.168.10.123"]
+              insecure = true
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
