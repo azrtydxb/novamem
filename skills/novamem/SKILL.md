@@ -11,7 +11,7 @@ metadata:
 
 # novamem · long-term memory
 
-You have a persistent memory system through the `novamem` MCP server. It exposes hybrid retrieval (keyword + vector + graph) over durable entries the user has accumulated across sessions, plus project (sub-brain) scoping. **Use it.** Don't re-derive things the user already told you.
+You have a persistent memory system through the `novamem` MCP server. It exposes hybrid retrieval (keyword + vector + graph + recency + entity — 5 signals, graph/entity weights default to 0 in production calibration) over durable entries the user has accumulated across sessions, plus project (sub-brain) scoping. **Use it.** Don't re-derive things the user already told you.
 
 The server ships these same rules to compliant clients via the MCP `instructions` field on `initialize`; this skill is the equivalent for clients that don't honour `instructions`.
 
@@ -33,7 +33,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 
 **Read / recall** — see [references/search.md](references/search.md):
 - `memory_context` — first-pass grounding; relevant + recent context in one call
-- `memory_search` — hybrid relevance (keyword + vector + graph fusion)
+- `memory_search` — hybrid relevance (keyword + vector + graph + recency + entity 5-signal fusion)
 - `memory_recent` — newest-first feed, optional `since` cutoff
 - `memory_today` — sugar for `recent` with a 24h window
 - `memory_neighbors` — graph traversal from a seed entry id

@@ -1,6 +1,6 @@
 # @azrtydxb/novamem
 
-TypeScript client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service with hybrid search, per-user isolation, and project (sub-brain) scoping.
+TypeScript client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service with 5-signal hybrid retrieval (keyword + vector + graph + recency + entity), content-hash dedup, sensitivity auto-detection, and async background enrichment.
 
 ```bash
 npm install @azrtydxb/novamem
@@ -51,7 +51,7 @@ await memory.updateMemory(oldId, {
 
 | Method | Description |
 |---|---|
-| `search(req)` | Hybrid keyword + vector + graph search |
+| `search(req)` | 5-signal hybrid retrieval (keyword + vector + graph + recency + entity) |
 | `capture(req)` | Agent-facing durable write with typed metadata, worthiness scoring, semantic dedupe/update, and supersession |
 | `sessionRecap(req)` | Batch ingest curated end-of-session recap items |
 | `hygiene(req)` | Read-only memory hygiene report |

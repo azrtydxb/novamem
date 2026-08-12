@@ -41,6 +41,10 @@ export const SYSTEM_USER = "public";
  *  effectively live while capping the write rate per token. */
 const TOKEN_TOUCH_INTERVAL_MS = 60_000;
 
+/** Cap on the per-process touch-throttle map — reset wholesale past this
+ *  size so stale entries (revoked/deleted tokens) can't grow unbounded. */
+const TOKEN_TOUCH_MAP_MAX = 10_000;
+
 export type WarmDB = NodePgDatabase<typeof schema>;
 
 export interface WarmStoreConfig {
@@ -302,11 +306,20 @@ export class WarmStore {
     if (staleEnough && now - lastQueued >= TOKEN_TOUCH_INTERVAL_MS) {
       // Per-process throttle so a burst doesn't queue N identical writes
       // before the first one lands. Off-path: auth never waits on it.
+      // Bound the map: entries for revoked/deleted tokens would otherwise
+      // accumulate forever. Clearing wholesale is fine — worst case is one
+      // extra touch per live token.
+      if (this.tokenTouchQueuedAt.size >= TOKEN_TOUCH_MAP_MAX) {
+        this.tokenTouchQueuedAt.clear();
+      }
       this.tokenTouchQueuedAt.set(tokenHash, now);
       void this.db
         .update(schema.userTokens)
         .set({ lastUsedAt: sql`now()` })
-        .where(eq(schema.userTokens.tokenHash, tokenHash))
+        // Re-check revocation: the token may have been revoked between the
+        // SELECT above and this off-path write, and a revoked token must
+        // not look freshly used to operators.
+        .where(and(eq(schema.userTokens.tokenHash, tokenHash), isNull(schema.userTokens.revokedAt)))
         .catch(() => {
           // Telemetry write — losing one touch is harmless; allow a retry.
           this.tokenTouchQueuedAt.delete(tokenHash);

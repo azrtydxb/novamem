@@ -1,10 +1,6 @@
 # novamem — Go client
 
-Go client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory
-service with hybrid search, per-user isolation, and project (sub-brain)
-scoping. It targets the same HTTP API as the TypeScript client in
-`packages/client`, and is a standalone Go module so it can be imported without
-pulling in the server.
+Go client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service with 5-signal hybrid retrieval (keyword + vector + graph + recency + entity), per-user isolation, project (sub-brain) scoping, sensitivity auto-detection, content-hash dedup, and async background enrichment. It targets the same HTTP API as the TypeScript client in `packages/client`, and is a standalone Go module so it can be imported without pulling in the server.
 
 ```bash
 go get github.com/azrtydxb/novamem/clients/go
@@ -80,7 +76,7 @@ error message, including when the server echoes it back.
 | Method | Route | Notes |
 |---|---|---|
 | `Capture(ctx, CaptureRequest)` | `POST /v1/capture` | Durable write with semantic dedupe, in-place update, and supersession. Check `result.Saved()` — the worthiness gate declining is not an error. |
-| `Search(ctx, SearchRequest)` | `POST /v1/search` | Hybrid keyword + vector + graph. |
+| `Search(ctx, SearchRequest)` | `POST /v1/search` | 5-signal hybrid retrieval (keyword + vector + graph + recency + entity). |
 | `Recent(ctx, RecentRequest)` | `POST /v1/recent` | Newest first; `Since` is a `time.Time`, formatted for you. |
 | `Neighbors(ctx, NeighborsRequest)` | `POST /v1/neighbors` | Graph walk from a seed entry id. |
 | `Update(ctx, UpdateRequest)` | `PUT /v1/memories/:id` | Rewrite in place; preserves id, hits and edges. Prefer it to forget+capture. |

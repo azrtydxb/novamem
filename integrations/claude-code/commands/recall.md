@@ -1,5 +1,5 @@
 ---
-description: Hybrid-search NovaMem memories (keyword + vector + graph)
+description: 5-signal hybrid retrieval (keyword + vector + graph + recency + entity, graph/entity at 0 in production calibration)
 argument-hint: <query>
 allowed-tools: mcp__novamem__memory_search
 ---

@@ -29,9 +29,9 @@ npx @azrtydxb/novamem-mcp
 
 ## Tools advertised
 
-Memory operations (every tool accepts an optional `project` — id or human name):
+Memory operations (22 tools total, every tool accepts an optional `project` — id or human name):
 
-- `memory_context` / `memory_capture` / `memory_session_recap` / `memory_hygiene` / `memory_evaluate` / `memory_adoption` / `memory_search` / `memory_remember` / `memory_update` / `memory_recent` / `memory_today` / `memory_neighbors` / `memory_forget` / `memory_stats`
+- `memory_context` · `memory_capture` · `memory_session_recap` · `memory_hygiene` · `memory_evaluate` · `memory_adoption` · `memory_search` · `memory_remember` · `memory_update` · `memory_recent` · `memory_today` · `memory_neighbors` · `memory_forget` · `memory_stats`
 - `memory_remember` accepts `sourceType`, `capturedFrom`, `confidence`, and `force` (bypass the worthiness gate)
 - `memory_update` rewrites an existing entry in place; preserves id + hits + edges; re-embeds when content changes
 
