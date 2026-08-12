@@ -64,7 +64,7 @@ for (const col of cols) {
     if (values.length) {
       await pool.query(
         `INSERT INTO memory_vectors (entry_id, user_id, project_id, namespace, scope, embedding, payload)
-         VALUES ${values.join(",")} ON CONFLICT (entry_id, scope) DO NOTHING`, params);
+         VALUES ${values.join(",")} ON CONFLICT (entry_id, scope, namespace) DO NOTHING`, params);
     }
   } while (offset);
   console.log(`  ${col}: cumulative ${copied} copied, ${orphans} orphans`);
@@ -75,7 +75,10 @@ console.log(`rows loaded in ${Math.round((Date.now() - t0) / 1000)}s; rebuilding
 // pooled query may land on a different backend than the CREATE INDEX.
 const idx = await pool.connect();
 try {
-  await idx.query("SET maintenance_work_mem = '2GB'");
+  // 256MB, sequential: partitions are small by design, and a big value
+  // here OOM-killed a 2Gi-limit pod during the bench migration.
+  await idx.query("SET maintenance_work_mem = '256MB'");
+  await idx.query("SET max_parallel_maintenance_workers = 0");
   for (let i = 0; i < PARTITIONS; i++) {
     const t = Date.now();
     await idx.query(

@@ -16,6 +16,13 @@ data:
   NOVAMEM_EMBEDDINGS_PROVIDER: "local-transformers"
   # NOVAMEM_WARM_URL has moved to the Secret (it embeds the Postgres
   # password). See secrets.yaml.
+  # Vector backend. Default: qdrant (below). To run pgvector instead:
+  #   1. set NOVAMEM_COLD_PROVIDER: "pgvector"
+  #   2. REMOVE or change NOVAMEM_COLD_URL — if it still points at Qdrant,
+  #      the pgvector store will try to speak Postgres to it and every
+  #      pod will fail readiness. Unset, it falls back to the warm DB.
+  #   3. use a pgvector-enabled postgres image and give the pod a real
+  #      /dev/shm — see the comments in postgres.yaml.
   NOVAMEM_COLD_URL: "http://qdrant.novamem.svc.cluster.local:6333"
   # TLS is terminated at the Ingress (see ingress.yaml), so cookies must
   # carry the Secure flag. Leave at "0" in production.

@@ -44,6 +44,10 @@ services:
         condition: service_healthy
     environment:
       NOVAMEM_WARM_URL: postgres://novamem:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/novamem
+      # For pgvector instead of qdrant: set NOVAMEM_COLD_PROVIDER=pgvector,
+      # REMOVE this NOVAMEM_COLD_URL line (it falls back to the warm DB),
+      # switch postgres to image pgvector/pgvector:pg16, and add
+      # `shm_size: 512mb` to the postgres service.
       NOVAMEM_COLD_URL: http://qdrant:6333
       NOVAMEM_EMBEDDINGS_PROVIDER: local-transformers
       NOVAMEM_AUTH_MODE: ${NOVAMEM_AUTH_MODE:-user}
