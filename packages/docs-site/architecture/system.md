@@ -22,7 +22,7 @@ flowchart TB
 
     subgraph stores["Storage"]
         PG[("Postgres<br/>warm + audit + auth")]
-        QD[("Qdrant<br/>cold · vector")]
+        QD[("Qdrant or pgvector<br/>cold · vector")]
         REL[("memory_relations<br/>(Postgres)")]
     end
 
@@ -42,15 +42,15 @@ sequenceDiagram
     participant C as Client
     participant S as Server (engine.search)
     participant W as Warm (Postgres FTS)
-    participant K as Cold (Qdrant)
+    participant K as Cold (Qdrant/pgvector · vector)
     C->>S: query, weights, scope
-    par parallel signals
+    par parallel signals (keyword, vector, graph, recency, entity)
         S->>W: ftsSearch
         S->>K: vector cosine
     end
     W-->>S: keyword hits
     K-->>S: cosine hits
-    S->>S: min-max normalise → weighted fuse
+    S->>S: min-max normalize → weighted fuse (keyword, vector, graph, recency, entity)
     S->>W: bumpHits (batched)
     S-->>C: top-K hits + per-signal subscores
 ```
@@ -88,7 +88,7 @@ stateDiagram-v2
 
 ## Data tiering
 
-A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-indexed) until the decay loop demotes it to the **cold** tier (Qdrant, vector-only). A search hits both signals in parallel (warm FTS keyword, cold cosine vector) and fuses with `min-max-normalised weighted scoring`. Adjacency queries are served separately by `/v1/neighbors` over `memory_relations`.
+A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-indexed) until the decay loop demotes it to the **cold** tier (Qdrant, vector-only). Hybrid search runs three tiers (warm FTS keyword, cold cosine vector, graph neighbours, recency rank prior, entity bridge) in parallel and fuses with `min-max-normalised weighted scoring`. The winning calibration runs graph and entity weights at 0; recency contributes via the rank prior bounded to [0.7, 1.15]. Adjacency queries are served separately by `/v1/neighbors` over `memory_relations`.
 
 - **Decay** — `effectiveDays(hits) = 7 × log₂(hits + 1)`. An entry idle for longer than its lifespan gets demoted. The decay loop runs every 6h by default; one bulk SQL UPDATE per loop tick.
 - **Promotion** — reactive: a search that hits a cold entry whose accumulated lifespan now exceeds the pre-hit idle gap re-promotes it to warm.

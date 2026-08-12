@@ -2,7 +2,7 @@
   "name": "@azrtydxb/novamem-monorepo",
   "version": "1.1.2",
   "private": true,
-  "description": "Standalone tiered memory service for AI agents",
+  "description": "Monorepo for novamem — a standalone tiered memory service for AI agents with 5-signal hybrid retrieval, per-user isolation with shareable sub-brains, 30+ agent host integrations",
   "license": "Apache-2.0",
   "type": "module",
   "packageManager": "pnpm@9.12.0",

@@ -4,7 +4,7 @@ title: novamem · documentation
 
 # novamem documentation
 
-**One memory across every AI agent you use.** Hybrid keyword + vector + graph retrieval, per-user isolation with shareable sub-brains, MCP and HTTP transports, built-in dashboard. Self-hostable on a laptop or as a multi-tenant brain for a whole company.
+**One memory across every AI agent you use.** Hybrid keyword + vector + graph + recency + entity retrieval (5-signal engine, graph/entity defaulted to 0 in production calibration), per-user isolation with shareable sub-brains, MCP and HTTP transports, built-in dashboard. Integrates with 30+ AI agent hosts. Self-hostable on a laptop or as a multi-tenant brain for a whole company. pgvector as an alternative to Qdrant for the cold vector tier.
 
 This is the long-form documentation. For the marketing landing page see [novamem.github.io/novamem](https://azrtydxb.github.io/novamem/). For source see [github.com/azrtydxb/novamem](https://github.com/azrtydxb/novamem).
 
@@ -29,12 +29,14 @@ This is the long-form documentation. For the marketing landing page see [novamem
 
 ## Three minutes overview
 
-novamem is a single Fastify server that holds memory entries for AI agents and exposes two equivalent transports — JSON HTTP and the Model Context Protocol. Entries flow through three storage layers:
+novamem is a single Fastify server that holds memory entries for AI agents and exposes two equivalent transports — JSON HTTP and the Model Context Protocol. Entries flow through five layers:
 
 - **Warm tier** — Postgres full-text search, low-latency hot path
-- **Cold tier** — Qdrant vector embeddings, semantic recall over older entries
+- **Cold tier** — Qdrant or pgvector vector embeddings, semantic recall over older entries
 - **Relations** — co-occurrence edges in Postgres (`memory_relations`), traversed by `/v1/neighbors`
+- **Recency** — exponential decay rank prior applied on search results
+- **Entity bridge** — exact identifier bridging via extracted identifiers from the query (currently at weight 0 in production)
 
-Search fuses two signals — Postgres full-text keyword match and Qdrant vector similarity — with an optional cross-encoder rerank; adjacency between memories is served separately by `/v1/neighbors` over the `memory_relations` table.
+Search fuses five signals — Postgres full-text keyword match, Qdrant/pgvector vector similarity, graph adjacency, recency rank prior, and entity bridge — with an optional cross-encoder rerank; adjacency between memories is served separately by `/v1/neighbors` over the `memory_relations` table.
 
-The same code runs on a laptop (Docker Compose, single user) or as a multi-tenant deployment on Kubernetes.
+The same code runs on a laptop (Docker Compose, single user) or as a multi-tenant deployment on Kubernetes, supporting 30+ AI agent hosts via the `novamem-init` CLI.

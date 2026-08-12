@@ -4,7 +4,7 @@ What novamem does, when to use each tool, what the gates and decay loops mean fo
 
 ## Mental model
 
-A novamem instance holds **memory entries**. Every entry belongs to a single user. An entry can additionally belong to a **project** (a sub-brain) which can be shared with other users. Each entry lives in a **tier** — warm or cold — and each search runs three signals (keyword, vector, graph) in parallel.
+A novamem instance holds **memory entries**. Every entry belongs to a single user. An entry can additionally belong to a **project** (a sub-brain) which can be shared with other users. Each entry lives in a **tier** — warm or cold — and each search runs five signals (keyword, vector, graph, recency, entity) in parallel.
 
 ```mermaid
 flowchart LR
@@ -35,13 +35,15 @@ NovaMem works best when agents use it without waiting to be told. Integrations s
 
 ## Searching (`memory_search`)
 
-Hybrid search runs **keyword (FTS)** + **vector (cosine)** + **graph (neighbour)** in parallel and fuses the three with weighted scoring:
+Hybrid search runs **keyword (FTS)** + **vector (cosine)** + **graph (neighbour)** + **recency (rank prior)** + **entity (identifier bridge)** in parallel and fuses the five with weighted scoring:
 
 | Default weight | Signal | Best for |
 |---|---|---|
-| 0.6 | vector | concept-level questions, paraphrases |
-| 0.3 | keyword | literal symbol / id / file / hash matches |
-| 0.1 | graph | "what's adjacent to X?" once you have a seed |
+| 0.65 | vector | concept-level questions, paraphrases |
+| 0.15 | keyword | literal symbol / id / file / hash matches |
+| 0.10 | recency | recently accessed entries (exponential decay prior) |
+| 0.05 | graph | adjacency via co-occurrence edges (defaulted to 0 in production) |
+| 0.05 | entity | exact identifier bridging (defaulted to 0 in production) |
 
 Override weights when a default doesn't fit the question:
 
@@ -49,7 +51,7 @@ Override weights when a default doesn't fit the question:
 |---|---|
 | Exact id / file path / commit hash | `{ keyword: 1, vector: 0 }` |
 | Pure semantic ("things like X" with no shared tokens) | `{ vector: 1, keyword: 0 }` |
-| Neighbour-driven recall around a known entry | `{ graph: 1 }` |
+| Neighbour-driven recall around a known entry | use [`memory_neighbors`](#graph-traversal-memory_neighbors) |
 
 Hits below \~0.4 are misses — treat them as "nothing relevant" rather than chasing low-confidence matches.
 

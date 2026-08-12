@@ -57,7 +57,7 @@ After install, from any session:
 | Command       | Does                                                                  |
 | ------------- | --------------------------------------------------------------------- |
 | `/remember …` | Store a memory entry (decision, preference, constraint, fact).        |
-| `/recall …`   | Hybrid search (keyword + vector + graph). Returns top 10.             |
+| `/recall …`   | 5-signal hybrid retrieval (keyword + vector + graph + recency + entity, graph/entity weights at 0 in production calibration). Returns top 10.             |
 | `/today`      | Activity feed for the last 24h.                                       |
 | `/recent`     | Newest entries in a namespace.                                        |
 | `/forget id`  | Hard delete across warm + cold + graph.                               |

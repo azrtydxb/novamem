@@ -1,6 +1,6 @@
 # novamem documentation
 
-Tiered long-term memory for AI agents — keyword + vector + graph hybrid search, per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard.
+Tiered long-term memory for AI agents — keyword + vector + graph + recency + entity hybrid retrieval (5-signal engine), per-user isolation with shared sub-brains, MCP and HTTP transports, built-in dashboard. pgvector as an alternative to Qdrant for the cold vector tier.
 
 ## Start here
 
