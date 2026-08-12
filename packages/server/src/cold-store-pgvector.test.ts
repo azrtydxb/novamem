@@ -82,6 +82,26 @@ describe("pgvector cold store: scope discipline", () => {
     expect(payload).toMatchObject({ source: "manual", entryId: "01E", userId: "u1", projectId: null });
   });
 
+  it("retries ensureReady after a failed first attempt (no sticky rejection)", async () => {
+    const store = new PgVectorColdStore({ url: "postgres://unused", vectorSize: 4 });
+    let attempt = 0;
+    const fake = {
+      query: async (text: string) => {
+        if (text.includes("CREATE EXTENSION") && ++attempt === 1) {
+          throw new Error("db briefly down");
+        }
+        if (text.includes("atttypmod")) return { rows: [{ dim: 4 }] };
+        if (text.includes("indisprimary")) return { rows: [{ cols: ["entry_id", "scope", "namespace"] }] };
+        return { rows: [], rowCount: 0 };
+      },
+      connect: async () => ({ query: fake.query, release: () => {} }),
+      end: async () => {},
+    };
+    (store as unknown as { pool: typeof fake }).pool = fake;
+    expect(await store.ping()).toBe(false); // first attempt fails
+    expect(await store.ping()).toBe(true);  // second attempt retries and succeeds
+  });
+
   it("refuses a dimensionality mismatch loudly", async () => {
     const calls: Call[] = [];
     const store = new PgVectorColdStore({ url: "postgres://unused", vectorSize: 8 });

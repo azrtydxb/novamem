@@ -144,7 +144,15 @@ export class PgVectorColdStore {
         await this.pool.query(
           `CREATE INDEX IF NOT EXISTS idx_vectors_scope ON ${TABLE} (scope, namespace)`,
         );
-      })();
+      })().catch((err) => {
+        // A failed attempt (e.g. Postgres briefly down at boot) must not
+        // be cached forever: with a sticky rejected promise every later
+        // ping() fails and the pod can never become ready without a
+        // process restart — observed live on the bench during a postgres
+        // crashloop. Clear the memo so the next call retries.
+        this.ready = null;
+        throw err;
+      });
     }
     return this.ready;
   }
