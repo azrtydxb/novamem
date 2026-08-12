@@ -119,6 +119,13 @@ export interface HttpOptions {
   betterAuth?: {
     handler: (req: Request) => Promise<Response>;
     getSession: (headers: Headers) => Promise<BAGetSessionResult>;
+    /** In-process sign-up used by POST /v1/admin/users. Optional — the
+     *  route answers 404 when unset. */
+    signUpEmail?: (body: {
+      email: string;
+      password: string;
+      name: string;
+    }) => Promise<{ user?: { id?: string } } | null | undefined>;
   };
 }
 
@@ -532,17 +539,28 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       }
     }
 
-    if (req.url.startsWith("/v1/auth/") || req.url.startsWith("/v1/me/")) {
-      if (!req.dashUser && headerToken.startsWith("nm_") && opts.warm) {
-        const resolved = await opts.warm.resolveUserToken(headerToken);
-        if (resolved) {
-          const u = await opts.warm.findUserById(resolved.userId);
-          if (u) {
-            req.dashUser = u as DashboardUser;
-            req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
-          }
+    // Resolve our own user-bearer (`nm_…`) to a full dashUser (with role)
+    // for the surfaces that authorize per-user: /v1/auth/*, /v1/me/*, and
+    // /v1/admin/*. Admin routes accepting an admin-owned nm_ bearer is
+    // what makes non-interactive provisioning (POST /v1/admin/users)
+    // possible — requireAdmin still enforces the role, so a regular
+    // user's bearer gains nothing.
+    const wantsDashUser =
+      req.url.startsWith("/v1/auth/") ||
+      req.url.startsWith("/v1/me/") ||
+      req.url.startsWith("/v1/admin/");
+    if (wantsDashUser && !req.dashUser && headerToken.startsWith("nm_") && opts.warm) {
+      const resolved = await opts.warm.resolveUserToken(headerToken);
+      if (resolved) {
+        const u = await opts.warm.findUserById(resolved.userId);
+        if (u) {
+          req.dashUser = u as DashboardUser;
+          req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
         }
       }
+    }
+
+    if (req.url.startsWith("/v1/auth/") || req.url.startsWith("/v1/me/")) {
       if (!req.dashUser) {
         reply.code(401).send({ error: "unauthorized" });
         return reply;
@@ -551,8 +569,9 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return;
     }
 
-    // /v1/admin/* — handlers do their own check (session-admin only).
-    // User id is irrelevant for admin routes.
+    // /v1/admin/* — handlers do their own check (requireAdmin against the
+    // session or nm_-bearer dashUser resolved above). User id is
+    // irrelevant for admin routes.
     if (req.url.startsWith("/v1/admin/")) {
       req.userId = SYSTEM_USER;
       return;

@@ -33,6 +33,15 @@ export interface BetterAuthBridge {
   getSession: (
     headers: Headers,
   ) => Promise<{ user?: { id: string }; session?: { id: string } } | null | undefined>;
+  /** In-process sign-up — the only way to create a user without a browser.
+   *  `/api/auth/sign-up/email` is intentionally not mounted over HTTP
+   *  (issue #56); admin provisioning (`POST /v1/admin/users`) goes through
+   *  this instead. Throws Better Auth's APIError on duplicate email etc. */
+  signUpEmail?: (body: {
+    email: string;
+    password: string;
+    name: string;
+  }) => Promise<{ user?: { id?: string } } | null | undefined>;
 }
 
 export interface RouteContext {

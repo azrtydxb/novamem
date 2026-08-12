@@ -319,6 +319,7 @@ async function main() {
       // that changes the session payload becomes a compile error here
       // (and in HttpOptions) instead of a silent runtime mismatch.
       getSession: (headers) => ba.api.getSession({ headers }),
+      signUpEmail: (body) => ba.api.signUpEmail({ body }),
     },
   });
 
