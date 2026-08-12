@@ -11,7 +11,7 @@
  * pattern loads the same data in a few minutes.
  *
  *   NOVAMEM_WARM_URL=postgres://... QDRANT_URL=http://qdrant:6333 \
- *     node sync-qdrant-to-pgvector.mjs [--partitions 32] [--dim 1024]
+ *     node sync-qdrant-to-pgvector.mjs [--partitions 32]
  *
  * Idempotent: ON CONFLICT DO NOTHING, and index rebuild uses IF NOT
  * EXISTS after a drop, so a crashed run can simply be re-run.
@@ -71,13 +71,20 @@ for (const col of cols) {
 }
 
 console.log(`rows loaded in ${Math.round((Date.now() - t0) / 1000)}s; rebuilding HNSW indexes...`);
-await pool.query("SET maintenance_work_mem = '2GB'");
-for (let i = 0; i < PARTITIONS; i++) {
-  const t = Date.now();
-  await pool.query(
-    `CREATE INDEX IF NOT EXISTS idx_vectors_hnsw_p${i} ON memory_vectors_p${i}
-     USING hnsw (embedding vector_cosine_ops)`);
-  console.log(`  index p${i} built in ${Math.round((Date.now() - t) / 1000)}s`);
+// One dedicated session for the rebuild: SET is per-connection, and a
+// pooled query may land on a different backend than the CREATE INDEX.
+const idx = await pool.connect();
+try {
+  await idx.query("SET maintenance_work_mem = '2GB'");
+  for (let i = 0; i < PARTITIONS; i++) {
+    const t = Date.now();
+    await idx.query(
+      `CREATE INDEX IF NOT EXISTS idx_vectors_hnsw_p${i} ON memory_vectors_p${i}
+       USING hnsw (embedding vector_cosine_ops)`);
+    console.log(`  index p${i} built in ${Math.round((Date.now() - t) / 1000)}s`);
+  }
+} finally {
+  idx.release();
 }
 console.log(`DONE: ${copied} vectors, ${orphans} orphans, ${cols.length} collections, total ${Math.round((Date.now() - t0) / 1000)}s`);
 await pool.end();

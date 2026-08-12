@@ -65,11 +65,6 @@ export class PgVectorColdStore {
     this.dim = cfg.vectorSize;
   }
 
-  /** Idempotent DDL, run once per process on first use. The vector
-   *  column's dimensionality comes from config (mirrors Qdrant, where
-   *  collections are created with the configured size); a dimension
-   *  mismatch against an existing table fails loudly rather than
-   *  truncating or padding. */
   /** Idempotent DDL, run once per process on first use.
    *
    *  The table is HASH-PARTITIONED on `scope` — `u:<user>` for user

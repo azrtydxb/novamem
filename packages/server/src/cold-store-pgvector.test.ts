@@ -32,7 +32,7 @@ function mocked() {
 }
 
 describe("pgvector cold store: scope discipline", () => {
-  it("user-scoped search filters on user_id AND project_id IS NULL AND namespace", async () => {
+  it("user-scoped search filters on the u:<user> partition scope + namespace", async () => {
     const { store, calls } = mocked();
     await store.search({ userId: "u1", namespace: "ns", embedding: [1, 0, 0, 0], k: 5 });
     const q = calls.find((c) => c.text.includes("ORDER BY embedding"));
@@ -41,7 +41,7 @@ describe("pgvector cold store: scope discipline", () => {
     expect(q!.values).toEqual(["u:u1", "[1,0,0,0]", "ns", 5]);
   });
 
-  it("project-scoped search filters on project_id (project members share the space)", async () => {
+  it("project-scoped search filters on the p:<project> partition scope (members share it)", async () => {
     const { store, calls } = mocked();
     await store.search({ userId: "u1", projectId: "p9", namespace: "ns", embedding: [0, 1, 0, 0], k: 3 });
     const q = calls.find((c) => c.text.includes("ORDER BY embedding"));
