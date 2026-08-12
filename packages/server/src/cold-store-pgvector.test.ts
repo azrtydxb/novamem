@@ -37,28 +37,25 @@ describe("pgvector cold store: scope discipline", () => {
     await store.search({ userId: "u1", namespace: "ns", embedding: [1, 0, 0, 0], k: 5 });
     const q = calls.find((c) => c.text.includes("ORDER BY embedding"));
     expect(q).toBeTruthy();
-    expect(q!.text).toContain("user_id = $1");
-    expect(q!.text).toContain("project_id IS NULL");
-    expect(q!.text).toContain("namespace = $3");
-    expect(q!.values).toEqual(["u1", "[1,0,0,0]", "ns", 5]);
+    expect(q!.text).toContain("scope = $1");
+    expect(q!.values).toEqual(["u:u1", "[1,0,0,0]", "ns", 5]);
   });
 
   it("project-scoped search filters on project_id (project members share the space)", async () => {
     const { store, calls } = mocked();
     await store.search({ userId: "u1", projectId: "p9", namespace: "ns", embedding: [0, 1, 0, 0], k: 3 });
     const q = calls.find((c) => c.text.includes("ORDER BY embedding"));
-    expect(q!.text).toContain("project_id = $1");
-    expect(q!.values![0]).toBe("p9");
+    expect(q!.text).toContain("scope = $1");
+    expect(q!.values![0]).toBe("p:p9");
   });
 
   it("delete carries the FULL scope filter — user, project, and namespace", async () => {
     const { store, calls } = mocked();
     await store.delete("u1", "ns", "01ENTRY", null);
     const q = calls.find((c) => c.text.startsWith("DELETE"));
-    expect(q!.text).toContain("user_id = $1");
-    expect(q!.text).toContain("project_id IS NULL");
+    expect(q!.text).toContain("scope = $1");
     expect(q!.text).toContain("namespace = $3");
-    expect(q!.values).toEqual(["u1", "01ENTRY", "ns"]);
+    expect(q!.values).toEqual(["u:u1", "01ENTRY", "ns"]);
   });
 
   it("existingIds joins on scope+namespace, not bare ids", async () => {
@@ -67,11 +64,11 @@ describe("pgvector cold store: scope discipline", () => {
       { id: "01A", userId: "u1", projectId: null, namespace: "ns1" },
       { id: "01B", userId: "u2", projectId: "p1", namespace: "ns2" },
     ]);
-    const q = calls.find((c) => c.text.includes("VALUES"));
+    const q = calls.find((c) => c.text.includes("AS v(id"));
     expect(q).toBeTruthy();
+    expect(q!.text).toContain("t.scope = v.scope");
     expect(q!.text).toContain("t.namespace = v.namespace");
-    expect(q!.text).toContain("t.project_id = v.project_id");
-    expect(q!.values).toEqual(["01A", "u1", null, "ns1", "01B", "u2", "p1", "ns2"]);
+    expect(q!.values).toEqual(["01A", "u:u1", "ns1", "01B", "p:p1", "ns2"]);
   });
 
   it("upsert stores the entryId/userId/projectId echo in the payload like Qdrant", async () => {
@@ -81,7 +78,7 @@ describe("pgvector cold store: scope discipline", () => {
       embedding: [0, 0, 1, 0], payload: { source: "manual" },
     });
     const q = calls.find((c) => c.text.startsWith("INSERT INTO"));
-    const payload = q!.values![5] as Record<string, unknown>;
+    const payload = q!.values![6] as Record<string, unknown>;
     expect(payload).toMatchObject({ source: "manual", entryId: "01E", userId: "u1", projectId: null });
   });
 
