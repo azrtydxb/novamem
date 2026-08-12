@@ -122,6 +122,32 @@ similarity search); capture's synchronous semantic near-dup probe; the
 search-time neighbour walk; `preferFacts`; the second write path's
 divergent semantics.
 
+## Phase 8 — SHIPPED AND GATED 2026-08-12: pgvector cold-store backend
+
+**Verdict: PASS — exact accuracy parity.** LoCoMo short-run (same seed,
+same 50 questions, stable table, full 378k-vector corpus resident):
+pgvector (hash-partitioned) **72.0 vs Qdrant 72.0**, zero eval failures.
+An earlier 62.0 read was confounded (concurrent bulk inserts into a
+scope-skewed single partition) and is superseded. The bench runs
+pgvector permanently per Pascal; Qdrant remains the default provider
+and the scale-out option.
+
+Shipped across #188–#192, each fixing something the gate caught live:
+provider + WHERE-scope discipline (#188); hash partitioning + fast
+migration tool (#189); (scope, namespace) partition key after
+single-tenant skew packed all 378k vectors into one partition, plus the
+deploy-trap docs (#190); ensureReady no longer memoises a failed boot
+forever (#191); the PK guard survives node-pg returning name[] as a
+string (#192). Migration: 378,214 vectors, 0 orphans, 17.5 minutes via
+drop-index → batch-load → rebuild, vs ~5k rows/min inserting through a
+global HNSW graph.
+
+Same-day bonus (latency lever 1, #193): the FTS keyword tier's
+strict-then-loose serial fallback collapsed into one statement —
+measured with the tier active on the pgvector bench: p50 399→246 ms,
+p95 785→476 ms. This makes re-evaluating hybrid keyword weights (which
+lost the original calibration partly on latency) a live question.
+
 ## Phase 8 (queued 2026-08-12): pgvector cold-store backend
 
 Mem0's bundled server runs pgvector — vectors inside Postgres, no
