@@ -118,17 +118,21 @@ export class PgVectorColdStore {
         // A table created by an earlier build (PK/partition key without
         // namespace) fails upserts with an opaque ON CONFLICT error —
         // detect it at startup and say what to actually do.
+        // string_agg, not array_agg: node-pg hands back name[] as the
+        // literal "{a,b,c}" string, and the guard itself threw TypeError
+        // on it — which read as "cold store down" instead of the
+        // intended migration message.
         const pk = await this.pool.query(
-          `SELECT array_agg(a.attname ORDER BY x.n) AS cols
+          `SELECT string_agg(a.attname, ',' ORDER BY x.n) AS cols
            FROM pg_index i
            JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS x(attnum, n) ON true
            JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = x.attnum
            WHERE i.indrelid = '${TABLE}'::regclass AND i.indisprimary`,
         );
-        const cols: string[] = pk.rows[0]?.cols ?? [];
-        if (cols.length > 0 && cols.join(",") !== "entry_id,scope,namespace") {
+        const cols: string = pk.rows[0]?.cols ?? "";
+        if (cols && cols !== "entry_id,scope,namespace") {
           throw new Error(
-            `${TABLE} has primary key (${cols.join(", ")}) from an older build; ` +
+            `${TABLE} has primary key (${cols.split(",").join(", ")}) from an older build; ` +
             `this version requires (entry_id, scope, namespace). ` +
             `Rebuild the table: DROP TABLE ${TABLE}, restart to recreate, then re-run ` +
             `scripts/sync-qdrant-to-pgvector.mjs (or re-embed).`,
