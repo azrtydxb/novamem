@@ -148,7 +148,7 @@ measured with the tier active on the pgvector bench: p50 399→246 ms,
 p95 785→476 ms. This makes re-evaluating hybrid keyword weights (which
 lost the original calibration partly on latency) a live question.
 
-## Phase 8 (queued 2026-08-12): pgvector cold-store backend
+## Phase 8 — original plan entry (historical; superseded by the verdict above)
 
 Mem0's bundled server runs pgvector — vectors inside Postgres, no
 separate vector service. A `pgvector` implementation behind the existing
