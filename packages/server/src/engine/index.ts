@@ -1214,8 +1214,8 @@ export class MemoryEngine {
   }> {
     // Capture is remember plus one thing: the contradiction/superset
     // guard below (Mem0 alignment, Phase 4). The checks that also run
-    // here (worthiness, length, exact-hash lookup) are cheap pre-filters
-    // that keep junk and exact duplicates away from the paid embed — the
+    // here (worthiness, length) are cheap pre-filters that keep junk
+    // away from the paid embed — the
     // *handling* of every outcome (rejection wording, dedup fast-path
     // with its backfill self-heal, metrics) lives in remember() alone.
     // This path used to clone the handling too, and the clones drifted:
@@ -1232,13 +1232,11 @@ export class MemoryEngine {
 
     const namespace = req.namespace ?? "default";
     const projectId = req.project ?? null;
-    // Exact duplicate: skip the embed and let remember()'s own dedup
-    // fast-path do the bump + vector self-heal.
-    const contentHash = sha256Hex(req.content.trim());
-    const exact = await this.warm.findByContentHash(userId, projectId, contentHash);
-    if (exact) {
-      return this.remember(userId, { ...req, namespace }, token);
-    }
+    // NOTE(perf, lever 2c): the pre-embed exact-hash check that used to
+    // sit here duplicated remember()'s own dedup fast-path — one extra
+    // Postgres round trip on EVERY capture to save one embed call (~40ms)
+    // only on the exact-duplicate minority. remember() still dedups; the
+    // embed spent on a duplicate is the cheaper side of that trade.
 
     // This embed only powers the near-duplicate lookup, and unlike
     // remember() it runs *before* anything is written. An unguarded throw
@@ -1985,7 +1983,17 @@ export class MemoryEngine {
         for (const r of results) if (promotedSet.has(r.id)) r.tier = "warm";
       }
     }
-    if (idsToBump.length > 0) await this.warm.bumpHitsMany(idsToBump);
+    if (idsToBump.length > 0) {
+      // Bookkeeping, not response content: a hit-count bump the caller
+      // never sees does not belong on the response path. Failures only
+      // cost decay/promotion signal, which the next search re-earns.
+      void this.warm.bumpHitsMany(idsToBump).catch((err: unknown) => {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "async bumpHitsMany failed (hit counts lag)",
+        );
+      });
+    }
 
     // ── Arch-plan gap-closer: auto-expand source_chunk for fact memories ──
     // Each extracted-fact memory carries metadata.source_chunk_id pointing
