@@ -42,6 +42,10 @@ export interface PgVectorColdStoreConfig {
 }
 
 const TABLE = "memory_vectors";
+/** Hash-partition count. Fixed after first creation (changing it means a
+ *  table rebuild via the migration tool); 32 keeps each partition's HNSW
+ *  graph small through the multi-million-vector range. */
+const PARTITIONS = 32;
 
 function toVectorLiteral(embedding: number[]): string {
   return `[${embedding.join(",")}]`;
@@ -61,24 +65,40 @@ export class PgVectorColdStore {
     this.dim = cfg.vectorSize;
   }
 
-  /** Idempotent DDL, run once per process on first use. The vector
-   *  column's dimensionality comes from config (mirrors Qdrant, where
-   *  collections are created with the configured size); a dimension
-   *  mismatch against an existing table fails loudly rather than
-   *  truncating or padding. */
+  /** Idempotent DDL, run once per process on first use.
+   *
+   *  The table is HASH-PARTITIONED on `scope` — `u:<user>` for user
+   *  entries, `p:<project>` for project entries — so each partition
+   *  carries its own small HNSW graph. Two scaling properties follow:
+   *  inserts pay the small-graph walk forever instead of degrading with
+   *  global table size (measured on the bench sync: ~5k inserts/min at
+   *  260k rows on one big graph), and every query the engine issues
+   *  filters on exactly this scope, so partition pruning gives the ANN
+   *  search a per-tenant-bucket graph — Qdrant's per-collection
+   *  isolation model, rebuilt inside Postgres.
+   *
+   *  Dimensionality comes from config; a mismatch against an existing
+   *  table fails loudly rather than truncating or padding. */
   private ensureReady(): Promise<void> {
     if (!this.ready) {
       this.ready = (async () => {
         await this.pool.query("CREATE EXTENSION IF NOT EXISTS vector");
         await this.pool.query(`
           CREATE TABLE IF NOT EXISTS ${TABLE} (
-            entry_id   TEXT PRIMARY KEY,
+            entry_id   TEXT NOT NULL,
             user_id    TEXT NOT NULL,
             project_id TEXT,
             namespace  TEXT NOT NULL,
+            scope      TEXT NOT NULL,
             embedding  vector(${this.dim}) NOT NULL,
-            payload    JSONB NOT NULL DEFAULT '{}'
-          )`);
+            payload    JSONB NOT NULL DEFAULT '{}',
+            PRIMARY KEY (entry_id, scope)
+          ) PARTITION BY HASH (scope)`);
+        for (let i = 0; i < PARTITIONS; i++) {
+          await this.pool.query(
+            `CREATE TABLE IF NOT EXISTS ${TABLE}_p${i} PARTITION OF ${TABLE}
+             FOR VALUES WITH (MODULUS ${PARTITIONS}, REMAINDER ${i})`);
+        }
         const { rows } = await this.pool.query(
           `SELECT atttypmod AS dim FROM pg_attribute
            WHERE attrelid = '${TABLE}'::regclass AND attname = 'embedding'`,
@@ -90,16 +110,15 @@ export class PgVectorColdStore {
             `refusing to mix dimensionalities; migrate or re-embed first`,
           );
         }
+        // Partitioned parents can't carry an HNSW index; each partition
+        // gets its own (that is the point).
+        for (let i = 0; i < PARTITIONS; i++) {
+          await this.pool.query(
+            `CREATE INDEX IF NOT EXISTS idx_vectors_hnsw_p${i} ON ${TABLE}_p${i}
+             USING hnsw (embedding vector_cosine_ops)`);
+        }
         await this.pool.query(
-          `CREATE INDEX IF NOT EXISTS idx_vectors_hnsw ON ${TABLE}
-           USING hnsw (embedding vector_cosine_ops)`,
-        );
-        await this.pool.query(
-          `CREATE INDEX IF NOT EXISTS idx_vectors_scope ON ${TABLE} (user_id, project_id, namespace)`,
-        );
-        await this.pool.query(
-          `CREATE INDEX IF NOT EXISTS idx_vectors_project ON ${TABLE} (project_id)
-           WHERE project_id IS NOT NULL`,
+          `CREATE INDEX IF NOT EXISTS idx_vectors_scope ON ${TABLE} (scope, namespace)`,
         );
       })();
     }
@@ -110,10 +129,14 @@ export class PgVectorColdStore {
    *  project-scoped entry lives under its project (user intentionally
    *  not part of the key — project members share the space); a user
    *  entry lives under (user, no project). */
+  /** The partition key. Matching on `scope` (not user/project columns)
+   *  is what lets the planner prune to a single partition. */
+  private scopeOf(userId: string, projectId: string | null): string {
+    return projectId === null ? `u:${userId}` : `p:${projectId}`;
+  }
+
   private scopeWhere(userId: string, projectId: string | null): { clause: string; params: unknown[] } {
-    return projectId === null
-      ? { clause: "user_id = $1 AND project_id IS NULL", params: [userId] }
-      : { clause: "project_id = $1", params: [projectId] };
+    return { clause: "scope = $1", params: [this.scopeOf(userId, projectId)] };
   }
 
   async upsert(args: {
@@ -127,13 +150,14 @@ export class PgVectorColdStore {
     await this.ensureReady();
     const projectId = args.projectId ?? null;
     await this.pool.query(
-      `INSERT INTO ${TABLE} (entry_id, user_id, project_id, namespace, embedding, payload)
-       VALUES ($1, $2, $3, $4, $5::vector, $6)
-       ON CONFLICT (entry_id) DO UPDATE SET
+      `INSERT INTO ${TABLE} (entry_id, user_id, project_id, namespace, scope, embedding, payload)
+       VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
+       ON CONFLICT (entry_id, scope) DO UPDATE SET
          user_id = EXCLUDED.user_id, project_id = EXCLUDED.project_id,
          namespace = EXCLUDED.namespace, embedding = EXCLUDED.embedding,
          payload = EXCLUDED.payload`,
       [args.id, args.userId, projectId, args.namespace,
+       this.scopeOf(args.userId, projectId),
        toVectorLiteral(args.embedding),
        { ...args.payload, entryId: args.id, userId: args.userId, projectId }],
     );
@@ -195,16 +219,15 @@ export class PgVectorColdStore {
     const values: string[] = [];
     const params: unknown[] = [];
     entries.forEach((e, i) => {
-      const b = i * 4;
-      values.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4})`);
-      params.push(e.id, e.userId, e.projectId, e.namespace);
+      const b = i * 3;
+      values.push(`($${b + 1}, $${b + 2}, $${b + 3})`);
+      params.push(e.id, this.scopeOf(e.userId, e.projectId), e.namespace);
     });
     const { rows } = await this.pool.query(
-      `SELECT v.id FROM (VALUES ${values.join(",")}) AS v(id, user_id, project_id, namespace)
+      `SELECT v.id FROM (VALUES ${values.join(",")}) AS v(id, scope, namespace)
        JOIN ${TABLE} t ON t.entry_id = v.id
-        AND t.namespace = v.namespace
-        AND ((v.project_id IS NULL AND t.user_id = v.user_id AND t.project_id IS NULL)
-          OR (v.project_id IS NOT NULL AND t.project_id = v.project_id))`,
+        AND t.scope = v.scope
+        AND t.namespace = v.namespace`,
       params,
     );
     return new Set(rows.map((r) => r.id as string));
