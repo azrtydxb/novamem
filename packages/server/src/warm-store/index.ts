@@ -36,6 +36,11 @@ export function hashToken(plaintext: string): string {
 
 export const SYSTEM_USER = "public";
 
+/** Minimum time between `last_used_at` touches for one token. Dormancy
+ *  reporting needs day-level resolution; one minute keeps the dashboard
+ *  effectively live while capping the write rate per token. */
+const TOKEN_TOUCH_INTERVAL_MS = 60_000;
+
 export type WarmDB = NodePgDatabase<typeof schema>;
 
 export interface WarmStoreConfig {
@@ -56,6 +61,11 @@ export class WarmStore {
    *    External callers must go through the typed methods on this class.
    */
   public readonly pool: Pool;
+
+  /** Per-token timestamp of the last queued `last_used_at` touch — the
+   *  process-local half of the resolveUserToken write throttle. Bounded
+   *  by the number of distinct live tokens this replica sees. */
+  private readonly tokenTouchQueuedAt = new Map<string, number>();
 
   constructor(cfg: WarmStoreConfig) {
     // Bound the pg connection pool so a load spike can't exhaust
@@ -255,7 +265,16 @@ export class WarmStore {
   /** Resolve a plaintext bearer token to its user id. Touches `last_used_at`
    *  on success so dormant tokens are visible to operators. Returns null on
    *  unknown or revoked tokens — never throw, the auth hook decides what 4xx
-   *  to send. */
+   *  to send.
+   *
+   *  The resolve itself is a plain SELECT. The old UPDATE…RETURNING form
+   *  put a row write on every authenticated request, and concurrent
+   *  requests carrying the same token serialized on that row's lock:
+   *  measured on the bench corpus at 8 concurrent search workers, p50
+   *  went 242→742ms and p95 478→1417ms; at 1 worker the cost vanished.
+   *  `last_used_at` is operator telemetry ("is this token dormant?"), so
+   *  minute-granularity is plenty: the touch is throttled to once per
+   *  TOKEN_TOUCH_INTERVAL_MS per token and fired off-path. */
   async resolveUserToken(
     plaintext: string,
   ): Promise<{
@@ -266,12 +285,33 @@ export class WarmStore {
     if (!plaintext) return null;
     const tokenHash = hashToken(plaintext);
     const rows = await this.db
-      .update(schema.userTokens)
-      .set({ lastUsedAt: sql`now()` })
+      .select({
+        userId: schema.userTokens.userId,
+        label: schema.userTokens.label,
+        lastUsedAt: schema.userTokens.lastUsedAt,
+      })
+      .from(schema.userTokens)
       .where(and(eq(schema.userTokens.tokenHash, tokenHash), isNull(schema.userTokens.revokedAt)))
-      .returning({ userId: schema.userTokens.userId, label: schema.userTokens.label });
+      .limit(1);
     const row = rows[0];
     if (!row) return null;
+    const now = Date.now();
+    const staleEnough =
+      !row.lastUsedAt || now - row.lastUsedAt.getTime() >= TOKEN_TOUCH_INTERVAL_MS;
+    const lastQueued = this.tokenTouchQueuedAt.get(tokenHash) ?? 0;
+    if (staleEnough && now - lastQueued >= TOKEN_TOUCH_INTERVAL_MS) {
+      // Per-process throttle so a burst doesn't queue N identical writes
+      // before the first one lands. Off-path: auth never waits on it.
+      this.tokenTouchQueuedAt.set(tokenHash, now);
+      void this.db
+        .update(schema.userTokens)
+        .set({ lastUsedAt: sql`now()` })
+        .where(eq(schema.userTokens.tokenHash, tokenHash))
+        .catch(() => {
+          // Telemetry write — losing one touch is harmless; allow a retry.
+          this.tokenTouchQueuedAt.delete(tokenHash);
+        });
+    }
     return { userId: row.userId, tokenHash, label: row.label };
   }
 
