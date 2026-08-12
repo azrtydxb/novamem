@@ -10,7 +10,13 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { AdminCreateUserBody, AdminRevokeBody } from "./schemas.js";
 import { requireAdmin, type RouteContext } from "./context.js";
 
-const AdminSecurity = [{ SessionCookie: [] as string[] }];
+// Admin routes accept a session cookie (dashboard SPA) or an
+// admin-owned nm_ user-bearer (non-interactive automation) — the auth
+// hook resolves both into `dashUser`; requireAdmin enforces the role.
+const AdminSecurity: ReadonlyArray<Record<string, readonly string[]>> = [
+  { SessionCookie: [] },
+  { UserBearer: [] },
+];
 const AuditLogQuery = z.object({
   limit: z.coerce.number().int().positive().max(500).default(200),
 });
@@ -80,6 +86,14 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       const minted = tokenLabel
         ? await ctx.warm.createUserToken(userId, tokenLabel)
         : null;
+      if (tokenLabel && !minted) {
+        // createUserToken returns null when the user row isn't visible —
+        // shouldn't happen for a user we just created, but a 201 without
+        // the requested token would break the caller's contract.
+        return reply
+          .code(500)
+          .send({ error: "user created but token mint failed", userId });
+      }
       await ctx.audit(req, "admin.user.create", userId, {
         email,
         tokenMinted: minted !== null,
