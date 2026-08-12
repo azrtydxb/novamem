@@ -89,7 +89,7 @@ stateDiagram-v2
 
 ## Data tiering
 
-A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-indexed) until the decay loop demotes it to the **cold** tier (Qdrant, vector-only). A search hits all three signals in parallel (warm FTS keyword, cold cosine vector, graph neighbours) and fuses with `min-max-normalised weighted scoring`.
+A memory entry exists on the **warm** tier (Postgres, fully addressable, FTS-indexed) until the decay loop demotes it to the **cold** tier (Qdrant or pgvector, vector-only). A search hits five signals in parallel (warm FTS keyword, cold cosine vector from Qdrant/pgvector, graph neighbours, recency rank prior, entity bridge) and fuses with `min-max-normalised weighted scoring`.
 
 - **Decay** — `effectiveDays(hits) = 7 × log₂(hits + 1)`. An entry idle for longer than its lifespan gets demoted. The decay loop runs every 6h by default; one bulk SQL UPDATE per loop tick.
 - **Promotion** — reactive: a search that hits a cold entry whose accumulated lifespan now exceeds the pre-hit idle gap re-promotes it to warm.
