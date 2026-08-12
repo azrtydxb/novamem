@@ -1225,46 +1225,53 @@ export class WarmStore {
     // query (rather than the raw string) keeps stemming, stop-word
     // removal, and phrase operators intact, and keeps the user's text a
     // bound parameter throughout — there is no string interpolation here.
-    const strictQuery = sql`websearch_to_tsquery('english', ${args.query})`;
-    const looseQuery = sql`replace(websearch_to_tsquery('english', ${args.query})::text, '&', '|')::tsquery`;
+    // ── single-pass strict-preference query ───────────────────────────
+    // The tier used to run the strict (AND) form first and fall back to
+    // the loose (OR) rewrite only on zero hits. On the primary grounding
+    // path (memory_context passes the whole user message) strict nearly
+    // always misses, so the common case paid two sequential round trips
+    // with the second being the expensive OR ranking. One statement now
+    // matches the loose superset once, flags which rows also satisfy the
+    // strict form, ranks each row against the form it satisfies, and
+    // orders strict-first — then the JS below keeps only strict rows when
+    // any exist, which reproduces the old two-query semantics exactly.
+    // The user's text stays a bound parameter throughout.
+    const nsSql = useNsArray
+      ? sql`f.namespace = ANY(${args.namespaces!})`
+      : sql`f.namespace = ${args.namespace}`;
+    const scopeSql = isProject
+      ? sql`f.project_id = ${args.projectId!}`
+      : sql`f.user_id = ${args.userId} AND f.project_id IS NULL`;
+    const agentSql =
+      args.agentName === undefined
+        ? sql`TRUE`
+        : args.agentName === null
+          ? sql`e.agent_name IS NULL`
+          : sql`e.agent_name = ${args.agentName}`;
+    const joinSql = args.agentName === undefined
+      ? sql``
+      : sql`JOIN memory_entries e ON e.id = f.entry_id`;
 
-    const run = async (tsquery: ReturnType<typeof sql>) => {
-      // ts_rank + tsv are Postgres-specific expressions — wrap each in
-      // `sql` so drizzle binds parameters but emits the raw operator.
-      // memory_fts.tsv is a GENERATED column not in the schema; refer to
-      // it by raw column name. `ts_rank_cd` (cover density) rewards rows
-      // where the matched lexemes sit close together, which is what we
-      // want once the OR fallback lets partial matches through.
-      const score = sql<number>`ts_rank_cd(${schema.memoryFts}.tsv, ${tsquery})`;
-      const tsvMatch = sql`${schema.memoryFts}.tsv @@ ${tsquery}`;
-      if (args.agentName !== undefined) {
-        // Agent filter requires the join to memory_entries since
-        // agent_name lives there, not on memory_fts.
-        const agentMatch =
-          args.agentName === null
-            ? isNull(schema.memoryEntries.agentName)
-            : eq(schema.memoryEntries.agentName, args.agentName);
-        const rows = await this.db
-          .select({ id: schema.memoryFts.entryId, score })
-          .from(schema.memoryFts)
-          .innerJoin(schema.memoryEntries, eq(schema.memoryEntries.id, schema.memoryFts.entryId))
-          .where(and(nsMatch, scopeMatch, agentMatch, tsvMatch))
-          .orderBy(desc(score))
-          .limit(args.k);
-        return rows.map((r) => ({ id: r.id, score: Number(r.score) }));
-      }
-      const rows = await this.db
-        .select({ id: schema.memoryFts.entryId, score })
-        .from(schema.memoryFts)
-        .where(and(nsMatch, scopeMatch, tsvMatch))
-        .orderBy(desc(score))
-        .limit(args.k);
-      return rows.map((r) => ({ id: r.id, score: Number(r.score) }));
-    };
-
-    const strict = await run(strictQuery);
-    if (strict.length > 0) return strict;
-    return run(looseQuery);
+    const res = await this.db.execute(sql`
+      WITH q AS (
+        SELECT websearch_to_tsquery('english', ${args.query}) AS strict,
+               replace(websearch_to_tsquery('english', ${args.query})::text, '&', '|')::tsquery AS loose
+      )
+      SELECT entry_id, is_strict, score FROM (
+        SELECT f.entry_id,
+               (f.tsv @@ q.strict) AS is_strict,
+               ts_rank_cd(f.tsv, CASE WHEN f.tsv @@ q.strict THEN q.strict ELSE q.loose END) AS score
+        FROM memory_fts f ${joinSql}, q
+        WHERE ${nsSql} AND ${scopeSql} AND ${agentSql} AND f.tsv @@ q.loose
+      ) t
+      ORDER BY is_strict DESC, score DESC
+      LIMIT ${args.k}
+    `);
+    const rows = (res.rows as Array<{ entry_id: string; is_strict: boolean; score: unknown }>);
+    const anyStrict = rows.length > 0 && rows[0]!.is_strict;
+    return rows
+      .filter((r) => !anyStrict || r.is_strict)
+      .map((r) => ({ id: r.entry_id, score: Number(r.score) }));
   }
 
   /** Look up a single entry, scoped to a user or project. This is the
