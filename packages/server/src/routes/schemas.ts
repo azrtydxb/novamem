@@ -283,6 +283,18 @@ export const AdminRevokeBody = z.object({
   token: z.string().min(1).max(256),
 });
 
+export const AdminCreateUserBody = z.object({
+  email: z.string().email().max(254),
+  // min 8 mirrors Better Auth's `minPasswordLength` so the request fails
+  // fast at the schema layer instead of surfacing a BA APIError.
+  password: z.string().min(8).max(256),
+  name: z.string().min(1).max(128).optional(),
+  /** When set, a bearer token is minted for the new user in the same
+   *  call and returned in the response — the non-interactive
+   *  provisioning path (one round trip: create user → usable bearer). */
+  tokenLabel: z.string().max(128).optional(),
+});
+
 // ─── Auth + user-management bodies ──────────────────────────────────────
 
 export const LoginBody = z.object({
