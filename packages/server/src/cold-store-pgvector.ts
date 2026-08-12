@@ -67,9 +67,14 @@ export class PgVectorColdStore {
 
   /** Idempotent DDL, run once per process on first use.
    *
-   *  The table is HASH-PARTITIONED on `scope` — `u:<user>` for user
-   *  entries, `p:<project>` for project entries — so each partition
-   *  carries its own small HNSW graph. Two scaling properties follow:
+   *  The table is HASH-PARTITIONED on (`scope`, `namespace`) — scope is
+   *  `u:<user>` / `p:<project>` — so each partition carries its own
+   *  small HNSW graph. Namespace is part of the key deliberately: a
+   *  deployment dominated by ONE tenant (the bench: a single shared
+   *  bearer user) would otherwise pack every vector into one partition
+   *  and get zero benefit — measured exactly that way before this key
+   *  was widened. Every engine query filters on both columns, so
+   *  pruning still hits a single partition. Two scaling properties follow:
    *  inserts pay the small-graph walk forever instead of degrading with
    *  global table size (measured on the bench sync: ~5k inserts/min at
    *  260k rows on one big graph), and every query the engine issues
@@ -92,8 +97,8 @@ export class PgVectorColdStore {
             scope      TEXT NOT NULL,
             embedding  vector(${this.dim}) NOT NULL,
             payload    JSONB NOT NULL DEFAULT '{}',
-            PRIMARY KEY (entry_id, scope)
-          ) PARTITION BY HASH (scope)`);
+            PRIMARY KEY (entry_id, scope, namespace)
+          ) PARTITION BY HASH (scope, namespace)`);
         for (let i = 0; i < PARTITIONS; i++) {
           await this.pool.query(
             `CREATE TABLE IF NOT EXISTS ${TABLE}_p${i} PARTITION OF ${TABLE}
@@ -152,7 +157,7 @@ export class PgVectorColdStore {
     await this.pool.query(
       `INSERT INTO ${TABLE} (entry_id, user_id, project_id, namespace, scope, embedding, payload)
        VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
-       ON CONFLICT (entry_id, scope) DO UPDATE SET
+       ON CONFLICT (entry_id, scope, namespace) DO UPDATE SET
          user_id = EXCLUDED.user_id, project_id = EXCLUDED.project_id,
          namespace = EXCLUDED.namespace, embedding = EXCLUDED.embedding,
          payload = EXCLUDED.payload`,
