@@ -171,3 +171,19 @@ kubectl -n novamem describe pod -l app=novamem
 - Cookies missing on sign-in over HTTPS → confirm `NOVAMEM_INSECURE_COOKIES=0` and that the Ingress is terminating TLS (not passing through).
 - cert-manager Certificate stuck `Pending` → check the `Order` / `Challenge` resources. Most often DNS for the host doesn't yet resolve to the Ingress IP.
 - Slow first search → local embedder is downloading the model. Subsequent calls are fast; the model lives in the pod's ephemeral volume so it re-downloads on every restart unless you mount a PVC for it.
+
+
+## Running with pgvector instead of Qdrant
+
+Set `NOVAMEM_COLD_PROVIDER: "pgvector"` and **remove `NOVAMEM_COLD_URL`
+from the ConfigMap** — left pointing at Qdrant it is silently used as a
+Postgres connection string and every pod fails readiness (env vars from
+`envFrom` cannot be overridden by `kubectl set env`; edit the ConfigMap
+itself). Unset, the cold store shares the warm database.
+
+The Postgres pod needs: a pgvector-enabled image
+(`pgvector/pgvector:pg16` is drop-in for `postgres:16`), and a
+memory-backed `/dev/shm` (see the example in `postgres.yaml`) sized
+well below the container memory limit. For migrating an existing
+Qdrant deployment, `packages/server/scripts/sync-qdrant-to-pgvector.mjs`
+copies vectors without re-embedding.

@@ -26,6 +26,15 @@ spec:
     spec:
       containers:
         - name: postgres
+          # For NOVAMEM_COLD_PROVIDER=pgvector use a pgvector-enabled
+          # image (pgvector/pgvector:pg16 — same major, data-compatible)
+          # AND mount a memory-backed emptyDir at /dev/shm: Kubernetes'
+          # 64MB default breaks parallel index maintenance with
+          # "could not resize shared memory segment" (dsm_impl_posix).
+          # Size it WELL below the container memory limit — the mount
+          # counts against it. Example:
+          #   volumes:       [{name: dshm, emptyDir: {medium: Memory, sizeLimit: 512Mi}}]
+          #   volumeMounts:  [{name: dshm, mountPath: /dev/shm}]
           image: postgres:16-alpine
           env:
             - name: POSTGRES_USER
