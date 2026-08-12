@@ -55,11 +55,20 @@ async function main() {
   const warm = new WarmStore({ url: cfg.warm.url, pgPoolMax: cfg.service.pgPoolMax });
   await warm.initialize();
 
-  const cold = new ColdStore({
-    url: cfg.cold.url,
-    vectorSize: cfg.cold.vectorSize,
-    timeoutMs: cfg.cold.timeoutMs,
-  });
+  const cold =
+    cfg.cold.provider === "pgvector"
+      ? (new (await import("./cold-store-pgvector.js")).PgVectorColdStore({
+          url: cfg.cold.url,
+          vectorSize: cfg.cold.vectorSize,
+          timeoutMs: cfg.cold.timeoutMs,
+        // Same structural-cast pattern as the test fakes (asCold): the
+        // engine consumes the shared method surface, not Qdrant details.
+        }) as unknown as ColdStore)
+      : new ColdStore({
+          url: cfg.cold.url,
+          vectorSize: cfg.cold.vectorSize,
+          timeoutMs: cfg.cold.timeoutMs,
+        });
 
   const embedder = makeEmbedder({
     provider: cfg.embeddings.provider,
