@@ -1214,8 +1214,8 @@ export class MemoryEngine {
   }> {
     // Capture is remember plus one thing: the contradiction/superset
     // guard below (Mem0 alignment, Phase 4). The checks that also run
-    // here (worthiness, length, exact-hash lookup) are cheap pre-filters
-    // that keep junk and exact duplicates away from the paid embed — the
+    // here (worthiness, length) are cheap pre-filters that keep junk
+    // away from the paid embed — the
     // *handling* of every outcome (rejection wording, dedup fast-path
     // with its backfill self-heal, metrics) lives in remember() alone.
     // This path used to clone the handling too, and the clones drifted:
