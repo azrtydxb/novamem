@@ -132,7 +132,7 @@ export class PgVectorColdStore {
         const cols: string = pk.rows[0]?.cols ?? "";
         if (cols && cols !== "entry_id,scope,namespace") {
           throw new Error(
-            `${TABLE} has primary key (${cols}) from an older build; ` +
+            `${TABLE} has primary key (${cols.split(",").join(", ")}) from an older build; ` +
             `this version requires (entry_id, scope, namespace). ` +
             `Rebuild the table: DROP TABLE ${TABLE}, restart to recreate, then re-run ` +
             `scripts/sync-qdrant-to-pgvector.mjs (or re-embed).`,
