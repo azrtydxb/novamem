@@ -51,13 +51,27 @@ describe("pgvector cold store: scope discipline", () => {
     expect(q!.values![0]).toBe("p9");
   });
 
-  it("delete carries the scope filter, not just the id", async () => {
+  it("delete carries the FULL scope filter — user, project, and namespace", async () => {
     const { store, calls } = mocked();
     await store.delete("u1", "ns", "01ENTRY", null);
     const q = calls.find((c) => c.text.startsWith("DELETE"));
     expect(q!.text).toContain("user_id = $1");
     expect(q!.text).toContain("project_id IS NULL");
-    expect(q!.values).toEqual(["u1", "01ENTRY"]);
+    expect(q!.text).toContain("namespace = $3");
+    expect(q!.values).toEqual(["u1", "01ENTRY", "ns"]);
+  });
+
+  it("existingIds joins on scope+namespace, not bare ids", async () => {
+    const { store, calls } = mocked();
+    await store.existingIds([
+      { id: "01A", userId: "u1", projectId: null, namespace: "ns1" },
+      { id: "01B", userId: "u2", projectId: "p1", namespace: "ns2" },
+    ]);
+    const q = calls.find((c) => c.text.includes("VALUES"));
+    expect(q).toBeTruthy();
+    expect(q!.text).toContain("t.namespace = v.namespace");
+    expect(q!.text).toContain("t.project_id = v.project_id");
+    expect(q!.values).toEqual(["01A", "u1", null, "ns1", "01B", "u2", "p1", "ns2"]);
   });
 
   it("upsert stores the entryId/userId/projectId echo in the payload like Qdrant", async () => {

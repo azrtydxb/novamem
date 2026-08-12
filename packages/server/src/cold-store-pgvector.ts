@@ -187,11 +187,27 @@ export class PgVectorColdStore {
   ): Promise<Set<string>> {
     await this.ensureReady();
     if (entries.length === 0) return new Set();
+    // Scope discipline applies to reads-by-id too: an id existing under a
+    // DIFFERENT tenant/namespace must not count, both for correctness
+    // (backfillMissingVector would skip a needed re-embed) and to deny
+    // cross-tenant existence probing of the shared table. One grouped
+    // query via a VALUES join rather than N round-trips.
+    const values: string[] = [];
+    const params: unknown[] = [];
+    entries.forEach((e, i) => {
+      const b = i * 4;
+      values.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4})`);
+      params.push(e.id, e.userId, e.projectId, e.namespace);
+    });
     const { rows } = await this.pool.query(
-      `SELECT entry_id FROM ${TABLE} WHERE entry_id = ANY($1)`,
-      [entries.map((e) => e.id)],
+      `SELECT v.id FROM (VALUES ${values.join(",")}) AS v(id, user_id, project_id, namespace)
+       JOIN ${TABLE} t ON t.entry_id = v.id
+        AND t.namespace = v.namespace
+        AND ((v.project_id IS NULL AND t.user_id = v.user_id AND t.project_id IS NULL)
+          OR (v.project_id IS NOT NULL AND t.project_id = v.project_id))`,
+      params,
     );
-    return new Set(rows.map((r) => r.entry_id as string));
+    return new Set(rows.map((r) => r.id as string));
   }
 
   async delete(
@@ -202,9 +218,14 @@ export class PgVectorColdStore {
   ): Promise<void> {
     await this.ensureReady();
     const scope = this.scopeWhere(userId, projectId);
+    // Namespace is part of the scope here exactly as it is in search():
+    // knowing an id must not be enough to delete across shelves.
     await this.pool.query(
-      `DELETE FROM ${TABLE} WHERE entry_id = $${scope.params.length + 1} AND ${scope.clause}`,
-      [...scope.params, id],
+      `DELETE FROM ${TABLE}
+       WHERE entry_id = $${scope.params.length + 1}
+         AND namespace = $${scope.params.length + 2}
+         AND ${scope.clause}`,
+      [...scope.params, id, namespace],
     );
   }
 

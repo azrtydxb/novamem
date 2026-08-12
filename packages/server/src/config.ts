@@ -309,7 +309,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     cold: {
       provider: env.NOVAMEM_COLD_PROVIDER,
-      url: env.NOVAMEM_COLD_URL ?? (env.NOVAMEM_COLD_PROVIDER === "pgvector" ? env.NOVAMEM_WARM_URL : undefined) ?? "http://localhost:6333",
+      url:
+        env.NOVAMEM_COLD_URL ??
+        (env.NOVAMEM_COLD_PROVIDER === "pgvector"
+          ? env.NOVAMEM_WARM_URL ?? "postgres://novamem:novamem@localhost:5432/novamem"
+          : "http://localhost:6333"),
       vectorSize: env.NOVAMEM_COLD_VECTOR_SIZE,
       timeoutMs: env.NOVAMEM_COLD_TIMEOUT_MS,
     },
