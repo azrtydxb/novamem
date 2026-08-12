@@ -130,7 +130,7 @@ cold-store interface would collapse NovaMem's minimum stack to
 **one database + an embedder** (Qdrant becomes the optional scale-out
 backend). Same discipline as Phase 7, with one difference: Qdrant
 genuinely carries retrieval (unlike the graph tier), so parity is NOT
-presumed. Gate: quick-gate parity at n=50 on a pgvector-backed corpus;
+presumed. Gate: quick-gate parity on the frozen 50-question stratified reference subset (bench/ref50-qids.json) against a pgvector-backed corpus;
 ingest throughput within 20% of Qdrant; measured at the 122k-chunk scale
 before it may become a default anywhere.
 
