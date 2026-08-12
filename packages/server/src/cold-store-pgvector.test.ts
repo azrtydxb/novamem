@@ -19,6 +19,7 @@ function mocked() {
     query: async (text: string, values?: unknown[]) => {
       calls.push({ text, values });
       if (text.includes("atttypmod")) return { rows: [{ dim: 4 }] };
+      if (text.includes("indisprimary")) return { rows: [{ cols: "entry_id,scope,namespace" }] };
       return { rows: [], rowCount: 0 };
     },
     connect: async () => ({
@@ -91,7 +92,7 @@ describe("pgvector cold store: scope discipline", () => {
           throw new Error("db briefly down");
         }
         if (text.includes("atttypmod")) return { rows: [{ dim: 4 }] };
-        if (text.includes("indisprimary")) return { rows: [{ cols: ["entry_id", "scope", "namespace"] }] };
+        if (text.includes("indisprimary")) return { rows: [{ cols: "entry_id,scope,namespace" }] };
         return { rows: [], rowCount: 0 };
       },
       connect: async () => ({ query: fake.query, release: () => {} }),
@@ -100,6 +101,23 @@ describe("pgvector cold store: scope discipline", () => {
     (store as unknown as { pool: typeof fake }).pool = fake;
     expect(await store.ping()).toBe(false); // first attempt fails
     expect(await store.ping()).toBe(true);  // second attempt retries and succeeds
+  });
+
+  it("old-schema guard fires with pg's string aggregation shape", async () => {
+    const store = new PgVectorColdStore({ url: "postgres://unused", vectorSize: 4 });
+    const fake = {
+      query: async (text: string) => {
+        if (text.includes("atttypmod")) return { rows: [{ dim: 4 }] };
+        if (text.includes("indisprimary")) return { rows: [{ cols: "entry_id,scope" }] };
+        return { rows: [], rowCount: 0 };
+      },
+      connect: async () => ({ query: fake.query, release: () => {} }),
+      end: async () => {},
+    };
+    (store as unknown as { pool: typeof fake }).pool = fake;
+    await expect(
+      store.search({ userId: "u", namespace: "n", embedding: [1, 0, 0, 0], k: 1 }),
+    ).rejects.toThrow(/older build/);
   });
 
   it("refuses a dimensionality mismatch loudly", async () => {
