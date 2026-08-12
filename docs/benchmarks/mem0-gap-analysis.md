@@ -70,7 +70,7 @@ The claims above were then verified by swapping models and harnesses with
 retrieval frozen (no reingestion — the eval reruns from the stored search
 reports). GPT-5 was routed through fastllm-proxy via OpenRouter.
 
-| cell (all 500 questions, identical NovaMem corpus) | score |
+| cell (identical NovaMem corpus; n=500 unless noted) | score |
 |---|---|
 | Qwen3-35B answer+judge, our strict prompt, k=20/6k | 80.4 → 82.8 with scaffold |
 | **GPT-5** answer+judge, our strict prompt, k=20/6k | **80.4** — frontier model buys nothing under honest judging |
@@ -80,7 +80,7 @@ reports). GPT-5 was routed through fastllm-proxy via OpenRouter.
 | mem0 closed platform | 94.4 |
 
 **Verdict: NovaMem's memory content is at statistical parity with mem0's
-OSS v3** (90.0 vs 91.0 is ~5 questions at n=500). The published 14-point
+OSS v3** (90.0 at n=498 vs 91.0 at n=500 — a ~5-question difference). The published 14-point
 gap decomposes as ≈4 pts prompt+judge style, ≈6 pts retrieval-window
 configuration (k=20/6k vs their top_200-class window — a frontier
 answerer converts width into correctness; note per-type: temporal 82.7→88.0,
