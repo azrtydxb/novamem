@@ -34,6 +34,25 @@ function makeApp(
       if (!r) return null;
       return { user: { id: r.user.id, email: r.user.username, role: r.user.role } };
     },
+    // In-process sign-up shim for POST /v1/admin/users — mirrors Better
+    // Auth's behavior: creates the user, throws a 422-shaped APIError on
+    // duplicate email. The fake warm store's `username` doubles as email.
+    signUpEmail: async (body: { email: string; password: string; name: string }) => {
+      for (const u of warm.users.values()) {
+        if (u.username === body.email) {
+          const err = new Error("User already exists") as Error & { statusCode: number };
+          err.statusCode = 422;
+          throw err;
+        }
+      }
+      const created = await warm.createUser({
+        username: body.email,
+        passwordHash: "test-not-checked",
+        role: "user",
+        userId: null,
+      });
+      return { user: { id: created.id } };
+    },
   };
   const app = buildHttpServer({
     engine,
@@ -1473,5 +1492,84 @@ describe("http: project-share uses exact-email lookup (#14)", () => {
     });
     expect(exact.statusCode).toBe(201);
     expect(exact.json().username).toBe("alice@example.com");
+  });
+});
+
+describe("http: POST /v1/admin/users (non-interactive provisioning)", () => {
+  it("admin provisions a user + bearer in one call; bearer works on the data plane", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const headers = await adminAuth(warm);
+    const r = await app.inject({
+      method: "POST", url: "/v1/admin/users",
+      payload: { email: "agent-1@novaflow.local", password: "s3cret-pass", tokenLabel: "novaflow" },
+      headers,
+    });
+    expect(r.statusCode).toBe(201);
+    const body = r.json();
+    expect(body.userId).toBeTruthy();
+    expect(body.token).toMatch(/^nm_/);
+    // The minted bearer authenticates data-plane calls as the new user.
+    const remember = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "agent-1 memory" },
+      headers: { authorization: `Bearer ${body.token}` },
+    });
+    expect(remember.statusCode).toBe(201);
+  });
+
+  it("omits the token when no tokenLabel is requested", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const headers = await adminAuth(warm);
+    const r = await app.inject({
+      method: "POST", url: "/v1/admin/users",
+      payload: { email: "agent-2@novaflow.local", password: "s3cret-pass" },
+      headers,
+    });
+    expect(r.statusCode).toBe(201);
+    expect(r.json().token).toBeUndefined();
+  });
+
+  it("duplicate email answers 409", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const headers = await adminAuth(warm);
+    const payload = { email: "dup@novaflow.local", password: "s3cret-pass" };
+    const first = await app.inject({ method: "POST", url: "/v1/admin/users", payload, headers });
+    expect(first.statusCode).toBe(201);
+    const second = await app.inject({ method: "POST", url: "/v1/admin/users", payload, headers });
+    expect(second.statusCode).toBe(409);
+  });
+
+  it("non-admin caller gets 403, anonymous gets 401", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const user = await userAuth(warm, "plain-user");
+    const payload = { email: "x@novaflow.local", password: "s3cret-pass" };
+    const asUser = await app.inject({
+      method: "POST", url: "/v1/admin/users", payload,
+      headers: { authorization: user.authorization },
+    });
+    expect(asUser.statusCode).toBe(403);
+    const anon = await app.inject({ method: "POST", url: "/v1/admin/users", payload });
+    expect(anon.statusCode).toBe(401);
+  });
+
+  it("an admin-owned nm_ bearer reaches admin routes; a plain user's does not", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const admin = await userAuth(warm, "root-admin", "admin");
+    const adminTok = await warm.createUserToken(admin.userId, "automation");
+    const r = await app.inject({
+      method: "POST", url: "/v1/admin/users",
+      payload: { email: "agent-3@novaflow.local", password: "s3cret-pass", tokenLabel: "t" },
+      headers: { authorization: `Bearer ${adminTok!.token}` },
+    });
+    expect(r.statusCode).toBe(201);
+    // A regular user's bearer resolves but fails the role check.
+    const plain = await userAuth(warm, "plain-2");
+    const plainTok = await warm.createUserToken(plain.userId, "automation");
+    const denied = await app.inject({
+      method: "POST", url: "/v1/admin/users",
+      payload: { email: "y@novaflow.local", password: "s3cret-pass" },
+      headers: { authorization: `Bearer ${plainTok!.token}` },
+    });
+    expect(denied.statusCode).toBe(403);
   });
 });
