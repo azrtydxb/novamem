@@ -4,7 +4,7 @@ Five MCP tools for reading. All are non-mutating except `memory_search`, which c
 
 ## memory_search — hybrid relevance
 
-Always runs keyword (FTS) + vector (cosine) + graph (neighbour) signals in parallel and fuses them with weighted scoring. Default weights `{ keyword: 0.3, vector: 0.6, graph: 0.1 }` — tuned for prose.
+Always runs keyword (FTS) + vector (cosine) + graph (neighbour) + recency rank prior + entity bridge signals in parallel and fuses them with weighted scoring. Default weights `{ keyword: 0.3, vector: 0.6, graph: 0, recency: 0, entity: 0 }` — graph, recency, entity default to 0 in production calibration; tuned for prose.
 
 Inputs:
 - `query` (required, string) — natural-language question or topic
@@ -13,7 +13,7 @@ Inputs:
 - `includeNamespaces[]` (string[]) — union across shelves; capped at 16; ignores `namespace` when set
 - `project` (string) — id (ULID) or human name; omit for user-global
 - `includeProjects[]` (string[]) — union user-global with each listed project; capped at 16
-- `weights` (object) — override one or more of `keyword` / `vector` / `graph`
+- `weights` (object) — override one or more of `keyword` / `vector` / `graph` / `recency` / `entity`
 
 Useful weight overrides:
 - `{ keyword: 1, vector: 0 }` — exact id / symbol / file / hash lookup
@@ -67,7 +67,7 @@ Every hit carries:
 - `score` (number)
 - `tier` (`"warm"` | `"cold"`)
 - `metadata` (object)
-- per-signal sub-scores (`keyword`, `vector`, `graph`) when available
+- per-signal sub-scores (`keyword`, `vector`, `graph`, `recency`, `entity`) when available
 - `sourceType` / `capturedFrom` / `confidence` when set on the entry
 
 Cite `id` if you plan to follow up with `memory_update`, `memory_forget`, or `memory_neighbors`.

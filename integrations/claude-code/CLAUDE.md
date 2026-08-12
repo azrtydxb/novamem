@@ -10,10 +10,7 @@
 
 # NovaMem long-term memory
 
-You have a persistent memory system through the `novamem` MCP server. It
-exposes hybrid search (keyword + vector + graph) over durable entries
-the user has accumulated across sessions. **Use it.** Don't re-derive
-things the user already told you.
+You have a persistent memory system through the `novamem` MCP server. It exposes hybrid search (keyword + vector + graph + recency + entity — 5 signals, graph/entity weights at 0 in production calibration) over durable entries the user has accumulated across sessions. **Use it.** Don't re-derive things the user already told you.
 
 
 ## Mandatory memory protocol

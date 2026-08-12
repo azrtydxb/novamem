@@ -4,7 +4,7 @@
 
 # novamem
 
-**One memory across every AI agent you use.** Hybrid keyword + vector + graph retrieval. Per-user isolation with shareable sub-brains. Self-hostable on a laptop or as a multi-tenant brain for a whole company.
+**One memory across every AI agent you use.** Hybrid keyword + vector + graph + recency + entity retrieval (5-signal engine, graph/entity defaulted to 0 in production calibration). Per-user isolation with shareable sub-brains. Self-hostable on a laptop or as a multi-tenant brain for a whole company. Integrates with 30+ AI agent hosts.
 
 ### → [**azrtydxb.github.io/novamem**](https://azrtydxb.github.io/novamem/)
 

@@ -26,7 +26,7 @@ Returns `{ relevant, recent }` with the same result shape used by search/recent.
 
 ## `POST /v1/search`
 
-Hybrid retrieval. Always runs keyword + vector + graph in parallel, fuses with weighted scoring.
+Hybrid retrieval across 5 signals (keyword + vector + graph + recency + entity). Graph, recency, and entity weights default to 0 in production calibration.
 
 ```json
 {
@@ -36,7 +36,7 @@ Hybrid retrieval. Always runs keyword + vector + graph in parallel, fuses with w
   "includeNamespaces": ["restrict fanout to subset"],
   "project": "id or name",
   "includeProjects": ["active-project union"],
-  "weights": { "keyword": 0.3, "vector": 0.6, "graph": 0.1 },
+  "weights": { "keyword": 0.3, "vector": 0.6, "graph": 0, "recency": 0, "entity": 0 },
   "agentName": "filter results to entries authored by this agent",
   "maxSensitivity": "public|internal|private|sensitive"
 }

@@ -23,11 +23,14 @@ flowchart LR
 - Query path: `SELECT … WHERE tsv @@ plainto_tsquery($1)` ranked by `ts_rank_cd`.
 - Lifespan: an entry stays warm as long as `(now - last_hit) < effectiveDays(hits)`. The synaptic-decay sweep (every 6 h by default) demotes anything past that threshold.
 
-## Cold — Qdrant vectors
+## Cold — Qdrant vectors (or pgvector)
 
 **Job**: semantic recall over older / less-frequently-touched entries.
 
-- Storage: one Qdrant collection per `(scope × namespace)` pair. Naming: `novamem_u_<userId>_<namespace>` for user-global entries and `novamem_p_<projectId>_<namespace>` for project entries. Older unprefixed `novamem_<userId>_<namespace>` collections are read as a compatibility fallback only.
+By default, cold vectors live in Qdrant collections. Set `NOVAMEM_COLD_PROVIDER=pgvector` to use a partitioned Postgres table (`memory_vectors`) instead — useful when you want to avoid an extra service. pgvector uses HNSW indexes with `hnsw.iterative_scan = relaxed_order` for per-tenant filter recall.
+
+- **Qdrant storage**: one collection per `(scope × namespace)` pair. Naming: `novamem_u_<userId>_<namespace>` for user-global entries and `novamem_p_<projectId>_<namespace>` for project entries. Older unprefixed `novamem_<userId>_<namespace>` collections are read as a compatibility fallback only.
+- **pgvector storage**: single partitioned table with HNSW indexes per partition.
 - Vector dim: `NOVAMEM_COLD_VECTOR_SIZE` (default 384, matching the local `all-MiniLM-L6-v2` embedder). Must match `NOVAMEM_EMBEDDINGS_DIM`.
 - Reactive promotion: a cold entry whose accumulated lifespan now exceeds its idle time is moved back to warm on the same call that hit it. Without this, useful entries would slowly disappear forever.
 
@@ -53,7 +56,7 @@ Each layer alone has a failure mode:
 | Cold only | Semantic similarity | Misses literals; a single typo'd identifier can fail to match |
 | Relations only | Adjacent context | No initial seed; needs an entry to walk from |
 
-Hybrid search fuses the keyword and vector signals, normalises (min-max) to a 0..1 scale, then weighted-sums with defaults `keyword: 0.3, vector: 0.6`. `weights.graph` / `weights.entity` are still accepted on the wire but contribute nothing — the winning calibration ran them at 0. Override per call when you have a specific reason — `{keyword:1, vector:0}` for exact-id lookups, `{vector:1}` for pure semantic. Adjacency is served separately by `/v1/neighbors` over `memory_relations`.
+Hybrid search fuses the keyword, vector, graph, recency, and entity signals, normalises (min-max) to a 0..1 scale, then weighted-sums with defaults `keyword: 0.3, vector: 0.6, graph: 0, recency: 0, entity: 0`. The winning calibration ran graph at 0 and entity at 0 (Phase 7 removal); recency contributes via the rank prior bounded to [0.7, 1.15]. Override per call when you have a specific reason — `{keyword:1, vector:0}` for exact-id lookups, `{vector:1}` for pure semantic. Adjacency is served separately by `/v1/neighbors` over `memory_relations`.
 
 ## Decay maths
 

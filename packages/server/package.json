@@ -2,7 +2,7 @@
   "name": "@azrtydxb/novamem-server",
   "version": "1.1.7",
   "private": true,
-  "description": "Standalone tiered memory service — HTTP + MCP transports",
+  "description": "Standalone tiered memory service for AI agents — warm/cold Postgres tiers, pgvector or Qdrant for vectors, 5-signal hybrid search, Better Auth, MCP/HTTP transports, async background enrichment, decay + dream cycle",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",

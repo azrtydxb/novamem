@@ -4,7 +4,7 @@ What novamem does, when to use each tool, what the gates and decay loops mean fo
 
 ## Mental model
 
-A novamem instance holds **memory entries**. Every entry belongs to a single user. An entry can additionally belong to a **project** (a sub-brain) which can be shared with other users. Each entry lives in a **tier** — warm or cold — and each search runs two signals (keyword, vector) in parallel.
+A novamem instance holds **memory entries**. Every entry belongs to a single user. An entry can additionally belong to a **project** (a sub-brain) which can be shared with other users. Each entry lives in a **tier** — warm or cold — and each search runs five signals (keyword, vector, graph, recency, entity) in parallel.
 
 ```mermaid
 flowchart LR
@@ -23,14 +23,17 @@ A user-global entry is invisible to anyone else, period. A project entry is visi
 
 ## Searching (`memory_search`)
 
-Hybrid search runs **keyword (FTS)** + **vector (cosine)** in parallel and fuses the two with weighted scoring:
+Hybrid search runs **keyword (FTS)** + **vector (cosine)** + **graph (neighbour)** + **recency (rank prior)** + **entity (identifier bridge)** in parallel and fuses them with weighted scoring:
 
 | Default weight | Signal | Best for |
 |---|---|---|
-| 0.6 | vector | concept-level questions, paraphrases |
-| 0.3 | keyword | literal symbol / id / file / hash matches |
+| 0.65 | vector | concept-level questions, paraphrases |
+| 0.15 | keyword | literal symbol / id / file / hash matches |
+| 0.10 | recency | recently accessed entries (exponential decay prior) |
+| 0.05 | graph | adjacency via co-occurrence edges (defaulted to 0 in production) |
+| 0.05 | entity | exact identifier bridging (defaulted to 0 in production) |
 
-(`weights.graph` / `weights.entity` are still accepted but contribute nothing.) Override weights when a default doesn't fit the question:
+Override weights when a default doesn't fit the question:
 
 | Need | `weights` |
 |---|---|

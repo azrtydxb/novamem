@@ -8,11 +8,11 @@ Three user-facing pages for exploring your memory.
 
 ## Browse
 
-Hybrid search over your memories. Type a query → all three signals (keyword + vector + graph) run in parallel and the top-K fused results render with per-tier signal badges.
+Hybrid search over your memories. Type a query → all five signals (keyword + vector + graph + recency + entity) run in parallel and the top-K fused results render with per-tier signal badges.
 
 - **Empty input** falls through to recent entries (newest first).
 - **+ Remember** opens a modal to add a new entry. The textarea is the focused element on open; `Esc` cancels, `⌘/Ctrl + Enter` saves.
-- **Tier badges** on each row show which signal contributed: warm · cold · graph. A hit with all three shaded is a strong match.
+- **Tier badges** on each row show which signal contributed: warm · cold · graph · recency · entity. A hit with all five shaded is a strong match.
 - **Click an entry** to open its detail card with the full content + provenance fields (`sourceType`, `capturedFrom`, `confidence`, `createdAt`, `hits`).
 
 ## Today
