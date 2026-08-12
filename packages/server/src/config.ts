@@ -63,9 +63,16 @@ export const ConfigSchema = z
       url: z.string(),
     }),
     cold: z.object({
+      /** Vector backend. `qdrant` (default) or `pgvector` — Phase 8.
+       *  pgvector keeps vectors in Postgres (usually the warm store's own
+       *  database via `url`), collapsing the minimum stack to one
+       *  database + an embedder. Qdrant remains the scale-out option. */
+      provider: z.enum(["qdrant", "pgvector"]).default("qdrant"),
+      /** Qdrant URL, or a Postgres connection string for pgvector. For
+       *  pgvector, leave unset to reuse the warm store's database. */
       url: z.string(),
       vectorSize: z.coerce.number().int().positive().default(384),
-      /** Per-request Qdrant timeout in ms. */
+      /** Per-request timeout in ms (Qdrant request / Postgres statement). */
       timeoutMs: z.coerce.number().int().positive().default(15_000),
     }),
     embeddings: z.object({
@@ -301,7 +308,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       url: env.NOVAMEM_WARM_URL ?? "postgres://novamem:novamem@localhost:5432/novamem",
     },
     cold: {
-      url: env.NOVAMEM_COLD_URL ?? "http://localhost:6333",
+      provider: env.NOVAMEM_COLD_PROVIDER,
+      url: env.NOVAMEM_COLD_URL ?? (env.NOVAMEM_COLD_PROVIDER === "pgvector" ? env.NOVAMEM_WARM_URL : undefined) ?? "http://localhost:6333",
       vectorSize: env.NOVAMEM_COLD_VECTOR_SIZE,
       timeoutMs: env.NOVAMEM_COLD_TIMEOUT_MS,
     },
