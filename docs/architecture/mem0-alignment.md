@@ -122,6 +122,27 @@ similarity search); capture's synchronous semantic near-dup probe; the
 search-time neighbour walk; `preferFacts`; the second write path's
 divergent semantics.
 
+## Phase 8 (queued 2026-08-12): pgvector cold-store backend
+
+Mem0's bundled server runs pgvector — vectors inside Postgres, no
+separate vector service. A `pgvector` implementation behind the existing
+cold-store interface would collapse NovaMem's minimum stack to
+**one database + an embedder** (Qdrant becomes the optional scale-out
+backend). Same discipline as Phase 7, with one difference: Qdrant
+genuinely carries retrieval (unlike the graph tier), so parity is NOT
+presumed. Gate: quick-gate parity on the frozen 50-question stratified reference subset (bench/ref50-qids.json) against a pgvector-backed corpus;
+ingest throughput within 20% of Qdrant; measured at the 122k-chunk scale
+before it may become a default anywhere.
+
+## Benchmark ladder (adopted 2026-08-12)
+
+1. **quick-gate** (~15 min) — read-path changes, standing corpus, no reingest.
+2. **LoCoMo-10** (~45 min end-to-end incl. ingest+drain) — full-pipeline
+   iteration including write-path changes; 10 conversations, published
+   anchors from mem0's harness for comparability. Adapter: to be added
+   to `bench/`.
+3. **LongMemEval_s** (~12 h) — release gate only.
+
 ## 4. Migration plan
 
 One variable per phase. One deploy per phase. Every gate is answer
