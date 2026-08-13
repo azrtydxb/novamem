@@ -2019,3 +2019,58 @@ describe("http: per-user write quotas", () => {
     }
   });
 });
+
+describe("http: export/import round trip", () => {
+  it("exports pages by cursor and re-imports idempotently elsewhere", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const src = await userAuth(warm, "export-user");
+    const contents = [
+      "first durable fact about the ingress controller configuration",
+      "second durable fact about the postgres shared buffers sizing",
+      "third durable fact about the reranker endpoint on the dgx",
+    ];
+    for (const content of contents) {
+      const r = await app.inject({
+        method: "POST", url: "/v1/remember", payload: { content },
+        headers: { authorization: src.authorization },
+      });
+      expect(r.statusCode).toBe(201);
+    }
+    // Page with limit 2 → 2 + 1 via cursor.
+    const p1 = await app.inject({
+      method: "GET", url: "/v1/me/export?limit=2",
+      headers: { authorization: src.authorization },
+    });
+    expect(p1.json().entries).toHaveLength(2);
+    const p2 = await app.inject({
+      method: "GET", url: `/v1/me/export?limit=2&afterId=${p1.json().nextAfterId}`,
+      headers: { authorization: src.authorization },
+    });
+    expect(p2.json().entries).toHaveLength(1);
+    // Import into a different user.
+    const dst = await userAuth(warm, "import-user");
+    const all = [...p1.json().entries, ...p2.json().entries].map(
+      ({ content, namespace, metadata }: { content: string; namespace: string; metadata: Record<string, unknown> }) =>
+        ({ content, namespace, metadata }),
+    );
+    const imp = await app.inject({
+      method: "POST", url: "/v1/me/import", payload: { entries: all },
+      headers: { authorization: dst.authorization },
+    });
+    expect(imp.statusCode).toBe(201);
+    expect(imp.json().imported).toBe(3);
+    // Re-import: content-hash dedup makes it idempotent.
+    const again = await app.inject({
+      method: "POST", url: "/v1/me/import", payload: { entries: all },
+      headers: { authorization: dst.authorization },
+    });
+    expect(again.json().imported).toBe(0);
+    expect(again.json().deduplicated).toBe(3);
+    // The import landed for dst, invisible to src's scope and vice versa.
+    const dstRecent = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {},
+      headers: { authorization: dst.authorization },
+    });
+    expect(dstRecent.json().results).toHaveLength(3);
+  });
+});

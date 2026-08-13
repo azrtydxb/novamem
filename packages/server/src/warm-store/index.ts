@@ -555,6 +555,55 @@ export class WarmStore {
     });
   }
 
+  // ─── Export ───────────────────────────────────────────────────────────
+
+  /** Keyset-paged dump of every entry the user owns (any scope), oldest
+   *  id first. Powers /v1/me/export; id order is stable under concurrent
+   *  writes (ULIDs are monotonic), so pages never skip or repeat. */
+  async exportEntries(
+    userId: string,
+    opts: { afterId?: string; limit?: number } = {},
+  ): Promise<
+    Array<{
+      id: string;
+      projectId: string | null;
+      content: string;
+      namespace: string;
+      source: string;
+      agentName: string | null;
+      metadata: Record<string, unknown>;
+      sourceType: string | null;
+      capturedFrom: string | null;
+      confidence: number;
+      createdAt: Date;
+      updatedAt: Date;
+    }>
+  > {
+    const limit = Math.min(Math.max(opts.limit ?? 500, 1), 1000);
+    const conds = [eq(schema.memoryEntries.userId, userId)];
+    if (opts.afterId) conds.push(gt(schema.memoryEntries.id, opts.afterId));
+    const rows = await this.db
+      .select()
+      .from(schema.memoryEntries)
+      .where(and(...conds))
+      .orderBy(asc(schema.memoryEntries.id))
+      .limit(limit);
+    return rows.map((r) => ({
+      id: r.id,
+      projectId: r.projectId,
+      content: r.content,
+      namespace: r.namespace,
+      source: r.source,
+      agentName: r.agentName,
+      metadata: (r.metadata ?? {}) as Record<string, unknown>,
+      sourceType: r.sourceType,
+      capturedFrom: r.capturedFrom,
+      confidence: r.confidence,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }));
+  }
+
   // ─── Quotas ───────────────────────────────────────────────────────────
 
   /** Per-user quota overrides; null fields = server defaults. */

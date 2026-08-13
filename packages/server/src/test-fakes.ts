@@ -938,6 +938,28 @@ export class FakeWarmStore {
     return null;
   }
 
+  async exportEntries(userId: string, opts: { afterId?: string; limit?: number } = {}) {
+    const limit = Math.min(Math.max(opts.limit ?? 500, 1), 1000);
+    return [...this.rows.values()]
+      .filter((r) => r.userId === userId && (!opts.afterId || r.id > opts.afterId))
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .slice(0, limit)
+      .map((r) => ({
+        id: r.id,
+        projectId: r.projectId,
+        content: r.content,
+        namespace: r.namespace,
+        source: r.source,
+        agentName: r.agentName,
+        metadata: r.metadata,
+        sourceType: r.sourceType,
+        capturedFrom: null,
+        confidence: r.confidence ?? 1,
+        createdAt: r.createdAt,
+        updatedAt: r.createdAt,
+      }));
+  }
+
   quotas = new Map<string, { maxEntries: number | null; writesPerMinute: number | null }>();
 
   async getUserQuota(userId: string) {

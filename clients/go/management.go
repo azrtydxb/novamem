@@ -434,3 +434,86 @@ func (m *Management) Usage(ctx context.Context) (Usage, error) {
 	err := m.c.do(ctx, "usage", http.MethodGet, "/v1/me/usage", nil, &out)
 	return out, err
 }
+
+// ExportedEntry is one row of an export page.
+type ExportedEntry struct {
+	ID           string         `json:"id"`
+	ProjectID    *string        `json:"projectId"`
+	Content      string         `json:"content"`
+	Namespace    string         `json:"namespace"`
+	Source       string         `json:"source"`
+	AgentName    *string        `json:"agentName"`
+	Metadata     map[string]any `json:"metadata"`
+	SourceType   *string        `json:"sourceType"`
+	CapturedFrom *string        `json:"capturedFrom"`
+	Confidence   float64        `json:"confidence"`
+	CreatedAt    string         `json:"createdAt"`
+	UpdatedAt    string         `json:"updatedAt"`
+}
+
+// Export pages every entry the caller owns, oldest id first. Pass the
+// returned cursor back as afterID until it returns an empty page.
+func (m *Management) Export(ctx context.Context, afterID string, limit int) ([]ExportedEntry, string, error) {
+	q := url.Values{}
+	if afterID != "" {
+		q.Set("afterId", afterID)
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/v1/me/export"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out struct {
+		Entries     []ExportedEntry `json:"entries"`
+		NextAfterID *string         `json:"nextAfterId"`
+	}
+	if err := m.c.do(ctx, "export", http.MethodGet, path, nil, &out); err != nil {
+		return nil, "", err
+	}
+	next := afterID
+	if out.NextAfterID != nil {
+		next = *out.NextAfterID
+	}
+	return out.Entries, next, nil
+}
+
+// ImportEntry is one entry to import — the writable subset of
+// ExportedEntry (ids are never preserved across deployments).
+type ImportEntry struct {
+	Content      string         `json:"content"`
+	Namespace    string         `json:"namespace,omitempty"`
+	Source       string         `json:"source,omitempty"`
+	AgentName    string         `json:"agentName,omitempty"`
+	Project      string         `json:"project,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	SourceType   string         `json:"sourceType,omitempty"`
+	CapturedFrom string         `json:"capturedFrom,omitempty"`
+	Confidence   *float64       `json:"confidence,omitempty"`
+}
+
+// ImportResult reports an import page's outcome.
+type ImportResult struct {
+	Imported     int `json:"imported"`
+	Deduplicated int `json:"deduplicated"`
+	Failed       []struct {
+		Index int    `json:"index"`
+		Error string `json:"error"`
+	} `json:"failed"`
+}
+
+// Import stores a page of entries (max 200 per call) as new memories for
+// the calling user. Content-hash dedup makes re-importing the same page
+// idempotent — repeated entries count as Deduplicated, not Imported.
+func (m *Management) Import(ctx context.Context, entries []ImportEntry) (ImportResult, error) {
+	var out ImportResult
+	if len(entries) == 0 {
+		return out, &Error{Op: "import", Message: "entries are required"}
+	}
+	body := struct {
+		Entries []ImportEntry `json:"entries"`
+	}{Entries: entries}
+	err := m.c.do(ctx, "import", http.MethodPost, "/v1/me/import", body, &out)
+	return out, err
+}
