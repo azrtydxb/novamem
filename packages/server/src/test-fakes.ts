@@ -130,6 +130,27 @@ export class FakeWarmStore {
         // pg returns rowCount in addition to rows; the engine reads rowCount.
         return { rows, rowCount: rows.length } as { rows: { id: string }[]; rowCount: number };
       }
+      // reapExpired(): TTL sweep — select expired, bulk-delete by id list.
+      if (sql.includes("metadata->>'expiresAt'") && sql.trimStart().startsWith("SELECT")) {
+        const now = Date.now();
+        const rows = [...this.rows.values()]
+          .filter((r) => {
+            const exp = (r.metadata as { expiresAt?: unknown } | undefined)?.expiresAt;
+            return typeof exp === "string" && Date.parse(exp) <= now;
+          })
+          .slice(0, 1000)
+          .map((r) => ({ id: r.id, user_id: r.userId, project_id: r.projectId, namespace: r.namespace }));
+        return { rows, rowCount: rows.length } as { rows: unknown[]; rowCount: number };
+      }
+      if (sql.startsWith("DELETE FROM memory_relations WHERE from_id = ANY")) {
+        const ids = new Set(params[0] as string[]);
+        this.relations = this.relations.filter((r) => !ids.has(r.fromId) && !ids.has(r.toId));
+        return { rows: [] };
+      }
+      if (sql.startsWith("DELETE FROM memory_entries WHERE id = ANY")) {
+        for (const id of params[0] as string[]) this.rows.delete(id);
+        return { rows: [] };
+      }
       // forget()
       // The engine's forget builds the scope clause as either
       // `project_id = $2` or `user_id = $2` depending on whether the

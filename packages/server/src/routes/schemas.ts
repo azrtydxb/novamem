@@ -215,6 +215,9 @@ export const CaptureBody = z.object({
   capturedFrom: z.string().max(256).optional(),
   confidence: z.number().min(0).max(1).optional(),
   force: z.boolean().optional(),
+  /** Explicit TTL (ISO-8601, must be in the future). Past it the entry
+   *  is hidden from reads immediately and reaped on the decay timer. */
+  expiresAt: z.string().datetime({ offset: true }).optional(),
 });
 
 export const RememberBody = z.object({
@@ -232,6 +235,9 @@ export const RememberBody = z.object({
   confidence: z.number().min(0).max(1).optional(),
   // Bypass for the worthiness gate. Default false.
   force: z.boolean().optional(),
+  /** Explicit TTL (ISO-8601, must be in the future). Past it the entry
+   *  is hidden from reads immediately and reaped on the decay timer. */
+  expiresAt: z.string().datetime({ offset: true }).optional(),
 });
 
 export const UpdateMemoryBody = z.object({

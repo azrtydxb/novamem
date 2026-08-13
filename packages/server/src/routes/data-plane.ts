@@ -243,6 +243,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         confidence: body.confidence,
         force: body.force,
         sensitivity: body.sensitivity,
+        expiresAt: body.expiresAt,
       }, req.bearerToken);
       reply.code(201).send(result);
     },

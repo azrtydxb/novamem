@@ -375,6 +375,10 @@ type CaptureRequest struct {
 	// server judges non-durable ("ok, thanks") comes back Rejected with no
 	// id — which is the gate working, not a failure.
 	Force bool `json:"force,omitempty"`
+	// ExpiresAt sets an explicit TTL (RFC3339). Past it the entry is
+	// hidden from every read immediately and hard-deleted by the server's
+	// reaper. Zero value = no expiry.
+	ExpiresAt string `json:"expiresAt,omitempty"`
 }
 
 // CaptureResult is the outcome of a write.

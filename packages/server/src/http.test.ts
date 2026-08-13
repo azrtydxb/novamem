@@ -1834,3 +1834,56 @@ describe("http: search contentMode (payload shaping)", () => {
     expect(r.json().results[0].content).toBeUndefined();
   });
 });
+
+describe("http: memory TTL (expiresAt)", () => {
+  it("expired entries vanish from reads immediately and are reaped by decay", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "ttl-user");
+    const put = async (content: string, expiresAt?: string) =>
+      app.inject({
+        method: "POST", url: "/v1/remember",
+        payload: { content, ...(expiresAt ? { expiresAt } : {}) },
+        headers: { authorization: u.authorization },
+      });
+    const keep = await put("the permanent fact about the deployment topology");
+    expect(keep.statusCode).toBe(201);
+    // Future TTL: visible now.
+    const future = new Date(Date.now() + 3600_000).toISOString();
+    const soon = await put("the deploy freeze ends on friday afternoon", future);
+    expect(soon.statusCode).toBe(201);
+    const before = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {},
+      headers: { authorization: u.authorization },
+    });
+    expect(before.json().results).toHaveLength(2);
+    // Force-expire it by rewriting the stored metadata (simulates time).
+    const id = soon.json().id;
+    const row = warm.rows.get(id)!;
+    row.metadata = { ...row.metadata, expiresAt: new Date(Date.now() - 1000).toISOString() };
+    const after = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {},
+      headers: { authorization: u.authorization },
+    });
+    expect(after.json().results).toHaveLength(1);
+    expect(after.json().results[0].content).toContain("permanent");
+    // Decay reaps the row for real.
+    const adminH = await adminAuth(warm);
+    const decay = await app.inject({
+      method: "POST", url: "/v1/decay", payload: {}, headers: adminH,
+    });
+    expect(decay.statusCode).toBe(200);
+    expect(decay.json().expired).toBe(1);
+    expect(warm.rows.has(id)).toBe(false);
+  });
+
+  it("rejects a malformed expiresAt", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "ttl-bad");
+    const r = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "some fact that would otherwise be stored fine", expiresAt: "next tuesday" },
+      headers: { authorization: u.authorization },
+    });
+    expect(r.statusCode).toBe(400);
+  });
+});
