@@ -315,6 +315,32 @@ export class ColdStore {
     );
   }
 
+  /** Drop every user-wide collection for a user. Project collections die
+   *  with their project (deleteAllForProject); vectors this user wrote
+   *  into OTHER users' projects are per-point rows this collection-level
+   *  API cannot reach — the warm teardown parks those ids in
+   *  cold_orphans and the reaper deletes them point-by-point. Same
+   *  best-effort semantics as deleteAllForProject. */
+  async deleteAllForUser(userId: string): Promise<string[]> {
+    const prefix = `novamem_u_${userId}_`;
+    const all = await this.client.getCollections();
+    const mine = all.collections.map((c) => c.name).filter((n) => n.startsWith(prefix));
+    const dropped: string[] = [];
+    for (const name of mine) {
+      try {
+        await this.client.deleteCollection(name);
+        this.seenCollections.delete(name);
+        dropped.push(name);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[cold-store] deleteCollection(${name}) failed: ${(err as Error).message}`,
+        );
+      }
+    }
+    return dropped;
+  }
+
   /** Drop every project-scoped collection for the given project id. Used
    *  when a project is deleted. The naming scheme `novamem_p_<project>_*`
    *  makes this a simple prefix scan. */

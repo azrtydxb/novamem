@@ -924,14 +924,50 @@ export class FakeWarmStore {
   }
 
   async listUsers() {
+    // Mirrors the real store's admin census shape: email/name derive from
+    // the fake's `username`, and the counts are computed live.
     return [...this.users.values()].map((u) => ({
       id: u.id,
-      username: u.username,
+      email: u.username,
+      name: u.username,
       role: u.role,
-      userId: u.userId,
       createdAt: u.createdAt,
-      lastLoginAt: u.lastLoginAt,
+      entryCount: [...this.rows.values()].filter((r) => r.userId === u.id).length,
+      tokenCount: [...this.tokens.values()].filter((t) => t.userId === u.id && !t.revoked)
+        .length,
     }));
+  }
+
+  async listOwnedProjects(userId: string) {
+    return [...this.projects.values()].filter((p) => p.ownerUserId === userId).map((p) => p.id);
+  }
+
+  async deleteUserData(userId: string) {
+    if ((await this.listOwnedProjects(userId)).length > 0) {
+      return {
+        deleted: false,
+        entriesRemoved: 0,
+        tokensRemoved: 0,
+        reason: "user still owns project(s)",
+      };
+    }
+    let entriesRemoved = 0;
+    for (const [eid, r] of [...this.rows.entries()]) {
+      if (r.userId === userId) { this.rows.delete(eid); entriesRemoved++; }
+    }
+    this.relations = this.relations.filter((r) => r.userId !== userId);
+    let tokensRemoved = 0;
+    for (const [tk, v] of [...this.tokens.entries()]) {
+      if (v.userId === userId) { this.tokens.delete(tk); tokensRemoved++; }
+    }
+    for (const [pid, members] of this.projectMembers.entries()) {
+      members.delete(userId);
+    }
+    for (const [sid, s] of [...this.sessions.entries()]) {
+      if (s.userId === userId) this.sessions.delete(sid);
+    }
+    this.users.delete(userId);
+    return { deleted: true, entriesRemoved, tokensRemoved };
   }
 
   async deleteUser(id: string) {
@@ -1267,6 +1303,18 @@ export class FakeColdStore {
       if (v.projectId === projectId) {
         this.vectors.delete(id);
         dropped.add(`novamem_p_${projectId}_${v.namespace}`);
+      }
+    }
+    return [...dropped];
+  }
+
+  async deleteAllForUser(userId: string): Promise<string[]> {
+    if (this.fail) throw new Error("cold store down");
+    const dropped = new Set<string>();
+    for (const [id, v] of [...this.vectors.entries()]) {
+      if (v.userId === userId && !v.projectId) {
+        this.vectors.delete(id);
+        dropped.add(`novamem_u_${userId}_${v.namespace}`);
       }
     }
     return [...dropped];

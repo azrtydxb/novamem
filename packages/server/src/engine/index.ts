@@ -2921,6 +2921,59 @@ export class MemoryEngine {
     };
   }
 
+  /** Remove a user and everything they own: owned projects first (each
+   *  via deleteProject, which drops the project's cold collections),
+   *  then the user-global remainder — warm rows, cold vectors, tokens,
+   *  Better Auth sessions/accounts and the user row. Deletion is a
+   *  promise (same rule as forget): cold cleanup failures are surfaced
+   *  in the result, never rounded up to success. */
+  async deleteUser(userId: string): Promise<{
+    deleted: boolean;
+    entriesRemoved: number;
+    tokensRemoved: number;
+    projectsDeleted: string[];
+    coldCleanup: string[];
+    coldCleanupOk: boolean;
+    reason?: string;
+  }> {
+    const projectsDeleted: string[] = [];
+    for (const projectId of await this.warm.listOwnedProjects(userId)) {
+      const r = await this.deleteProject(projectId, userId);
+      if (r.deleted) projectsDeleted.push(projectId);
+    }
+    const warm = await this.warm.deleteUserData(userId);
+    if (!warm.deleted) {
+      return {
+        deleted: false,
+        entriesRemoved: 0,
+        tokensRemoved: 0,
+        projectsDeleted,
+        coldCleanup: [],
+        coldCleanupOk: true,
+        reason: warm.reason,
+      };
+    }
+    let coldCleanup: string[] = [];
+    let coldCleanupOk = true;
+    try {
+      coldCleanup = await this.cold.deleteAllForUser(userId);
+    } catch (err) {
+      coldCleanupOk = false;
+      this.logger.warn(
+        { userId, err: (err as Error).message },
+        "deleteUser: cold cleanup failed — vectors remain until reaped",
+      );
+    }
+    return {
+      deleted: true,
+      entriesRemoved: warm.entriesRemoved,
+      tokensRemoved: warm.tokensRemoved,
+      projectsDeleted,
+      coldCleanup,
+      coldCleanupOk,
+    };
+  }
+
   async stats(userId: string): Promise<MemoryStats> {
     const s = await this.warm.stats(userId);
     const byNamespace: Record<string, { warm: number; cold: number }> = {};
