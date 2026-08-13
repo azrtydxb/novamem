@@ -81,10 +81,28 @@ error message, including when the server echoes it back.
 | `Neighbors(ctx, NeighborsRequest)` | `POST /v1/neighbors` | Graph walk from a seed entry id. |
 | `Update(ctx, UpdateRequest)` | `PUT /v1/memories/:id` | Rewrite in place; preserves id, hits and edges. Prefer it to forget+capture. |
 | `Forget(ctx, ForgetRequest)` | `POST /v1/forget` | Never reports success on a failed delete. See below. |
+| `Remember(ctx, CaptureRequest)` | `POST /v1/remember` | Unconditional store — no worthiness gate, no dedupe pass. For content a person explicitly asked to keep. |
+| `Context(ctx, ContextRequest)` | `POST /v1/context` | Relevant + recent entries for one message, in one round trip. |
+| `SessionRecap(ctx, SessionRecapRequest)` | `POST /v1/session-recap` | Batch end-of-session facts by category. |
+| `ContextPrefix(ctx, project)` | `GET /v1/context-prefix` | Cacheable observation-log prefix for prompt-caching agents. `ErrNotFound` = observer disabled. |
+| `Today(ctx, RecentRequest)` | `POST /v1/recent` | Sugar: `Recent` with `Since` = 24h ago. |
+| `Stats(ctx)` / `Health(ctx)` | `GET /v1/stats`, `GET /health` | Entry census; boolean liveness (a served `{ok:false}` is an answer, not an error). |
 
-Project and token administration are deliberately not exposed — those are
-operator actions, and an agent process holding a client should not be able to
-perform them by accident. Use the TypeScript client or the dashboard.
+Project and token administration are deliberately not on `Client` — an agent
+process holding a client should not be able to perform them by accident. They
+live on two separate, explicitly-constructed types sharing the same error
+contract:
+
+- **`NewManagement(cfg)`** → `Management`: the caller's own `/v1/me/*`
+  surface — `MintToken` / `ListTokens` / `RevokeToken`, projects
+  (`CreateProject`, `ListProjects`, `DeleteProject`, members), the active
+  project, and maintenance (`Decay`, `Hygiene`, `Evaluate`, `Adoption`,
+  `Observe`).
+- **`NewAdmin(cfg)`** → `Admin`: server administration with an admin bearer —
+  `ProvisionUser` (`POST /v1/admin/users`, non-interactive user + first-token
+  creation for fleet orchestrators; branch on the duplicate-email 409 with
+  `IsAlreadyExists`) and `RevokeUserToken`. Keep the admin bearer on the
+  orchestrator side only; it must never reach an agent's context.
 
 ## Scoping
 

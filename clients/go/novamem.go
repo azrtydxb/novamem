@@ -9,7 +9,8 @@
 //   - ISOLATION IS PER USER. A bearer token (`nm_…`) belongs to a user and
 //     carries every right that user has. There is no per-token scope-down: a
 //     leaked token is a leaked account, so treat it exactly like a password.
-//     Mint one from the dashboard's API Tokens page.
+//     Mint one from the dashboard's API Tokens page, via [Management.MintToken],
+//     or — for fleet provisioning — via [Admin.ProvisionUser].
 //   - PROJECTS ARE THE SHARING BOUNDARY. Every entry is either user-wide or
 //     belongs to a project (a "sub-brain") whose members can all read and
 //     delete its entries. Pass Project (an id or a human name) to scope a
@@ -63,11 +64,20 @@
 //	}
 //	res, err := c.Search(ctx, novamem.SearchRequest{Query: "coffee preference", K: 5})
 //
-// The client covers the six data-plane operations an agent needs: Capture,
-// Search, Recent, Neighbors, Update and Forget. Project and token
-// administration are deliberately out of scope — those are operator actions,
-// and an agent process holding a client should not be able to perform them by
-// accident.
+// Client covers the data-plane operations an agent needs: Capture, Remember,
+// Search, Recent, Neighbors, Update, Forget, plus the context helpers
+// (Context, SessionRecap, ContextPrefix, Today) and the read-only Stats and
+// Health probes. Project and token administration are deliberately NOT on
+// Client — an agent process holding a client should not be able to perform
+// them by accident. They live on two separate, explicitly-constructed types:
+//
+//   - [Management] (NewManagement) — the caller's own /v1/me/* surface:
+//     API tokens, projects and members, active project, and the maintenance
+//     endpoints (decay, hygiene, evaluate, adoption, observe).
+//   - [Admin] (NewAdmin) — server administration with an admin user's
+//     bearer: non-interactive user provisioning (ProvisionUser) and token
+//     revocation. This is what an orchestrator uses to create one NovaMem
+//     user per agent.
 package novamem
 
 import (
@@ -612,6 +622,155 @@ func (c *Client) Forget(ctx context.Context, req ForgetRequest) (ForgetResult, e
 	return out, nil
 }
 
+// Remember stores content unconditionally — no worthiness gate, no
+// dedup-or-supersede pass. Prefer Capture for agent-written facts; Remember is
+// for content a person or pipeline explicitly asked to store, where a silent
+// rejection would be the surprise. Field set is identical to CaptureRequest
+// (Force is meaningless here and ignored by the server).
+func (c *Client) Remember(ctx context.Context, req CaptureRequest) (CaptureResult, error) {
+	var out CaptureResult
+	if strings.TrimSpace(req.Content) == "" {
+		return out, &Error{Op: "remember", Message: "content is required"}
+	}
+	err := c.do(ctx, "remember", http.MethodPost, "/v1/remember", req, &out)
+	return out, err
+}
+
+// ContextRequest asks the server to assemble a working context for one
+// incoming message: relevant entries by hybrid search plus the newest entries
+// in scope, in a single round trip.
+type ContextRequest struct {
+	Message string `json:"message"`
+	// K bounds the relevant-results half. The server defaults it.
+	K                 int         `json:"k,omitempty"`
+	Namespace         string      `json:"namespace,omitempty"`
+	Project           string      `json:"project,omitempty"`
+	IncludeProjects   []string    `json:"includeProjects,omitempty"`
+	IncludeNamespaces []string    `json:"includeNamespaces,omitempty"`
+	Weights           *Weights    `json:"weights,omitempty"`
+	MaxSensitivity    Sensitivity `json:"maxSensitivity,omitempty"`
+}
+
+// ContextResult is the server-assembled context bundle.
+type ContextResult struct {
+	Relevant Results `json:"relevant"`
+	Recent   Results `json:"recent"`
+	// Guidance is the server's one-line instruction on how to use the bundle
+	// in a prompt.
+	Guidance string `json:"guidance"`
+}
+
+// Context assembles retrieval context for one message in a single round trip —
+// the "what do I know that bears on this?" call an agent makes before
+// answering. No retry, same reasoning as Search.
+func (c *Client) Context(ctx context.Context, req ContextRequest) (ContextResult, error) {
+	var out ContextResult
+	if strings.TrimSpace(req.Message) == "" {
+		return out, &Error{Op: "context", Message: "message is required"}
+	}
+	err := c.do(ctx, "context", http.MethodPost, "/v1/context", req, &out)
+	return out, err
+}
+
+// SessionRecapRequest batches end-of-session facts by category. Every list is
+// optional; empty lists are simply skipped server-side.
+type SessionRecapRequest struct {
+	Decisions          []string `json:"decisions,omitempty"`
+	SetupFacts         []string `json:"setupFacts,omitempty"`
+	RootCauses         []string `json:"rootCauses,omitempty"`
+	Preferences        []string `json:"preferences,omitempty"`
+	ProjectConventions []string `json:"projectConventions,omitempty"`
+	SafetyConstraints  []string `json:"safetyConstraints,omitempty"`
+	Other              []string `json:"other,omitempty"`
+	Namespace          string   `json:"namespace,omitempty"`
+	Source             string   `json:"source,omitempty"`
+	SourceType         string   `json:"sourceType,omitempty"`
+	CapturedFrom       string   `json:"capturedFrom,omitempty"`
+	Project            string   `json:"project,omitempty"`
+}
+
+// SessionRecapResult reports the batch outcome. Saved counts stored entries;
+// Results carries the per-item outcomes in submission order, including gate
+// rejections (which are not errors — see CaptureResult).
+type SessionRecapResult struct {
+	Saved   int             `json:"saved"`
+	Results []CaptureResult `json:"results"`
+}
+
+// SessionRecap stores a batch of end-of-session facts in one call. Write-path
+// semantics: worth retrying via Retryable(err), never retried here.
+func (c *Client) SessionRecap(ctx context.Context, req SessionRecapRequest) (SessionRecapResult, error) {
+	var out SessionRecapResult
+	err := c.do(ctx, "session-recap", http.MethodPost, "/v1/session-recap", req, &out)
+	return out, err
+}
+
+// ContextPrefix fetches the cacheable observation-log prefix for this user
+// (optionally scoped to a project). Prompt-caching agents prepend it verbatim.
+//
+// ErrNotFound means the server's observer feature is disabled — a
+// configuration answer, not an outage; callers treating the prefix as an
+// optimization should fall back to Search/Context on it.
+func (c *Client) ContextPrefix(ctx context.Context, project string) (string, error) {
+	path := "/v1/context-prefix"
+	if project != "" {
+		path += "?project=" + url.QueryEscape(project)
+	}
+	var out struct {
+		Prefix string `json:"prefix"`
+	}
+	if err := c.do(ctx, "context-prefix", http.MethodGet, path, nil, &out); err != nil {
+		return "", err
+	}
+	return out.Prefix, nil
+}
+
+// Today lists entries from the last 24 hours — sugar over Recent with Since
+// set, mirroring the TypeScript client.
+func (c *Client) Today(ctx context.Context, req RecentRequest) (Results, error) {
+	req.Since = time.Now().Add(-24 * time.Hour)
+	return c.Recent(ctx, req)
+}
+
+// Stats is the per-user entry census: counts by namespace plus totals.
+type Stats struct {
+	ByNamespace map[string]struct {
+		Warm int `json:"warm"`
+		Cold int `json:"cold"`
+	} `json:"byNamespace"`
+	TotalWarm   int     `json:"totalWarm"`
+	TotalCold   int     `json:"totalCold"`
+	LastDecayAt *string `json:"lastDecayAt"`
+	UptimeMs    int64   `json:"uptimeMs"`
+}
+
+// Stats returns the caller's entry counts. Read-path semantics: no retry.
+func (c *Client) Stats(ctx context.Context) (Stats, error) {
+	var out Stats
+	err := c.do(ctx, "stats", http.MethodGet, "/v1/stats", nil, &out)
+	return out, err
+}
+
+// Health probes the public liveness endpoint. Boolean by design — dependency
+// detail is admin-only server-side. A transport failure is ErrUnavailable like
+// any other call; a served `{"ok": false}` comes back (false, nil): the
+// service answered, and the answer was "not healthy".
+func (c *Client) Health(ctx context.Context) (bool, error) {
+	var out struct {
+		OK bool `json:"ok"`
+	}
+	if err := c.do(ctx, "health", http.MethodGet, "/health", nil, &out); err != nil {
+		// /health itself answers 503 with {"ok": false} when a dependency is
+		// down — that is an answer, not an outage of the HTTP surface.
+		var e *Error
+		if errors.As(err, &e) && e.StatusCode == http.StatusServiceUnavailable {
+			return false, nil
+		}
+		return false, err
+	}
+	return out.OK, nil
+}
+
 // degradedEmpty converts the server's "degraded, no results" into
 // ErrUnavailable.
 //
@@ -645,8 +804,11 @@ func degradedEmpty(op string, r Results) error {
 // caller allocate without bound.
 const maxResponseBytes = 8 << 20
 
-// do performs one request and decodes its body. All six operations funnel
+// do performs one request and decodes its body. Every operation funnels
 // through here, so the classification of failures is written exactly once.
+//
+// A nil body sends no request body at all — the GET endpoints (stats, token
+// and project listings) must not receive a stray `null` payload.
 func (c *Client) do(ctx context.Context, op, method, path string, body, out any) error {
 	// EVERY CALL IS BOUNDED, including one handed context.Background(). An
 	// unbounded call to a host that accepts the connection and then never
@@ -655,15 +817,21 @@ func (c *Client) do(ctx context.Context, op, method, path string, body, out any)
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return &Error{Op: op, Message: "encode request: " + err.Error(), cause: err}
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return &Error{Op: op, Message: "encode request: " + err.Error(), cause: err}
+		}
+		reader = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
 		return &Error{Op: op, Message: "build request: " + err.Error(), cause: err}
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
@@ -692,6 +860,11 @@ func (c *Client) do(ctx context.Context, op, method, path string, body, out any)
 		// removes the only path by which the token can reach an error string.
 		e.Message = strings.ReplaceAll(e.Message, c.token, "[redacted]")
 		return e
+	}
+	if out == nil {
+		// Caller expects no payload (204-style endpoints). The status code
+		// already carried the whole answer.
+		return nil
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {
 		// A 2xx with no body is not the contract. Decoding it into a
