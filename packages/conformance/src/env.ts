@@ -11,6 +11,17 @@ export const env = {
   testToken: process.env.NOVAMEM_TEST_TOKEN ?? "",
   adminToken: process.env.NOVAMEM_ADMIN_TOKEN ?? "",
   authMode: (process.env.NOVAMEM_AUTH_MODE ?? "user") as AuthMode,
+  // Session-cookie admin identity. In `user` auth mode the maintenance
+  // routes (decay/dream-cycle/reap-orphans/observe) gate on `requireAdmin`,
+  // which only ever sees a Better-Auth session (`req.dashUser`) — a
+  // data-plane bearer token never populates it (see
+  // packages/server/src/http.ts's `wantsDashUser` allowlist, which excludes
+  // these routes). `adminCookie` is the `set-cookie` value from a prior
+  // `/api/auth/sign-in/email`; `adminEmail`/`adminPassword` let a suite
+  // mint a fresh one when the stored cookie has expired.
+  adminCookie: process.env.NOVAMEM_ADMIN_COOKIE ?? "",
+  adminEmail: process.env.NOVAMEM_ADMIN_EMAIL ?? "",
+  adminPassword: process.env.NOVAMEM_ADMIN_PASSWORD ?? "",
 };
 
 /** Returns whether the current test should be SKIPPED, because the live
