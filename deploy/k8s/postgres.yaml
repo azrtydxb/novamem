@@ -57,19 +57,22 @@ spec:
               command: ["pg_isready", "-U", "novamem"]
             initialDelaySeconds: 5
             periodSeconds: 5
-          # pgvector deployments: HNSW queries are CPU-bound (~50-60ms of
-          # CPU each), so CONCURRENT searches queue on this CPU limit long
-          # before postgres itself is the bottleneck. Measured on a 380k
-          # vector corpus: 8 concurrent queries at limits.cpu=2 ran 268ms
-          # each under active CFS throttling (cgroup v2: growing
-          # throttled_usec in /sys/fs/cgroup/cpu.stat; cgroup v1:
-          # throttled_time in /sys/fs/cgroup/cpu/cpu.stat); at
-          # limits.cpu=6 the same load ran 91ms. Budget roughly
-          # (expected concurrent searches × 1 core), and raise
-          # shared_buffers with it, e.g.:
-          #   args: ["-c", "shared_buffers=1GB", "-c", "effective_cache_size=6GB"]
-          # (the 128MB default forces every hot index page through the
-          # OS cache instead of staying resident).
+          # pgvector deployments: measured with pgbench (persistent
+          # connections) on a 380k-vector corpus with per-partition HNSW
+          # indexes, one k=200 query runs ~8-10ms and 8 concurrent run
+          # ~20ms each — a single core absorbs moderate concurrent search
+          # comfortably. Two sizing notes that DO matter:
+          #   - raise shared_buffers past its 128MB default, e.g.
+          #     args: ["-c", "shared_buffers=1GB", "-c", "effective_cache_size=6GB"]
+          #     so the hot index pages stay resident;
+          #   - if you diagnose CPU throttling (cgroup v2: growing
+          #     throttled_usec in /sys/fs/cgroup/cpu.stat; v1:
+          #     throttled_time in /sys/fs/cgroup/cpu/cpu.stat), measure
+          #     from a REMOTE client with persistent connections
+          #     (pgbench). Forked psql loops inside the pod throttle the
+          #     limit with their own startup cost and implicate the
+          #     database falsely — that mistake shipped in an earlier
+          #     version of this comment.
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: 1000m, memory: 1Gi }
