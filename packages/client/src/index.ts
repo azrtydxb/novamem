@@ -495,6 +495,28 @@ export class NovamemClient {
     await this.request("/v1/me/active-project", { method: "DELETE" });
   }
 
+  /** Page the caller's memory changelog. Pass the previous page's
+   *  `nextSeq` back as `afterSeq` to resume without missing events.
+   *  Best-effort log (see server docs) — certainty requires a full diff. */
+  async changes(opts: { since?: string; afterSeq?: number; limit?: number } = {}): Promise<{
+    changes: Array<{
+      seq: number;
+      entryId: string;
+      projectId: string | null;
+      change: "created" | "updated" | "superseded" | "deleted" | "expired";
+      detail: Record<string, unknown> | null;
+      at: string;
+    }>;
+    nextSeq: number | null;
+  }> {
+    const qs = new URLSearchParams();
+    if (opts.since) qs.set("since", opts.since);
+    if (opts.afterSeq !== undefined) qs.set("afterSeq", String(opts.afterSeq));
+    if (opts.limit !== undefined) qs.set("limit", String(opts.limit));
+    const suffix = qs.size > 0 ? `?${qs}` : "";
+    return this.request(`/v1/me/changes${suffix}`);
+  }
+
   // ─── Tokens (per-device API keys) ──────────────────────────────────────
 
   /** Mint a bearer. `scope: "read_only"` limits it to reads; `project`

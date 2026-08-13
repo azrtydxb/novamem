@@ -976,11 +976,31 @@ export class MemoryEngine {
         });
       }
       this.metrics?.recordLatency("remember", Date.now() - rememberStartedAt);
+      this.logChange(userId, projectId, id, "created", { source: req.source ?? "manual" });
       return { id, embedded };
     }).catch((err) => {
       this.metrics?.recordError("remember");
       throw err;
     });
+  }
+
+  /** Best-effort changelog append (memory_changes). Never blocks or
+   *  fails the mutation it records — see WarmStore.recordChanges. */
+  private logChange(
+    userId: string,
+    projectId: string | null | undefined,
+    entryId: string,
+    change: "created" | "updated" | "superseded" | "deleted" | "expired",
+    detail?: Record<string, unknown>,
+  ): void {
+    void this.warm
+      .recordChanges([{ userId, projectId: projectId ?? null, entryId, change, detail }])
+      .catch((err) => {
+        this.logger.warn(
+          { err: (err as Error).message, entryId, change },
+          "changelog append failed (mutation unaffected)",
+        );
+      });
   }
 
   /** Single-pass extraction (Mem0 alignment, Phase 2 —
@@ -1403,6 +1423,7 @@ export class MemoryEngine {
       }
       throw err;
     }
+    this.logChange(userId, projectId, candidate.id, "superseded", { supersededBy: created.id });
     return { id: created.id, superseded: supersededIds, embedded: created.embedded ?? false };
   }
 
@@ -1476,6 +1497,14 @@ export class MemoryEngine {
         // this entry for the *old* wording and miss it for the new.
         await this.warm.setEmbeddedAt(id, null);
       }
+    }
+    // "superseded" transitions come through this method too (the
+    // supersede path sets lifecycleStatus via update) — those log their
+    // own, more specific change; plain updates log "updated".
+    if (req.metadata?.lifecycleStatus !== "superseded") {
+      this.logChange(userId, projectId, id, "updated", {
+        contentChanged: req.content !== undefined,
+      });
     }
     return { updated: true, embeddingChanged };
   }
@@ -2135,6 +2164,9 @@ export class MemoryEngine {
       this.metrics.recordDemotion(demoted);
     }
     const expired = await this.reapExpired();
+    // Changelog retention: 30 days is plenty for an orchestrator polling
+    // /v1/me/changes; unbounded growth would eventually dominate the DB.
+    await this.warm.pruneChanges(30).catch(() => {});
     return { demoted, promoted, expired };
   }
 
@@ -2194,6 +2226,16 @@ export class MemoryEngine {
           .catch(() => {});
       }
     }
+    void this.warm
+      .recordChanges(
+        batch.rows.map((row) => ({
+          userId: row.user_id,
+          projectId: row.project_id,
+          entryId: row.id,
+          change: "expired" as const,
+        })),
+      )
+      .catch(() => {});
     this.logger.info?.({ expired: ids.length }, "reaped expired (TTL) entries");
     return ids.length;
   }
@@ -2402,6 +2444,7 @@ export class MemoryEngine {
         [id, userId, e.namespace, e.projectId ?? null, message],
       );
     }
+    this.logChange(userId, e.projectId ?? null, id, "deleted", { coldDeleteOk });
     return { deleted: true, coldDeleteOk };
   }
 

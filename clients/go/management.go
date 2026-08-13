@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -366,4 +367,53 @@ func (m *Management) Observe(ctx context.Context, project string, limit int) err
 		return &Error{Op: "observe", StatusCode: e.StatusCode, Code: "observer_disabled", Message: "observer disabled"}
 	}
 	return err
+}
+
+// Change is one changelog event: what happened to one entry.
+type Change struct {
+	// Seq is the stable pagination cursor — pass the page's last Seq back
+	// as AfterSeq to resume without missing same-timestamp events.
+	Seq       int     `json:"seq"`
+	EntryID   string  `json:"entryId"`
+	ProjectID *string `json:"projectId"`
+	// Change is "created", "updated", "superseded", "deleted" or "expired".
+	Change string         `json:"change"`
+	Detail map[string]any `json:"detail"`
+	At     string         `json:"at"`
+}
+
+// Changes pages the caller's memory changelog, oldest-first. since is an
+// optional RFC3339 lower bound; afterSeq (preferred for paging) resumes
+// strictly after that cursor; limit caps the page (server max 500).
+//
+// The log is BEST-EFFORT by contract: appends never block mutations, so
+// a failed append means a missed event. Use it for auditing and cache
+// invalidation hints, not as the source of truth.
+func (m *Management) Changes(ctx context.Context, since string, afterSeq, limit int) ([]Change, int, error) {
+	q := url.Values{}
+	if since != "" {
+		q.Set("since", since)
+	}
+	if afterSeq > 0 {
+		q.Set("afterSeq", strconv.Itoa(afterSeq))
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/v1/me/changes"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out struct {
+		Changes []Change `json:"changes"`
+		NextSeq *int     `json:"nextSeq"`
+	}
+	if err := m.c.do(ctx, "changes", http.MethodGet, path, nil, &out); err != nil {
+		return nil, 0, err
+	}
+	next := afterSeq
+	if out.NextSeq != nil {
+		next = *out.NextSeq
+	}
+	return out.Changes, next, nil
 }

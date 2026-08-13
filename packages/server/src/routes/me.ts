@@ -13,6 +13,7 @@ import {
   ActiveProjectBody,
   AddMemberBody,
   CreateProjectBody,
+  MeChangesQuery,
   MintMyTokenBody,
 } from "./schemas.js";
 import {
@@ -443,6 +444,35 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   );
 
   // ─── Today + onboarding (derived state for the SPA) ────────────────
+
+  r.get(
+    "/v1/me/changes",
+    {
+      schema: {
+        tags: ["self-service"],
+        summary: "Per-user memory changelog (created/updated/superseded/deleted/expired)",
+        querystring: MeChangesQuery,
+        security: SessionSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "changes disabled" });
+      const u = requireDashUser(req, reply);
+      if (!u) return;
+      const q = req.query ?? {};
+      const changes = await ctx.warm.listChanges(u.id, {
+        since: q.since ? new Date(q.since) : undefined,
+        afterSeq: q.afterSeq,
+        limit: q.limit,
+      });
+      // `nextSeq` is the resume cursor: pass it back as afterSeq to page
+      // forward without missing same-timestamp rows.
+      reply.send({
+        changes,
+        nextSeq: changes.length > 0 ? changes[changes.length - 1]!.seq : (q.afterSeq ?? null),
+      });
+    },
+  );
 
   r.get(
     "/v1/me/today",

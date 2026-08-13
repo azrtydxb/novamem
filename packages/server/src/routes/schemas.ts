@@ -385,3 +385,14 @@ export const AdminDeleteUserQuery = z
     dryRun: z.coerce.boolean().optional(),
   })
   .optional();
+
+export const MeChangesQuery = z
+  .object({
+    /** ISO-8601 lower bound (exclusive). */
+    since: z.string().datetime({ offset: true }).optional(),
+    /** Sequence cursor (exclusive) — from the previous page's nextSeq.
+     *  Preferred over `since` for paging: seq never collides. */
+    afterSeq: z.coerce.number().int().nonnegative().optional(),
+    limit: z.coerce.number().int().positive().max(500).optional(),
+  })
+  .optional();

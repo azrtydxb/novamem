@@ -1887,3 +1887,57 @@ describe("http: memory TTL (expiresAt)", () => {
     expect(r.statusCode).toBe(400);
   });
 });
+
+describe("http: /v1/me/changes (per-user changelog)", () => {
+  it("records created/updated/deleted and pages by seq cursor", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "changes-user");
+    const created = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "the staging environment uses the blue ingress class" },
+      headers: { authorization: u.authorization },
+    });
+    const id = created.json().id;
+    await app.inject({
+      method: "PUT", url: `/v1/memories/${id}`,
+      payload: { content: "the staging environment uses the green ingress class now" },
+      headers: { authorization: u.authorization },
+    });
+    await app.inject({
+      method: "POST", url: "/v1/forget", payload: { id },
+      headers: { authorization: u.authorization },
+    });
+    // Off-path appends — give the microtask queue a beat.
+    await new Promise((r) => setTimeout(r, 20));
+    const page1 = await app.inject({
+      method: "GET", url: "/v1/me/changes?limit=2",
+      headers: { authorization: u.authorization },
+    });
+    expect(page1.statusCode).toBe(200);
+    const p1 = page1.json();
+    expect(p1.changes.map((c: { change: string }) => c.change)).toEqual(["created", "updated"]);
+    const page2 = await app.inject({
+      method: "GET", url: `/v1/me/changes?afterSeq=${p1.nextSeq}`,
+      headers: { authorization: u.authorization },
+    });
+    expect(page2.json().changes.map((c: { change: string }) => c.change)).toEqual(["deleted"]);
+    expect(page2.json().changes[0].entryId).toBe(id);
+  });
+
+  it("changelog is per-user — B never sees A's events", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const a = await userAuth(warm, "changes-a");
+    const b = await userAuth(warm, "changes-b");
+    await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "a private fact belonging to user a about deployments" },
+      headers: { authorization: a.authorization },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const forB = await app.inject({
+      method: "GET", url: "/v1/me/changes",
+      headers: { authorization: b.authorization },
+    });
+    expect(forB.json().changes).toHaveLength(0);
+  });
+});

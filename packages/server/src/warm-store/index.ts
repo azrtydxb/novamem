@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { ulid } from "ulid";
@@ -553,6 +553,78 @@ export class WarmStore {
         .returning({ createdAt: schema.userTokens.createdAt });
       return { token, userId, createdAt: inserted!.createdAt };
     });
+  }
+
+  // ─── Change log ───────────────────────────────────────────────────────
+
+  /** Append changelog rows. BEST-EFFORT BY CONTRACT: callers fire this
+   *  off-path and a failed insert must never fail the mutation it
+   *  records — the log is an audit convenience, not the source of truth.
+   *  (A dropped row means a consumer polling /v1/me/changes can miss an
+   *  event; consumers needing certainty diff full listings.) */
+  async recordChanges(
+    rows: Array<{
+      userId: string;
+      projectId?: string | null;
+      entryId: string;
+      change: "created" | "updated" | "superseded" | "deleted" | "expired";
+      detail?: Record<string, unknown>;
+    }>,
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db.insert(schema.memoryChanges).values(
+      rows.map((r) => ({
+        userId: r.userId,
+        projectId: r.projectId ?? null,
+        entryId: r.entryId,
+        change: r.change,
+        detail: r.detail ?? null,
+      })),
+    );
+  }
+
+  /** Page the caller's changelog, oldest-first, strictly after `since`
+   *  (or after `afterSeq` for cursorless pagination — seq is the stable
+   *  cursor; timestamps can collide). */
+  async listChanges(
+    userId: string,
+    opts: { since?: Date; afterSeq?: number; limit?: number } = {},
+  ): Promise<
+    Array<{
+      seq: number;
+      entryId: string;
+      projectId: string | null;
+      change: string;
+      detail: Record<string, unknown> | null;
+      at: Date;
+    }>
+  > {
+    const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    const conds = [eq(schema.memoryChanges.userId, userId)];
+    if (opts.since) conds.push(gt(schema.memoryChanges.at, opts.since));
+    if (opts.afterSeq !== undefined) conds.push(gt(schema.memoryChanges.seq, opts.afterSeq));
+    const rows = await this.db
+      .select()
+      .from(schema.memoryChanges)
+      .where(and(...conds))
+      .orderBy(asc(schema.memoryChanges.seq))
+      .limit(limit);
+    return rows.map((r) => ({
+      seq: r.seq,
+      entryId: r.entryId,
+      projectId: r.projectId,
+      change: r.change,
+      detail: (r.detail ?? null) as Record<string, unknown> | null,
+      at: r.at,
+    }));
+  }
+
+  /** Drop changelog rows older than `days`. Runs on the decay timer. */
+  async pruneChanges(days: number): Promise<number> {
+    const r = await this.db.execute(
+      sql`DELETE FROM memory_changes WHERE at < now() - make_interval(days => ${days})`,
+    );
+    return r.rowCount ?? 0;
   }
 
   // ─── Users ────────────────────────────────────────────────────────────

@@ -938,6 +938,62 @@ export class FakeWarmStore {
     return null;
   }
 
+  changes: Array<{
+    seq: number;
+    userId: string;
+    projectId: string | null;
+    entryId: string;
+    change: string;
+    detail: Record<string, unknown> | null;
+    at: Date;
+  }> = [];
+  private changeSeq = 0;
+
+  async recordChanges(
+    rows: Array<{
+      userId: string;
+      projectId?: string | null;
+      entryId: string;
+      change: string;
+      detail?: Record<string, unknown>;
+    }>,
+  ) {
+    for (const r of rows) {
+      this.changes.push({
+        seq: ++this.changeSeq,
+        userId: r.userId,
+        projectId: r.projectId ?? null,
+        entryId: r.entryId,
+        change: r.change,
+        detail: r.detail ?? null,
+        at: new Date(),
+      });
+    }
+  }
+
+  async listChanges(
+    userId: string,
+    opts: { since?: Date; afterSeq?: number; limit?: number } = {},
+  ) {
+    const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    return this.changes
+      .filter(
+        (c) =>
+          c.userId === userId &&
+          (!opts.since || c.at > opts.since) &&
+          (opts.afterSeq === undefined || c.seq > opts.afterSeq),
+      )
+      .slice(0, limit)
+      .map(({ userId: _u, ...rest }) => rest);
+  }
+
+  async pruneChanges(days: number) {
+    const cutoff = Date.now() - days * 86_400_000;
+    const before = this.changes.length;
+    this.changes = this.changes.filter((c) => c.at.getTime() >= cutoff);
+    return before - this.changes.length;
+  }
+
   async findUserById(id: string) {
     const u = this.users.get(id);
     if (!u) return null;
