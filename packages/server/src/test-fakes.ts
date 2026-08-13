@@ -43,7 +43,17 @@ export interface FakeWarmRow {
 export class FakeWarmStore {
   rows = new Map<string, FakeWarmRow>();
   relations: Array<{ userId: string; projectId: string | null; fromId: string; toId: string; relation: string; strength: number }> = [];
-  tokens = new Map<string, { userId: string; label: string | null; projectId: string | null; revoked: boolean }>();
+  tokens = new Map<
+    string,
+    {
+      userId: string;
+      label: string | null;
+      scope: "full" | "read_only";
+      projectId: string | null;
+      expiresAt: Date | null;
+      revoked: boolean;
+    }
+  >();
   users = new Map<string, { id: string; username: string; passwordHash: string; role: string; userId: string | null; createdAt: Date; lastLoginAt: Date | null }>([
     // Synthetic public user — exists for `none`/`bearer` auth modes.
     ["public", { id: "public", username: "public", passwordHash: "unused", role: "user", userId: null, createdAt: new Date(), lastLoginAt: null }],
@@ -716,25 +726,37 @@ export class FakeWarmStore {
   async createUserToken(
     userId: string,
     label?: string,
-    projectId?: string | null,
+    opts: {
+      scope?: "full" | "read_only";
+      projectId?: string | null;
+      expiresAt?: Date | null;
+    } | null = {},
   ) {
+    // Some older tests pass an explicit `null` third arg (the legacy
+    // positional projectId) — treat it as "no options".
+    const o = opts ?? {};
     // The synthetic "public" user always exists for none/bearer mode.
     if (userId !== "public" && !this.users.has(userId)) return null;
     const token = "nm_test_" + Math.random().toString(36).slice(2, 18);
     this.tokens.set(token, {
       userId,
       label: label ?? null,
-      projectId: projectId ?? null,
+      scope: o.scope ?? ("full" as const),
+      projectId: o.projectId ?? null,
+      expiresAt: o.expiresAt ?? null,
       revoked: false,
     });
-    return { token, userId, projectId: projectId ?? null, createdAt: new Date() };
+    return { token, userId, projectId: o.projectId ?? null, createdAt: new Date() };
   }
 
   async resolveUserToken(plaintext: string) {
     const t = this.tokens.get(plaintext);
     if (!t || t.revoked) return null;
+    // Mirrors the real store: expired resolves exactly like revoked.
+    if (t.expiresAt && t.expiresAt.getTime() <= Date.now()) return null;
     return {
       userId: t.userId,
+      scope: t.scope,
       projectId: t.projectId,
       tokenHash: this.fakeHash(plaintext),
       label: t.label,

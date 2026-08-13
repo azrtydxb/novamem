@@ -147,10 +147,37 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       if (!u) return;
       if (!u.id) return reply.code(400).send({ error: "user has no id assigned" });
       const body = req.body ?? {};
-      const result = await ctx.warm.createUserToken(u.id, body.label);
+      // A restricted bearer can't reach this route (the auth hook 403s
+      // token mutations for it), so the caller here is a full-scope
+      // credential and may mint any narrowing of itself.
+      let projectId: string | null = null;
+      if (body.project) {
+        const resolved = await resolveProjectRef(ctx, u.id, body.project);
+        if (!resolved) {
+          return reply.code(404).send({
+            error: `no such project '${body.project}' — call project_list to see ids`,
+          });
+        }
+        const m = await ctx.warm.getProjectMembership(resolved.id, u.id);
+        if (!m) {
+          return reply.code(403).send({ error: `not a member of project '${body.project}'` });
+        }
+        projectId = resolved.id;
+      }
+      const expiresAt = body.expiresInDays
+        ? new Date(Date.now() + body.expiresInDays * 86_400_000)
+        : null;
+      const result = await ctx.warm.createUserToken(u.id, body.label, {
+        scope: body.scope ?? "full",
+        projectId,
+        expiresAt,
+      });
       if (!result) return reply.code(404).send({ error: "user missing" });
       reply.code(201).send({
         ...result,
+        scope: body.scope ?? "full",
+        projectId,
+        expiresAt: expiresAt?.toISOString() ?? null,
         warning:
           "Store this token now — it will not be shown again. Server retains only a sha256 hash.",
       });

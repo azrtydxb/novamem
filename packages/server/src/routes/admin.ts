@@ -61,7 +61,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         return reply.code(404).send({ error: "user auth not enabled" });
       }
       if (!requireAdmin(req, reply)) return;
-      const { email, password, name, tokenLabel } = req.body;
+      const { email, password, name, tokenLabel, tokenScope, tokenExpiresInDays } = req.body;
       let userId: string | undefined;
       try {
         const r = await signUpEmail({
@@ -84,7 +84,12 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       }
       if (!userId) return reply.code(500).send({ error: "sign-up returned no user id" });
       const minted = tokenLabel
-        ? await ctx.warm.createUserToken(userId, tokenLabel)
+        ? await ctx.warm.createUserToken(userId, tokenLabel, {
+            scope: tokenScope ?? "full",
+            expiresAt: tokenExpiresInDays
+              ? new Date(Date.now() + tokenExpiresInDays * 86_400_000)
+              : null,
+          })
         : null;
       if (tokenLabel && !minted) {
         // createUserToken returns null when the user row isn't visible —

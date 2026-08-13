@@ -38,11 +38,34 @@ func NewManagement(cfg Config) (*Management, error) {
 // Token is one bearer as the listing shows it. The plaintext is absent — the
 // server stores only the hash; TokenHash is the handle for revocation.
 type Token struct {
-	TokenHash  string  `json:"tokenHash"`
-	Label      *string `json:"label"`
+	TokenHash string  `json:"tokenHash"`
+	Label     *string `json:"label"`
+	// Scope is "full" or "read_only".
+	Scope string `json:"scope"`
+	// ProjectID is non-nil when the token is confined to one project.
+	ProjectID *string `json:"projectId"`
+	// ExpiresAt is non-nil for tokens with a hard expiry (RFC3339).
+	ExpiresAt  *string `json:"expiresAt"`
 	CreatedAt  string  `json:"createdAt"`
 	LastUsedAt *string `json:"lastUsedAt"`
 	Revoked    bool    `json:"revoked"`
+}
+
+// MintTokenRequest describes the bearer to mint. Zero values mean the
+// historical default: full scope, user-wide, never expires.
+type MintTokenRequest struct {
+	// Label is optional operator context ("laptop", "novaflow").
+	Label string `json:"label,omitempty"`
+	// Scope "read_only" limits the token to GET plus the read-shaped POST
+	// routes (search/recent/neighbors/context). Empty means "full".
+	Scope string `json:"scope,omitempty"`
+	// Project (id or name; the caller must be a member) confines the token
+	// to that project. Confined tokens cannot reach /v1/auth/*,
+	// /v1/admin/* or token minting, and every data-plane call is forced
+	// into the project.
+	Project string `json:"project,omitempty"`
+	// ExpiresInDays sets a hard expiry (max 3650). 0 = never.
+	ExpiresInDays int `json:"expiresInDays,omitempty"`
 }
 
 // MintedToken carries the one-time plaintext of a freshly minted bearer.
@@ -56,14 +79,13 @@ type MintedToken struct {
 	Warning string `json:"warning"`
 }
 
-// MintToken mints a new bearer for the calling user. label is optional
-// operator context ("laptop", "novaflow"), shown in listings.
-func (m *Management) MintToken(ctx context.Context, label string) (MintedToken, error) {
-	body := struct {
-		Label string `json:"label,omitempty"`
-	}{Label: label}
+// MintToken mints a new bearer for the calling user. Restricted tokens
+// (read-only scope, project confinement, expiry) are the right shape to
+// hand to less trusted processes — they cannot mint further tokens or
+// reach admin/auth surfaces, and rotation preserves their restrictions.
+func (m *Management) MintToken(ctx context.Context, req MintTokenRequest) (MintedToken, error) {
 	var out MintedToken
-	err := m.c.do(ctx, "mint-token", http.MethodPost, "/v1/me/tokens", body, &out)
+	err := m.c.do(ctx, "mint-token", http.MethodPost, "/v1/me/tokens", req, &out)
 	return out, err
 }
 

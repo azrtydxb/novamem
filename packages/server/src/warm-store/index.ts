@@ -244,13 +244,19 @@ export class WarmStore {
 
   /** Mint a new bearer token for a user. Returns the **plaintext** token —
    *  the caller is responsible for getting it to their device; the server
-   *  keeps only the sha256 hash. The bearer grants access to everything
-   *  the owning user can reach (global memory + every project the user
-   *  is a member of); there is no per-token project scope. Returns null
+   *  keeps only the sha256 hash. By default the bearer grants everything
+   *  the owning user can reach; `opts` narrows it: scope "read_only"
+   *  (GET + read-shaped POSTs only), projectId (confined to one project),
+   *  expiresAt (hard expiry, resolves as revoked after). Returns null
    *  if the user doesn't exist. */
   async createUserToken(
     userId: string,
     label?: string,
+    opts: {
+      scope?: "full" | "read_only";
+      projectId?: string | null;
+      expiresAt?: Date | null;
+    } = {},
   ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
     // Raw: Better-Auth-owned `"user"` table not in our drizzle schema (rule a).
     const exists = await this.db.execute<{ exists: number }>(
@@ -261,7 +267,14 @@ export class WarmStore {
     const tokenHash = hashToken(token);
     const [row] = await this.db
       .insert(schema.userTokens)
-      .values({ tokenHash, userId, label: label ?? null })
+      .values({
+        tokenHash,
+        userId,
+        label: label ?? null,
+        scope: opts.scope ?? "full",
+        projectId: opts.projectId ?? null,
+        expiresAt: opts.expiresAt ?? null,
+      })
       .returning({ createdAt: schema.userTokens.createdAt });
     return { token, userId, createdAt: row!.createdAt };
   }
@@ -285,6 +298,8 @@ export class WarmStore {
     userId: string;
     tokenHash: string;
     label: string | null;
+    scope: "full" | "read_only";
+    projectId: string | null;
   } | null> {
     if (!plaintext) return null;
     const tokenHash = hashToken(plaintext);
@@ -292,6 +307,9 @@ export class WarmStore {
       .select({
         userId: schema.userTokens.userId,
         label: schema.userTokens.label,
+        scope: schema.userTokens.scope,
+        projectId: schema.userTokens.projectId,
+        expiresAt: schema.userTokens.expiresAt,
         lastUsedAt: schema.userTokens.lastUsedAt,
       })
       .from(schema.userTokens)
@@ -299,6 +317,10 @@ export class WarmStore {
       .limit(1);
     const row = rows[0];
     if (!row) return null;
+    // Expired ⇒ same answer as revoked: null, and the auth hook 401s.
+    // Checked in process rather than in SQL so the comparison uses one
+    // clock consistently with the touch throttle below.
+    if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) return null;
     const now = Date.now();
     const staleEnough =
       !row.lastUsedAt || now - row.lastUsedAt.getTime() >= TOKEN_TOUCH_INTERVAL_MS;
@@ -325,7 +347,13 @@ export class WarmStore {
           this.tokenTouchQueuedAt.delete(tokenHash);
         });
     }
-    return { userId: row.userId, tokenHash, label: row.label };
+    return {
+      userId: row.userId,
+      tokenHash,
+      label: row.label,
+      scope: (row.scope === "read_only" ? "read_only" : "full") as "full" | "read_only",
+      projectId: row.projectId,
+    };
   }
 
   async revokeUserToken(plaintext: string): Promise<boolean> {
@@ -446,6 +474,9 @@ export class WarmStore {
     Array<{
       tokenHash: string;
       label: string | null;
+      scope: string;
+      projectId: string | null;
+      expiresAt: Date | null;
       createdAt: Date;
       lastUsedAt: Date | null;
       revoked: boolean;
@@ -455,6 +486,9 @@ export class WarmStore {
       .select({
         tokenHash: schema.userTokens.tokenHash,
         label: schema.userTokens.label,
+        scope: schema.userTokens.scope,
+        projectId: schema.userTokens.projectId,
+        expiresAt: schema.userTokens.expiresAt,
         createdAt: schema.userTokens.createdAt,
         lastUsedAt: schema.userTokens.lastUsedAt,
         revokedAt: schema.userTokens.revokedAt,
@@ -465,6 +499,9 @@ export class WarmStore {
     return rows.map((r) => ({
       tokenHash: r.tokenHash,
       label: r.label,
+      scope: r.scope,
+      projectId: r.projectId,
+      expiresAt: r.expiresAt,
       createdAt: r.createdAt,
       lastUsedAt: r.lastUsedAt,
       revoked: r.revokedAt !== null,
@@ -485,14 +522,31 @@ export class WarmStore {
         .update(schema.userTokens)
         .set({ revokedAt: sql`now()` })
         .where(and(eq(schema.userTokens.tokenHash, oldHash), isNull(schema.userTokens.revokedAt)))
-        .returning({ userId: schema.userTokens.userId });
-      const userId = revoked[0]?.userId;
-      if (!userId) return null;
+        .returning({
+          userId: schema.userTokens.userId,
+          scope: schema.userTokens.scope,
+          projectId: schema.userTokens.projectId,
+          expiresAt: schema.userTokens.expiresAt,
+        });
+      const old = revoked[0];
+      const userId = old?.userId;
+      if (!old || !userId) return null;
       const token = generateBearerToken();
       const tokenHash = hashToken(token);
+      // Rotation preserves the old token's restrictions verbatim —
+      // otherwise rotating a read-only or project-confined bearer would
+      // quietly mint an unrestricted one (privilege escalation via the
+      // one endpoint restricted tokens used to be able to reach).
       const [inserted] = await tx
         .insert(schema.userTokens)
-        .values({ tokenHash, userId, label: "rotated" })
+        .values({
+          tokenHash,
+          userId,
+          label: "rotated",
+          scope: old.scope,
+          projectId: old.projectId,
+          expiresAt: old.expiresAt,
+        })
         .returning({ createdAt: schema.userTokens.createdAt });
       return { token, userId, createdAt: inserted!.createdAt };
     });

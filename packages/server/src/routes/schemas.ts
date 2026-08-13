@@ -293,6 +293,11 @@ export const AdminCreateUserBody = z.object({
    *  call and returned in the response — the non-interactive
    *  provisioning path (one round trip: create user → usable bearer). */
   tokenLabel: z.string().max(128).optional(),
+  /** Scope of the minted token (requires tokenLabel). Default "full". */
+  tokenScope: z.enum(["full", "read_only"]).optional(),
+  /** Hard expiry of the minted token, in days from now (requires
+   *  tokenLabel). Omit for a non-expiring token. */
+  tokenExpiresInDays: z.number().int().positive().max(3650).optional(),
 });
 
 // ─── Auth + user-management bodies ──────────────────────────────────────
@@ -321,6 +326,17 @@ export const SetRoleBody = z.object({
 
 export const MintMyTokenBody = z.object({
   label: z.string().max(128).optional(),
+  /** "read_only" limits the token to GET + the read-shaped POST routes
+   *  (search/recent/neighbors/context). Default "full". */
+  scope: z.enum(["full", "read_only"]).optional(),
+  /** Confine the token to one project (id or name; caller must be a
+   *  member). Confined tokens cannot reach /v1/auth/*, /v1/admin/* or
+   *  token minting, and every data-plane call is forced into the
+   *  project. */
+  project: ProjectRefRule.optional(),
+  /** Hard expiry, in days from now (max 10 years). Expired tokens
+   *  answer 401 exactly like revoked ones. */
+  expiresInDays: z.number().int().positive().max(3650).optional(),
 });
 
 export const CreateProjectBody = z.object({
