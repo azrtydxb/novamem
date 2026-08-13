@@ -37,13 +37,16 @@ export interface SearchRequest {
 export interface SearchResult {
   id: string;
   score: number;
-  content: string;
+  /** Absent when the request used contentMode: "ids". Possibly truncated
+   *  (see `truncated`) under contentMode: "snippet". */
+  content?: string;
   tier: "warm" | "cold";
   namespace: string;
   /** Project this entry belongs to, or null for user-wide entries. */
   project: string | null;
   source: string;
-  metadata: Record<string, unknown>;
+  /** Absent when the request used contentMode: "ids". */
+  metadata?: Record<string, unknown>;
   /** Per-signal contributions for ranked results (search/neighbors).
    *  Omitted on ordered results (recent) where ranking isn't applicable. */
   signals?: { keyword?: number; vector?: number; graph?: number };

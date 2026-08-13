@@ -81,8 +81,10 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         delete r.metadata;
       } else if (content.length > SNIPPET_CHARS) {
         const cut = content.slice(0, SNIPPET_CHARS);
-        const lastSpace = cut.lastIndexOf(" ");
-        r.content = (lastSpace > SNIPPET_CHARS / 2 ? cut.slice(0, lastSpace) : cut) + "\u2026";
+        // Any whitespace is a boundary — logs and markdown break on
+        // newlines/tabs at least as often as on spaces.
+        const boundary = cut.search(/\s\S*$/);
+        r.content = (boundary > SNIPPET_CHARS / 2 ? cut.slice(0, boundary) : cut) + "\u2026";
         r.truncated = true;
       }
     }

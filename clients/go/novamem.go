@@ -297,9 +297,13 @@ const (
 // Entry is one memory as the server returns it. Search, Recent and Neighbors
 // all emit this same shape.
 type Entry struct {
-	ID      string  `json:"id"`
-	Score   float64 `json:"score"`
-	Content string  `json:"content"`
+	ID    string  `json:"id"`
+	Score float64 `json:"score"`
+	// Content is EMPTY (zero value) when the request used ContentMode
+	// "ids" — the server omits the field entirely. An empty Content on a
+	// hit therefore means "not requested", not "empty memory" (stored
+	// content is never empty). Metadata is nil in the same mode.
+	Content string `json:"content"`
 	// Tier is "warm" or "cold" — which store answered, not a quality signal.
 	Tier      string `json:"tier"`
 	Namespace string `json:"namespace"`

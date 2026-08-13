@@ -1794,6 +1794,12 @@ describe("http: search contentMode (payload shaping)", () => {
     expect(hit.content.length).toBeLessThan(long.length);
     expect(hit.content.length).toBeLessThanOrEqual(241);
     expect(hit.content.endsWith("…")).toBe(true);
+    // Boundary contract: the cut text (sans ellipsis) must be a prefix of
+    // the original ending exactly at a whitespace boundary — the next
+    // character in the original is whitespace, so no word was split.
+    const stem = hit.content.slice(0, -1);
+    expect(long.startsWith(stem)).toBe(true);
+    expect(long[stem.length]).toMatch(/\s/);
   });
 
   it("ids mode omits content and metadata; full is unchanged", async () => {
