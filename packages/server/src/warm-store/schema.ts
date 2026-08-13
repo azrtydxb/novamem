@@ -77,6 +77,17 @@ export const userTokens = pgTable(
     tokenHash: text("token_hash").primaryKey(),
     userId: text("user_id").notNull(),
     label: text("label"),
+    /** "full" (everything the user can do) or "read_only" (GET + the
+     *  read-shaped POST routes: search/recent/neighbors/context). The
+     *  auth hook enforces it; new columns default to the historical
+     *  behavior so pre-migration tokens keep working unchanged. */
+    scope: text("scope").notNull().default("full"),
+    /** When set, the token is confined to this project (ULID): reads and
+     *  writes are forced into it, and any restricted token is barred
+     *  from /v1/auth/*, token minting and /v1/admin/*. Null = user-wide. */
+    projectId: text("project_id"),
+    /** Hard expiry. Expired tokens resolve as if revoked (401). */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),

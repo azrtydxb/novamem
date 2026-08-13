@@ -138,7 +138,7 @@ func TestManagementTokenLifecycle(t *testing.T) {
 		}
 	})
 	ctx := context.Background()
-	minted, err := m.MintToken(ctx, "test")
+	minted, err := m.MintToken(ctx, MintTokenRequest{Label: "test"})
 	if err != nil || minted.Token != "nm_fresh" {
 		t.Fatalf("MintToken: %v %+v", err, minted)
 	}

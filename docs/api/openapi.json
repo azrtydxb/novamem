@@ -1323,6 +1323,24 @@
                   "label": {
                     "type": "string",
                     "maxLength": 128
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "read_only"
+                    ]
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "expiresInDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 3650
                   }
                 }
               }
@@ -1797,6 +1815,19 @@
                   "tokenLabel": {
                     "type": "string",
                     "maxLength": 128
+                  },
+                  "tokenScope": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "read_only"
+                    ]
+                  },
+                  "tokenExpiresInDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 3650
                   }
                 },
                 "required": [

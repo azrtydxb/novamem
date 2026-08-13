@@ -52,6 +52,12 @@ type ProvisionUserRequest struct {
 	// in the same call — the whole point for provisioning: one round trip
 	// from "agent exists" to "agent has a credential". Empty skips the mint.
 	TokenLabel string `json:"tokenLabel,omitempty"`
+	// TokenScope narrows the minted bearer: "read_only" for agents that
+	// only recall. Empty means "full". Requires TokenLabel.
+	TokenScope string `json:"tokenScope,omitempty"`
+	// TokenExpiresInDays sets a hard expiry on the minted bearer (max
+	// 3650). 0 = never. Requires TokenLabel.
+	TokenExpiresInDays int `json:"tokenExpiresInDays,omitempty"`
 }
 
 // ProvisionedUser is the outcome of a ProvisionUser call.

@@ -232,8 +232,9 @@ export interface ProjectMember {
 
 export interface MintTokenResponse {
   token: string;
-
+  scope: "full" | "read_only";
   projectId: string | null;
+  expiresAt: string | null;
   createdAt: string;
   warning: string;
 }
@@ -484,7 +485,18 @@ export class NovamemClient {
 
   // ─── Tokens (per-device API keys) ──────────────────────────────────────
 
-  async mintToken(opts: { label?: string } = {}): Promise<MintTokenResponse> {
+  /** Mint a bearer. `scope: "read_only"` limits it to reads; `project`
+   *  confines it to one project (id or name); `expiresInDays` sets a hard
+   *  expiry. Restricted tokens cannot mint, rotate into broader tokens,
+   *  or reach /v1/admin/*. */
+  async mintToken(
+    opts: {
+      label?: string;
+      scope?: "full" | "read_only";
+      project?: string;
+      expiresInDays?: number;
+    } = {},
+  ): Promise<MintTokenResponse> {
     return this.request<MintTokenResponse>("/v1/me/tokens", { method: "POST", body: opts });
   }
 
@@ -492,6 +504,9 @@ export class NovamemClient {
     tokens: Array<{
       tokenHash: string;
       label: string | null;
+      scope: "full" | "read_only";
+      projectId: string | null;
+      expiresAt: string | null;
       createdAt: string;
       lastUsedAt: string | null;
       revoked: boolean;

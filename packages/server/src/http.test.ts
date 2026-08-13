@@ -1573,3 +1573,113 @@ describe("http: POST /v1/admin/users (non-interactive provisioning)", () => {
     expect(denied.statusCode).toBe(403);
   });
 });
+
+describe("http: token scoping + expiry (restricted bearers)", () => {
+  async function mintVia(app: ReturnType<typeof makeApp>["app"], auth: string, body: Record<string, unknown>) {
+    return app.inject({
+      method: "POST", url: "/v1/me/tokens",
+      payload: body, headers: { authorization: auth },
+    });
+  }
+
+  it("read_only token: search allowed, remember/forget/mint/admin denied", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "ro-owner");
+    const minted = await mintVia(app, u.authorization, { label: "ro", scope: "read_only" });
+    expect(minted.statusCode).toBe(201);
+    const tok = `Bearer ${minted.json().token}`;
+    const search = await app.inject({
+      method: "POST", url: "/v1/search", payload: { query: "x" },
+      headers: { authorization: tok },
+    });
+    expect(search.statusCode).toBe(200);
+    const remember = await app.inject({
+      method: "POST", url: "/v1/remember", payload: { content: "nope" },
+      headers: { authorization: tok },
+    });
+    expect(remember.statusCode).toBe(403);
+    const forget = await app.inject({
+      method: "POST", url: "/v1/forget", payload: { id: "01K" },
+      headers: { authorization: tok },
+    });
+    expect(forget.statusCode).toBe(403);
+    const mint = await app.inject({
+      method: "POST", url: "/v1/me/tokens", payload: { label: "esc" },
+      headers: { authorization: tok },
+    });
+    expect(mint.statusCode).toBe(403);
+    const admin = await app.inject({
+      method: "POST", url: "/v1/admin/users",
+      payload: { email: "x@x.local", password: "longenough" },
+      headers: { authorization: tok },
+    });
+    expect(admin.statusCode).toBe(403);
+  });
+
+  it("project-confined token: writes land in the project; other scopes 403", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "pj-owner");
+    const created = await app.inject({
+      method: "POST", url: "/v1/me/projects", payload: { name: "confine" },
+      headers: { authorization: u.authorization },
+    });
+    expect(created.statusCode).toBe(201);
+    const projectId = created.json().id;
+    const other = await app.inject({
+      method: "POST", url: "/v1/me/projects", payload: { name: "other" },
+      headers: { authorization: u.authorization },
+    });
+    const otherId = other.json().id;
+    const minted = await mintVia(app, u.authorization, { label: "pj", project: projectId });
+    expect(minted.statusCode).toBe(201);
+    const tok = `Bearer ${minted.json().token}`;
+    // Unscoped write is forced into the project.
+    const remember = await app.inject({
+      method: "POST", url: "/v1/remember", payload: { content: "confined fact" },
+      headers: { authorization: tok },
+    });
+    expect(remember.statusCode).toBe(201);
+    const recent = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {},
+      headers: { authorization: tok },
+    });
+    expect(recent.json().results.some((r: { content: string }) => r.content === "confined fact")).toBe(true);
+    // Explicitly asking for another project is refused, not rewritten.
+    const cross = await app.inject({
+      method: "POST", url: "/v1/search", payload: { query: "x", project: otherId },
+      headers: { authorization: tok },
+    });
+    expect(cross.statusCode).toBe(403);
+    // Owner sees the entry inside the project, proving where it landed.
+    const inProject = await app.inject({
+      method: "POST", url: "/v1/recent", payload: { includeProjects: [projectId] },
+      headers: { authorization: u.authorization },
+    });
+    expect(inProject.json().results.some((r: { content: string }) => r.content === "confined fact")).toBe(true);
+  });
+
+  it("expired token answers 401", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "exp-owner");
+    const t = await warm.createUserToken(u.userId, "old", {
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const r = await app.inject({
+      method: "POST", url: "/v1/search", payload: { query: "x" },
+      headers: { authorization: `Bearer ${t!.token}` },
+    });
+    expect(r.statusCode).toBe(401);
+  });
+
+  it("mint accepts expiresInDays and reports the restriction fields", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "meta-owner");
+    const minted = await mintVia(app, u.authorization, {
+      label: "ttl", scope: "read_only", expiresInDays: 7,
+    });
+    expect(minted.statusCode).toBe(201);
+    const body = minted.json();
+    expect(body.scope).toBe("read_only");
+    expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  });
+});
