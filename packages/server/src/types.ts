@@ -153,6 +153,10 @@ export interface RememberRequest {
   force?: boolean;
   /** Privacy classification. Also stored in metadata.sensitivity. Defaults to inferred content sensitivity, then private. */
   sensitivity?: SensitivityLevel;
+  /** Explicit TTL (ISO-8601). Past it the entry is hidden from every
+   *  read immediately and hard-deleted by the decay-timer reaper.
+   *  Stored as metadata.expiresAt. */
+  expiresAt?: string;
 }
 
 export interface DecayRequest {

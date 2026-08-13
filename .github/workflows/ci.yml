@@ -201,6 +201,13 @@ jobs:
       - name: Trivy scan local PR image (HIGH+CRITICAL, fail on findings)
         if: github.event_name != 'push' || (github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          # mirror.gcr.io (the action's default DB mirror) serves
+          # persistent 404s during Google artifact-cache incidents and
+          # fails every build. List the canonical registries as
+          # fallbacks so one registry outage can't block CI.
+          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1
         with:
           image-ref: novamem:ci-${{ matrix.arch }}
           severity: HIGH,CRITICAL
@@ -234,6 +241,9 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         env:
           TRIVY_PLATFORM: linux/${{ matrix.arch }}
+          # Same DB fallbacks as the PR-scan step above.
+          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1
         with:
           image-ref: ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
           severity: HIGH,CRITICAL

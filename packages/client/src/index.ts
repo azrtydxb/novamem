@@ -104,6 +104,9 @@ export interface RememberRequest {
   capturedFrom?: string;
   confidence?: number;
   force?: boolean;
+  /** Explicit TTL (ISO-8601). Past it the entry is hidden from reads
+   *  immediately and hard-deleted by the server's decay-timer reaper. */
+  expiresAt?: string;
 }
 
 /**
@@ -404,8 +407,8 @@ export class NovamemClient {
     return this.request<HealthResponse>("/health");
   }
 
-  async decay(opts: { effectiveDays?: number } = {}): Promise<{ demoted: number; promoted: number }> {
-    return this.request<{ demoted: number; promoted: number }>("/v1/decay", {
+  async decay(opts: { effectiveDays?: number } = {}): Promise<{ demoted: number; promoted: number; expired: number }> {
+    return this.request<{ demoted: number; promoted: number; expired: number }>("/v1/decay", {
       method: "POST",
       body: opts,
     });

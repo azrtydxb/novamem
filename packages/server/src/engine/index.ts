@@ -248,7 +248,10 @@ function inferSensitivity(content: string, metadata?: Record<string, unknown>, e
 
 function withSensitivityMetadata(req: RememberRequest): RememberRequest {
   const sensitivity = inferSensitivity(req.content, req.metadata, req.sensitivity);
-  return { ...req, metadata: { ...(req.metadata ?? {}), sensitivity } };
+  // TTL rides in metadata too (metadata.expiresAt) so it needs no schema
+  // change and survives every backend; isInactiveMemory reads it back.
+  const ttl = req.expiresAt ? { expiresAt: req.expiresAt } : {};
+  return { ...req, metadata: { ...(req.metadata ?? {}), ...ttl, sensitivity } };
 }
 
 function resultSensitivity(metadata: Record<string, unknown> | null | undefined): SensitivityLevel {
@@ -272,6 +275,15 @@ function isInactiveMemory(metadata: Record<string, unknown> | null | undefined):
   // DELETE decision get `fact_inactive: true` and stay in the warm row
   // for history-preservation but must drop out of search results.
   if ((metadata as Record<string, unknown> | null | undefined)?.fact_inactive) return true;
+  // Explicit TTL (metadata.expiresAt, ISO-8601): the writer said this
+  // stops being true at a known time, so past it the entry is invisible
+  // to every read immediately — the decay-timer reaper hard-deletes the
+  // row later, but visibility must not wait for the sweep.
+  const expiresAt = metadata?.expiresAt;
+  if (typeof expiresAt === "string") {
+    const t = Date.parse(expiresAt);
+    if (!Number.isNaN(t) && t <= Date.now()) return true;
+  }
   return false;
 }
 
@@ -2069,7 +2081,7 @@ export class MemoryEngine {
     });
   }
 
-  async decay(opts: { effectiveDaysOverride?: number } = {}): Promise<{ demoted: number; promoted: number }> {
+  async decay(opts: { effectiveDaysOverride?: number } = {}): Promise<{ demoted: number; promoted: number; expired: number }> {
     // For each warm entry, compare idle age (days since last access) against
     // its effective lifespan: `7 × log₂(hits+1)` — frequently-used memories
     // resist decay because their lifespan grows with use. Override the
@@ -2122,7 +2134,68 @@ export class MemoryEngine {
       this.metrics.markDecayRun();
       this.metrics.recordDemotion(demoted);
     }
-    return { demoted, promoted };
+    const expired = await this.reapExpired();
+    return { demoted, promoted, expired };
+  }
+
+  /** Hard-delete entries whose explicit TTL (metadata.expiresAt) has
+   *  passed. Reads already hide them (isInactiveMemory), so this sweep is
+   *  pure storage hygiene and runs on the decay timer. Bounded per pass;
+   *  the remainder is picked up next tick. Cold-vector failures park in
+   *  cold_orphans exactly like forget's. */
+  private async reapExpired(): Promise<number> {
+    const batch = await this.warm.pool.query<{
+      id: string;
+      user_id: string;
+      project_id: string | null;
+      namespace: string;
+    }>(
+      `SELECT id, user_id, project_id, namespace
+         FROM memory_entries
+        WHERE metadata->>'expiresAt' IS NOT NULL
+          AND (metadata->>'expiresAt')::timestamptz <= now()
+        LIMIT 1000`,
+    );
+    if (batch.rowCount === 0) return 0;
+    const ids = batch.rows.map((r) => r.id);
+    const client = await this.warm.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM memory_fts WHERE entry_id = ANY($1)", [ids]);
+      await client.query("DELETE FROM memory_access WHERE entry_id = ANY($1)", [ids]);
+      await client.query(
+        "DELETE FROM memory_relations WHERE from_id = ANY($1) OR to_id = ANY($1)",
+        [ids],
+      );
+      await client.query("DELETE FROM memory_entries WHERE id = ANY($1)", [ids]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    for (const row of batch.rows) {
+      try {
+        await this.cold.delete(row.user_id, row.namespace, row.id, row.project_id);
+      } catch (err) {
+        // Same parking SQL as forget's cold-failure path: the reaper
+        // retries on the decay schedule until the vector is gone.
+        await this.warm.pool
+          .query(
+            `INSERT INTO cold_orphans (id, user_id, namespace, project_id, attempts, last_error, last_attempt_at)
+             VALUES ($1, $2, $3, $4, 1, $5, now())
+             ON CONFLICT (id) DO UPDATE SET
+               attempts = cold_orphans.attempts + 1,
+               last_error = EXCLUDED.last_error,
+               last_attempt_at = now()`,
+            [row.id, row.user_id, row.namespace, row.project_id, (err as Error).message],
+          )
+          .catch(() => {});
+      }
+    }
+    this.logger.info?.({ expired: ids.length }, "reaped expired (TTL) entries");
+    return ids.length;
   }
 
   /** Recent entries in a namespace, ordered newest first. Optional `since`
