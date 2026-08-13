@@ -15,6 +15,7 @@ import {
   pgTable,
   text,
   serial,
+  bigserial,
   integer,
   real,
   boolean,
@@ -341,3 +342,33 @@ export const metricsSamples = pgTable(
     index("idx_metrics_samples_at").on(table.sampledAt),
   ],
 );
+
+/** Append-only per-user changelog — what happened to my memory since T?
+ *  Written best-effort on every mutation (created / updated / superseded /
+ *  deleted / expired) and pruned on the decay timer. Lets an orchestrator
+ *  audit what capture, supersession and the reapers did to an agent's
+ *  memory without polling full listings. */
+export const memoryChanges = pgTable(
+  "memory_changes",
+  {
+    seq: bigserial("seq", { mode: "number" }).primaryKey(),
+    userId: text("user_id").notNull(),
+    projectId: text("project_id"),
+    entryId: text("entry_id").notNull(),
+    change: text("change").notNull(),
+    detail: jsonb("detail"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_memory_changes_user_at").on(table.userId, table.at)],
+);
+
+/** Per-user quota overrides (admin-set). NULL columns fall back to the
+ *  server-wide defaults (NOVAMEM_QUOTA_* env). Absent row = defaults. */
+export const userQuotas = pgTable("user_quotas", {
+  userId: text("user_id").primaryKey(),
+  /** Hard cap on stored entries (any scope). NULL = server default. */
+  maxEntries: integer("max_entries"),
+  /** Write-rate cap (remember/capture per minute). NULL = server default. */
+  writesPerMinute: integer("writes_per_minute"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

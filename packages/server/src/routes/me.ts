@@ -13,6 +13,9 @@ import {
   ActiveProjectBody,
   AddMemberBody,
   CreateProjectBody,
+  MeChangesQuery,
+  MeExportQuery,
+  MeImportBody,
   MintMyTokenBody,
 } from "./schemas.js";
 import {
@@ -443,6 +446,135 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   );
 
   // ─── Today + onboarding (derived state for the SPA) ────────────────
+
+  r.get(
+    "/v1/me/export",
+    {
+      schema: {
+        tags: ["self-service"],
+        summary: "Keyset-paged export of every entry the caller owns",
+        querystring: MeExportQuery,
+        security: SessionSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "export disabled" });
+      const u = requireDashUser(req, reply);
+      if (!u) return;
+      const q = req.query ?? {};
+      const entries = await ctx.warm.exportEntries(u.id, {
+        afterId: q.afterId,
+        limit: q.limit,
+      });
+      reply.send({
+        entries,
+        // Resume cursor: pass back as afterId until an empty page.
+        nextAfterId: entries.length > 0 ? entries[entries.length - 1]!.id : null,
+      });
+    },
+  );
+
+  r.post(
+    "/v1/me/import",
+    {
+      schema: {
+        tags: ["self-service"],
+        summary: "Import entries (from an export or a migration) as new memories",
+        body: MeImportBody,
+        security: SessionSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "import disabled" });
+      const u = requireDashUser(req, reply);
+      if (!u) return;
+      // Ids are NOT preserved: they are deployment-local ULIDs, and a
+      // collision would silently graft foreign history onto a local row.
+      // Content-hash dedup makes re-importing the same export idempotent.
+      let imported = 0;
+      let deduplicated = 0;
+      const failed: Array<{ index: number; error: string }> = [];
+      for (const [index, entry] of req.body.entries.entries()) {
+        try {
+          const r = await ctx.engine.remember(u.id, {
+            content: entry.content,
+            namespace: entry.namespace,
+            source: entry.source ?? "import",
+            agentName: entry.agentName,
+            // Project references from a foreign deployment don't resolve
+            // here; import lands user-wide unless the caller pre-created
+            // the project and passes its local id/name.
+            project: entry.project ?? null,
+            metadata: entry.metadata,
+            sourceType: entry.sourceType ?? "import",
+            capturedFrom: entry.capturedFrom ?? "import",
+            confidence: entry.confidence,
+            force: true,
+          }, req.bearerToken);
+          if (r.deduplicated) deduplicated++;
+          else if (r.id) imported++;
+        } catch (err) {
+          failed.push({ index, error: (err as Error).message });
+        }
+      }
+      await ctx.audit(req, "user.import", u.id, {
+        imported, deduplicated, failed: failed.length,
+      });
+      reply.code(failed.length === req.body.entries.length ? 400 : 201).send({
+        imported, deduplicated, failed,
+      });
+    },
+  );
+
+  r.get(
+    "/v1/me/usage",
+    {
+      schema: {
+        tags: ["self-service"],
+        summary: "The caller's stored-entry count and effective quotas",
+        security: SessionSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "usage disabled" });
+      const u = requireDashUser(req, reply);
+      if (!u) return;
+      const [entries, quota] = await Promise.all([
+        ctx.warm.countEntriesForUser(u.id),
+        ctx.warm.getUserQuota(u.id),
+      ]);
+      reply.send({ entries, quota });
+    },
+  );
+
+  r.get(
+    "/v1/me/changes",
+    {
+      schema: {
+        tags: ["self-service"],
+        summary: "Per-user memory changelog (created/updated/superseded/deleted/expired)",
+        querystring: MeChangesQuery,
+        security: SessionSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "changes disabled" });
+      const u = requireDashUser(req, reply);
+      if (!u) return;
+      const q = req.query ?? {};
+      const changes = await ctx.warm.listChanges(u.id, {
+        since: q.since ? new Date(q.since) : undefined,
+        afterSeq: q.afterSeq,
+        limit: q.limit,
+      });
+      // `nextSeq` is the resume cursor: pass it back as afterSeq to page
+      // forward without missing same-timestamp rows.
+      reply.send({
+        changes,
+        nextSeq: changes.length > 0 ? changes[changes.length - 1]!.seq : (q.afterSeq ?? null),
+      });
+    },
+  );
 
   r.get(
     "/v1/me/today",

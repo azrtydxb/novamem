@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -366,4 +367,153 @@ func (m *Management) Observe(ctx context.Context, project string, limit int) err
 		return &Error{Op: "observe", StatusCode: e.StatusCode, Code: "observer_disabled", Message: "observer disabled"}
 	}
 	return err
+}
+
+// Change is one changelog event: what happened to one entry.
+type Change struct {
+	// Seq is the stable pagination cursor — pass the page's last Seq back
+	// as AfterSeq to resume without missing same-timestamp events.
+	Seq       int     `json:"seq"`
+	EntryID   string  `json:"entryId"`
+	ProjectID *string `json:"projectId"`
+	// Change is "created", "updated", "superseded", "deleted" or "expired".
+	Change string         `json:"change"`
+	Detail map[string]any `json:"detail"`
+	At     string         `json:"at"`
+}
+
+// Changes pages the caller's memory changelog, oldest-first. since is an
+// optional RFC3339 lower bound; afterSeq (preferred for paging) resumes
+// strictly after that cursor; limit caps the page (server max 500).
+//
+// The log is BEST-EFFORT by contract: appends never block mutations, so
+// a failed append means a missed event. Use it for auditing and cache
+// invalidation hints, not as the source of truth.
+func (m *Management) Changes(ctx context.Context, since string, afterSeq, limit int) ([]Change, int, error) {
+	q := url.Values{}
+	if since != "" {
+		q.Set("since", since)
+	}
+	if afterSeq > 0 {
+		q.Set("afterSeq", strconv.Itoa(afterSeq))
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/v1/me/changes"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out struct {
+		Changes []Change `json:"changes"`
+		NextSeq *int     `json:"nextSeq"`
+	}
+	if err := m.c.do(ctx, "changes", http.MethodGet, path, nil, &out); err != nil {
+		return nil, 0, err
+	}
+	next := afterSeq
+	if out.NextSeq != nil {
+		next = *out.NextSeq
+	}
+	return out.Changes, next, nil
+}
+
+// Usage is the caller's stored-entry count and quota overrides (nil
+// fields mean the server default applies).
+type Usage struct {
+	Entries int `json:"entries"`
+	Quota   struct {
+		MaxEntries      *int `json:"maxEntries"`
+		WritesPerMinute *int `json:"writesPerMinute"`
+	} `json:"quota"`
+}
+
+// Usage reports the caller's memory footprint against their quotas.
+func (m *Management) Usage(ctx context.Context) (Usage, error) {
+	var out Usage
+	err := m.c.do(ctx, "usage", http.MethodGet, "/v1/me/usage", nil, &out)
+	return out, err
+}
+
+// ExportedEntry is one row of an export page.
+type ExportedEntry struct {
+	ID           string         `json:"id"`
+	ProjectID    *string        `json:"projectId"`
+	Content      string         `json:"content"`
+	Namespace    string         `json:"namespace"`
+	Source       string         `json:"source"`
+	AgentName    *string        `json:"agentName"`
+	Metadata     map[string]any `json:"metadata"`
+	SourceType   *string        `json:"sourceType"`
+	CapturedFrom *string        `json:"capturedFrom"`
+	Confidence   float64        `json:"confidence"`
+	CreatedAt    string         `json:"createdAt"`
+	UpdatedAt    string         `json:"updatedAt"`
+}
+
+// Export pages every entry the caller owns, oldest id first. Pass the
+// returned cursor back as afterID until it returns an empty page.
+func (m *Management) Export(ctx context.Context, afterID string, limit int) ([]ExportedEntry, string, error) {
+	q := url.Values{}
+	if afterID != "" {
+		q.Set("afterId", afterID)
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/v1/me/export"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out struct {
+		Entries     []ExportedEntry `json:"entries"`
+		NextAfterID *string         `json:"nextAfterId"`
+	}
+	if err := m.c.do(ctx, "export", http.MethodGet, path, nil, &out); err != nil {
+		return nil, "", err
+	}
+	next := afterID
+	if out.NextAfterID != nil {
+		next = *out.NextAfterID
+	}
+	return out.Entries, next, nil
+}
+
+// ImportEntry is one entry to import — the writable subset of
+// ExportedEntry (ids are never preserved across deployments).
+type ImportEntry struct {
+	Content      string         `json:"content"`
+	Namespace    string         `json:"namespace,omitempty"`
+	Source       string         `json:"source,omitempty"`
+	AgentName    string         `json:"agentName,omitempty"`
+	Project      string         `json:"project,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	SourceType   string         `json:"sourceType,omitempty"`
+	CapturedFrom string         `json:"capturedFrom,omitempty"`
+	Confidence   *float64       `json:"confidence,omitempty"`
+}
+
+// ImportResult reports an import page's outcome.
+type ImportResult struct {
+	Imported     int `json:"imported"`
+	Deduplicated int `json:"deduplicated"`
+	Failed       []struct {
+		Index int    `json:"index"`
+		Error string `json:"error"`
+	} `json:"failed"`
+}
+
+// Import stores a page of entries (max 200 per call) as new memories for
+// the calling user. Content-hash dedup makes re-importing the same page
+// idempotent — repeated entries count as Deduplicated, not Imported.
+func (m *Management) Import(ctx context.Context, entries []ImportEntry) (ImportResult, error) {
+	var out ImportResult
+	if len(entries) == 0 {
+		return out, &Error{Op: "import", Message: "entries are required"}
+	}
+	body := struct {
+		Entries []ImportEntry `json:"entries"`
+	}{Entries: entries}
+	err := m.c.do(ctx, "import", http.MethodPost, "/v1/me/import", body, &out)
+	return out, err
 }

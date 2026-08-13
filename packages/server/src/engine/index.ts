@@ -454,6 +454,9 @@ export interface EngineConfig {
   defaultEffectiveDays?: number;
   /** Optional logger. Defaults to console. */
   logger?: EngineLogger;
+  /** Server-wide write quotas (per user; 0 = unlimited). Per-user
+   *  overrides live in the user_quotas table and win over these. */
+  quotas?: { maxEntries: number; writesPerMinute: number };
   /** When remembering a new entry, link it to this many top vector neighbours
    *  in the graph (skip self). Set to 0 to disable auto-edges. Default 3. */
   graphLinkFanout?: number;
@@ -501,6 +504,7 @@ export class MemoryEngine {
   private readonly cold: ColdStore;
   private readonly embedder: Embedder;
   private readonly defaultDecayDays: number;
+  private readonly quotas: { maxEntries: number; writesPerMinute: number } | null;
   private logger: EngineLogger;
   private readonly graphLinkFanout: number;
   /** Enrichment tasks currently in flight — see MAX_ENRICH_IN_FLIGHT. */
@@ -535,6 +539,7 @@ export class MemoryEngine {
     this.cold = cfg.cold;
     this.embedder = cfg.embedder;
     this.defaultDecayDays = cfg.defaultEffectiveDays ?? 7;
+    this.quotas = cfg.quotas ?? null;
     // Default-to-console fallback. The cast is safe: console.warn /
     // .error / .info are structurally compatible with the
     // (obj|string, msg?) overloads — the second positional arg is just
@@ -765,6 +770,10 @@ export class MemoryEngine {
       "novamem.force": Boolean(req.force),
     }, async (span) => {
       const rememberStartedAt = Date.now();
+      // ── Write quota (rate + capacity) ───────────────────────────────
+      // Before everything, including the worthiness gate: force:true
+      // must not bypass it, and a rejected write should not burn embeds.
+      await this.enforceWriteQuota(userId);
       // ── Worthiness gate (hard rules + dedup) ────────────────────────
       if (!req.force) {
         const reason = this.shouldReject(req.content);
@@ -976,11 +985,84 @@ export class MemoryEngine {
         });
       }
       this.metrics?.recordLatency("remember", Date.now() - rememberStartedAt);
+      this.logChange(userId, projectId, id, "created", { source: req.source ?? "manual" });
       return { id, embedded };
     }).catch((err) => {
       this.metrics?.recordError("remember");
       throw err;
     });
+  }
+
+  /** Per-user write-quota guard. Approximations are deliberate and
+   *  documented on the API: the rate window and the cached entry count
+   *  are per-replica in-memory state, so with N replicas the effective
+   *  ceiling is up to N× the configured value — quotas here bound
+   *  runaway agents, they are not billing meters. Internal writes made
+   *  on behalf of a user write (supersession) count too, which errs
+   *  conservative. Throws a 429-shaped error the HTTP layer forwards. */
+  private readonly quotaState = new Map<
+    string,
+    { windowStart: number; writes: number; countCheckedAt: number; count: number }
+  >();
+
+  private async enforceWriteQuota(userId: string): Promise<void> {
+    const defaults = this.quotas;
+    if (!defaults || (defaults.maxEntries === 0 && defaults.writesPerMinute === 0)) return;
+    const override = await this.warm.getUserQuota(userId);
+    const maxEntries = override.maxEntries ?? defaults.maxEntries;
+    const writesPerMinute = override.writesPerMinute ?? defaults.writesPerMinute;
+    if (maxEntries === 0 && writesPerMinute === 0) return;
+    const now = Date.now();
+    let s = this.quotaState.get(userId);
+    if (!s || now - s.windowStart >= 60_000) {
+      s = { windowStart: now, writes: 0, countCheckedAt: 0, count: 0 };
+      // Bound the map like the token-touch throttle: stale users drop out
+      // wholesale, worst case one extra count query per live user.
+      if (this.quotaState.size >= 10_000) this.quotaState.clear();
+      this.quotaState.set(userId, s);
+    }
+    if (writesPerMinute > 0 && s.writes >= writesPerMinute) {
+      const err = new Error(
+        `write quota exceeded: ${writesPerMinute} writes/minute — retry after the window resets`,
+      ) as Error & { statusCode: number };
+      err.statusCode = 429;
+      throw err;
+    }
+    if (maxEntries > 0) {
+      // Re-count at most every 30s; locally-observed writes fill the gap.
+      if (now - s.countCheckedAt >= 30_000) {
+        s.count = await this.warm.countEntriesForUser(userId);
+        s.countCheckedAt = now;
+      }
+      if (s.count >= maxEntries) {
+        const err = new Error(
+          `entry quota exceeded: ${maxEntries} stored entries — forget something first`,
+        ) as Error & { statusCode: number };
+        err.statusCode = 429;
+        throw err;
+      }
+      s.count++;
+    }
+    s.writes++;
+  }
+
+  /** Best-effort changelog append (memory_changes). Never blocks or
+   *  fails the mutation it records — see WarmStore.recordChanges. */
+  private logChange(
+    userId: string,
+    projectId: string | null | undefined,
+    entryId: string,
+    change: "created" | "updated" | "superseded" | "deleted" | "expired",
+    detail?: Record<string, unknown>,
+  ): void {
+    void this.warm
+      .recordChanges([{ userId, projectId: projectId ?? null, entryId, change, detail }])
+      .catch((err) => {
+        this.logger.warn(
+          { err: (err as Error).message, entryId, change },
+          "changelog append failed (mutation unaffected)",
+        );
+      });
   }
 
   /** Single-pass extraction (Mem0 alignment, Phase 2 —
@@ -1403,6 +1485,7 @@ export class MemoryEngine {
       }
       throw err;
     }
+    this.logChange(userId, projectId, candidate.id, "superseded", { supersededBy: created.id });
     return { id: created.id, superseded: supersededIds, embedded: created.embedded ?? false };
   }
 
@@ -1476,6 +1559,14 @@ export class MemoryEngine {
         // this entry for the *old* wording and miss it for the new.
         await this.warm.setEmbeddedAt(id, null);
       }
+    }
+    // "superseded" transitions come through this method too (the
+    // supersede path sets lifecycleStatus via update) — those log their
+    // own, more specific change; plain updates log "updated".
+    if (req.metadata?.lifecycleStatus !== "superseded") {
+      this.logChange(userId, projectId, id, "updated", {
+        contentChanged: req.content !== undefined,
+      });
     }
     return { updated: true, embeddingChanged };
   }
@@ -2135,6 +2226,9 @@ export class MemoryEngine {
       this.metrics.recordDemotion(demoted);
     }
     const expired = await this.reapExpired();
+    // Changelog retention: 30 days is plenty for an orchestrator polling
+    // /v1/me/changes; unbounded growth would eventually dominate the DB.
+    await this.warm.pruneChanges(30).catch(() => {});
     return { demoted, promoted, expired };
   }
 
@@ -2194,6 +2288,16 @@ export class MemoryEngine {
           .catch(() => {});
       }
     }
+    void this.warm
+      .recordChanges(
+        batch.rows.map((row) => ({
+          userId: row.user_id,
+          projectId: row.project_id,
+          entryId: row.id,
+          change: "expired" as const,
+        })),
+      )
+      .catch(() => {});
     this.logger.info?.({ expired: ids.length }, "reaped expired (TTL) entries");
     return ids.length;
   }
@@ -2402,6 +2506,7 @@ export class MemoryEngine {
         [id, userId, e.namespace, e.projectId ?? null, message],
       );
     }
+    this.logChange(userId, e.projectId ?? null, id, "deleted", { coldDeleteOk });
     return { deleted: true, coldDeleteOk };
   }
 

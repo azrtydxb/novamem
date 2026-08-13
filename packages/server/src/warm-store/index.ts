@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { ulid } from "ulid";
@@ -553,6 +553,177 @@ export class WarmStore {
         .returning({ createdAt: schema.userTokens.createdAt });
       return { token, userId, createdAt: inserted!.createdAt };
     });
+  }
+
+  // ─── Export ───────────────────────────────────────────────────────────
+
+  /** Keyset-paged dump of every entry the user owns (any scope), oldest
+   *  id first. Powers /v1/me/export; id order is stable under concurrent
+   *  writes (ULIDs are monotonic), so pages never skip or repeat. */
+  async exportEntries(
+    userId: string,
+    opts: { afterId?: string; limit?: number } = {},
+  ): Promise<
+    Array<{
+      id: string;
+      projectId: string | null;
+      content: string;
+      namespace: string;
+      source: string;
+      agentName: string | null;
+      metadata: Record<string, unknown>;
+      sourceType: string | null;
+      capturedFrom: string | null;
+      confidence: number;
+      createdAt: Date;
+      updatedAt: Date;
+    }>
+  > {
+    const limit = Math.min(Math.max(opts.limit ?? 500, 1), 1000);
+    const conds = [eq(schema.memoryEntries.userId, userId)];
+    if (opts.afterId) conds.push(gt(schema.memoryEntries.id, opts.afterId));
+    const rows = await this.db
+      .select()
+      .from(schema.memoryEntries)
+      .where(and(...conds))
+      .orderBy(asc(schema.memoryEntries.id))
+      .limit(limit);
+    return rows.map((r) => ({
+      id: r.id,
+      projectId: r.projectId,
+      content: r.content,
+      namespace: r.namespace,
+      source: r.source,
+      agentName: r.agentName,
+      metadata: (r.metadata ?? {}) as Record<string, unknown>,
+      sourceType: r.sourceType,
+      capturedFrom: r.capturedFrom,
+      confidence: r.confidence,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }));
+  }
+
+  // ─── Quotas ───────────────────────────────────────────────────────────
+
+  /** Per-user quota overrides; null fields = server defaults. */
+  async getUserQuota(
+    userId: string,
+  ): Promise<{ maxEntries: number | null; writesPerMinute: number | null }> {
+    const [row] = await this.db
+      .select({
+        maxEntries: schema.userQuotas.maxEntries,
+        writesPerMinute: schema.userQuotas.writesPerMinute,
+      })
+      .from(schema.userQuotas)
+      .where(eq(schema.userQuotas.userId, userId))
+      .limit(1);
+    return row ?? { maxEntries: null, writesPerMinute: null };
+  }
+
+  /** Upsert a user's quota overrides. Null clears the override back to
+   *  the server default. */
+  async setUserQuota(
+    userId: string,
+    quota: { maxEntries?: number | null; writesPerMinute?: number | null },
+  ): Promise<void> {
+    await this.db
+      .insert(schema.userQuotas)
+      .values({
+        userId,
+        maxEntries: quota.maxEntries ?? null,
+        writesPerMinute: quota.writesPerMinute ?? null,
+      })
+      .onConflictDoUpdate({
+        target: schema.userQuotas.userId,
+        set: {
+          maxEntries: quota.maxEntries ?? null,
+          writesPerMinute: quota.writesPerMinute ?? null,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+
+  /** Entry count across every scope the user owns — the capacity side
+   *  of quota enforcement. */
+  async countEntriesForUser(userId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(schema.memoryEntries)
+      .where(eq(schema.memoryEntries.userId, userId));
+    return row?.n ?? 0;
+  }
+
+  // ─── Change log ───────────────────────────────────────────────────────
+
+  /** Append changelog rows. BEST-EFFORT BY CONTRACT: callers fire this
+   *  off-path and a failed insert must never fail the mutation it
+   *  records — the log is an audit convenience, not the source of truth.
+   *  (A dropped row means a consumer polling /v1/me/changes can miss an
+   *  event; consumers needing certainty diff full listings.) */
+  async recordChanges(
+    rows: Array<{
+      userId: string;
+      projectId?: string | null;
+      entryId: string;
+      change: "created" | "updated" | "superseded" | "deleted" | "expired";
+      detail?: Record<string, unknown>;
+    }>,
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db.insert(schema.memoryChanges).values(
+      rows.map((r) => ({
+        userId: r.userId,
+        projectId: r.projectId ?? null,
+        entryId: r.entryId,
+        change: r.change,
+        detail: r.detail ?? null,
+      })),
+    );
+  }
+
+  /** Page the caller's changelog, oldest-first, strictly after `since`
+   *  (or after `afterSeq` for cursorless pagination — seq is the stable
+   *  cursor; timestamps can collide). */
+  async listChanges(
+    userId: string,
+    opts: { since?: Date; afterSeq?: number; limit?: number } = {},
+  ): Promise<
+    Array<{
+      seq: number;
+      entryId: string;
+      projectId: string | null;
+      change: string;
+      detail: Record<string, unknown> | null;
+      at: Date;
+    }>
+  > {
+    const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    const conds = [eq(schema.memoryChanges.userId, userId)];
+    if (opts.since) conds.push(gt(schema.memoryChanges.at, opts.since));
+    if (opts.afterSeq !== undefined) conds.push(gt(schema.memoryChanges.seq, opts.afterSeq));
+    const rows = await this.db
+      .select()
+      .from(schema.memoryChanges)
+      .where(and(...conds))
+      .orderBy(asc(schema.memoryChanges.seq))
+      .limit(limit);
+    return rows.map((r) => ({
+      seq: r.seq,
+      entryId: r.entryId,
+      projectId: r.projectId,
+      change: r.change,
+      detail: (r.detail ?? null) as Record<string, unknown> | null,
+      at: r.at,
+    }));
+  }
+
+  /** Drop changelog rows older than `days`. Runs on the decay timer. */
+  async pruneChanges(days: number): Promise<number> {
+    const r = await this.db.execute(
+      sql`DELETE FROM memory_changes WHERE at < now() - make_interval(days => ${days})`,
+    );
+    return r.rowCount ?? 0;
   }
 
   // ─── Users ────────────────────────────────────────────────────────────

@@ -221,6 +221,7 @@ async function main() {
     cold,
     embedder,
     defaultEffectiveDays: cfg.decay.defaultEffectiveDays,
+    quotas: cfg.quotas,
     metrics,
     extractor,
     extractorMaxFacts: cfg.extraction.maxFactsPerChunk,

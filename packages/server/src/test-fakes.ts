@@ -938,6 +938,104 @@ export class FakeWarmStore {
     return null;
   }
 
+  async exportEntries(userId: string, opts: { afterId?: string; limit?: number } = {}) {
+    const limit = Math.min(Math.max(opts.limit ?? 500, 1), 1000);
+    return [...this.rows.values()]
+      .filter((r) => r.userId === userId && (!opts.afterId || r.id > opts.afterId))
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .slice(0, limit)
+      .map((r) => ({
+        id: r.id,
+        projectId: r.projectId,
+        content: r.content,
+        namespace: r.namespace,
+        source: r.source,
+        agentName: r.agentName,
+        metadata: r.metadata,
+        sourceType: r.sourceType,
+        capturedFrom: null,
+        confidence: r.confidence ?? 1,
+        createdAt: r.createdAt,
+        updatedAt: r.createdAt,
+      }));
+  }
+
+  quotas = new Map<string, { maxEntries: number | null; writesPerMinute: number | null }>();
+
+  async getUserQuota(userId: string) {
+    return this.quotas.get(userId) ?? { maxEntries: null, writesPerMinute: null };
+  }
+
+  async setUserQuota(
+    userId: string,
+    quota: { maxEntries?: number | null; writesPerMinute?: number | null },
+  ) {
+    this.quotas.set(userId, {
+      maxEntries: quota.maxEntries ?? null,
+      writesPerMinute: quota.writesPerMinute ?? null,
+    });
+  }
+
+  async countEntriesForUser(userId: string) {
+    return [...this.rows.values()].filter((r) => r.userId === userId).length;
+  }
+
+  changes: Array<{
+    seq: number;
+    userId: string;
+    projectId: string | null;
+    entryId: string;
+    change: string;
+    detail: Record<string, unknown> | null;
+    at: Date;
+  }> = [];
+  private changeSeq = 0;
+
+  async recordChanges(
+    rows: Array<{
+      userId: string;
+      projectId?: string | null;
+      entryId: string;
+      change: string;
+      detail?: Record<string, unknown>;
+    }>,
+  ) {
+    for (const r of rows) {
+      this.changes.push({
+        seq: ++this.changeSeq,
+        userId: r.userId,
+        projectId: r.projectId ?? null,
+        entryId: r.entryId,
+        change: r.change,
+        detail: r.detail ?? null,
+        at: new Date(),
+      });
+    }
+  }
+
+  async listChanges(
+    userId: string,
+    opts: { since?: Date; afterSeq?: number; limit?: number } = {},
+  ) {
+    const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    return this.changes
+      .filter(
+        (c) =>
+          c.userId === userId &&
+          (!opts.since || c.at > opts.since) &&
+          (opts.afterSeq === undefined || c.seq > opts.afterSeq),
+      )
+      .slice(0, limit)
+      .map(({ userId: _u, ...rest }) => rest);
+  }
+
+  async pruneChanges(days: number) {
+    const cutoff = Date.now() - days * 86_400_000;
+    const before = this.changes.length;
+    this.changes = this.changes.filter((c) => c.at.getTime() >= cutoff);
+    return before - this.changes.length;
+  }
+
   async findUserById(id: string) {
     const u = this.users.get(id);
     if (!u) return null;
@@ -1395,6 +1493,8 @@ export interface MakeEngineOpts {
   personalTerms?: readonly string[];
   /** Forwarded to `MemoryEngine`. */
   defaultEffectiveDays?: number;
+  /** Forwarded to `MemoryEngine` — per-user write quotas. */
+  quotas?: { maxEntries: number; writesPerMinute: number };
   /** When true, builds a `MetricsCollector`, binds gauge sources to the
    *  fake stores and wires it into the engine. Default false. */
   withMetrics?: boolean;
@@ -1440,6 +1540,7 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
   const engine = new MemoryEngine({
     reranker: opts.reranker,
     graphLinkFanout: opts.graphLinkFanout,
+    quotas: opts.quotas,
     warm: asWarm(warm),
     cold: asCold(cold),
     embedder,

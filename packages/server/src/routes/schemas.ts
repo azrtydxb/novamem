@@ -385,3 +385,52 @@ export const AdminDeleteUserQuery = z
     dryRun: z.coerce.boolean().optional(),
   })
   .optional();
+
+export const MeChangesQuery = z
+  .object({
+    /** ISO-8601 lower bound (exclusive). */
+    since: z.string().datetime({ offset: true }).optional(),
+    /** Sequence cursor (exclusive) — from the previous page's nextSeq.
+     *  Preferred over `since` for paging: seq never collides. */
+    afterSeq: z.coerce.number().int().nonnegative().optional(),
+    limit: z.coerce.number().int().positive().max(500).optional(),
+  })
+  .optional();
+
+export const AdminQuotaBody = z.object({
+  /** Hard cap on stored entries. null clears the override; 0 = unlimited
+   *  for this user regardless of the server default. */
+  maxEntries: z.number().int().nonnegative().nullable().optional(),
+  /** remember/capture per minute (approximate, per replica). Same null/0
+   *  semantics as maxEntries. */
+  writesPerMinute: z.number().int().nonnegative().nullable().optional(),
+});
+
+export const MeExportQuery = z
+  .object({
+    /** Resume cursor from the previous page's nextAfterId. */
+    afterId: z.string().max(64).optional(),
+    limit: z.coerce.number().int().positive().max(1000).optional(),
+  })
+  .optional();
+
+export const MeImportBody = z.object({
+  /** Page of entries to import (typically from /v1/me/export). Capped
+   *  well below the global body limit; page large imports. */
+  entries: z
+    .array(
+      z.object({
+        content: z.string().min(1).max(MAX_CONTENT_BYTES),
+        namespace: z.string().max(128).optional(),
+        source: z.string().max(128).optional(),
+        agentName: z.string().max(128).optional().nullable(),
+        project: ProjectRefRule.optional().nullable(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        sourceType: z.string().max(64).optional(),
+        capturedFrom: z.string().max(256).optional(),
+        confidence: z.number().min(0).max(1).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});

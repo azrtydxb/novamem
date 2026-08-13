@@ -495,6 +495,66 @@ export class NovamemClient {
     await this.request("/v1/me/active-project", { method: "DELETE" });
   }
 
+  /** Page the caller's memory changelog. Pass the previous page's
+   *  `nextSeq` back as `afterSeq` to resume without missing events.
+   *  Best-effort log (see server docs) — certainty requires a full diff. */
+  async changes(opts: { since?: string; afterSeq?: number; limit?: number } = {}): Promise<{
+    changes: Array<{
+      seq: number;
+      entryId: string;
+      projectId: string | null;
+      change: "created" | "updated" | "superseded" | "deleted" | "expired";
+      detail: Record<string, unknown> | null;
+      at: string;
+    }>;
+    nextSeq: number | null;
+  }> {
+    const qs = new URLSearchParams();
+    if (opts.since) qs.set("since", opts.since);
+    if (opts.afterSeq !== undefined) qs.set("afterSeq", String(opts.afterSeq));
+    if (opts.limit !== undefined) qs.set("limit", String(opts.limit));
+    const suffix = qs.size > 0 ? `?${qs}` : "";
+    return this.request(`/v1/me/changes${suffix}`);
+  }
+
+  /** The caller's stored-entry count and effective quota overrides. */
+  async usage(): Promise<{
+    entries: number;
+    quota: { maxEntries: number | null; writesPerMinute: number | null };
+  }> {
+    return this.request("/v1/me/usage");
+  }
+
+  /** Page an export of every entry the caller owns. Pass nextAfterId
+   *  back as afterId until it returns an empty page. */
+  async exportEntries(opts: { afterId?: string; limit?: number } = {}): Promise<{
+    entries: Array<Record<string, unknown> & { id: string; content: string; namespace: string }>;
+    nextAfterId: string | null;
+  }> {
+    const qs = new URLSearchParams();
+    if (opts.afterId) qs.set("afterId", opts.afterId);
+    if (opts.limit !== undefined) qs.set("limit", String(opts.limit));
+    const suffix = qs.size > 0 ? `?${qs}` : "";
+    return this.request(`/v1/me/export${suffix}`);
+  }
+
+  /** Import a page of entries (typically from exportEntries; ≤200 per
+   *  call). Ids are not preserved; content-hash dedup makes re-imports
+   *  idempotent. */
+  async importEntries(entries: Array<{
+    content: string;
+    namespace?: string;
+    source?: string;
+    agentName?: string | null;
+    project?: string | null;
+    metadata?: Record<string, unknown>;
+    sourceType?: string;
+    capturedFrom?: string;
+    confidence?: number;
+  }>): Promise<{ imported: number; deduplicated: number; failed: Array<{ index: number; error: string }> }> {
+    return this.request("/v1/me/import", { method: "POST", body: { entries } });
+  }
+
   // ─── Tokens (per-device API keys) ──────────────────────────────────────
 
   /** Mint a bearer. `scope: "read_only"` limits it to reads; `project`

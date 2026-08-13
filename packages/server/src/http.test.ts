@@ -13,11 +13,13 @@ function makeApp(
     token?: string;
     adminDashboard?: boolean;
     withMetrics?: boolean;
+    quotas?: { maxEntries: number; writesPerMinute: number };
   } = {},
 ) {
   const { engine, warm, cold, metrics } = makeEngine({
     defaultEffectiveDays: 7,
     withMetrics: opts.withMetrics !== false,
+    quotas: opts.quotas,
   });
   // Test-mode Better Auth shim. Production wires the real Better Auth
   // instance; tests synthesize a session by minting a row in the fake
@@ -1885,5 +1887,190 @@ describe("http: memory TTL (expiresAt)", () => {
       headers: { authorization: u.authorization },
     });
     expect(r.statusCode).toBe(400);
+  });
+});
+
+describe("http: /v1/me/changes (per-user changelog)", () => {
+  it("records created/updated/deleted and pages by seq cursor", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "changes-user");
+    const created = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "the staging environment uses the blue ingress class" },
+      headers: { authorization: u.authorization },
+    });
+    const id = created.json().id;
+    await app.inject({
+      method: "PUT", url: `/v1/memories/${id}`,
+      payload: { content: "the staging environment uses the green ingress class now" },
+      headers: { authorization: u.authorization },
+    });
+    await app.inject({
+      method: "POST", url: "/v1/forget", payload: { id },
+      headers: { authorization: u.authorization },
+    });
+    // Off-path appends — give the microtask queue a beat.
+    await new Promise((r) => setTimeout(r, 20));
+    const page1 = await app.inject({
+      method: "GET", url: "/v1/me/changes?limit=2",
+      headers: { authorization: u.authorization },
+    });
+    expect(page1.statusCode).toBe(200);
+    const p1 = page1.json();
+    expect(p1.changes.map((c: { change: string }) => c.change)).toEqual(["created", "updated"]);
+    const page2 = await app.inject({
+      method: "GET", url: `/v1/me/changes?afterSeq=${p1.nextSeq}`,
+      headers: { authorization: u.authorization },
+    });
+    expect(page2.json().changes.map((c: { change: string }) => c.change)).toEqual(["deleted"]);
+    expect(page2.json().changes[0].entryId).toBe(id);
+  });
+
+  it("changelog is per-user — B never sees A's events", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const a = await userAuth(warm, "changes-a");
+    const b = await userAuth(warm, "changes-b");
+    await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "a private fact belonging to user a about deployments" },
+      headers: { authorization: a.authorization },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const forB = await app.inject({
+      method: "GET", url: "/v1/me/changes",
+      headers: { authorization: b.authorization },
+    });
+    expect(forB.json().changes).toHaveLength(0);
+  });
+});
+
+describe("http: per-user write quotas", () => {
+  it("rate limit answers 429 after the per-minute budget", async () => {
+    const { app, warm } = makeApp({ authMode: "user", quotas: { maxEntries: 0, writesPerMinute: 2 } });
+    const u = await userAuth(warm, "rate-user");
+    const put = (i: number) =>
+      app.inject({
+        method: "POST", url: "/v1/remember",
+        payload: { content: `distinct durable fact number ${i} about the pipeline configuration` },
+        headers: { authorization: u.authorization },
+      });
+    expect((await put(1)).statusCode).toBe(201);
+    expect((await put(2)).statusCode).toBe(201);
+    const third = await put(3);
+    expect(third.statusCode).toBe(429);
+    expect(third.json().error).toContain("write quota exceeded");
+  });
+
+  it("entry cap answers 429; forget frees room only after recount window", async () => {
+    const { app, warm } = makeApp({ authMode: "user", quotas: { maxEntries: 1, writesPerMinute: 0 } });
+    const u = await userAuth(warm, "cap-user");
+    const first = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "the only fact this capped user is allowed to keep around" },
+      headers: { authorization: u.authorization },
+    });
+    expect(first.statusCode).toBe(201);
+    const second = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "a second fact that must be refused by the entry quota" },
+      headers: { authorization: u.authorization },
+    });
+    expect(second.statusCode).toBe(429);
+    expect(second.json().error).toContain("entry quota exceeded");
+  });
+
+  it("admin override wins over the server default; usage reports it", async () => {
+    const { app, warm } = makeApp({ authMode: "user", quotas: { maxEntries: 1, writesPerMinute: 0 } });
+    const adminH = await adminAuth(warm);
+    const u = await userAuth(warm, "override-user");
+    const bump = await app.inject({
+      method: "PUT", url: `/v1/admin/users/${u.userId}/quota`,
+      payload: { maxEntries: 5 },
+      headers: adminH,
+    });
+    expect(bump.statusCode).toBe(200);
+    for (let i = 0; i < 3; i++) {
+      const r = await app.inject({
+        method: "POST", url: "/v1/remember",
+        payload: { content: `override user durable fact number ${i} about cluster networking` },
+        headers: { authorization: u.authorization },
+      });
+      expect(r.statusCode).toBe(201);
+    }
+    const usage = await app.inject({
+      method: "GET", url: "/v1/me/usage",
+      headers: { authorization: u.authorization },
+    });
+    expect(usage.statusCode).toBe(200);
+    expect(usage.json().entries).toBe(3);
+    expect(usage.json().quota.maxEntries).toBe(5);
+  });
+
+  it("quotas off by default — no limit enforced", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "unlimited-user");
+    for (let i = 0; i < 5; i++) {
+      const r = await app.inject({
+        method: "POST", url: "/v1/remember",
+        payload: { content: `unlimited user durable fact number ${i} about storage classes` },
+        headers: { authorization: u.authorization },
+      });
+      expect(r.statusCode).toBe(201);
+    }
+  });
+});
+
+describe("http: export/import round trip", () => {
+  it("exports pages by cursor and re-imports idempotently elsewhere", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const src = await userAuth(warm, "export-user");
+    const contents = [
+      "first durable fact about the ingress controller configuration",
+      "second durable fact about the postgres shared buffers sizing",
+      "third durable fact about the reranker endpoint on the dgx",
+    ];
+    for (const content of contents) {
+      const r = await app.inject({
+        method: "POST", url: "/v1/remember", payload: { content },
+        headers: { authorization: src.authorization },
+      });
+      expect(r.statusCode).toBe(201);
+    }
+    // Page with limit 2 → 2 + 1 via cursor.
+    const p1 = await app.inject({
+      method: "GET", url: "/v1/me/export?limit=2",
+      headers: { authorization: src.authorization },
+    });
+    expect(p1.json().entries).toHaveLength(2);
+    const p2 = await app.inject({
+      method: "GET", url: `/v1/me/export?limit=2&afterId=${p1.json().nextAfterId}`,
+      headers: { authorization: src.authorization },
+    });
+    expect(p2.json().entries).toHaveLength(1);
+    // Import into a different user.
+    const dst = await userAuth(warm, "import-user");
+    const all = [...p1.json().entries, ...p2.json().entries].map(
+      ({ content, namespace, metadata }: { content: string; namespace: string; metadata: Record<string, unknown> }) =>
+        ({ content, namespace, metadata }),
+    );
+    const imp = await app.inject({
+      method: "POST", url: "/v1/me/import", payload: { entries: all },
+      headers: { authorization: dst.authorization },
+    });
+    expect(imp.statusCode).toBe(201);
+    expect(imp.json().imported).toBe(3);
+    // Re-import: content-hash dedup makes it idempotent.
+    const again = await app.inject({
+      method: "POST", url: "/v1/me/import", payload: { entries: all },
+      headers: { authorization: dst.authorization },
+    });
+    expect(again.json().imported).toBe(0);
+    expect(again.json().deduplicated).toBe(3);
+    // The import landed for dst, invisible to src's scope and vice versa.
+    const dstRecent = await app.inject({
+      method: "POST", url: "/v1/recent", payload: {},
+      headers: { authorization: dst.authorization },
+    });
+    expect(dstRecent.json().results).toHaveLength(3);
   });
 });
