@@ -288,8 +288,11 @@ export class PgVectorColdStore {
     );
   }
 
-  /** Remove every user-wide vector for a user. Project-scoped vectors
-   *  are removed by deleteAllForProject when their project dies. */
+  /** Remove EVERY vector the user owns, in any scope — including rows
+   *  they wrote into other users' projects (those entries die in the
+   *  warm teardown too, so their vectors must not outlive them). The
+   *  Qdrant store can only drop whole user-wide collections; this
+   *  single-table backend can and does go further. */
   async deleteAllForUser(userId: string): Promise<string[]> {
     await this.ensureReady();
     const r = await this.pool.query(

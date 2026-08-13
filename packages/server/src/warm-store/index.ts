@@ -256,8 +256,11 @@ export class WarmStore {
       scope?: "full" | "read_only";
       projectId?: string | null;
       expiresAt?: Date | null;
-    } = {},
+    } | null = {},
   ): Promise<{ token: string; userId: string; createdAt: Date } | null> {
+    // Legacy call sites passed a positional `null` projectId here —
+    // treat it as "no options" rather than crashing on property access.
+    const o = opts ?? {};
     // Raw: Better-Auth-owned `"user"` table not in our drizzle schema (rule a).
     const exists = await this.db.execute<{ exists: number }>(
       sql`SELECT 1 AS exists FROM "user" WHERE id = ${userId} LIMIT 1`,
@@ -271,9 +274,9 @@ export class WarmStore {
         tokenHash,
         userId,
         label: label ?? null,
-        scope: opts.scope ?? "full",
-        projectId: opts.projectId ?? null,
-        expiresAt: opts.expiresAt ?? null,
+        scope: o.scope ?? "full",
+        projectId: o.projectId ?? null,
+        expiresAt: o.expiresAt ?? null,
       })
       .returning({ createdAt: schema.userTokens.createdAt });
     return { token, userId, createdAt: row!.createdAt };
@@ -585,7 +588,9 @@ export class WarmStore {
     }>(sql`
       SELECT u.id, u.email, u.name, u.role, u."createdAt" AS created_at,
              (SELECT count(*) FROM memory_entries e WHERE e.user_id = u.id) AS entry_count,
-             (SELECT count(*) FROM user_tokens t WHERE t.user_id = u.id AND t.revoked_at IS NULL) AS token_count
+             (SELECT count(*) FROM user_tokens t
+               WHERE t.user_id = u.id AND t.revoked_at IS NULL
+                 AND (t.expires_at IS NULL OR t.expires_at > now())) AS token_count
         FROM "user" u
        ORDER BY u."createdAt" ASC
     `);
@@ -631,6 +636,19 @@ export class WarmStore {
       };
     }
     return this.db.transaction(async (tx) => {
+      // Vectors this user wrote into OTHER users' projects can't be
+      // reached by the Qdrant store's collection-level deleteAllForUser
+      // (owned projects are already gone by contract). Park their ids in
+      // cold_orphans so the reaper deletes them point-by-point; on the
+      // pgvector backend deleteAllForUser removes them directly and the
+      // orphan rows clear as no-ops.
+      await tx.execute(sql`
+        INSERT INTO cold_orphans (id, user_id, namespace, project_id, attempts, last_error, last_attempt_at)
+        SELECT id, user_id, namespace, project_id, 0, 'user teardown', NULL
+          FROM memory_entries
+         WHERE user_id = ${userId} AND project_id IS NOT NULL
+        ON CONFLICT (id) DO NOTHING
+      `);
       await tx.execute(sql`
         DELETE FROM memory_access WHERE entry_id IN (
           SELECT id FROM memory_entries WHERE user_id = ${userId}
@@ -649,6 +667,8 @@ export class WarmStore {
         .delete(schema.userTokens)
         .where(eq(schema.userTokens.userId, userId))
         .returning({ tokenHash: schema.userTokens.tokenHash });
+      // Per-user telemetry — part of "everything the warm store holds".
+      await tx.execute(sql`DELETE FROM metrics_samples WHERE user_id = ${userId}`);
       // Better Auth's tables aren't in the drizzle schema (rule a) —
       // delete sessions and credential accounts before the user row.
       await tx.execute(sql`DELETE FROM session WHERE "userId" = ${userId}`);
