@@ -57,6 +57,13 @@
       "when": 1786611354752,
       "tag": "0007_equal_next_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786611692270,
+      "tag": "0008_minor_hammerhead",
+      "breakpoints": true
     }
   ]
 }

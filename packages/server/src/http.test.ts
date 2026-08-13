@@ -13,11 +13,13 @@ function makeApp(
     token?: string;
     adminDashboard?: boolean;
     withMetrics?: boolean;
+    quotas?: { maxEntries: number; writesPerMinute: number };
   } = {},
 ) {
   const { engine, warm, cold, metrics } = makeEngine({
     defaultEffectiveDays: 7,
     withMetrics: opts.withMetrics !== false,
+    quotas: opts.quotas,
   });
   // Test-mode Better Auth shim. Production wires the real Better Auth
   // instance; tests synthesize a session by minting a row in the fake
@@ -1939,5 +1941,81 @@ describe("http: /v1/me/changes (per-user changelog)", () => {
       headers: { authorization: b.authorization },
     });
     expect(forB.json().changes).toHaveLength(0);
+  });
+});
+
+describe("http: per-user write quotas", () => {
+  it("rate limit answers 429 after the per-minute budget", async () => {
+    const { app, warm } = makeApp({ authMode: "user", quotas: { maxEntries: 0, writesPerMinute: 2 } });
+    const u = await userAuth(warm, "rate-user");
+    const put = (i: number) =>
+      app.inject({
+        method: "POST", url: "/v1/remember",
+        payload: { content: `distinct durable fact number ${i} about the pipeline configuration` },
+        headers: { authorization: u.authorization },
+      });
+    expect((await put(1)).statusCode).toBe(201);
+    expect((await put(2)).statusCode).toBe(201);
+    const third = await put(3);
+    expect(third.statusCode).toBe(429);
+    expect(third.json().error).toContain("write quota exceeded");
+  });
+
+  it("entry cap answers 429; forget frees room only after recount window", async () => {
+    const { app, warm } = makeApp({ authMode: "user", quotas: { maxEntries: 1, writesPerMinute: 0 } });
+    const u = await userAuth(warm, "cap-user");
+    const first = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "the only fact this capped user is allowed to keep around" },
+      headers: { authorization: u.authorization },
+    });
+    expect(first.statusCode).toBe(201);
+    const second = await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "a second fact that must be refused by the entry quota" },
+      headers: { authorization: u.authorization },
+    });
+    expect(second.statusCode).toBe(429);
+    expect(second.json().error).toContain("entry quota exceeded");
+  });
+
+  it("admin override wins over the server default; usage reports it", async () => {
+    const { app, warm } = makeApp({ authMode: "user", quotas: { maxEntries: 1, writesPerMinute: 0 } });
+    const adminH = await adminAuth(warm);
+    const u = await userAuth(warm, "override-user");
+    const bump = await app.inject({
+      method: "PUT", url: `/v1/admin/users/${u.userId}/quota`,
+      payload: { maxEntries: 5 },
+      headers: adminH,
+    });
+    expect(bump.statusCode).toBe(200);
+    for (let i = 0; i < 3; i++) {
+      const r = await app.inject({
+        method: "POST", url: "/v1/remember",
+        payload: { content: `override user durable fact number ${i} about cluster networking` },
+        headers: { authorization: u.authorization },
+      });
+      expect(r.statusCode).toBe(201);
+    }
+    const usage = await app.inject({
+      method: "GET", url: "/v1/me/usage",
+      headers: { authorization: u.authorization },
+    });
+    expect(usage.statusCode).toBe(200);
+    expect(usage.json().entries).toBe(3);
+    expect(usage.json().quota.maxEntries).toBe(5);
+  });
+
+  it("quotas off by default — no limit enforced", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "unlimited-user");
+    for (let i = 0; i < 5; i++) {
+      const r = await app.inject({
+        method: "POST", url: "/v1/remember",
+        payload: { content: `unlimited user durable fact number ${i} about storage classes` },
+        headers: { authorization: u.authorization },
+      });
+      expect(r.statusCode).toBe(201);
+    }
   });
 });

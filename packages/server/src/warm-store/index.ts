@@ -555,6 +555,56 @@ export class WarmStore {
     });
   }
 
+  // ─── Quotas ───────────────────────────────────────────────────────────
+
+  /** Per-user quota overrides; null fields = server defaults. */
+  async getUserQuota(
+    userId: string,
+  ): Promise<{ maxEntries: number | null; writesPerMinute: number | null }> {
+    const [row] = await this.db
+      .select({
+        maxEntries: schema.userQuotas.maxEntries,
+        writesPerMinute: schema.userQuotas.writesPerMinute,
+      })
+      .from(schema.userQuotas)
+      .where(eq(schema.userQuotas.userId, userId))
+      .limit(1);
+    return row ?? { maxEntries: null, writesPerMinute: null };
+  }
+
+  /** Upsert a user's quota overrides. Null clears the override back to
+   *  the server default. */
+  async setUserQuota(
+    userId: string,
+    quota: { maxEntries?: number | null; writesPerMinute?: number | null },
+  ): Promise<void> {
+    await this.db
+      .insert(schema.userQuotas)
+      .values({
+        userId,
+        maxEntries: quota.maxEntries ?? null,
+        writesPerMinute: quota.writesPerMinute ?? null,
+      })
+      .onConflictDoUpdate({
+        target: schema.userQuotas.userId,
+        set: {
+          maxEntries: quota.maxEntries ?? null,
+          writesPerMinute: quota.writesPerMinute ?? null,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+
+  /** Entry count across every scope the user owns — the capacity side
+   *  of quota enforcement. */
+  async countEntriesForUser(userId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(schema.memoryEntries)
+      .where(eq(schema.memoryEntries.userId, userId));
+    return row?.n ?? 0;
+  }
+
   // ─── Change log ───────────────────────────────────────────────────────
 
   /** Append changelog rows. BEST-EFFORT BY CONTRACT: callers fire this

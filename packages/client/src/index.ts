@@ -517,6 +517,14 @@ export class NovamemClient {
     return this.request(`/v1/me/changes${suffix}`);
   }
 
+  /** The caller's stored-entry count and effective quota overrides. */
+  async usage(): Promise<{
+    entries: number;
+    quota: { maxEntries: number | null; writesPerMinute: number | null };
+  }> {
+    return this.request("/v1/me/usage");
+  }
+
   // ─── Tokens (per-device API keys) ──────────────────────────────────────
 
   /** Mint a bearer. `scope: "read_only"` limits it to reads; `project`

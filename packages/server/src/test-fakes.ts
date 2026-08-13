@@ -938,6 +938,26 @@ export class FakeWarmStore {
     return null;
   }
 
+  quotas = new Map<string, { maxEntries: number | null; writesPerMinute: number | null }>();
+
+  async getUserQuota(userId: string) {
+    return this.quotas.get(userId) ?? { maxEntries: null, writesPerMinute: null };
+  }
+
+  async setUserQuota(
+    userId: string,
+    quota: { maxEntries?: number | null; writesPerMinute?: number | null },
+  ) {
+    this.quotas.set(userId, {
+      maxEntries: quota.maxEntries ?? null,
+      writesPerMinute: quota.writesPerMinute ?? null,
+    });
+  }
+
+  async countEntriesForUser(userId: string) {
+    return [...this.rows.values()].filter((r) => r.userId === userId).length;
+  }
+
   changes: Array<{
     seq: number;
     userId: string;
@@ -1451,6 +1471,8 @@ export interface MakeEngineOpts {
   personalTerms?: readonly string[];
   /** Forwarded to `MemoryEngine`. */
   defaultEffectiveDays?: number;
+  /** Forwarded to `MemoryEngine` — per-user write quotas. */
+  quotas?: { maxEntries: number; writesPerMinute: number };
   /** When true, builds a `MetricsCollector`, binds gauge sources to the
    *  fake stores and wires it into the engine. Default false. */
   withMetrics?: boolean;
@@ -1496,6 +1518,7 @@ export function makeEngine(opts: MakeEngineOpts = {}): MakeEngineResult {
   const engine = new MemoryEngine({
     reranker: opts.reranker,
     graphLinkFanout: opts.graphLinkFanout,
+    quotas: opts.quotas,
     warm: asWarm(warm),
     cold: asCold(cold),
     embedder,

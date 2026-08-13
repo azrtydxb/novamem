@@ -396,3 +396,12 @@ export const MeChangesQuery = z
     limit: z.coerce.number().int().positive().max(500).optional(),
   })
   .optional();
+
+export const AdminQuotaBody = z.object({
+  /** Hard cap on stored entries. null clears the override; 0 = unlimited
+   *  for this user regardless of the server default. */
+  maxEntries: z.number().int().nonnegative().nullable().optional(),
+  /** remember/capture per minute (approximate, per replica). Same null/0
+   *  semantics as maxEntries. */
+  writesPerMinute: z.number().int().nonnegative().nullable().optional(),
+});

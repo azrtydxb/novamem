@@ -211,6 +211,12 @@ export const ConfigSchema = z
       intervalMs: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
       defaultEffectiveDays: z.coerce.number().positive().default(7),
     }),
+    /** Server-wide per-user write quotas. 0 = unlimited (the default —
+     *  quotas are opt-in). Per-user overrides via /v1/admin/users/:id/quota. */
+    quotas: z.object({
+      maxEntries: z.coerce.number().int().nonnegative().default(0),
+      writesPerMinute: z.coerce.number().int().nonnegative().default(0),
+    }),
     /** Secret used to sign Fastify cookies AND seed Better Auth's session
      *  signer. Must be operator-supplied in any non-`auth.mode=none`
      *  deployment — we refuse to start otherwise (see `loadConfig`). The
@@ -374,6 +380,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     decay: {
       intervalMs: env.NOVAMEM_DECAY_INTERVAL_MS,
       defaultEffectiveDays: env.NOVAMEM_DECAY_DAYS,
+    },
+    quotas: {
+      maxEntries: env.NOVAMEM_QUOTA_MAX_ENTRIES,
+      writesPerMinute: env.NOVAMEM_QUOTA_WRITES_PER_MINUTE,
     },
     cookieSecret,
     bootstrap: {

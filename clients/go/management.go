@@ -417,3 +417,20 @@ func (m *Management) Changes(ctx context.Context, since string, afterSeq, limit 
 	}
 	return out.Changes, next, nil
 }
+
+// Usage is the caller's stored-entry count and quota overrides (nil
+// fields mean the server default applies).
+type Usage struct {
+	Entries int `json:"entries"`
+	Quota   struct {
+		MaxEntries      *int `json:"maxEntries"`
+		WritesPerMinute *int `json:"writesPerMinute"`
+	} `json:"quota"`
+}
+
+// Usage reports the caller's memory footprint against their quotas.
+func (m *Management) Usage(ctx context.Context) (Usage, error) {
+	var out Usage
+	err := m.c.do(ctx, "usage", http.MethodGet, "/v1/me/usage", nil, &out)
+	return out, err
+}

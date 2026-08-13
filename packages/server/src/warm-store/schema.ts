@@ -361,3 +361,14 @@ export const memoryChanges = pgTable(
   },
   (table) => [index("idx_memory_changes_user_at").on(table.userId, table.at)],
 );
+
+/** Per-user quota overrides (admin-set). NULL columns fall back to the
+ *  server-wide defaults (NOVAMEM_QUOTA_* env). Absent row = defaults. */
+export const userQuotas = pgTable("user_quotas", {
+  userId: text("user_id").primaryKey(),
+  /** Hard cap on stored entries (any scope). NULL = server default. */
+  maxEntries: integer("max_entries"),
+  /** Write-rate cap (remember/capture per minute). NULL = server default. */
+  writesPerMinute: integer("writes_per_minute"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

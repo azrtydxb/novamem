@@ -185,3 +185,23 @@ func (a *Admin) DeleteUser(ctx context.Context, userID string) (UserDeletion, er
 		"/v1/admin/users/"+url.PathEscape(userID), nil, &out)
 	return out, err
 }
+
+// QuotaOverride sets per-user quota overrides. Nil fields clear the
+// override back to the server default; explicit 0 means unlimited for
+// this user regardless of the default.
+type QuotaOverride struct {
+	MaxEntries      *int `json:"maxEntries"`
+	WritesPerMinute *int `json:"writesPerMinute"`
+}
+
+// SetUserQuota writes a user's quota overrides. Quotas bound runaway
+// agents (writes/minute is approximate, per server replica) — they are
+// not billing meters.
+func (a *Admin) SetUserQuota(ctx context.Context, userID string, q QuotaOverride) error {
+	if strings.TrimSpace(userID) == "" {
+		return &Error{Op: "set-user-quota", Message: "userID is required"}
+	}
+	var out map[string]any
+	return a.c.do(ctx, "set-user-quota", http.MethodPut,
+		"/v1/admin/users/"+url.PathEscape(userID)+"/quota", q, &out)
+}

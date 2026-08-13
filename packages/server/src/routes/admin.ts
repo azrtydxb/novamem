@@ -10,6 +10,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import {
   AdminCreateUserBody,
   AdminDeleteUserQuery,
+  AdminQuotaBody,
   AdminRevokeBody,
   AdminUserIdParam,
 } from "./schemas.js";
@@ -181,6 +182,29 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       });
       if (!result.deleted) return reply.code(409).send({ error: result.reason ?? "delete failed" });
       reply.send(result);
+    },
+  );
+
+  r.put(
+    "/v1/admin/users/:id/quota",
+    {
+      schema: {
+        tags: ["admin"],
+        summary: "Set per-user quota overrides (null clears back to server default)",
+        params: AdminUserIdParam,
+        body: AdminQuotaBody,
+        security: AdminSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "admin disabled" });
+      if (!requireAdmin(req, reply)) return;
+      const { id } = req.params;
+      const target = await ctx.warm.findUserById(id);
+      if (!target) return reply.code(404).send({ error: "no such user" });
+      await ctx.warm.setUserQuota(id, req.body);
+      await ctx.audit(req, "admin.user.quota", id, req.body);
+      reply.send({ userId: id, quota: await ctx.warm.getUserQuota(id) });
     },
   );
 

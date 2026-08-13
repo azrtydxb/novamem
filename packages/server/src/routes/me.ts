@@ -446,6 +446,27 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
   // ─── Today + onboarding (derived state for the SPA) ────────────────
 
   r.get(
+    "/v1/me/usage",
+    {
+      schema: {
+        tags: ["self-service"],
+        summary: "The caller's stored-entry count and effective quotas",
+        security: SessionSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "usage disabled" });
+      const u = requireDashUser(req, reply);
+      if (!u) return;
+      const [entries, quota] = await Promise.all([
+        ctx.warm.countEntriesForUser(u.id),
+        ctx.warm.getUserQuota(u.id),
+      ]);
+      reply.send({ entries, quota });
+    },
+  );
+
+  r.get(
     "/v1/me/changes",
     {
       schema: {
