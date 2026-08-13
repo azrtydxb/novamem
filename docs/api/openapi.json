@@ -253,6 +253,14 @@
                       }
                     }
                   },
+                  "contentMode": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "snippet",
+                      "ids"
+                    ]
+                  },
                   "maxSensitivity": {
                     "type": "string",
                     "enum": [
@@ -383,6 +391,14 @@
                         "type": "number"
                       }
                     }
+                  },
+                  "contentMode": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "snippet",
+                      "ids"
+                    ]
                   },
                   "maxSensitivity": {
                     "type": "string",
@@ -1057,6 +1073,14 @@
                       "internal",
                       "private",
                       "sensitive"
+                    ]
+                  },
+                  "contentMode": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "snippet",
+                      "ids"
                     ]
                   }
                 }

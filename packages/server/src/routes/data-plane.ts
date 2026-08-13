@@ -63,6 +63,32 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
 
 
 
+
+  /** Post-shape results for callers that rank first and hydrate later.
+   *  Applied at the route layer so the engine's fusion (which needs full
+   *  content for recency/entity signals and reranking) is untouched —
+   *  only the wire payload shrinks. */
+  const SNIPPET_CHARS = 240;
+  const shapeContent = <T extends { results: unknown[] }>(
+    result: T,
+    mode: "full" | "snippet" | "ids" | undefined,
+  ): T => {
+    if (!mode || mode === "full") return result;
+    for (const r of result.results as Array<Record<string, unknown>>) {
+      const content = typeof r.content === "string" ? r.content : "";
+      if (mode === "ids") {
+        delete r.content;
+        delete r.metadata;
+      } else if (content.length > SNIPPET_CHARS) {
+        const cut = content.slice(0, SNIPPET_CHARS);
+        const lastSpace = cut.lastIndexOf(" ");
+        r.content = (lastSpace > SNIPPET_CHARS / 2 ? cut.slice(0, lastSpace) : cut) + "\u2026";
+        r.truncated = true;
+      }
+    }
+    return result;
+  };
+
   r.post(
     "/v1/adoption",
     {
@@ -125,7 +151,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
       const body = req.body;
       if (!(await checkProjectAccess(ctx, req, body, reply))) return;
       const result = await ctx.engine.search(req.userId, body, req.bearerToken);
-      sendSearchResult(reply, result);
+      sendSearchResult(reply, shapeContent(result, body.contentMode));
     },
   );
 
@@ -423,7 +449,8 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     async (req, reply) => {
       const body = req.body ?? {};
       if (!(await checkProjectAccess(ctx, req, body, reply))) return;
-      reply.send(await ctx.engine.recent(req.userId, body));
+      const recentResult = await ctx.engine.recent(req.userId, body);
+      reply.send(shapeContent(recentResult, body.contentMode));
     },
   );
 

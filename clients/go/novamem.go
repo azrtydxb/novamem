@@ -312,6 +312,8 @@ type Entry struct {
 	// Signals is nil on ordered results (Recent), where ranking does not
 	// apply — a pointer so "not ranked" stays distinct from "ranked zero".
 	Signals *Signals `json:"signals,omitempty"`
+	// Truncated is true when ContentMode "snippet" cut this content.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // Signals is the per-channel contribution to an entry's score. Neighbors
@@ -431,6 +433,8 @@ type RecentRequest struct {
 	IncludeProjects   []string    `json:"includeProjects,omitempty"`
 	IncludeNamespaces []string    `json:"includeNamespaces,omitempty"`
 	MaxSensitivity    Sensitivity `json:"maxSensitivity,omitempty"`
+	// ContentMode — see SearchRequest.ContentMode.
+	ContentMode string `json:"contentMode,omitempty"`
 }
 
 // NeighborsRequest walks the memory graph out from a seed entry — the way to
