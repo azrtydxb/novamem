@@ -188,16 +188,27 @@ well below the container memory limit. For migrating an existing
 Qdrant deployment, `packages/server/scripts/sync-qdrant-to-pgvector.mjs`
 copies vectors without re-embedding.
 
-**Give Postgres CPU headroom for concurrent search.** HNSW queries are
-CPU-bound (~50–60 ms of CPU each on a ~380k-vector corpus), so
-concurrent searches queue on the container's CPU limit — with
-`limits.cpu: 2`, 8 concurrent queries measured 268 ms each under active
-CFS throttling; at `limits.cpu: 6` the same load ran 91 ms. Budget
-roughly one core per expected concurrent search, and raise
-`shared_buffers` from its 128 MB default at the same time (e.g.
-`args: ["-c", "shared_buffers=1GB"]`) so the hot index pages stay
-resident. Symptom to check for: search p95 that degrades with client
-concurrency while the node looks idle — confirm throttling from inside
-the pod: on cgroup v2, a growing `throttled_usec` in
-`/sys/fs/cgroup/cpu.stat`; on cgroup v1, `throttled_time` (nanoseconds)
-in `/sys/fs/cgroup/cpu/cpu.stat`.
+**Postgres sizing for pgvector.** Measured with pgbench (persistent
+connections) on a ~380k-vector corpus with per-partition HNSW indexes:
+one k=200 query runs ~8–10 ms, and 8 concurrent queries run ~20 ms
+each — HNSW search is cheap, and a modest CPU limit absorbs moderate
+concurrent load. What does matter is `shared_buffers`: raise it from
+its 128 MB default so the hot index pages stay resident instead of
+round-tripping through the OS cache — but size it against the
+**container memory limit**, not in isolation. Keep `shared_buffers` at
+roughly 25% of the limit: `shared_buffers=1GB` requires raising the
+default manifest's `limits.memory: 1Gi` to ~4Gi first (e.g.
+`args: ["-c", "shared_buffers=1GB"]` with `limits.memory: 4Gi`);
+copy-pasting the 1GB setting against a 1Gi limit OOM-kills the pod
+under load.
+
+If you suspect CPU throttling (search latency that degrades with
+client concurrency while the node looks idle), confirm it from the
+cgroup counters — v2: `throttled_usec` in `/sys/fs/cgroup/cpu.stat`;
+v1: `throttled_time` in `/sys/fs/cgroup/cpu/cpu.stat` — but measure
+query latency **from a remote client with persistent connections**
+(pgbench with a custom script). A forked-psql loop inside the pod
+spends more CPU on client startup and vector-literal parsing than on
+the queries, throttles the container's own limit, and implicates the
+database falsely; an earlier revision of this section published
+numbers produced exactly that way.
