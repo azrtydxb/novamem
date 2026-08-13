@@ -76,7 +76,6 @@ WORKDIR /app
 # the image; `pnpm deploy --prod` was measured at +88MB and +174 packages
 # for the same application. Smaller image, smaller attack surface.
 COPY --from=build /tmp/runtime-package.json ./package.json
-COPY --from=build /app/packages/server/dist ./dist
 # Keep --omit=dev but NOT --omit=optional. `onnxruntime-node` ships as an
 # optionalDependency of `@xenova/transformers` (its native binary varies
 # per platform); stripping optional deps breaks the local-transformers
@@ -102,6 +101,17 @@ RUN npm install --omit=dev --no-audit --no-fund --no-package-lock \
  # runtime, not npm. Keeps Trivy from flagging CVEs in npm's own bundled
  # deps (picomatch, etc.) that aren't part of our application.
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+# Application code comes AFTER the npm install layer: dist/ and scripts/
+# change on every release, package.json only when dependencies do, so
+# this ordering keeps the expensive install layer cacheable.
+COPY --from=build /app/packages/server/dist ./dist
+# Operator tooling (e.g. sync-qdrant-to-pgvector.mjs for backend
+# migration). Plain .mjs, no build step, runs against the installed
+# node_modules — shipping it means a migration is
+#   kubectl -n <ns> exec <pod> -- node /app/scripts/<script>.mjs
+# instead of hand-copying a script into the pod.
+COPY --from=build /app/packages/server/scripts ./scripts
 
 # Stack-aware healthcheck against the server's /health endpoint.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

@@ -77,7 +77,17 @@ declare module "fastify" {
     /** Identity of the user bearer that authenticated this request — set
      *  in `user` auth mode after the bearer resolves. Used to attribute
      *  search/remember/forget calls to per-token metrics. */
-    bearerToken?: { hash: string; label: string | null };
+    bearerToken?: {
+      hash: string;
+      label: string | null;
+      /** Token scope — "full" unless minted read-only. Enforced by the
+       *  auth hook; handlers can trust a write request got here only on
+       *  a full-scope credential. */
+      scope: "full" | "read_only";
+      /** Non-null when the token is confined to one project (ULID).
+       *  checkProjectAccess forces every data-plane call into it. */
+      projectId: string | null;
+    };
     /** Resolved dashboard user — populated by the dashboard auth hook for
      *  /v1/auth/* /v1/me/* /v1/admin/* /v1/decay routes when a session
      *  bearer is present. Undefined for data-plane requests authed by a
@@ -555,10 +565,58 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
         const u = await opts.warm.findUserById(resolved.userId);
         if (u) {
           req.dashUser = u as DashboardUser;
-          req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
+          req.bearerToken = {
+            hash: resolved.tokenHash,
+            label: resolved.label,
+            scope: resolved.scope,
+            projectId: resolved.projectId,
+          };
         }
       }
     }
+
+    // Token-restriction gate. A RESTRICTED bearer (read-only scope or
+    // project confinement) is a credential built to be handed to a less
+    // trusted process, so it must not reach the account-management or
+    // admin surfaces at all — and a read-only one must not write:
+    //   - /v1/admin/* and /v1/auth/*: denied outright (rotate-token is
+    //     exempt above and preserves restrictions on rotation).
+    //   - /v1/me/tokens mutations: denied — minting is how a restricted
+    //     token would otherwise escalate itself to a full one.
+    //   - read_only: GET plus the read-shaped POST routes only.
+    // Called after BOTH resolution points (dashUser fallback above,
+    // data-plane below) — the bearer isn't resolved until one of them.
+    const restrictedTokenDenied = (): boolean => {
+      const t = req.bearerToken;
+      if (!t || (t.scope === "full" && !t.projectId)) return false;
+      const path = req.url.split("?")[0]!;
+      if (path.startsWith("/v1/admin/") || path.startsWith("/v1/auth/")) {
+        reply.code(403).send({ error: "restricted token" });
+        return true;
+      }
+      if (path.startsWith("/v1/me/tokens") && req.method !== "GET") {
+        reply.code(403).send({ error: "restricted token" });
+        return true;
+      }
+      if (t.scope === "read_only" && req.method !== "GET") {
+        // POST routes that only read. Everything else non-GET is a write
+        // (or an operator action) and gets a hard 403.
+        const READ_POSTS = new Set([
+          "/v1/search",
+          "/v1/recent",
+          "/v1/neighbors",
+          "/v1/context",
+          "/v1/hygiene",
+          "/v1/adoption",
+        ]);
+        if (!READ_POSTS.has(path)) {
+          reply.code(403).send({ error: "read-only token" });
+          return true;
+        }
+      }
+      return false;
+    };
+    if (restrictedTokenDenied()) return reply;
 
     if (req.url.startsWith("/v1/auth/") || req.url.startsWith("/v1/me/")) {
       if (!req.dashUser) {
@@ -611,7 +669,13 @@ export function buildHttpServer(opts: HttpOptions): FastifyInstance {
       return reply;
     }
     req.userId = resolved.userId;
-    req.bearerToken = { hash: resolved.tokenHash, label: resolved.label };
+    req.bearerToken = {
+      hash: resolved.tokenHash,
+      label: resolved.label,
+      scope: resolved.scope,
+      projectId: resolved.projectId,
+    };
+    if (restrictedTokenDenied()) return reply;
   });
 
   // ─── Admin dashboard (static SPA) ────────────────────────────────────

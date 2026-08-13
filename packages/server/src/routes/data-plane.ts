@@ -123,7 +123,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply))) return;
       const result = await ctx.engine.search(req.userId, body, req.bearerToken);
       sendSearchResult(reply, result);
     },
@@ -141,7 +141,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply))) return;
       const k = body.k ?? 8;
       const relevant = await ctx.engine.search(req.userId, {
         query: body.message,
@@ -202,7 +202,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply, false))) return;
       const result = await ctx.engine.capture(req.userId, {
         content: body.content,
         namespace: body.namespace,
@@ -232,7 +232,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply, false))) return;
       const groups: Array<{ items?: string[]; namespace: string; memoryType: string }> = [
         { items: body.decisions, namespace: "decisions", memoryType: "decision" },
         { items: body.setupFacts, namespace: "current-setup", memoryType: "setup_fact" },
@@ -277,7 +277,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply, false))) return;
       const result = await ctx.engine.remember(req.userId, body, req.bearerToken);
       reply.code(201).send(result);
     },
@@ -386,7 +386,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     async (req, reply) => {
       const { id } = req.params;
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply, false))) return;
       const result = await ctx.engine.update(req.userId, id, body);
       if (!result.updated) {
         return reply.code(404).send({ error: "no such memory in your scope" });
@@ -422,7 +422,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body ?? {};
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply))) return;
       reply.send(await ctx.engine.recent(req.userId, body));
     },
   );
@@ -439,7 +439,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply))) return;
       try {
         sendSearchResult(reply, await ctx.engine.neighbors(req.userId, body));
       } catch (err) {
@@ -472,7 +472,7 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
     },
     async (req, reply) => {
       const body = req.body;
-      if (!(await checkProjectAccess(ctx, req.userId, body, reply, false))) return;
+      if (!(await checkProjectAccess(ctx, req, body, reply, false))) return;
       // Defence in depth: even after the requested-project check, resolve
       // the entry's actual scope by id alone and re-verify. Stops an
       // attacker who knows an entry id from deleting it by passing

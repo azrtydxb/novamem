@@ -182,7 +182,10 @@ export async function resolveProjectRef(
  *  Returns false when the request was rejected — handler should bail. */
 export async function checkProjectAccess(
   ctx: RouteContext,
-  userId: string,
+  req: {
+    userId: string;
+    bearerToken?: { projectId: string | null };
+  },
   body: { project?: string | null; includeProjects?: string[] },
   reply: FastifyReply,
   /** When true (search/recent/neighbors), an unset scope defaults to
@@ -193,6 +196,41 @@ export async function checkProjectAccess(
   unionWithActive: boolean = true,
 ): Promise<boolean> {
   if (!ctx.warm) return true;
+  const userId = req.userId;
+
+  // Project-confined token: every data-plane call is forced into the
+  // token's project. An explicit request for anything else is a 403 —
+  // not silently rewritten, because a caller that asked for another
+  // scope and got this one would misattribute what it reads and writes.
+  // `body.project` alone (no includeProjects) is the engine's
+  // "this project only" read scope, so confinement also excludes the
+  // user-global store.
+  const tokenProject = req.bearerToken?.projectId ?? null;
+  if (tokenProject) {
+    const explicit = [
+      ...(body.project ? [body.project] : []),
+      ...(body.includeProjects ?? []),
+    ];
+    for (const ref of explicit) {
+      const resolved = await resolveProjectRef(ctx, userId, ref);
+      if (!resolved || resolved.id !== tokenProject) {
+        reply.code(403).send({
+          error: "token is confined to its project",
+        });
+        return false;
+      }
+    }
+    body.project = tokenProject;
+    body.includeProjects = undefined;
+    // Membership still checked below via the rewritten body — a token
+    // whose user was since removed from the project must not pass.
+    const m = await ctx.warm.getProjectMembership(tokenProject, userId);
+    if (!m) {
+      reply.code(403).send({ error: "not a member of the token's project" });
+      return false;
+    }
+    return true;
+  }
   const noScope =
     !body.project && (!body.includeProjects || body.includeProjects.length === 0);
   if (noScope) {

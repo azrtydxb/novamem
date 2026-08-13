@@ -273,6 +273,20 @@
                   },
                   "expandSourceChunks": {
                     "type": "boolean"
+                  },
+                  "rerank": {
+                    "type": "boolean"
+                  },
+                  "minVectorScore": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "maxTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 1000000
                   }
                 },
                 "required": [
@@ -390,6 +404,12 @@
                   },
                   "expandSourceChunks": {
                     "type": "boolean"
+                  },
+                  "maxTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 1000000
                   }
                 },
                 "required": [
@@ -769,7 +789,7 @@
     },
     "/v1/observe": {
       "post": {
-        "summary": "Trigger an observer+reflector pass over recent memories (admin only)",
+        "summary": "Trigger an observer+reflector pass over recent memories (operator)",
         "tags": [
           "memory"
         ],
@@ -798,6 +818,9 @@
         },
         "security": [
           {
+            "UserBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -810,7 +833,7 @@
     },
     "/v1/decay": {
       "post": {
-        "summary": "Trigger a decay sweep (admin only)",
+        "summary": "Trigger a decay sweep (operator)",
         "tags": [
           "lifecycle"
         ],
@@ -833,6 +856,9 @@
         },
         "security": [
           {
+            "UserBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -845,11 +871,14 @@
     },
     "/v1/dream-cycle": {
       "post": {
-        "summary": "Trigger the dedup-merge + edge-promotion pass (admin only)",
+        "summary": "Trigger the dedup-merge + edge-promotion pass (operator)",
         "tags": [
           "lifecycle"
         ],
         "security": [
+          {
+            "UserBearer": []
+          },
           {
             "SessionCookie": []
           }
@@ -949,11 +978,14 @@
     },
     "/v1/reap-orphans": {
       "post": {
-        "summary": "Trigger the cold-orphan reaper (admin only)",
+        "summary": "Trigger the cold-orphan reaper (operator)",
         "tags": [
           "lifecycle"
         ],
         "security": [
+          {
+            "UserBearer": []
+          },
           {
             "SessionCookie": []
           }
@@ -1291,6 +1323,24 @@
                   "label": {
                     "type": "string",
                     "maxLength": 128
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "read_only"
+                    ]
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "expiresInDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 3650
                   }
                 }
               }
@@ -1721,6 +1771,79 @@
         "security": [
           {
             "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/admin/users": {
+      "post": {
+        "summary": "Provision a user (and optionally a bearer token) non-interactively",
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 256
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "tokenLabel": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "tokenScope": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "read_only"
+                    ]
+                  },
+                  "tokenExpiresInDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 3650
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
           }
         ],
         "responses": {
@@ -1753,6 +1876,9 @@
         "security": [
           {
             "SessionCookie": []
+          },
+          {
+            "UserBearer": []
           }
         ],
         "responses": {
@@ -1771,6 +1897,9 @@
         "security": [
           {
             "SessionCookie": []
+          },
+          {
+            "UserBearer": []
           }
         ],
         "responses": {
@@ -1789,6 +1918,9 @@
         "security": [
           {
             "SessionCookie": []
+          },
+          {
+            "UserBearer": []
           }
         ],
         "responses": {

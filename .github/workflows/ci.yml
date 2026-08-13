@@ -75,6 +75,14 @@ jobs:
       # Guard against stale prose drift in docs (issue #73). Cheap regex
       # checks; no extra deps. See scripts/doc-smoke.mjs for invariants.
       - run: pnpm docs:smoke
+      # Guard against API-surface drift: docs/api/openapi.json is the
+      # committed snapshot of what the server actually serves, and the
+      # clients (TS, Go, MCP) are hand-synced against it. Regenerate and
+      # fail if a route/schema changed without the snapshot (and therefore
+      # a conscious client/docs decision) changing with it. Caught real
+      # drift on day one: the snapshot was missing /v1/admin/users.
+      - run: pnpm --filter @azrtydxb/novamem-server docs:api
+      - run: git diff --exit-code docs/api/openapi.json
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
