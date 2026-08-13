@@ -134,6 +134,12 @@ export const SearchBody = z.object({
       entity: z.number().optional(),
     })
     .optional(),
+  /** Shape of returned content, for callers that rank first and hydrate
+   *  later. "full" (default) returns stored content verbatim; "snippet"
+   *  truncates to ~240 chars on a word boundary; "ids" omits content and
+   *  metadata entirely. Measured motivation: at k=200 the response
+   *  payload dominates end-to-end latency (~113ms of a 213ms p50).*/
+  contentMode: z.enum(["full", "snippet", "ids"]).optional(),
   maxSensitivity: SensitivityRule.optional(),
   asOf: z.string().datetime().optional().nullable(),
   decompose: z.boolean().optional(),
@@ -256,6 +262,8 @@ export const RecentBody = z.object({
   includeProjects: z.array(ProjectRefRule).max(16).optional(),
   includeNamespaces: z.array(NamespaceRule).max(16).optional(),
   maxSensitivity: SensitivityRule.optional(),
+  /** Same content shaping as SearchBody.contentMode. */
+  contentMode: z.enum(["full", "snippet", "ids"]).optional(),
 });
 
 export const NeighborsBody = z.object({

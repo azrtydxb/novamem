@@ -1766,3 +1766,71 @@ describe("http: admin user lifecycle (list + delete cascade)", () => {
     expect(missing.statusCode).toBe(404);
   });
 });
+
+describe("http: search contentMode (payload shaping)", () => {
+  async function seed(app: ReturnType<typeof makeApp>["app"], auth: string) {
+    const long = "the deployment pipeline uses a Zot registry cache on the cluster and " +
+      "falls back to plain builds when the cache is unreachable; ".repeat(4);
+    const r = await app.inject({
+      method: "POST", url: "/v1/remember", payload: { content: long },
+      headers: { authorization: auth },
+    });
+    expect(r.statusCode).toBe(201);
+    return long;
+  }
+
+  it("snippet mode truncates on a word boundary and flags it", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "snippet-user");
+    const long = await seed(app, u.authorization);
+    const r = await app.inject({
+      method: "POST", url: "/v1/search",
+      payload: { query: "deployment pipeline registry", contentMode: "snippet" },
+      headers: { authorization: u.authorization },
+    });
+    expect(r.statusCode).toBe(200);
+    const hit = r.json().results[0];
+    expect(hit.truncated).toBe(true);
+    expect(hit.content.length).toBeLessThan(long.length);
+    expect(hit.content.length).toBeLessThanOrEqual(241);
+    expect(hit.content.endsWith("…")).toBe(true);
+    // Boundary contract: the cut text (sans ellipsis) must be a prefix of
+    // the original ending exactly at a whitespace boundary — the next
+    // character in the original is whitespace, so no word was split.
+    const stem = hit.content.slice(0, -1);
+    expect(long.startsWith(stem)).toBe(true);
+    expect(long[stem.length]).toMatch(/\s/);
+  });
+
+  it("ids mode omits content and metadata; full is unchanged", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "ids-user");
+    const long = await seed(app, u.authorization);
+    const ids = await app.inject({
+      method: "POST", url: "/v1/search",
+      payload: { query: "deployment pipeline registry", contentMode: "ids" },
+      headers: { authorization: u.authorization },
+    });
+    const hit = ids.json().results[0];
+    expect(hit.id).toBeTruthy();
+    expect(hit.content).toBeUndefined();
+    expect(hit.metadata).toBeUndefined();
+    const full = await app.inject({
+      method: "POST", url: "/v1/search",
+      payload: { query: "deployment pipeline registry" },
+      headers: { authorization: u.authorization },
+    });
+    expect(full.json().results[0].content).toBe(long);
+  });
+
+  it("recent supports contentMode too", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const u = await userAuth(warm, "recent-shape-user");
+    await seed(app, u.authorization);
+    const r = await app.inject({
+      method: "POST", url: "/v1/recent", payload: { contentMode: "ids" },
+      headers: { authorization: u.authorization },
+    });
+    expect(r.json().results[0].content).toBeUndefined();
+  });
+});

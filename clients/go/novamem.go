@@ -297,9 +297,13 @@ const (
 // Entry is one memory as the server returns it. Search, Recent and Neighbors
 // all emit this same shape.
 type Entry struct {
-	ID      string  `json:"id"`
-	Score   float64 `json:"score"`
-	Content string  `json:"content"`
+	ID    string  `json:"id"`
+	Score float64 `json:"score"`
+	// Content is EMPTY (zero value) when the request used ContentMode
+	// "ids" — the server omits the field entirely. An empty Content on a
+	// hit therefore means "not requested", not "empty memory" (stored
+	// content is never empty). Metadata is nil in the same mode.
+	Content string `json:"content"`
 	// Tier is "warm" or "cold" — which store answered, not a quality signal.
 	Tier      string `json:"tier"`
 	Namespace string `json:"namespace"`
@@ -312,6 +316,8 @@ type Entry struct {
 	// Signals is nil on ordered results (Recent), where ranking does not
 	// apply — a pointer so "not ranked" stays distinct from "ranked zero".
 	Signals *Signals `json:"signals,omitempty"`
+	// Truncated is true when ContentMode "snippet" cut this content.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // Signals is the per-channel contribution to an entry's score. Neighbors
@@ -431,6 +437,8 @@ type RecentRequest struct {
 	IncludeProjects   []string    `json:"includeProjects,omitempty"`
 	IncludeNamespaces []string    `json:"includeNamespaces,omitempty"`
 	MaxSensitivity    Sensitivity `json:"maxSensitivity,omitempty"`
+	// ContentMode — see SearchRequest.ContentMode.
+	ContentMode string `json:"contentMode,omitempty"`
 }
 
 // NeighborsRequest walks the memory graph out from a seed entry — the way to

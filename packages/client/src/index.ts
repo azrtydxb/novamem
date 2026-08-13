@@ -29,21 +29,29 @@ export interface SearchRequest {
   includeProjects?: string[];
   includeNamespaces?: string[];
   maxSensitivity?: SensitivityLevel;
+  /** "snippet" truncates content to ~240 chars; "ids" omits content and
+   *  metadata. For rank-first-hydrate-later callers. Default "full". */
+  contentMode?: "full" | "snippet" | "ids";
 }
 
 export interface SearchResult {
   id: string;
   score: number;
-  content: string;
+  /** Absent when the request used contentMode: "ids". Possibly truncated
+   *  (see `truncated`) under contentMode: "snippet". */
+  content?: string;
   tier: "warm" | "cold";
   namespace: string;
   /** Project this entry belongs to, or null for user-wide entries. */
   project: string | null;
   source: string;
-  metadata: Record<string, unknown>;
+  /** Absent when the request used contentMode: "ids". */
+  metadata?: Record<string, unknown>;
   /** Per-signal contributions for ranked results (search/neighbors).
    *  Omitted on ordered results (recent) where ranking isn't applicable. */
   signals?: { keyword?: number; vector?: number; graph?: number };
+  /** Present (true) when contentMode: "snippet" cut this content. */
+  truncated?: boolean;
 }
 
 export interface SearchResponse {
@@ -349,6 +357,7 @@ export class NovamemClient {
     since?: string;
     project?: string | null;
     includeProjects?: string[];
+    contentMode?: "full" | "snippet" | "ids";
   } = {}): Promise<SearchResponse> {
     return this.request<SearchResponse>("/v1/recent", { method: "POST", body: opts });
   }
