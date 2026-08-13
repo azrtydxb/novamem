@@ -76,7 +76,8 @@ Three artifacts define "correct":
 1. **OpenAPI spec** — generated today by `docs:api`; checked in as the
    reference the Go server must match (paths, status codes, error
    shapes).
-2. **MCP tool schemas** — the 15 tools and both transports (streamable
+2. **MCP tool schemas** — all 21 tools (14 `memory_*` + 7 `project_*`
+   in `mcp-tools.ts`) and both transports (streamable
    HTTP and legacy SSE), including the behaviors enforced by
    `mcp-spec-guards.ts`.
 3. **Postgres schema** — Drizzle migrations remain the single source of
@@ -154,7 +155,7 @@ portion green against the Go server on novamem-bench:
 3. **Cold store + search** — pgvector first, Qdrant second; embeddings
    client; hybrid search + rerank (`search`, `neighbors`); differential
    ranking tests.
-4. **MCP** — streamable transport with all 15 tools, then legacy SSE.
+4. **MCP** — streamable transport with all 21 tools, then legacy SSE.
 5. **User mode** — native auth over Better Auth tables, `/v1/me/*`,
    dashboard static serving via `go:embed`.
 6. **Background jobs** — decay/reap loop, dream consolidation, async
