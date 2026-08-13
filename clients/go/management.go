@@ -2,6 +2,7 @@ package novamem
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -168,17 +169,21 @@ func (m *Management) ListProjectMembers(ctx context.Context, id string) ([]Proje
 	return out.Members, err
 }
 
-// AddProjectMember adds a user (by username, as shown in member listings) to a
-// project. role is "member" or "owner"; empty means the server default
-// ("member").
-func (m *Management) AddProjectMember(ctx context.Context, id, username, role string) error {
-	if strings.TrimSpace(id) == "" || strings.TrimSpace(username) == "" {
-		return &Error{Op: "add-member", Message: "id and username are required"}
+// AddProjectMember adds a user to a project by their EXACT EMAIL — the
+// server resolves the target with an exact-email lookup, despite the wire
+// field being named "username" for historical reasons (the display username
+// is derived from the email and is not unique). Pass the address the user
+// signs in with; a display handle will simply not match. role is "member" or
+// "owner"; empty means the server default ("member").
+func (m *Management) AddProjectMember(ctx context.Context, id, email, role string) error {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(email) == "" {
+		return &Error{Op: "add-member", Message: "id and email are required"}
 	}
 	body := struct {
+		// Wire name is "username"; the value is an exact email. See method doc.
 		Username string `json:"username"`
 		Role     string `json:"role,omitempty"`
-	}{Username: username, Role: role}
+	}{Username: email, Role: role}
 	var out struct {
 		Added bool `json:"added"`
 	}
@@ -321,13 +326,22 @@ func (m *Management) Adoption(ctx context.Context, client string) (map[string]an
 }
 
 // Observe triggers one observer+reflector pass over recent memories (the
-// pipeline behind Client.ContextPrefix). limit 0 means the server default. A
-// 503 means the observer feature is disabled server-side.
+// pipeline behind Client.ContextPrefix). limit 0 means the server default.
+//
+// The server answers 503 when the observer FEATURE IS DISABLED — a stable
+// configuration answer, not an outage, so unlike every other 5xx it comes
+// back neither Unavailable nor Retryable: retrying a feature flag does not
+// flip it. Branch on it via *Error.Code == "observer_disabled".
 func (m *Management) Observe(ctx context.Context, project string, limit int) error {
 	body := struct {
 		Project string `json:"project,omitempty"`
 		Limit   int    `json:"limit,omitempty"`
 	}{Project: project, Limit: limit}
 	var out map[string]any
-	return m.c.do(ctx, "observe", http.MethodPost, "/v1/observe", body, &out)
+	err := m.c.do(ctx, "observe", http.MethodPost, "/v1/observe", body, &out)
+	var e *Error
+	if errors.As(err, &e) && e.StatusCode == http.StatusServiceUnavailable {
+		return &Error{Op: "observe", StatusCode: e.StatusCode, Code: "observer_disabled", Message: "observer disabled"}
+	}
+	return err
 }

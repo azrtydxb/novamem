@@ -246,3 +246,21 @@ func TestAdminRevokeUserToken(t *testing.T) {
 func isNotFound(err error) bool {
 	return errors.Is(err, ErrNotFound)
 }
+
+func TestObserveDisabledIsNotRetryable(t *testing.T) {
+	m := newTestManagement(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "observer disabled"})
+	})
+	err := m.Observe(context.Background(), "", 0)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if Retryable(err) || Unavailable(err) {
+		t.Fatalf("observer-disabled must be neither retryable nor unavailable: %v", err)
+	}
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "observer_disabled" {
+		t.Fatalf("want Code observer_disabled, got %v", err)
+	}
+}
