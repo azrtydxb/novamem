@@ -197,5 +197,7 @@ roughly one core per expected concurrent search, and raise
 `shared_buffers` from its 128 MB default at the same time (e.g.
 `args: ["-c", "shared_buffers=1GB"]`) so the hot index pages stay
 resident. Symptom to check for: search p95 that degrades with client
-concurrency while the node looks idle — confirm with a growing
-`throttled_usec` in the pod's `/sys/fs/cgroup/cpu.stat`.
+concurrency while the node looks idle — confirm throttling from inside
+the pod: on cgroup v2, a growing `throttled_usec` in
+`/sys/fs/cgroup/cpu.stat`; on cgroup v1, `throttled_time` (nanoseconds)
+in `/sys/fs/cgroup/cpu/cpu.stat`.
