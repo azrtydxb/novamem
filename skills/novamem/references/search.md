@@ -4,7 +4,7 @@ Five MCP tools for reading. All are non-mutating except `memory_search`, which c
 
 ## memory_search — hybrid relevance
 
-Always runs keyword (FTS) + vector (cosine) + graph (neighbour) + recency rank prior + entity bridge signals in parallel and fuses them with weighted scoring. Default weights `{ keyword: 0.3, vector: 0.6, graph: 0, recency: 0, entity: 0 }` — graph, recency, entity default to 0 in production calibration; tuned for prose.
+Always runs keyword (FTS) + vector (cosine) + graph (neighbour) + recency rank prior + entity bridge signals in parallel and fuses them with weighted scoring. Default weights `{ keyword: 0.15, vector: 0.65, graph: 0.05, recency: 0.10, entity: 0.05 }` — production calibrations often set graph and entity to 0; tuned for prose.
 
 Inputs:
 - `query` (required, string) — natural-language question or topic

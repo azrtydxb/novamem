@@ -47,7 +47,7 @@ Earlier versions ran two additional search-time tiers — a neighbour walk over 
 
 ## Weighted fuse
 
-Default weights: `keyword: 0.3, vector: 0.6`. Tuned for prose; the user can override per call.
+Default weights: `keyword: 0.15, vector: 0.65, graph: 0.05, recency: 0.10, entity: 0.05` (production calibrations often set graph and entity to 0). Tuned for prose; the user can override per call.
 
 ```
 final(id) = w_k · norm_k(id) + w_v · vec(id)
