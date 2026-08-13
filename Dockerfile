@@ -77,6 +77,11 @@ WORKDIR /app
 # for the same application. Smaller image, smaller attack surface.
 COPY --from=build /tmp/runtime-package.json ./package.json
 COPY --from=build /app/packages/server/dist ./dist
+# Operator tooling (e.g. sync-qdrant-to-pgvector.mjs for backend
+# migration). Plain .mjs, no build step, runs against the installed
+# node_modules — shipping it means a migration is `kubectl exec node
+# /app/scripts/...` instead of hand-copying a script into the pod.
+COPY --from=build /app/packages/server/scripts ./scripts
 # Keep --omit=dev but NOT --omit=optional. `onnxruntime-node` ships as an
 # optionalDependency of `@xenova/transformers` (its native binary varies
 # per platform); stripping optional deps breaks the local-transformers
