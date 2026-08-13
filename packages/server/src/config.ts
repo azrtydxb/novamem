@@ -213,10 +213,14 @@ export const ConfigSchema = z
     }),
     /** Server-wide per-user write quotas. 0 = unlimited (the default —
      *  quotas are opt-in). Per-user overrides via /v1/admin/users/:id/quota. */
-    quotas: z.object({
-      maxEntries: z.coerce.number().int().nonnegative().default(0),
-      writesPerMinute: z.coerce.number().int().nonnegative().default(0),
-    }),
+    quotas: z
+      .object({
+        maxEntries: z.coerce.number().int().nonnegative().default(0),
+        writesPerMinute: z.coerce.number().int().nonnegative().default(0),
+      })
+      // Default the whole object too: config.test.ts (and any embedder of
+      // loadConfig-shaped objects) builds configs without a quotas key.
+      .default({ maxEntries: 0, writesPerMinute: 0 }),
     /** Secret used to sign Fastify cookies AND seed Better Auth's session
      *  signer. Must be operator-supplied in any non-`auth.mode=none`
      *  deployment — we refuse to start otherwise (see `loadConfig`). The
