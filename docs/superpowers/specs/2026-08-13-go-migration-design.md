@@ -15,10 +15,11 @@ cluster.
 **Drivers:** performance/footprint, single-static-binary distribution,
 and long-term maintainability in Go — all three.
 
-**Hard constraint:** the `.248` production deployment is never touched
-during the migration. It upgrades to the Go server only when parity is
-proven and the operator explicitly decides to. Dev and test happen
-exclusively on `novamem-bench`.
+**Hard constraint:** all development, testing, and deployment for this
+migration happen exclusively on the `novamem-bench` deployment on the
+kw cluster. No other deployment is in scope, referenced, or touched —
+production rollout is entirely outside this migration and is a separate
+operator decision made after the fact.
 
 ## Migration strategy
 
@@ -172,7 +173,7 @@ From slice 2 onward:
   **both** servers;
 - when the Go server becomes the default on novamem-bench, new features
   become Go-first and the TS server enters maintenance mode (bugfixes
-  only) until .248 cuts over.
+  only) until the cleanup phase removes it.
 
 Without this, parity is a moving target and the migration never
 converges.
@@ -213,8 +214,8 @@ just happy paths.
 A slice that fails any of the three is not merged as "done" — there is
 no "mostly works, fix later" state.
 
-**Final cleanup phase (after slice 8 parity audit, Go default on
-novamem-bench, and .248 cut over to the Go image):**
+**Final cleanup phase (after the slice 8 parity audit passes and the Go
+server is the default on novamem-bench):**
 
 - Delete `packages/server` (the TS implementation) entirely.
 - Delete the in-process Xenova embedding path and its dependencies.
@@ -224,7 +225,7 @@ novamem-bench, and .248 cut over to the Go image):**
 - Sweep docs for references to the TS server.
 
 The TS server is kept **whole** until this phase (it is the conformance
-oracle and the .248 production binary); it is then removed in one
+oracle); it is then removed in one
 dedicated cleanup, not left as a fallback. No backwards-compatibility
 shims, dual code paths, or "legacy mode" flags survive the migration —
 the git history is the archive.
@@ -235,4 +236,4 @@ the git history is the archive.
 - No admin-ui rewrite (Preact stays; it is embedded, not ported).
 - No schema changes for their own sake; no auth redesign.
 - No in-process embedding runtime in Go.
-- No changes of any kind to the `.248` deployment.
+- No deployment target other than novamem-bench on the kw cluster.
