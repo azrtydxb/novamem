@@ -198,6 +198,37 @@ status codes and JSON error shapes as documented in the OpenAPI spec
 hooks, quota 429s). The conformance suite asserts error shapes, not
 just happy paths.
 
+## Definition of done and cleanup
+
+**Per slice, "done" means all of:**
+
+1. Conformance portion green against the Go server (plus differential
+   tests where applicable) — no test waivers, no partial acceptance.
+2. Actually deployed to novamem-bench via the standard deploy flow and
+   exercised live (real requests through real clients/integrations, not
+   just CI).
+3. Documented: user-facing docs updated where behavior is now served by
+   Go, and the slice's design decisions recorded.
+
+A slice that fails any of the three is not merged as "done" — there is
+no "mostly works, fix later" state.
+
+**Final cleanup phase (after slice 8 parity audit, Go default on
+novamem-bench, and .248 cut over to the Go image):**
+
+- Delete `packages/server` (the TS implementation) entirely.
+- Delete the in-process Xenova embedding path and its dependencies.
+- Move Drizzle migration ownership to the Go tree (or a Go-native
+  migration tool) and delete the drizzle-kit tooling.
+- Remove TS-server-only CI jobs, build scripts, and Docker stages.
+- Sweep docs for references to the TS server.
+
+The TS server is kept **whole** until this phase (it is the conformance
+oracle and the .248 production binary); it is then removed in one
+dedicated cleanup, not left as a fallback. No backwards-compatibility
+shims, dual code paths, or "legacy mode" flags survive the migration —
+the git history is the archive.
+
 ## Non-goals
 
 - No rewrite of `client` / `mcp` / `init` npm packages.
