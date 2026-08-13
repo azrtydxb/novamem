@@ -560,6 +560,104 @@ export class WarmStore {
   // with the bcrypt path; tests run against FakeWarmStore which still
   // implements them in-memory.
 
+  /** Admin listing of every user with their footprint (entry + token
+   *  counts) — the census an operator needs before deciding to remove
+   *  one. Counts are per-owner, regardless of project. */
+  async listUsers(): Promise<
+    Array<{
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      createdAt: Date;
+      entryCount: number;
+      tokenCount: number;
+    }>
+  > {
+    const r = await this.db.execute<{
+      id: string;
+      email: string;
+      name: string;
+      role: string | null;
+      created_at: Date;
+      entry_count: string;
+      token_count: string;
+    }>(sql`
+      SELECT u.id, u.email, u.name, u.role, u."createdAt" AS created_at,
+             (SELECT count(*) FROM memory_entries e WHERE e.user_id = u.id) AS entry_count,
+             (SELECT count(*) FROM user_tokens t WHERE t.user_id = u.id AND t.revoked_at IS NULL) AS token_count
+        FROM "user" u
+       ORDER BY u."createdAt" ASC
+    `);
+    return r.rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      role: row.role ?? "user",
+      createdAt: row.created_at,
+      entryCount: Number(row.entry_count),
+      tokenCount: Number(row.token_count),
+    }));
+  }
+
+  /** Owned-project ids for a user — the engine deletes these first (via
+   *  deleteProject, which also drops their cold collections) before
+   *  calling deleteUserData for the user-global remainder. */
+  async listOwnedProjects(userId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ id: schema.projects.id })
+      .from(schema.projects)
+      .where(eq(schema.projects.ownerUserId, userId));
+    return rows.map((r) => r.id);
+  }
+
+  /** Remove EVERYTHING the warm store holds for a user: memories (in any
+   *  remaining scope), FTS rows, relations, access telemetry, orphan
+   *  queue rows, project memberships, tokens, Better Auth sessions,
+   *  accounts and the user row itself. One transaction — a half-deleted
+   *  user is worse than a present one. Owned projects must already be
+   *  gone (engine's job); this method refuses if any remain, because
+   *  deleting the owner row first would orphan them. */
+  async deleteUserData(
+    userId: string,
+  ): Promise<{ deleted: boolean; entriesRemoved: number; tokensRemoved: number; reason?: string }> {
+    const owned = await this.listOwnedProjects(userId);
+    if (owned.length > 0) {
+      return {
+        deleted: false,
+        entriesRemoved: 0,
+        tokensRemoved: 0,
+        reason: `user still owns ${owned.length} project(s)`,
+      };
+    }
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`
+        DELETE FROM memory_access WHERE entry_id IN (
+          SELECT id FROM memory_entries WHERE user_id = ${userId}
+        )
+      `);
+      await tx.delete(schema.memoryFts).where(eq(schema.memoryFts.userId, userId));
+      await tx.delete(schema.memoryRelations).where(eq(schema.memoryRelations.userId, userId));
+      const removed = await tx
+        .delete(schema.memoryEntries)
+        .where(eq(schema.memoryEntries.userId, userId))
+        .returning({ id: schema.memoryEntries.id });
+      await tx.delete(schema.coldOrphans).where(eq(schema.coldOrphans.userId, userId));
+      await tx.delete(schema.projectMembers).where(eq(schema.projectMembers.userId, userId));
+      await tx.delete(schema.userActiveProject).where(eq(schema.userActiveProject.userId, userId));
+      const tokens = await tx
+        .delete(schema.userTokens)
+        .where(eq(schema.userTokens.userId, userId))
+        .returning({ tokenHash: schema.userTokens.tokenHash });
+      // Better Auth's tables aren't in the drizzle schema (rule a) —
+      // delete sessions and credential accounts before the user row.
+      await tx.execute(sql`DELETE FROM session WHERE "userId" = ${userId}`);
+      await tx.execute(sql`DELETE FROM account WHERE "userId" = ${userId}`);
+      await tx.execute(sql`DELETE FROM "user" WHERE id = ${userId}`);
+      return { deleted: true, entriesRemoved: removed.length, tokensRemoved: tokens.length };
+    });
+  }
+
   /** Strict, case-insensitive email-only lookup. Used by the
    *  project-share / add-member flow where a fuzzy match could let an
    *  attacker register a benign email with `name = "alice"` and be

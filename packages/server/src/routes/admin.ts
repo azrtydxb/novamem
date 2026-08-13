@@ -7,7 +7,12 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 
-import { AdminCreateUserBody, AdminRevokeBody } from "./schemas.js";
+import {
+  AdminCreateUserBody,
+  AdminDeleteUserQuery,
+  AdminRevokeBody,
+  AdminUserIdParam,
+} from "./schemas.js";
 import { requireAdmin, type RouteContext } from "./context.js";
 
 // Admin routes accept a session cookie (dashboard SPA) or an
@@ -110,6 +115,72 @@ export function register(app: FastifyInstance, ctx: RouteContext): void {
         // only its hash. Absent when no tokenLabel was requested.
         token: minted?.token,
       });
+    },
+  );
+
+  r.get(
+    "/v1/admin/users",
+    {
+      schema: {
+        tags: ["admin"],
+        summary: "List every user with entry + token counts",
+        security: AdminSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "admin disabled" });
+      if (!requireAdmin(req, reply)) return;
+      reply.send({ users: await ctx.warm.listUsers() });
+    },
+  );
+
+  r.delete(
+    "/v1/admin/users/:id",
+    {
+      schema: {
+        tags: ["admin"],
+        summary: "Delete a user and everything they own (irreversible)",
+        params: AdminUserIdParam,
+        querystring: AdminDeleteUserQuery,
+        security: AdminSecurity,
+      },
+    },
+    async (req, reply) => {
+      if (!ctx.warm) return reply.code(404).send({ error: "admin disabled" });
+      if (!requireAdmin(req, reply)) return;
+      const { id } = req.params;
+      const target = await ctx.warm.findUserById(id);
+      if (!target) return reply.code(404).send({ error: "no such user" });
+      // Self-deletion via the admin surface is refused: the last admin
+      // removing themselves would brick the deployment (bootstrap only
+      // seeds when NO admin exists, and it can't run while one does).
+      if (req.dashUser!.id === id) {
+        return reply.code(400).send({ error: "admins cannot delete themselves" });
+      }
+      if (req.query?.dryRun) {
+        const owned = await ctx.warm.listOwnedProjects(id);
+        const users = await ctx.warm.listUsers();
+        const u = users.find((x) => x.id === id);
+        return reply.send({
+          dryRun: true,
+          wouldDelete: {
+            userId: id,
+            email: u?.email,
+            entries: u?.entryCount ?? 0,
+            tokens: u?.tokenCount ?? 0,
+            ownedProjects: owned,
+          },
+        });
+      }
+      const result = await ctx.engine.deleteUser(id);
+      await ctx.audit(req, "admin.user.delete", id, {
+        entriesRemoved: result.entriesRemoved,
+        tokensRemoved: result.tokensRemoved,
+        projectsDeleted: result.projectsDeleted.length,
+        coldCleanupOk: result.coldCleanupOk,
+      });
+      if (!result.deleted) return reply.code(409).send({ error: result.reason ?? "delete failed" });
+      reply.send(result);
     },
   );
 

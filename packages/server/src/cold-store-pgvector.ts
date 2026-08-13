@@ -288,6 +288,17 @@ export class PgVectorColdStore {
     );
   }
 
+  /** Remove every user-wide vector for a user. Project-scoped vectors
+   *  are removed by deleteAllForProject when their project dies. */
+  async deleteAllForUser(userId: string): Promise<string[]> {
+    await this.ensureReady();
+    const r = await this.pool.query(
+      `DELETE FROM ${TABLE} WHERE user_id = $1`,
+      [userId],
+    );
+    return [`${TABLE}: ${r.rowCount ?? 0} vectors removed for user ${userId}`];
+  }
+
   async deleteAllForProject(projectId: string): Promise<string[]> {
     await this.ensureReady();
     const r = await this.pool.query(

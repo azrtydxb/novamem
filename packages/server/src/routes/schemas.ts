@@ -360,3 +360,14 @@ export const ChangePasswordBody = z.object({
   currentPassword: z.string().min(1).max(256),
   newPassword: z.string().min(8).max(256),
 });
+
+export const AdminUserIdParam = z.object({
+  id: z.string().min(1).max(128),
+});
+
+export const AdminDeleteUserQuery = z
+  .object({
+    /** Report what would be removed without removing anything. */
+    dryRun: z.coerce.boolean().optional(),
+  })
+  .optional();

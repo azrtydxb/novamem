@@ -1683,3 +1683,86 @@ describe("http: token scoping + expiry (restricted bearers)", () => {
     expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 });
+
+describe("http: admin user lifecycle (list + delete cascade)", () => {
+  it("GET /v1/admin/users lists users with footprint counts", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const adminH = await adminAuth(warm);
+    const u = await userAuth(warm, "census-user");
+    await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "census user prefers the dark dashboard theme at night" },
+      headers: { authorization: u.authorization },
+    });
+    const r = await app.inject({ method: "GET", url: "/v1/admin/users", headers: adminH });
+    expect(r.statusCode).toBe(200);
+    const row = r.json().users.find((x: { email: string }) => x.email === "census-user");
+    expect(row).toBeTruthy();
+    expect(row.entryCount).toBe(1);
+  });
+
+  it("DELETE cascades: memories, tokens, owned projects; user gone", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const adminH = await adminAuth(warm);
+    const u = await userAuth(warm, "doomed-user");
+    await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "doomed user keeps a user-global fact about deployment state" },
+      headers: { authorization: u.authorization },
+    });
+    const proj = await app.inject({
+      method: "POST", url: "/v1/me/projects", payload: { name: "doomed-proj" },
+      headers: { authorization: u.authorization },
+    });
+    await app.inject({
+      method: "POST", url: "/v1/remember",
+      payload: { content: "doomed project holds a fact about sprint conventions", project: proj.json().id },
+      headers: { authorization: u.authorization },
+    });
+    const tok = await warm.createUserToken(u.userId, "agent");
+    // Dry-run first: reports, deletes nothing.
+    const dry = await app.inject({
+      method: "DELETE", url: `/v1/admin/users/${u.userId}?dryRun=true`, headers: adminH,
+    });
+    expect(dry.statusCode).toBe(200);
+    expect(dry.json().dryRun).toBe(true);
+    expect(dry.json().wouldDelete.ownedProjects).toHaveLength(1);
+    expect(warm.users.has(u.userId)).toBe(true);
+    // Real delete.
+    const del = await app.inject({
+      method: "DELETE", url: `/v1/admin/users/${u.userId}`, headers: adminH,
+    });
+    expect(del.statusCode).toBe(200);
+    expect(del.json().deleted).toBe(true);
+    expect(del.json().projectsDeleted).toHaveLength(1);
+    expect(del.json().entriesRemoved).toBeGreaterThanOrEqual(1);
+    expect(warm.users.has(u.userId)).toBe(false);
+    // The dead user's bearer no longer authenticates.
+    const after = await app.inject({
+      method: "POST", url: "/v1/search", payload: { query: "x" },
+      headers: { authorization: `Bearer ${tok!.token}` },
+    });
+    expect(after.statusCode).toBe(401);
+  });
+
+  it("admin cannot delete themselves; non-admin cannot delete anyone", async () => {
+    const { app, warm } = makeApp({ authMode: "user" });
+    const admin = await userAuth(warm, "self-admin", "admin");
+    const self = await app.inject({
+      method: "DELETE", url: `/v1/admin/users/${admin.userId}`,
+      headers: { authorization: admin.authorization },
+    });
+    expect(self.statusCode).toBe(400);
+    const plain = await userAuth(warm, "plain-3");
+    const denied = await app.inject({
+      method: "DELETE", url: `/v1/admin/users/${admin.userId}`,
+      headers: { authorization: plain.authorization },
+    });
+    expect(denied.statusCode).toBe(403);
+    const missing = await app.inject({
+      method: "DELETE", url: "/v1/admin/users/nonexistent",
+      headers: { authorization: admin.authorization },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+});

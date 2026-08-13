@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -110,4 +111,77 @@ func (a *Admin) RevokeUserToken(ctx context.Context, plaintext string) (bool, er
 	}
 	err := a.c.do(ctx, "revoke-user-token", http.MethodPost, "/v1/admin/tokens/revoke", body, &out)
 	return out.Revoked, err
+}
+
+// AdminUser is one row of the admin census.
+type AdminUser struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	CreatedAt string `json:"createdAt"`
+	// EntryCount and TokenCount are the user's footprint — what a delete
+	// would take with it.
+	EntryCount int `json:"entryCount"`
+	TokenCount int `json:"tokenCount"`
+}
+
+// ListUsers returns every user with entry + token counts.
+func (a *Admin) ListUsers(ctx context.Context) ([]AdminUser, error) {
+	var out struct {
+		Users []AdminUser `json:"users"`
+	}
+	err := a.c.do(ctx, "list-users", http.MethodGet, "/v1/admin/users", nil, &out)
+	return out.Users, err
+}
+
+// UserDeletion reports what removing a user actually removed.
+type UserDeletion struct {
+	Deleted         bool     `json:"deleted"`
+	EntriesRemoved  int      `json:"entriesRemoved"`
+	TokensRemoved   int      `json:"tokensRemoved"`
+	ProjectsDeleted []string `json:"projectsDeleted"`
+	ColdCleanup     []string `json:"coldCleanup"`
+	// ColdCleanupOk false means the primary data is gone but vector
+	// copies survived (queued for the server's reaper) — the deletion is
+	// not yet complete. Same honesty rule as Client.Forget.
+	ColdCleanupOk bool `json:"coldCleanupOk"`
+}
+
+// UserDeletionPreview is the dry-run answer: what WOULD go.
+type UserDeletionPreview struct {
+	UserID        string   `json:"userId"`
+	Email         string   `json:"email"`
+	Entries       int      `json:"entries"`
+	Tokens        int      `json:"tokens"`
+	OwnedProjects []string `json:"ownedProjects"`
+}
+
+// PreviewDeleteUser reports what deleting the user would remove, without
+// removing anything. Call it first — deletion is irreversible.
+func (a *Admin) PreviewDeleteUser(ctx context.Context, userID string) (UserDeletionPreview, error) {
+	var out struct {
+		WouldDelete UserDeletionPreview `json:"wouldDelete"`
+	}
+	if strings.TrimSpace(userID) == "" {
+		return out.WouldDelete, &Error{Op: "preview-delete-user", Message: "userID is required"}
+	}
+	err := a.c.do(ctx, "preview-delete-user", http.MethodDelete,
+		"/v1/admin/users/"+url.PathEscape(userID)+"?dryRun=true", nil, &out)
+	return out.WouldDelete, err
+}
+
+// DeleteUser removes a user and EVERYTHING they own — memories in every
+// scope, owned projects (including their vector collections), tokens,
+// sessions and the account itself. Irreversible; use PreviewDeleteUser
+// first. The orchestrator's agent-teardown path: revoke reachable
+// credentials, then delete the user.
+func (a *Admin) DeleteUser(ctx context.Context, userID string) (UserDeletion, error) {
+	var out UserDeletion
+	if strings.TrimSpace(userID) == "" {
+		return out, &Error{Op: "delete-user", Message: "userID is required"}
+	}
+	err := a.c.do(ctx, "delete-user", http.MethodDelete,
+		"/v1/admin/users/"+url.PathEscape(userID), nil, &out)
+	return out, err
 }
