@@ -59,12 +59,16 @@ spec:
             periodSeconds: 5
           # pgvector deployments: measured with pgbench (persistent
           # connections) on a 380k-vector corpus with per-partition HNSW
-          # indexes, one k=200 query runs ~8-10ms and 8 concurrent run
-          # ~20ms each — a single core absorbs moderate concurrent search
-          # comfortably. Two sizing notes that DO matter:
-          #   - raise shared_buffers past its 128MB default, e.g.
-          #     args: ["-c", "shared_buffers=1GB", "-c", "effective_cache_size=6GB"]
-          #     so the hot index pages stay resident;
+          # indexes, one k=200 query runs ~8-10ms and 8 concurrent
+          # queries run ~20ms each — a single core absorbs moderate
+          # concurrent search comfortably. Two sizing notes that DO
+          # matter:
+          #   - raise shared_buffers past its 128MB default so the hot
+          #     index pages stay resident — but ALWAYS in proportion to
+          #     the container memory limit (shared_buffers at ~25% of
+          #     the limit; 1GB shared_buffers needs limits.memory: 4Gi,
+          #     NOT the 1Gi below, or the pod OOMs under load), e.g.:
+          #     args: ["-c", "shared_buffers=1GB", "-c", "effective_cache_size=3GB"]
           #   - if you diagnose CPU throttling (cgroup v2: growing
           #     throttled_usec in /sys/fs/cgroup/cpu.stat; v1:
           #     throttled_time in /sys/fs/cgroup/cpu/cpu.stat), measure

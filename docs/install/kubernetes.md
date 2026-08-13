@@ -193,9 +193,14 @@ connections) on a ~380k-vector corpus with per-partition HNSW indexes:
 one k=200 query runs ~8–10 ms, and 8 concurrent queries run ~20 ms
 each — HNSW search is cheap, and a modest CPU limit absorbs moderate
 concurrent load. What does matter is `shared_buffers`: raise it from
-its 128 MB default (e.g. `args: ["-c", "shared_buffers=1GB"]`) so the
-hot index pages stay resident instead of round-tripping through the OS
-cache.
+its 128 MB default so the hot index pages stay resident instead of
+round-tripping through the OS cache — but size it against the
+**container memory limit**, not in isolation. Keep `shared_buffers` at
+roughly 25% of the limit: `shared_buffers=1GB` requires raising the
+default manifest's `limits.memory: 1Gi` to ~4Gi first (e.g.
+`args: ["-c", "shared_buffers=1GB"]` with `limits.memory: 4Gi`);
+copy-pasting the 1GB setting against a 1Gi limit OOM-kills the pod
+under load.
 
 If you suspect CPU throttling (search latency that degrades with
 client concurrency while the node looks idle), confirm it from the
