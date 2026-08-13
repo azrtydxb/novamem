@@ -187,3 +187,17 @@ memory-backed `/dev/shm` (see the example in `postgres.yaml`) sized
 well below the container memory limit. For migrating an existing
 Qdrant deployment, `packages/server/scripts/sync-qdrant-to-pgvector.mjs`
 copies vectors without re-embedding.
+
+**Give Postgres CPU headroom for concurrent search.** HNSW queries are
+CPU-bound (~50–60 ms of CPU each on a ~380k-vector corpus), so
+concurrent searches queue on the container's CPU limit — with
+`limits.cpu: 2`, 8 concurrent queries measured 268 ms each under active
+CFS throttling; at `limits.cpu: 6` the same load ran 91 ms. Budget
+roughly one core per expected concurrent search, and raise
+`shared_buffers` from its 128 MB default at the same time (e.g.
+`args: ["-c", "shared_buffers=1GB"]`) so the hot index pages stay
+resident. Symptom to check for: search p95 that degrades with client
+concurrency while the node looks idle — confirm throttling from inside
+the pod: on cgroup v2, a growing `throttled_usec` in
+`/sys/fs/cgroup/cpu.stat`; on cgroup v1, `throttled_time` (nanoseconds)
+in `/sys/fs/cgroup/cpu/cpu.stat`.

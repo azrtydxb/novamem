@@ -57,6 +57,19 @@ spec:
               command: ["pg_isready", "-U", "novamem"]
             initialDelaySeconds: 5
             periodSeconds: 5
+          # pgvector deployments: HNSW queries are CPU-bound (~50-60ms of
+          # CPU each), so CONCURRENT searches queue on this CPU limit long
+          # before postgres itself is the bottleneck. Measured on a 380k
+          # vector corpus: 8 concurrent queries at limits.cpu=2 ran 268ms
+          # each under active CFS throttling (cgroup v2: growing
+          # throttled_usec in /sys/fs/cgroup/cpu.stat; cgroup v1:
+          # throttled_time in /sys/fs/cgroup/cpu/cpu.stat); at
+          # limits.cpu=6 the same load ran 91ms. Budget roughly
+          # (expected concurrent searches × 1 core), and raise
+          # shared_buffers with it, e.g.:
+          #   args: ["-c", "shared_buffers=1GB", "-c", "effective_cache_size=6GB"]
+          # (the 128MB default forces every hot index page through the
+          # OS cache instead of staying resident).
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: 1000m, memory: 1Gi }
