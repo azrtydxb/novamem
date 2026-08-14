@@ -31,7 +31,9 @@ services:
       retries: 10
 
   novamem:
-    build: .
+    build:
+      context: .
+      dockerfile: go/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy

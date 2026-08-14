@@ -14,7 +14,7 @@ RUN pnpm install --filter @azrtydxb/novamem-admin-ui --frozen-lockfile
 COPY packages/admin-ui packages/admin-ui
 RUN pnpm --filter @azrtydxb/novamem-admin-ui build
 
-FROM golang:1.24-bookworm AS build
+FROM golang:1.26-bookworm AS build
 WORKDIR /src/go
 COPY go/go.mod go/go.sum ./
 RUN go mod download

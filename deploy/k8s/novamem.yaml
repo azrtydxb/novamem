@@ -46,9 +46,12 @@ spec:
     spec:
       containers:
         - name: novamem
-          # Multi-arch image published from CI on every main push. The
-          # `:main` tag is mutable — `kubectl rollout restart deploy/novamem`
-          # pulls the latest. Pin to `:sha-<short>` for a specific commit.
+          # Multi-arch image published from CI on every main push (the Go
+          # server, built from go/Dockerfile). The `:main` tag is mutable,
+          # so `kubectl rollout restart deploy/novamem` pulls the latest —
+          # but prefer pinning `:sha-<short>`: a mutable tag can be served
+          # stale by a node's registry cache, which is exactly how one
+          # replica came up on an older build during the Go cutover.
           image: ghcr.io/azrtydxb/novamem:main
           imagePullPolicy: Always
           envFrom:

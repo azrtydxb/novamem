@@ -85,7 +85,7 @@ pnpm build
 
 Outputs:
 
-- `packages/server/dist/` — the compiled server
+- `go/novamem-server` — the compiled server binary
 - `packages/admin-ui/dist/` — the SPA bundle, copied into the server's `dist/admin/ui/` by the `build:assets` step
 - `packages/client/dist/`, `packages/mcp/dist/`, `packages/init/dist/` — published packages
 

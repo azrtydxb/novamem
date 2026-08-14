@@ -69,9 +69,6 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
-      # Guard against schema.ts ↔ migrations/ drift. Fails if someone
-      # edited the schema without committing a paired migration.
-      - run: pnpm --filter @azrtydxb/novamem-server db:check
       # Guard against stale prose drift in docs (issue #73). Cheap regex
       # checks; no extra deps. See scripts/doc-smoke.mjs for invariants.
       - run: pnpm docs:smoke
@@ -85,7 +82,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.26"
           cache-dependency-path: |
             go/go.sum
             clients/go/go.sum
@@ -151,50 +148,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # ── Go server image (migration scaffolding; bench-only consumer) ──────
-  docker-go:
-    name: docker-go (${{ matrix.arch }})
-    permissions:
-      contents: read
-      packages: write
-    needs: [go]
-    timeout-minutes: 15
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: arc-azrtydxb-amd64-publish
-          - arch: arm64
-            runner: arc-azrtydxb-publish
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-config-inline: |
-            [registry."192.168.10.123"]
-              insecure = true
-      - name: Compute short SHA
-        id: sha
-        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: go/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/novamem-go:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
-            ghcr.io/${{ github.repository_owner }}/novamem-go:main-${{ matrix.arch }}
-          cache-from: type=registry,ref=192.168.10.123/azrtydxb/novamem-go-buildcache:${{ matrix.arch }}
-          cache-to: type=registry,ref=192.168.10.123/azrtydxb/novamem-go-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true
-
   # ── Docker image (native per arch) ────────────────────────────────────
   # Each arch builds on its own native runner — amd64 on novanas ARC,
   # arm64 on KW ARC. No buildx --platform with QEMU. Trivy gates the build before it gets pushed; only main-branch
@@ -205,7 +158,7 @@ jobs:
     permissions:
       contents: read
       packages: write   # publish container images to ghcr.io
-    needs: [test]
+    needs: [go]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -249,6 +202,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: go/Dockerfile
           push: false
           load: true
           tags: novamem:ci-${{ matrix.arch }}
@@ -287,6 +241,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: go/Dockerfile
           push: true
           tags: |
             ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}

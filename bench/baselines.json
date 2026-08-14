@@ -75,6 +75,14 @@
     84.0,
     82.0
    ]
+  },
+  {
+   "label": "go-cutover (Go server, first run after the TS\u2192Go bench flip)",
+   "mean": 84.0,
+   "reps": [
+    86.0,
+    82.0
+   ]
   }
  ]
 }

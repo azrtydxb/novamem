@@ -15,14 +15,14 @@ For local development against a real Postgres / Qdrant / FalkorDB, the easiest p
 
 ## Schema changes
 
-The warm store schema lives in [`packages/server/src/warm-store/schema.ts`](packages/server/src/warm-store/schema.ts). Drizzle ORM is the source of truth; migrations are generated, versioned, and committed alongside the code change.
+The warm store schema is defined by the migrations in [`go/internal/warmstore/migrations/`](go/internal/warmstore/migrations/), which the server embeds and applies on boot. The SQL is the source of truth; the journal format is drizzle's, so databases migrated by the old TypeScript server continue seamlessly.
 
 **On every schema change**:
 
 1. Edit `schema.ts`
 2. `pnpm --filter @azrtydxb/novamem-server db:generate`
    - Runs `drizzle-kit generate`
-   - Writes a new file under `packages/server/src/warm-store/migrations/<timestamp>_<name>.sql`
+   - Write a new file under `go/internal/warmstore/migrations/<NNNN>_<name>.sql` and add it to `meta/_journal.json`
    - Updates `migrations/meta/_journal.json`
 3. **Review the generated SQL**. Drizzle's diff is usually right but not always — particularly for column renames (it may emit DROP + ADD instead of ALTER … RENAME COLUMN, which loses data). For destructive or rename operations, hand-edit the migration file.
 4. Commit `schema.ts` and the new migration **together** in one commit.
@@ -51,7 +51,7 @@ When in doubt: write the SQL by hand in the generated migration file. drizzle-ki
 
 Schema migrations only handle DDL. For backfills (e.g. populate a new column from existing rows), one-shot transforms, or any operation that touches data:
 
-- Write a one-off TypeScript script under `packages/server/scripts/data-migrations/<timestamp>_<name>.ts`
+- Write a one-off Go program under `go/cmd/` (or plain SQL applied out of band)
 - Run it manually after deploying the schema change and before the application code that depends on the new shape
 - Document it in the relevant changelog entry
 
@@ -126,8 +126,8 @@ When the PR merges to `main`, the release workflow looks for unconsumed `.change
 
 Each package's `src/` follows a flat-by-default convention with folders only when a module genuinely spans multiple files:
 
-- **Multi-file modules**: a folder with `index.ts` as the public entry. Examples: `packages/server/src/engine/`, `packages/server/src/warm-store/`. The folder owns its private helpers and a single `index.ts` re-exports the surface other modules consume.
-- **Single-file modules**: a flat sibling file at the package root. Examples: `packages/server/src/cold-store.ts`, `packages/server/src/graph-store.ts`, `packages/server/src/embeddings.ts`. No wrapper folder — the file IS the module.
+- **Go packages**: one directory per bounded concern under `go/internal/`. Examples: `go/internal/engine/`, `go/internal/warmstore/`, `go/internal/httpapi/`. The package owns its private helpers and exports only what other packages consume.
+- **TypeScript packages** (`packages/client`, `packages/mcp`, `packages/init`, `packages/admin-ui`): a folder with `index.ts` as the public entry for multi-file modules, or a flat file at the package root when the file IS the module.
 
 When a single-file module grows enough to need internal helpers, promote it to a folder with `index.ts` rather than dropping a `*-helpers.ts` sibling next to it. Mixing the two styles in one package makes import paths inconsistent.
 
