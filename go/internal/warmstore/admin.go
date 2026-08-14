@@ -296,6 +296,58 @@ func (s *Store) ListPendingEnrichment(ctx context.Context, limit int) ([]Pending
 		 ORDER BY graph_pending_at ASC LIMIT $1`, limit)
 }
 
+// PendingFactEntry — the fields storeFactsForChunk needs to re-run
+// extraction: sensitivity travels inside metadata, source is the parent
+// provenance (warm-store/index.ts listPendingFacts).
+type PendingFactEntry struct {
+	ID        string
+	UserID    string
+	ProjectID *string
+	Content   string
+	Namespace string
+	Source    string
+	Metadata  map[string]any
+}
+
+// ListPendingFacts claims one bounded reconciler batch, oldest-marked
+// first. Claim-on-read: the marker is RE-ARMED to now() in the same
+// statement that selects the batch, with SKIP LOCKED, so replicas racing
+// on the same tick claim DISJOINT rows instead of all fetching the same
+// oldest-N slice and tripling the LLM spend. Re-arming (rather than
+// clearing) keeps the crash contract — a worker that dies mid-batch
+// leaves the marker set and the row comes back round. The final SELECT
+// re-orders by the pre-update marker because UPDATE ... RETURNING makes
+// no row-order guarantee.
+func (s *Store) ListPendingFacts(ctx context.Context, limit int) ([]PendingFactEntry, error) {
+	rows, err := s.Pool.Query(ctx, `
+		WITH claimed AS (
+		  SELECT id, facts_pending_at AS claimed_at FROM memory_entries
+		   WHERE facts_pending_at IS NOT NULL
+		   ORDER BY facts_pending_at ASC
+		   LIMIT $1
+		     FOR UPDATE SKIP LOCKED
+		), updated AS (
+		  UPDATE memory_entries m SET facts_pending_at = now()
+		    FROM claimed c WHERE m.id = c.id
+		  RETURNING m.id, m.user_id, m.project_id, m.content, m.namespace, m.source, m.metadata
+		)
+		SELECT u.* FROM updated u JOIN claimed c ON c.id = u.id
+		 ORDER BY c.claimed_at ASC`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PendingFactEntry{}
+	for rows.Next() {
+		var e PendingFactEntry
+		if err := rows.Scan(&e.ID, &e.UserID, &e.ProjectID, &e.Content, &e.Namespace, &e.Source, &e.Metadata); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) listPending(ctx context.Context, sql string, limit int) ([]PendingEntry, error) {
 	rows, err := s.Pool.Query(ctx, sql, limit)
 	if err != nil {

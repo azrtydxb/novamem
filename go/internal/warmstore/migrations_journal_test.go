@@ -1,33 +1,75 @@
 package warmstore
 
 import (
-	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
-// Keeps ExpectedLatestMigration honest against the checked-in drizzle
-// journal. Runs in-repo (CI checks out the whole monorepo); skips if the
-// journal isn't reachable (e.g. the module vendored elsewhere).
-func TestExpectedLatestMigrationMatchesJournal(t *testing.T) {
-	raw, err := os.ReadFile("../../../packages/server/src/warm-store/migrations/meta/_journal.json")
+// This server owns the migration set now, but packages/server still
+// ships its own copy until it is deleted. Any divergence would mean the
+// two servers migrate the same database differently, so fail on it.
+// Skips once packages/server is gone.
+func TestEmbeddedMigrationsMatchTSCopy(t *testing.T) {
+	tsDir := "../../../packages/server/src/warm-store/migrations"
+	if _, err := os.Stat(tsDir); err != nil {
+		t.Skipf("TS migration folder gone (expected after packages/server is deleted): %v", err)
+	}
+	files, err := filepath.Glob(filepath.Join(tsDir, "*.sql"))
 	if err != nil {
-		t.Skipf("journal not reachable from module: %v", err)
-	}
-	var j struct {
-		Entries []struct {
-			When int64 `json:"when"`
-		} `json:"entries"`
-	}
-	if err := json.Unmarshal(raw, &j); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(j.Entries); n == 0 {
-		t.Fatal("journal has no entries")
+	ours, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
 	}
-	last := j.Entries[len(j.Entries)-1].When
-	if last != ExpectedLatestMigration {
-		t.Fatalf("journal's last migration is %d but ExpectedLatestMigration is %d — bump the const in the same PR as the migration",
-			last, ExpectedLatestMigration)
+	// -1 for the meta/ directory entry.
+	if got, want := len(ours)-1, len(files); got != want {
+		t.Errorf("embedded set has %d .sql files, TS copy has %d", got, want)
+	}
+	for _, f := range append(files, filepath.Join(tsDir, "meta", "_journal.json")) {
+		want, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel, err := filepath.Rel(tsDir, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := migrationFS.ReadFile("migrations/" + filepath.ToSlash(rel))
+		if err != nil {
+			t.Errorf("%s: not embedded: %v", rel, err)
+			continue
+		}
+		if string(got) != string(want) {
+			t.Errorf("%s differs from the TS copy", rel)
+		}
+	}
+}
+
+// The journal must parse and be strictly ordered — the runner's
+// "apply everything newer than max(created_at)" rule silently skips a
+// migration whose `when` is out of order.
+func TestMigrationJournalOrdered(t *testing.T) {
+	ms, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) == 0 {
+		t.Fatal("no migrations embedded")
+	}
+	for i := 1; i < len(ms); i++ {
+		if ms[i].When <= ms[i-1].When {
+			t.Errorf("migration %s (when=%d) is not newer than %s (when=%d)",
+				ms[i].Tag, ms[i].When, ms[i-1].Tag, ms[i-1].When)
+		}
+	}
+	for _, m := range ms {
+		if len(m.Hash) != 64 {
+			t.Errorf("%s: hash %q is not a sha256 hex digest", m.Tag, m.Hash)
+		}
+		if len(m.Statements) == 0 {
+			t.Errorf("%s: no statements", m.Tag)
+		}
 	}
 }

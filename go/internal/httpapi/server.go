@@ -1,6 +1,7 @@
 // Package httpapi carries the HTTP surface: the three health probes with
-// the TS server's exact bodies, /openapi.json serving the frozen
-// contract document, and the slice-2 data plane (dataplane.go) behind
+// the TS server's exact bodies, /openapi.json serving the contract
+// document rendered from this server's own route table (openapi.go +
+// openapi_routes.go), and the slice-2 data plane (dataplane.go) behind
 // the none|bearer auth middleware (auth.go).
 //
 // Contract notes transcribed from packages/server/src/http.ts:
@@ -13,11 +14,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,12 +32,10 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
-// The frozen OpenAPI contract (docs/api/openapi.json). The copy here is
-// written by packages/server's `docs:api` generator alongside the
-// canonical file, and the existing CI drift gate keeps both honest.
-//
-//go:embed openapi.json
-var openapiDoc []byte
+// The OpenAPI contract, rendered from this server's own route table
+// (openapi_routes.go). `go run ./cmd/gen-openapi` writes the same bytes
+// to docs/api/openapi.json, and CI regenerates + diffs.
+var openapiDoc = buildOpenAPI()
 
 type Options struct {
 	Pool   *pgxpool.Pool
@@ -78,6 +80,7 @@ type server struct {
 	secureCookies  bool
 	trustedOrigins []string
 	corsOrigins    []string
+	baLimit        baRateLimit
 	limiter        *auth.Limiter
 	limitPerMinute int
 	metrics        *metrics.Collector
@@ -85,6 +88,13 @@ type server struct {
 }
 
 func New(opts Options) http.Handler {
+	h, _ := newHandler(opts)
+	return h
+}
+
+// newHandler also reports every mux pattern it registered — the input to
+// the OpenAPI route cross-check.
+func newHandler(opts Options) (http.Handler, []string) {
 	s := &server{
 		log:            opts.Log,
 		engine:         opts.Engine,
@@ -100,7 +110,7 @@ func New(opts Options) http.Handler {
 		metrics:        opts.Metrics,
 		adminDashboard: opts.AdminDashboard,
 	}
-	mux := http.NewServeMux()
+	mux := &routeMux{ServeMux: http.NewServeMux()}
 
 	ok := []byte(`{"ok":true}`)
 	notOK := []byte(`{"ok":false}`)
@@ -112,11 +122,22 @@ func New(opts Options) http.Handler {
 	ready := func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if err := opts.Pool.Ping(ctx); err != nil {
+		// Every dependency the TS readiness check covers, not just the
+		// warm pool: engine.Health pings warm AND cold, so a reachable
+		// Postgres with an unreachable vector store reports 503 on both
+		// servers instead of Go alone claiming ready.
+		healthy := true
+		if opts.Engine != nil {
+			h := opts.Engine.Health(ctx)
+			healthy, _ = h["ok"].(bool)
+		} else if err := opts.Pool.Ping(ctx); err != nil {
+			healthy = false
+		}
+		if !healthy {
 			// Debug, not Warn: readiness is polled every few seconds and a
 			// down dependency would flood the log at higher levels (the TS
 			// server doesn't log per-probe failures at all).
-			opts.Log.Debug("readiness probe failed", "err", err)
+			opts.Log.Debug("readiness probe failed")
 			writeJSON(w, http.StatusServiceUnavailable, notOK)
 			return
 		}
@@ -150,20 +171,71 @@ func New(opts Options) http.Handler {
 	s.registerDashboard(mux)
 
 	// Order matters and mirrors http.ts: CORS answers the preflight
-	// before anything else can 401 it, and the rate limiter sits outside
-	// the routes so its headers land on every answered request.
-	return requestLog(opts.Log, s.cors(s.rateLimit(mux)))
+	// before anything else can 401 it, the rate limiter sits outside the
+	// routes so its headers land on every answered request, and the JSON
+	// body guard sits where Fastify's content-type parser does — after
+	// routing, before the handler.
+	return requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux.ServeMux))))), mux.patterns
+}
+
+// routeMux is http.ServeMux plus the list of patterns registered on it.
+// The OpenAPI document is checked against that list (openapi_test.go),
+// so a route can neither be served without being documented nor
+// documented without being served.
+type routeMux struct {
+	*http.ServeMux
+	patterns []string
+}
+
+func (m *routeMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
+	m.patterns = append(m.patterns, pattern)
+	m.ServeMux.HandleFunc(pattern, h)
 }
 
 // sendNotFound is Fastify's default 404 envelope — callers (and the
 // conformance suite) parse `error` off every 4xx body, so net/http's
 // text/plain "404 page not found" is not an option.
 func sendNotFound(w http.ResponseWriter, r *http.Request) {
-	writeJSONValue(w, http.StatusNotFound, map[string]any{
-		"message":    "Route " + r.Method + ":" + r.URL.Path + " not found",
-		"error":      "Not Found",
-		"statusCode": 404,
+	writeJSONValue(w, http.StatusNotFound, obj{
+		{"message", "Route " + r.Method + ":" + r.URL.Path + " not found"},
+		{"error", "Not Found"},
+		{"statusCode", 404},
 	})
+}
+
+// emptyJSONBodyGuard is Fastify's JSON content-type parser: a request
+// that declares `application/json` and carries no body is rejected
+// before the handler runs — on EVERY route, including the ones whose
+// schema is .optional() and the ones that never read a body at all.
+// Only routes that exist are checked, because Fastify parses after
+// routing (an unrouted path 404s without the parser ever running).
+func emptyJSONBodyGuard(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if isJSONContentType(r) {
+				if _, pattern := mux.Handler(r); pattern != "" && pattern != "/" {
+					var first [1]byte
+					n, _ := io.ReadFull(r.Body, first[:])
+					if n == 0 {
+						writeJSONValue(w, http.StatusBadRequest, map[string]any{
+							"error": "Body cannot be empty when content-type is set to 'application/json'",
+						})
+						return
+					}
+					r.Body = readCloser{io.MultiReader(bytes.NewReader(first[:n]), r.Body), r.Body}
+				}
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// readCloser re-attaches the original Closer to a peeked body.
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
 
 func setHardeningHeaders(w http.ResponseWriter) {
@@ -183,10 +255,132 @@ func writeJSON(w http.ResponseWriter, status int, body []byte) {
 	_, _ = w.Write(body)
 }
 
+// obj is a JSON object that marshals in insertion order. Go's
+// encoding/json sorts map keys; the TS server emits object literals in
+// source order, and the two only agree by accident. Every response whose
+// TS counterpart is not alphabetical is built with this (or with a
+// struct, whose fields already marshal in declaration order).
+// maxParamLength mirrors Fastify's default (100). A longer path segment
+// is refused BEFORE routing, with Fastify's exact envelope — captured
+// from the live oracle rather than guessed:
+//
+//	{"error":"Bad Request","code":"FST_ERR_MAX_PARAM_LENGTH",
+//	 "message":"'<path>' is exceeding the max param length",
+//	 "statusCode":414}
+const maxParamLength = 100
+
+func paramLengthGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, seg := range strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/") {
+			if len(seg) <= maxParamLength {
+				continue
+			}
+			writeJSONValue(w, http.StatusRequestURITooLong, obj{
+				{"error", "Bad Request"},
+				{"code", "FST_ERR_MAX_PARAM_LENGTH"},
+				{"message", "'" + r.URL.Path + "' is exceeding the max param length"},
+				{"statusCode", 414},
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+type obj []kv
+
+type kv struct {
+	K string
+	V any
+}
+
+func (o obj) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, e := range o {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		key, err := marshalJS(e.K)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(key)
+		b.WriteByte(':')
+		val, err := marshalJS(e.V)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(val)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+// ordered projects a map into an obj in the given key order, so a
+// response the engine hands back as a Go map still marshals in the TS
+// object literal's order. Keys not listed keep encoding/json's sorted
+// order at the end, so a field added upstream can never be dropped
+// here — it only lands in the wrong place, which the differential
+// harness catches.
+func ordered(m map[string]any, keys ...string) obj {
+	out := make(obj, 0, len(m))
+	seen := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			out = append(out, kv{k, v})
+			seen[k] = true
+		}
+	}
+	rest := make([]string, 0, len(m))
+	for k := range m {
+		if !seen[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		out = append(out, kv{k, m[k]})
+	}
+	return out
+}
+
+// get looks a key up in an obj — the read side of the ordered form,
+// used by tests and by handlers that post-process a built response.
+func (o obj) get(key string) any {
+	for _, e := range o {
+		if e.K == key {
+			return e.V
+		}
+	}
+	return nil
+}
+
+// orderedIn applies `ordered` to a nested map value in place.
+func orderedIn(m map[string]any, key string, keys ...string) {
+	if nested, ok := m[key].(map[string]any); ok {
+		m[key] = ordered(nested, keys...)
+	}
+}
+
+// marshalJS is json.Marshal without Go's HTML escaping. JSON.stringify
+// emits `<`, `>` and `&` literally; encoding/json turns them into
+// \u003c/\u003e/\u0026, which shows up in every zod message that
+// carries a comparison operator ("expected number to be >=0").
+func marshalJS(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
 // writeJSONValue marshals v — used by the data plane where bodies are
 // built structs/maps rather than fixed byte strings.
 func writeJSONValue(w http.ResponseWriter, status int, value any) {
-	body, err := json.Marshal(value)
+	body, err := marshalJS(value)
 	if err != nil {
 		body = []byte(`{"error":"internal server error"}`)
 		status = http.StatusInternalServerError

@@ -2,7 +2,7 @@
 
 The HTTP API is fully described by an **OpenAPI 3.0 spec**. The live spec is generated dynamically from Fastify route schemas (`schema` + Zod via `fastify-type-provider-zod`) and exposed by the server at `/openapi.json`. A static copy is committed next to this file for offline/reference use:
 
-- [`openapi.json`](openapi.json) — committed, regenerated via `pnpm docs:api`
+- [`openapi.json`](openapi.json) — committed, regenerated from the **Go** server's route table
 
 ## Live Swagger UI
 
@@ -15,13 +15,13 @@ The dashboard sidebar links straight to it.
 
 ## Regenerating the static spec
 
-`openapi.json` is the generated artefact. To refresh it after editing route schemas or adding routes:
+`openapi.json` is the generated artefact, owned by the Go server. To refresh it after adding a route or editing a schema:
 
 ```bash
-pnpm docs:api
+cd go && go run ./cmd/gen-openapi
 ```
 
-Behind the scenes that builds `@azrtydxb/novamem-server`, starts the Fastify app in-process, reads `app.swagger()`, and writes JSON to `docs/api/openapi.json`.
+The generator walks the Go server's own route table and schema definitions in `go/internal/httpapi/openapi.go` and writes JSON to `docs/api/openapi.json`. A CI drift gate re-runs it and fails if the committed file changes.
 
 ## Surface at a glance
 

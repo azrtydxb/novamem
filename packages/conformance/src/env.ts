@@ -27,7 +27,29 @@ export const env = {
    *  on POST — while a MISSING origin (curl) passes. Must match the
    *  server's NOVAMEM_BASE_URL. */
   origin: process.env.NOVAMEM_ORIGIN ?? "",
+  /** An origin that IS on the target's `NOVAMEM_CORS_ORIGINS` allow-list.
+   *  Defaults to config.ts's own default (`["http://localhost:5173"]`),
+   *  which is what a target that never sets the var actually serves. */
+  corsAllowedOrigin: process.env.NOVAMEM_CORS_ALLOWED_ORIGIN ?? "http://localhost:5173",
+  /** Tri-state mirror of the server's own NOVAMEM_ADMIN_DASHBOARD. One
+   *  server run can only be in one mode, so the dashboard suite asserts
+   *  the enabled OR the disabled contract, never both. Unset ⇒ the suite
+   *  probes `/admin` once and infers the mode (no false red on an
+   *  operator who forgot the flag). */
+  adminDashboard: process.env.NOVAMEM_ADMIN_DASHBOARD ?? "",
+  /** Set to 1 when the target runs the LLM subsystems (fact extraction,
+   *  observer, query decomposition). Unset ⇒ 90-llm skips loudly instead
+   *  of waiting on facts that will never be derived. */
+  llmSubsystems: /^(1|true|yes|on)$/i.test(process.env.NOVAMEM_LLM_SUBSYSTEMS ?? ""),
 };
+
+/** True when a suite can obtain a Better-Auth admin session — either a
+ *  pre-minted cookie or the email/password `client.ts` signs in with.
+ *  Suites used to gate on `env.adminCookie` alone, which silently skipped
+ *  every cookie-gated test on a run configured with email+password. */
+export const hasAdminIdentity = Boolean(
+  env.adminCookie || (env.adminEmail && env.adminPassword),
+);
 
 /** Returns whether the current test should be SKIPPED, because the live
  *  oracle isn't running in one of the given auth modes. Later suites

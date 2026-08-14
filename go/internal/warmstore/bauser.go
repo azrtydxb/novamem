@@ -11,6 +11,7 @@ package warmstore
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -63,12 +64,17 @@ func jsTime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000
 // limit/offset of 0 mean "unset", matching Better Auth's `Number(x) ||
 // undefined` coercion.
 func (s *Store) ListBAUsers(ctx context.Context, limit, offset int) ([]BAUser, int, error) {
-	sql := `SELECT ` + baUserCols + ` FROM "user" ORDER BY "createdAt" ASC`
+	// No ORDER BY: better-auth's listUsers passes no sortBy, so the
+	// adapter emits a bare SELECT and rows come back in Postgres's
+	// physical order. Sorting here would reorder the dashboard's Users
+	// tab relative to the TS server.
+	sql := `SELECT ` + baUserCols + ` FROM "user"`
 	args := []any{}
-	if limit > 0 {
-		args = append(args, limit)
-		sql += ` LIMIT $1`
+	if limit <= 0 {
+		limit = baFindManyLimit
 	}
+	args = append(args, limit)
+	sql += ` LIMIT $1`
 	if offset > 0 {
 		args = append(args, offset)
 		sql += ` OFFSET $` + itoa(len(args))
@@ -225,5 +231,232 @@ func (s *Store) SetCredentialPassword(ctx context.Context, userID, hash string) 
 // with revokeOtherSessions, and the remove-user path).
 func (s *Store) DeleteUserSessions(ctx context.Context, userID string) error {
 	_, err := s.Pool.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1`, userID)
+	return err
+}
+
+// baFindManyLimit is better-auth's adapter default
+// (`options.advanced.database.defaultFindManyLimit ?? 100`): EVERY
+// findMany without an explicit limit is capped at 100 rows, so the
+// session and user listings truncate there on the TS server too.
+const baFindManyLimit = 100
+
+// ─── Better Auth sessions ──────────────────────────────────────────────
+
+// BASession is Better Auth's session output document (parseSessionOutput),
+// in Better Auth's own key order.
+type BASession struct {
+	ExpiresAt      string  `json:"expiresAt"`
+	Token          string  `json:"token"`
+	CreatedAt      string  `json:"createdAt"`
+	UpdatedAt      string  `json:"updatedAt"`
+	IPAddress      *string `json:"ipAddress"`
+	UserAgent      *string `json:"userAgent"`
+	UserID         string  `json:"userId"`
+	ImpersonatedBy *string `json:"impersonatedBy"`
+	ID             string  `json:"id"`
+}
+
+const baSessionCols = `"expiresAt", token, "createdAt", "updatedAt", "ipAddress", "userAgent", "userId", "impersonatedBy", id`
+
+func readBASession(rows pgx.Rows) (*BASession, error) {
+	var s BASession
+	var exp, created, updated time.Time
+	if err := rows.Scan(&exp, &s.Token, &created, &updated, &s.IPAddress, &s.UserAgent,
+		&s.UserID, &s.ImpersonatedBy, &s.ID); err != nil {
+		return nil, err
+	}
+	s.ExpiresAt, s.CreatedAt, s.UpdatedAt = jsTime(exp), jsTime(created), jsTime(updated)
+	return &s, nil
+}
+
+// ListBASessions returns every live session for a user, oldest first —
+// internalAdapter.listSessions, which filters expired rows out.
+func (s *Store) ListBASessions(ctx context.Context, userID string) ([]BASession, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+baSessionCols+` FROM "session"
+		 WHERE "userId" = $1 AND "expiresAt" > now() LIMIT `+itoa(baFindManyLimit), userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BASession{}
+	for rows.Next() {
+		one, err := readBASession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *one)
+	}
+	return out, rows.Err()
+}
+
+// GetBASession returns one session row by token, or (nil, nil).
+func (s *Store) GetBASession(ctx context.Context, token string) (*BASession, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+baSessionCols+` FROM "session" WHERE token = $1`, token)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return readBASession(rows)
+}
+
+// CreateBASession is CreateSession with the impersonation column set —
+// the admin plugin's impersonate-user path.
+func (s *Store) CreateBASession(ctx context.Context, userID, ip, userAgent string, ttl time.Duration, impersonatedBy *string) (*BASession, error) {
+	token := auth.NewID()
+	rows, err := s.Pool.Query(ctx, `
+		INSERT INTO "session" (id, "expiresAt", token, "ipAddress", "userAgent", "userId", "impersonatedBy")
+		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING `+baSessionCols,
+		auth.NewID(), time.Now().Add(ttl), token, ip, userAgent, userID, impersonatedBy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return readBASession(rows)
+}
+
+// ─── Better Auth user mutations ────────────────────────────────────────
+
+// baUpdatableCols is the subset of `"user"` columns admin/update-user may
+// write. Better Auth's adapter would write any field in its schema; this
+// deployment's schema is exactly these, and an allow-list keeps a caller
+// from reaching a column the route never intended.
+var baUpdatableCols = map[string]string{
+	"name":          "name",
+	"email":         "email",
+	"emailVerified": `"emailVerified"`,
+	"image":         "image",
+	"role":          "role",
+	"banned":        "banned",
+	"banReason":     `"banReason"`,
+	"banExpires":    `"banExpires"`,
+}
+
+// UpdateBAUser writes the given columns and returns the updated row.
+// Unknown keys are ignored, as Better Auth's adapter ignores fields that
+// aren't in the model.
+func (s *Store) UpdateBAUser(ctx context.Context, id string, data map[string]any) (*BAUser, error) {
+	sets := []string{`"updatedAt" = now()`}
+	args := []any{id}
+	for k, col := range baUpdatableCols {
+		v, ok := data[k]
+		if !ok {
+			continue
+		}
+		if k == "banExpires" {
+			v = parseJSDate(v)
+		}
+		args = append(args, v)
+		sets = append(sets, col+" = $"+itoa(len(args)))
+	}
+	rows, err := s.Pool.Query(ctx,
+		`UPDATE "user" SET `+strings.Join(sets, ", ")+` WHERE id = $1 RETURNING `+baUserCols, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return readBAUser(rows)
+}
+
+// parseJSDate accepts the ISO string a JSON body carries for a timestamp
+// column; anything else passes through for the driver to reject or null.
+func parseJSDate(v any) any {
+	s, ok := v.(string)
+	if !ok {
+		return v
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return v
+	}
+	return t
+}
+
+// BanBAUser / UnbanBAUser are admin/ban-user and admin/unban-user.
+func (s *Store) BanBAUser(ctx context.Context, id, reason string, expires *time.Time) (*BAUser, error) {
+	rows, err := s.Pool.Query(ctx, `
+		UPDATE "user" SET banned = true, "banReason" = $2, "banExpires" = $3, "updatedAt" = now()
+		 WHERE id = $1 RETURNING `+baUserCols, id, reason, expires)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return readBAUser(rows)
+}
+
+func (s *Store) UnbanBAUser(ctx context.Context, id string) (*BAUser, error) {
+	rows, err := s.Pool.Query(ctx, `
+		UPDATE "user" SET banned = false, "banReason" = NULL, "banExpires" = NULL, "updatedAt" = now()
+		 WHERE id = $1 RETURNING `+baUserCols, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return readBAUser(rows)
+}
+
+// UpsertCredentialPassword is admin/set-user-password: update the
+// credential account row when there is one, create it when there isn't.
+func (s *Store) UpsertCredentialPassword(ctx context.Context, userID, hash string) error {
+	updated, err := s.SetCredentialPassword(ctx, userID, hash)
+	if err != nil || updated {
+		return err
+	}
+	_, err = s.Pool.Exec(ctx, `
+		INSERT INTO "account" (id, "accountId", "providerId", "userId", password, "createdAt", "updatedAt")
+		VALUES ($1, $2, 'credential', $2, $3, now(), now())`, auth.NewID(), userID, hash)
+	return err
+}
+
+// ─── JWKS ──────────────────────────────────────────────────────────────
+
+// JWK is one row of the `jwks` table. The private key is Better Auth's
+// encrypted envelope, not a usable key — see httpapi/bajwt.go.
+type JWK struct {
+	ID         string
+	PublicKey  string
+	PrivateKey string
+}
+
+// AllJWKs returns every key, newest first (getJwksAdapter sorts by
+// createdAt descending for the signing key; the /jwks route publishes
+// them all).
+func (s *Store) AllJWKs(ctx context.Context) ([]JWK, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id, "publicKey", "privateKey" FROM jwks ORDER BY "createdAt" DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []JWK{}
+	for rows.Next() {
+		var k JWK
+		if err := rows.Scan(&k.ID, &k.PublicKey, &k.PrivateKey); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// InsertJWK stores a freshly generated key pair.
+func (s *Store) InsertJWK(ctx context.Context, id, publicKey, privateKey string) error {
+	_, err := s.Pool.Exec(ctx,
+		`INSERT INTO jwks (id, "publicKey", "privateKey", "createdAt") VALUES ($1,$2,$3, now())`,
+		id, publicKey, privateKey)
 	return err
 }

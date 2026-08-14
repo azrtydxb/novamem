@@ -3,12 +3,8 @@
 // neighbors, buildContextPack, hygieneReport, evaluateMemoryQuality)
 // — read-only reference, never imported.
 //
-// Not ported (feature not configured in the Go server, matching TS with
-// the corresponding config unset): query decomposition (`decompose` is
-// accepted and ignored — TS ignores it without a decomposer), the
-// coherence rerank (decomposer-gated), fact extraction (extractor-gated)
-// and the observer. `asOf` is accepted for wire compatibility and has no
-// effect on search, exactly as in TS (Phase 4 note).
+// `asOf` is accepted for wire compatibility and has no effect on search,
+// exactly as in TS (Phase 4 note).
 package engine
 
 import (
@@ -39,6 +35,13 @@ const overfetchFactor = 3
 // restatements; only the higher-ranked one is returned.
 const resultDiversityMaxJaccard = 0.75
 
+// Ceiling on how many candidates the coherence reranker is shown
+// (engine/index.ts COHERENCE_RERANK_MAX_CANDIDATES). Reranking is a
+// top-of-list concern: nothing below the cutoff can reach the caller,
+// and passing the whole over-fetch pool built a ~360KB prompt that could
+// only time out or come back truncated.
+const coherenceRerankMaxCandidates = 40
+
 // WeightsOverride mirrors SearchBody.weights: per-field optional
 // overrides spread over DEFAULT_WEIGHTS (an explicit 0 disables a tier).
 type WeightsOverride struct {
@@ -63,6 +66,9 @@ type SearchArgs struct {
 	// Rerank opts into the Phase 5 cross-encoder pass (requires a
 	// configured reranker; silently ignored otherwise, as in TS).
 	Rerank bool
+	// Decompose opts into Phase 4 query decomposition + the coherence
+	// rerank (requires a configured decomposer; ignored otherwise).
+	Decompose bool
 	// nil → engine default; explicit 0 disables the noise floor.
 	MinVectorScore *float64
 	// 0 = no token budget.
@@ -142,18 +148,34 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 		namespaces = ns
 	}
 
-	// Embed the query ("query" side of the asymmetric prefix pair). A
-	// dead embedder is a failed tier, not a failed request — but it must
-	// mark the search degraded or an outage looks like "nothing matched".
+	// Phase 4 query decomposition. If the caller opted in AND a decomposer
+	// is configured, rewrite into ≤N sub-queries and retrieve per
+	// sub-query; the original query is always first. A failure falls back
+	// to the original — decomposition is an enhancement, not a dependency.
+	queries := []string{req.Query}
+	if req.Decompose && e.decomposer != nil {
+		decomposed, err := e.decomposer.Decompose(ctx, req.Query)
+		if err != nil {
+			e.log.Warn("decompose failed (using original query)", "err", err)
+		} else if len(decomposed) > 0 {
+			queries = decomposed
+		}
+	}
+
+	// Embed every query in one batch ("query" side of the asymmetric
+	// prefix pair). Different sub-queries → different vector candidates,
+	// which is the whole point of decomposition. A dead embedder is a
+	// failed tier, not a failed request — but it must mark the search
+	// degraded or an outage looks like "nothing matched".
 	degraded := false
-	var queryEmbedding []float64
+	var queryEmbeddings [][]float64
 	if e.embedder == nil {
 		degraded = true
-	} else if vecs, err := e.embedder.Embed(ctx, []string{req.Query}, embeddings.KindQuery); err != nil {
+	} else if vecs, err := e.embedder.Embed(ctx, queries, embeddings.KindQuery); err != nil {
 		degraded = true
 		e.recordEmbedFailure(err, "search", "")
-	} else if len(vecs) > 0 {
-		queryEmbedding = vecs[0]
+	} else {
+		queryEmbeddings = vecs
 	}
 
 	// Keyword tier. A tier weighted 0 is pure latency — skipped, like TS.
@@ -161,51 +183,56 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 	// single Promise.all with one catch).
 	var keywordHits []warmstore.ScoredID
 	if weights.Keyword != 0 {
-		for _, projectID := range scopes {
-			var nsList []string
-			if len(namespaces) > 1 {
-				nsList = namespaces
+	keywordLoop:
+		for _, q := range queries {
+			for _, projectID := range scopes {
+				var nsList []string
+				if len(namespaces) > 1 {
+					nsList = namespaces
+				}
+				hits, err := e.warm.FtsSearch(ctx, warmstore.FtsArgs{
+					UserID:       userID,
+					ProjectID:    projectID,
+					Query:        q,
+					Namespace:    namespaces[0],
+					Namespaces:   nsList,
+					K:            k * 3,
+					AgentName:    req.AgentName,
+					AgentNameSet: req.AgentNameSet,
+				})
+				if err != nil {
+					degraded = true
+					e.log.Warn("keyword tier failed", "err", err)
+					keywordHits = nil
+					break keywordLoop
+				}
+				keywordHits = append(keywordHits, hits...)
 			}
-			hits, err := e.warm.FtsSearch(ctx, warmstore.FtsArgs{
-				UserID:       userID,
-				ProjectID:    projectID,
-				Query:        req.Query,
-				Namespace:    namespaces[0],
-				Namespaces:   nsList,
-				K:            k * 3,
-				AgentName:    req.AgentName,
-				AgentNameSet: req.AgentNameSet,
-			})
-			if err != nil {
-				degraded = true
-				e.log.Warn("keyword tier failed", "err", err)
-				keywordHits = nil
-				break
-			}
-			keywordHits = append(keywordHits, hits...)
 		}
 	}
 
 	// Vector tier: one cold search per (scope × namespace).
 	var vectorHits []coldstore.Hit
-	if queryEmbedding != nil && e.cold != nil {
+	if len(queryEmbeddings) > 0 && len(queryEmbeddings[0]) > 0 && e.cold != nil {
 	vectorLoop:
-		for _, projectID := range scopes {
-			for _, namespace := range namespaces {
-				hits, err := e.cold.Search(ctx, coldstore.SearchArgs{
-					UserID:    userID,
-					ProjectID: projectID,
-					Namespace: namespace,
-					Embedding: queryEmbedding,
-					K:         k * 3,
-				})
-				if err != nil {
-					degraded = true
-					e.log.Warn("vector tier failed", "err", err)
-					vectorHits = nil
-					break vectorLoop
+		for _, emb := range queryEmbeddings {
+			for _, projectID := range scopes {
+				for _, namespace := range namespaces {
+					hits, err := e.cold.Search(ctx, coldstore.SearchArgs{
+						UserID:    userID,
+						ProjectID: projectID,
+						Namespace: namespace,
+						Embedding: emb,
+						K:         k * 3,
+					})
+					if err != nil {
+						degraded = true
+						e.log.Warn("vector tier failed", "err", err)
+						vectorHits = nil
+						break vectorLoop
+					}
+					vectorHits = append(vectorHits, hits...)
 				}
-				vectorHits = append(vectorHits, hits...)
 			}
 		}
 	}
@@ -302,6 +329,39 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 	// Deliberately NOT truncated to k here: the visibility filter drops
 	// superseded/sensitivity-hidden rows; cutting to k first is exactly
 	// the recall bug the over-fetch exists to prevent.
+
+	// ── Phase 4: coherence rerank ──────────────────────────────────────
+	// Opt-in with decomposition AND a configured decomposer AND enough
+	// candidates. Only the HEAD is reranked, not the whole over-fetch
+	// pool: reranking is a top-of-list concern, and the head is also what
+	// decides whether there is anything to reorder (at k=1 the head is a
+	// single candidate even though `fused` holds many).
+	rerankCount := len(fused)
+	if rerankCount > k {
+		rerankCount = k
+	}
+	if rerankCount > coherenceRerankMaxCandidates {
+		rerankCount = coherenceRerankMaxCandidates
+	}
+	if req.Decompose && e.decomposer != nil && rerankCount >= 2 {
+		head, tail := fused[:rerankCount], fused[rerankCount:]
+		memTexts := make([]string, len(head))
+		for i, f := range head {
+			if entry := entryByID[f.ID]; entry != nil {
+				memTexts[i] = entry.Content
+			}
+		}
+		newOrder, err := e.decomposer.CoherenceRerank(ctx, req.Query, memTexts)
+		if err != nil {
+			e.log.Warn("coherenceRerank failed", "err", err)
+		} else if len(newOrder) == len(head) {
+			reordered := make([]HybridOutput, 0, len(fused))
+			for _, i := range newOrder {
+				reordered = append(reordered, head[i])
+			}
+			fused = append(reordered, tail...)
+		}
+	}
 
 	// Pre-fetch promotion stats for cold hits in one round-trip.
 	var coldHitIDs []string

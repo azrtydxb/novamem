@@ -43,6 +43,58 @@ export const COVERAGE: Record<string, string> = {
   // 40-auth
   "POST /v1/auth/rotate-token": "40-auth",
 
+  // 41-better-auth — the Better Auth passthrough allow-list
+  // (`routes/auth.ts` `exactPaths`). These are `schema: { hide: true }`,
+  // so they never appear in /openapi.json and the gate below cannot see
+  // them — they are claimed here anyway, because the manifest is also the
+  // human-readable inventory of what conformance owns, and the parity
+  // audit found 22 of them missing on Go under a green run precisely
+  // because nothing listed them. Every method the allow-list registers is
+  // reachable; the METHOD recorded here is the one that actually serves.
+  "POST /api/auth/sign-in/email": "41-better-auth",
+  "POST /api/auth/sign-out": "41-better-auth",
+  "GET /api/auth/get-session": "41-better-auth",
+  "POST /api/auth/get-session": "41-better-auth",
+  "GET /api/auth/token": "41-better-auth",
+  "GET /api/auth/jwks": "41-better-auth",
+  "POST /api/auth/change-password": "41-better-auth",
+  "GET /api/auth/list-sessions": "41-better-auth",
+  "POST /api/auth/revoke-session": "41-better-auth",
+  "POST /api/auth/forget-password": "41-better-auth",
+  "POST /api/auth/reset-password": "41-better-auth",
+  "GET /api/auth/verify-email": "41-better-auth",
+  "POST /api/auth/send-verification-email": "41-better-auth",
+  "GET /api/auth/admin/list-users": "41-better-auth",
+  "POST /api/auth/admin/create-user": "41-better-auth",
+  "POST /api/auth/admin/update-user": "41-better-auth",
+  "POST /api/auth/admin/set-role": "41-better-auth",
+  "POST /api/auth/admin/set-user-password": "41-better-auth",
+  "POST /api/auth/admin/remove-user": "41-better-auth",
+  "POST /api/auth/admin/ban-user": "41-better-auth",
+  "POST /api/auth/admin/unban-user": "41-better-auth",
+  "POST /api/auth/admin/list-user-sessions": "41-better-auth",
+  "POST /api/auth/admin/revoke-user-session": "41-better-auth",
+  "POST /api/auth/admin/revoke-user-sessions": "41-better-auth",
+  "POST /api/auth/admin/impersonate-user": "41-better-auth",
+  "POST /api/auth/admin/stop-impersonating": "41-better-auth",
+
+  // 42-dashboard — the static SPA mount + its auth-hook allow-list.
+  // Also hidden from /openapi.json (it isn't an API contract), claimed
+  // here for the same inventory reason.
+  "GET /admin": "42-dashboard",
+  "GET /admin/": "42-dashboard",
+  "GET /admin/index.html": "42-dashboard",
+  "GET /admin/assets/*": "42-dashboard",
+
+  // 43-cors-ratelimit — middleware, not endpoints: the CORS preflight
+  // response on any path and the x-ratelimit-* headers / health-probe
+  // exemption. No route of its own to claim.
+
+  // 90-llm — the LLM subsystems (extraction / observer / decomposition).
+  // Exercised through routes already claimed above (/v1/remember,
+  // /v1/search, /v1/observe, /v1/context-prefix); 90-llm asserts the
+  // subsystem behaviour those suites deliberately stay agnostic about.
+
   // 50-me — per-user self-service surface
   "GET /v1/me/active-project": "50-me",
   "PUT /v1/me/active-project": "50-me",

@@ -20,7 +20,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/mcp"
 )
 
-func (s *server) registerMCP(mux *http.ServeMux) *mcp.Server {
+func (s *server) registerMCP(mux *routeMux) *mcp.Server {
 	srv := mcp.NewServer(mcp.Options{
 		Log:            s.log,
 		Instructions:   novamemInstructions,
@@ -129,10 +129,10 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		message, _ := c.str("message", true, 1, 8*1024)
 		k, kSet := c.positiveInt("k", 50)
 		namespace, _ := c.str("namespace", false, 0, 128)
-		includeNamespaces, _ := c.strArray("includeNamespaces", 16, validNamespaceItem,
+		includeNamespaces, _ := c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 			"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 		project, _ := c.projectRef("project")
-		includeProjects, _ := c.strArray("includeProjects", 16, validProjectRefItem, "project ref contains control characters")
+		includeProjects, _ := c.strArray("includeProjects", 16, 1, 128, validProjectRefItem, "project ref contains control characters")
 		weights := c.parseWeights()
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 		if err := firstIssue(c); err != nil {
@@ -166,11 +166,11 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		if relevant.Results == nil {
 			relevant.Results = []engine.SearchResultItem{}
 		}
-		return map[string]any{
-			"relevant":    map[string]any{"results": relevant.Results, "degraded": relevant.Degraded},
-			"recent":      map[string]any{"results": recent},
-			"contextPack": engine.BuildContextPack(relevant.Results, recent),
-			"guidance":    "Use this context before answering. Prefer contextPack sections over loose hits. If relevant is empty, run targeted memory_search before asking the user to repeat context.",
+		return obj{
+			{"relevant", obj{{"results", orderedItems(relevant.Results)}, {"degraded", relevant.Degraded}}},
+			{"recent", obj{{"results", orderedItems(recent)}}},
+			{"contextPack", orderedPack(engine.BuildContextPack(relevant.Results, recent))},
+			{"guidance", "Use this context before answering. Prefer contextPack sections over loose hits. If relevant is empty, run targeted memory_search before asking the user to repeat context."},
 		}, nil
 
 	case "memory_capture":
@@ -202,20 +202,18 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		if r.ID != nil {
 			saved = 1
 		}
-		return map[string]any{"saved": saved, "results": []engine.RememberResult{r}}, nil
+		return obj{{"saved", saved}, {"results", []engine.RememberResult{r}}}, nil
 
 	case "memory_session_recap":
 		// SessionRecapBody is .strict() — unknown keys are rejected.
 		for key := range args {
 			if !recapKnownKeys[key] {
-				c.add("", fmt.Sprintf("Unrecognized key(s) in object: '%s'", key), "unrecognized_keys")
+				c.add("", fmt.Sprintf("Unrecognized key: %q", key), "unrecognized_keys")
 			}
 		}
 		items := map[string][]string{}
 		for _, g := range recapGroups {
-			if arr, ok := c.strArray(g.field, 1<<30,
-				func(s string) bool { return utf16Len(s) >= 12 && utf16Len(s) <= 4000 },
-				"String must contain at least 12 character(s)"); ok {
+			if arr, ok := c.strArray(g.field, 1<<30, 12, 4000, noItemRule, ""); ok {
 				items[g.field] = arr
 			}
 		}
@@ -238,7 +236,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 			if mm, ok := raw.(map[string]any); ok {
 				metadata = mm
 			} else {
-				c.add("metadata", fmt.Sprintf("Expected object, received %s", jsonType(raw)), "invalid_type")
+				c.add("metadata", fmt.Sprintf("Invalid input: expected record, received %s", jsonType(raw)), "invalid_type")
 			}
 		}
 		sensitivity, _ := c.enum("sensitivity", "public", "internal", "private", "sensitive")
@@ -290,7 +288,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 				results = append(results, r)
 			}
 		}
-		return map[string]any{"saved": saved, "results": results}, nil
+		return obj{{"saved", saved}, {"results", results}}, nil
 
 	case "memory_hygiene":
 		checkStrict(c, "k")
@@ -315,8 +313,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		checkStrict(c, "client", "observedTools", "observedInstructionsHash")
 		var opts adoptionOptions
 		opts.Client, _ = c.str("client", false, 0, 64)
-		if tools, ok := c.strArray("observedTools", 128,
-			func(s string) bool { return utf16Len(s) >= 1 && utf16Len(s) <= 128 }, "Invalid"); ok {
+		if tools, ok := c.strArray("observedTools", 128, 1, 128, noItemRule, ""); ok {
 			opts.ObservedTools = tools
 			opts.ObservedToolsSet = true
 		}
@@ -324,7 +321,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 			if instructionsHashRe.MatchString(hash) {
 				opts.ObservedInstructionsHash = &hash
 			} else {
-				c.add("observedInstructionsHash", "Invalid", "invalid_string")
+				c.add("observedInstructionsHash", `Invalid string: must match pattern /^[a-fA-F0-9]{64}$/`, "invalid_format")
 			}
 		}
 		if err := firstIssue(c); err != nil {
@@ -336,10 +333,10 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		query, _ := c.str("query", true, 1, 8*1024)
 		k, _ := c.positiveInt("k", 200)
 		namespace, _ := c.str("namespace", false, 0, 128)
-		includeNamespaces, _ := c.strArray("includeNamespaces", 16, validNamespaceItem,
+		includeNamespaces, _ := c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 			"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 		project, _ := c.projectRef("project")
-		includeProjects, _ := c.strArray("includeProjects", 16, validProjectRefItem, "project ref contains control characters")
+		includeProjects, _ := c.strArray("includeProjects", 16, 1, 128, validProjectRefItem, "project ref contains control characters")
 		weights := c.parseWeights()
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 		contentMode, _ := c.enum("contentMode", "full", "snippet", "ids")
@@ -361,7 +358,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 			outcome.Results = []engine.SearchResultItem{}
 		}
 		shapeContent(outcome.Results, contentMode)
-		return map[string]any{"results": outcome.Results, "degraded": outcome.Degraded}, nil
+		return obj{{"results", orderedItems(outcome.Results)}, {"degraded", outcome.Degraded}}, nil
 
 	case "memory_remember":
 		req := parseWriteBody(c)
@@ -385,12 +382,12 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 
 	case "memory_today", "memory_recent":
 		namespace, _ := c.str("namespace", false, 0, 128)
-		includeNamespaces, _ := c.strArray("includeNamespaces", 16, validNamespaceItem,
+		includeNamespaces, _ := c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 			"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 		k, kSet := c.positiveInt("k", 200)
 		since, _ := c.datetime("since", "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)")
 		project, _ := c.projectRef("project")
-		includeProjects, _ := c.strArray("includeProjects", 16, validProjectRefItem, "project ref contains control characters")
+		includeProjects, _ := c.strArray("includeProjects", 16, 1, 128, validProjectRefItem, "project ref contains control characters")
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 		contentMode, _ := c.enum("contentMode", "full", "snippet", "ids")
 		if err := firstIssue(c); err != nil {
@@ -414,14 +411,14 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 			return nil, err
 		}
 		shapeContent(results, contentMode)
-		return map[string]any{"results": results}, nil
+		return obj{{"results", orderedItems(results)}}, nil
 
 	case "memory_neighbors":
 		id, _ := c.str("id", true, 1, 128)
 		depth, _ := c.positiveInt("depth", 3)
 		k, _ := c.positiveInt("k", 50)
 		project, _ := c.projectRef("project")
-		includeProjects, _ := c.strArray("includeProjects", 16, validProjectRefItem, "project ref contains control characters")
+		includeProjects, _ := c.strArray("includeProjects", 16, 1, 128, validProjectRefItem, "project ref contains control characters")
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 		if err := firstIssue(c); err != nil {
 			return nil, err
@@ -440,7 +437,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		if outcome.Results == nil {
 			outcome.Results = []engine.SearchResultItem{}
 		}
-		return map[string]any{"results": outcome.Results, "degraded": outcome.Degraded}, nil
+		return obj{{"results", orderedItems(outcome.Results)}, {"degraded", outcome.Degraded}}, nil
 
 	case "memory_forget":
 		id, _ := c.str("id", true, 1, 128)
@@ -533,7 +530,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 	case "project_activate":
 		ref, _ := c.projectRef("project")
 		if ref == nil && len(c.issues) == 0 {
-			c.add("project", "Required", "invalid_type")
+			c.add("project", "Invalid input: expected string, received undefined", "invalid_type")
 		}
 		if err := firstIssue(c); err != nil {
 			return nil, err
@@ -615,7 +612,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 func (s *server) requireOwnedProject(ctx context.Context, c *v, userID, verb string) (*ownedProject, error) {
 	ref, _ := c.projectRef("project")
 	if ref == nil && len(c.issues) == 0 {
-		c.add("project", "Required", "invalid_type")
+		c.add("project", "Invalid input: expected string, received undefined", "invalid_type")
 	}
 	if err := firstIssue(c); err != nil {
 		return nil, err

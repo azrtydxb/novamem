@@ -260,3 +260,33 @@ func TestLooksLikeEmail(t *testing.T) {
 		}
 	}
 }
+
+// Fastify refuses a path segment over 100 chars before routing, with its
+// own envelope. Captured from the live oracle:
+// {"error":"Bad Request","code":"FST_ERR_MAX_PARAM_LENGTH","message":"'…'
+//
+//	is exceeding the max param length","statusCode":414}
+func TestMaxParamLength(t *testing.T) {
+	h := paramLengthGuard(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	long := "/v1/memories/" + strings.Repeat("a", 200)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PUT", long, nil))
+	if rec.Code != http.StatusRequestURITooLong {
+		t.Fatalf("status = %d, want 414", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != "FST_ERR_MAX_PARAM_LENGTH" || body["error"] != "Bad Request" {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+	// A short segment passes through untouched.
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest("PUT", "/v1/memories/01K", nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("short param status = %d, want 200", rec2.Code)
+	}
+}

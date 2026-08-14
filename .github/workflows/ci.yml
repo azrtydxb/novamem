@@ -75,14 +75,6 @@ jobs:
       # Guard against stale prose drift in docs (issue #73). Cheap regex
       # checks; no extra deps. See scripts/doc-smoke.mjs for invariants.
       - run: pnpm docs:smoke
-      # Guard against API-surface drift: docs/api/openapi.json is the
-      # committed snapshot of what the server actually serves, and the
-      # clients (TS, Go, MCP) are hand-synced against it. Regenerate and
-      # fail if a route/schema changed without the snapshot (and therefore
-      # a conscious client/docs decision) changing with it. Caught real
-      # drift on day one: the snapshot was missing /v1/admin/users.
-      - run: pnpm --filter @azrtydxb/novamem-server docs:api
-      - run: git diff --exit-code docs/api/openapi.json go/internal/httpapi/openapi.json
 
   # ── Go modules (server rewrite + shared client) ───────────────────────
   go:
@@ -99,6 +91,16 @@ jobs:
             clients/go/go.sum
       - run: cd go && go build ./... && go vet ./... && go test ./...
       - run: cd clients/go && go build ./... && go vet ./... && go test ./...
+      # Guard against API-surface drift: docs/api/openapi.json is the
+      # committed snapshot of what the server actually serves, and the
+      # clients (TS, Go, MCP) are hand-synced against it. The Go server
+      # renders it from its own route table, so regenerating and diffing
+      # fails if a route/schema changed without the snapshot (and
+      # therefore a conscious client/docs decision) changing with it.
+      # Caught real drift on day one: the snapshot was missing
+      # /v1/admin/users.
+      - run: cd go && go run ./cmd/gen-openapi
+      - run: git diff --exit-code docs/api/openapi.json
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:

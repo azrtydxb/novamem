@@ -133,6 +133,21 @@ Result at cutover: no re-login, no token re-issue, no schema break.
 
 ## 5. Embeddings and LLM calls
 
+**Decision (owner, 2026-08-14):** the Go server never embeds a model in
+process. `NOVAMEM_EMBEDDINGS_PROVIDER=local-transformers` is refused at
+startup with a message pointing at the API-endpoint path; deployments
+that want fully-local embeddings run the model behind an
+OpenAI-compatible endpoint and point `NOVAMEM_EMBEDDINGS_ENDPOINT` at
+it. The TypeScript server's in-process path is left as it is. This is
+the one intentional behavioural difference in an otherwise 100%-parity
+port, and it exists to keep the single static binary.
+
+Everything else that calls a model — fact extraction, the observer /
+reflector, and query decomposition — IS ported, because those already
+call external endpoints in both servers. (An earlier audit misfiled
+them as out of scope; they are in.)
+
+
 External OpenAI-compatible endpoints only — embeddings, reranker, and
 fact-extractor/dream LLM calls. No in-process ONNX (cgo would compromise
 static builds and cross-compilation). Config keeps the same env vars.

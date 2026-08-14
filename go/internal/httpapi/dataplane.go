@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"unicode"
 	"unicode/utf16"
 
@@ -31,6 +32,16 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 		return nil, false
 	}
 	return body, true
+}
+
+// isJSONContentType is Fastify's parser lookup: the media type before
+// any parameters, case-insensitively `application/json`.
+func isJSONContentType(r *http.Request) bool {
+	ct := r.Header.Get("Content-Type")
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	return strings.EqualFold(strings.TrimSpace(ct), "application/json")
 }
 
 func (s *server) sendError(w http.ResponseWriter, status int, msg string) {
@@ -252,7 +263,7 @@ func shapeContent(results []engine.SearchResultItem, mode string) {
 
 // ─── Routes ────────────────────────────────────────────────────────────
 
-func (s *server) registerDataPlane(mux *http.ServeMux) {
+func (s *server) registerDataPlane(mux *routeMux) {
 	mux.HandleFunc("POST /v1/remember", s.withAuth(s.handleRemember))
 	mux.HandleFunc("POST /v1/capture", s.withAuth(s.handleCapture))
 	mux.HandleFunc("POST /v1/session-recap", s.withAuth(s.handleSessionRecap))
@@ -335,10 +346,10 @@ func (s *server) handleRecent(w http.ResponseWriter, r *http.Request) {
 	args.K, _ = c.positiveInt("k", 200)
 	args.Since, _ = c.datetime("since", "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)")
 	args.Project, _ = c.projectRef("project")
-	args.IncludeProjects, _ = c.strArray("includeProjects", 16,
+	args.IncludeProjects, _ = c.strArray("includeProjects", 16, 1, 128,
 		func(s string) bool { return utf16Len(s) >= 1 && utf16Len(s) <= 128 && projectRefRe.MatchString(s) },
 		"project ref contains control characters")
-	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, validNamespaceItem,
+	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 		"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 	args.MaxSensitivity, _ = c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 	contentMode, _ := c.enum("contentMode", "full", "snippet", "ids")
@@ -360,7 +371,7 @@ func (s *server) handleRecent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shapeContent(results, contentMode)
-	writeJSONValue(w, http.StatusOK, map[string]any{"results": results})
+	writeJSONValue(w, http.StatusOK, obj{{"results", orderedItems(results)}})
 }
 
 func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {

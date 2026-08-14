@@ -69,9 +69,5 @@ func (s *Server) applyGuards(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func writeRPCGuardErr(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]any{
-		"jsonrpc": "2.0",
-		"error":   map[string]any{"code": -32000, "message": message},
-		"id":      nil,
-	})
+	writeJSON(w, status, rpcErrEnvelope(-32000, message))
 }

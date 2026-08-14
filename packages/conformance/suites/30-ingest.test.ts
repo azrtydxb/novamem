@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { adminCookieApi, api, ns } from "../src/client.js";
-import { env } from "../src/env.js";
+import { env, hasAdminIdentity } from "../src/env.js";
 import {
   CaptureResponse,
   DecayResponse,
@@ -115,7 +115,10 @@ describe("ingest pipeline", () => {
 });
 
 describe("operator-gated maintenance", () => {
-  const hasAdminCookie = Boolean(env.adminCookie);
+  // Was `Boolean(env.adminCookie)` — that silently skipped every
+  // operator-gated test on a run configured with EMAIL+PASSWORD instead
+  // of a pre-minted cookie, which is how the bench oracle is driven.
+  const hasAdminCookie = hasAdminIdentity;
 
   it.skipIf(!hasAdminCookie)(
     "POST /v1/observe: 401 with the data-plane token, 200/503 with the admin session cookie",
@@ -195,9 +198,12 @@ describe("operator-gated maintenance", () => {
   );
 
   if (!hasAdminCookie) {
-    // Loud skip: no silent green when the admin session cookie isn't
-    // configured for this oracle run.
-    it.skip("operator-gated maintenance requires NOVAMEM_ADMIN_COOKIE — skipped", () => {});
+    // Loud skip: no silent green when no admin identity is configured
+    // for this oracle run.
+    it.skip(
+      "operator-gated maintenance requires NOVAMEM_ADMIN_COOKIE or NOVAMEM_ADMIN_EMAIL+PASSWORD — skipped",
+      () => {},
+    );
   }
 });
 

@@ -13,13 +13,26 @@ import { env } from "../src/env.js";
  * Never imported — this suite talks to the live oracle only.
  */
 
-async function connect(): Promise<Client> {
+/**
+ * `client.close()` alone drops the socket without telling the server,
+ * so the session lingers until the 30-minute idle reaper. Six sessions
+ * per run against a cap of ten means a second run inside that window
+ * fails on "too many concurrent MCP sessions" — on either server, the
+ * cap and the timeout being identical. The transport comes back with
+ * the client so each test can DELETE its session on the way out.
+ */
+async function connect(): Promise<{ client: Client; transport: StreamableHTTPClientTransport }> {
   const client = new Client({ name: "novamem-conformance", version: "0.0.1" });
   const transport = new StreamableHTTPClientTransport(new URL(`${env.url}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${env.testToken}` } },
   });
   await client.connect(transport);
-  return client;
+  return { client, transport };
+}
+
+async function disconnect(client: Client, transport: StreamableHTTPClientTransport) {
+  await transport.terminateSession();
+  await client.close();
 }
 
 const toolJson = (r: unknown) =>
@@ -29,7 +42,7 @@ const SNAPSHOT = new URL("../reference/tools.snapshot.json", import.meta.url);
 
 describe("MCP streamable transport", () => {
   it("initializes and advertises the snapshotted tool surface", async () => {
-    const client = await connect();
+    const { client, transport } = await connect();
     try {
       const { tools } = await client.listTools();
       const names = tools.map((t) => t.name).sort();
@@ -50,12 +63,12 @@ describe("MCP streamable transport", () => {
         expect(snapshot.schemas[t.name], `schema for ${t.name}`).toEqual(t.inputSchema);
       }
     } finally {
-      await client.close();
+      await disconnect(client, transport);
     }
   });
 
   it("memory_remember -> memory_search -> memory_forget round-trip", async () => {
-    const client = await connect();
+    const { client, transport } = await connect();
     try {
       const shelf = ns();
       const fact = `the mcp conformance marker for this run is ${shelf}`;
@@ -78,12 +91,12 @@ describe("MCP streamable transport", () => {
       );
       expect(gone.deleted).toBe(true);
     } finally {
-      await client.close();
+      await disconnect(client, transport);
     }
   });
 
   it("unknown tool name is a tool-level error, not a transport crash", async () => {
-    const client = await connect();
+    const { client, transport } = await connect();
     try {
       const r = await client.callTool({ name: "memory_nonexistent", arguments: {} });
       expect(r.isError).toBe(true);
@@ -92,18 +105,18 @@ describe("MCP streamable transport", () => {
       // either is spec-conforming; a dropped connection is not.
       expect(String(err)).toMatch(/tool|unknown|not found/i);
     } finally {
-      await client.close();
+      await disconnect(client, transport);
     }
   });
 
   it("malformed arguments are a tool error with a message", async () => {
-    const client = await connect();
+    const { client, transport } = await connect();
     try {
       const r = await client.callTool({ name: "memory_search", arguments: {} });
       expect(r.isError).toBe(true);
       expect(JSON.stringify(r.content)).toMatch(/query/i);
     } finally {
-      await client.close();
+      await disconnect(client, transport);
     }
   });
 
