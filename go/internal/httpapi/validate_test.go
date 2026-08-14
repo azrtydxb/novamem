@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -200,5 +201,21 @@ func TestMalformedBodyEnvelopes(t *testing.T) {
 				t.Fatalf("%s %s: issues = %+v, want path \"\" message %q", path, body, env.Issues, want)
 			}
 		}
+	}
+}
+
+// A literal null body is a present-but-wrong-typed body, not an absent
+// one. Verified against the live TS oracle.
+func TestNullBodyEnvelope(t *testing.T) {
+	_, err := decodeBody([]byte("null"), false)
+	var iss *issue
+	if !errors.As(err, &iss) {
+		t.Fatalf("want an issue, got %v", err)
+	}
+	if iss.Message != "Invalid input: expected object, received null" {
+		t.Fatalf("message = %q", iss.Message)
+	}
+	if m, err := decodeBody([]byte("null"), true); err != nil || len(m) != 0 {
+		t.Fatalf("optional null should be an empty object: %v %v", m, err)
 	}
 }

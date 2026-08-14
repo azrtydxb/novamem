@@ -625,7 +625,7 @@ zero is outstanding.
   13 skipped, 0 failed** (`NOVAMEM_URL=http://127.0.0.1:18091`,
   `auth.mode=user`, non-admin data-plane token, dashboard disabled).
 
-Nothing outside `go/` and `docs/` was touched. Nothing was committed.
+Nothing outside `go/` and `docs/` was touched. All fixes and this report land in the migration PRs; nothing was committed by the audit run itself.
 
 > An earlier conformance run with a mis-set env (admin token used as the
 > data-plane token, dashboard enabled) showed 2 failures. The **same env

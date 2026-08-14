@@ -305,11 +305,25 @@ var errMalformedJSON = errors.New("Body is not valid JSON but content-type is se
 // "Required".
 func decodeBody(body []byte, optional bool) (map[string]any, error) {
 	trimmed := strings.TrimSpace(string(body))
-	if trimmed == "" || trimmed == "null" {
+	if trimmed == "" {
 		if optional {
 			return map[string]any{}, nil
 		}
 		return nil, &issue{Path: "", Message: "Required", Code: "invalid_type"}
+	}
+	if trimmed == "null" {
+		// A literal null is a PRESENT body of the wrong type, not an
+		// absent one — the oracle says so verbatim (verified live):
+		// {"path":"","message":"Invalid input: expected object,
+		// received null","code":"invalid_type"}.
+		if optional {
+			return map[string]any{}, nil
+		}
+		return nil, &issue{
+			Path:    "",
+			Message: "Invalid input: expected object, received null",
+			Code:    "invalid_type",
+		}
 	}
 	var parsed any
 	if err := json.Unmarshal(body, &parsed); err != nil {
