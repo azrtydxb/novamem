@@ -24,6 +24,7 @@ import (
 
 	"github.com/azrtydxb/novamem/go/internal/coldstore"
 	"github.com/azrtydxb/novamem/go/internal/embeddings"
+	"github.com/azrtydxb/novamem/go/internal/metrics"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -70,7 +71,19 @@ type Engine struct {
 	minVectorScore  float64
 	rerankPoolMult  int
 	graphLinkFanout int // 0 disables graph enrichment entirely
-	startedAt       time.Time
+	// defaultEffectiveDays is the decay lifespan base (config.ts
+	// decay.defaultEffectiveDays, 7).
+	defaultEffectiveDays float64
+	metrics              *metrics.Collector // nil when metrics are unwired
+	startedAt            time.Time
+
+	// promotedSinceLastDecay is the cold→warm promotion count the next
+	// decay run reports and resets (engine/index.ts
+	// promotedSinceLastDecay).
+	promotedSinceLastDecay atomic.Int64
+	// pendingEmbeddings is the backlog as of the last reconciler tick;
+	// -1 before the first (health() reports null then).
+	pendingEmbeddings atomic.Int64
 
 	// Embedder-failure accounting (engine/index.ts recordEmbedFailure):
 	// one ERROR per minute at most, with the suppressed count riding
@@ -79,6 +92,7 @@ type Engine struct {
 	embedMu                sync.Mutex
 	lastEmbedErrorLoggedAt time.Time
 	lastEmbedOkAt          time.Time
+	lastEmbedErrorAt       time.Time
 	suppressedEmbedErrors  int
 
 	// In-flight fire-and-forget enrichment tasks (MAX_ENRICH_IN_FLIGHT).
@@ -122,13 +136,20 @@ type Options struct {
 	RerankPoolMult int
 	// GraphLinkFanout — co_occurs edges per write; 0 disables enrichment.
 	GraphLinkFanout int
+	// DefaultEffectiveDays — decay lifespan base; 0 → 7 (config default).
+	DefaultEffectiveDays float64
+	// Metrics may be nil (unit tests); every call site nil-checks.
+	Metrics *metrics.Collector
 }
 
 func New(o Options) *Engine {
 	if o.RerankPoolMult == 0 {
 		o.RerankPoolMult = 4
 	}
-	return &Engine{
+	if o.DefaultEffectiveDays == 0 {
+		o.DefaultEffectiveDays = 7
+	}
+	e := &Engine{
 		warm:            o.Warm,
 		cold:            o.Cold,
 		embedder:        o.Embedder,
@@ -140,12 +161,17 @@ func New(o Options) *Engine {
 		minVectorScore:  o.MinVectorScore,
 		rerankPoolMult:  o.RerankPoolMult,
 		graphLinkFanout: o.GraphLinkFanout,
-		startedAt:       time.Now(),
-		now:             time.Now,
-		getUserQuota:    o.Warm.GetUserQuota,
-		countEntries:    o.Warm.CountEntriesForUser,
-		quotaState:      map[string]*quotaEntry{},
+
+		defaultEffectiveDays: o.DefaultEffectiveDays,
+		metrics:              o.Metrics,
+		startedAt:            time.Now(),
+		now:                  time.Now,
+		getUserQuota:         o.Warm.GetUserQuota,
+		countEntries:         o.Warm.CountEntriesForUser,
+		quotaState:           map[string]*quotaEntry{},
 	}
+	e.pendingEmbeddings.Store(-1)
+	return e
 }
 
 // recordEmbedFailure — engine/index.ts recordEmbedFailure. ERROR level
@@ -154,6 +180,7 @@ func New(o Options) *Engine {
 func (e *Engine) recordEmbedFailure(err error, op, entryID string) {
 	e.embedMu.Lock()
 	now := e.now()
+	e.lastEmbedErrorAt = now
 	if now.Sub(e.lastEmbedErrorLoggedAt) < time.Minute {
 		e.suppressedEmbedErrors++
 		e.embedMu.Unlock()
@@ -166,6 +193,14 @@ func (e *Engine) recordEmbedFailure(err error, op, entryID string) {
 	e.log.Error("embedder failed — entry stored without a vector and is not findable "+
 		"by semantic search until the reconciler drains it",
 		"op", op, "entryId", entryID, "err", err, "suppressedSinceLastLog", suppressed)
+}
+
+// embedderFailing — "failing" only when the most recent outcome was a
+// failure; a blip that later succeeded is not an outage.
+func (e *Engine) embedderFailing() bool {
+	e.embedMu.Lock()
+	defer e.embedMu.Unlock()
+	return !e.lastEmbedErrorAt.IsZero() && e.lastEmbedErrorAt.After(e.lastEmbedOkAt)
 }
 
 func (e *Engine) recordEmbedSuccess() {

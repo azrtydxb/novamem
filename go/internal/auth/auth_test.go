@@ -1,6 +1,9 @@
 package auth
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Golden vectors captured from the live bench deployment before this
 // package existed: a Better Auth account row written by the TypeScript
@@ -66,5 +69,25 @@ func TestLimiterLocksAfterFiveFailures(t *testing.T) {
 	l.Clear("k")
 	if l.Locked("k") != 0 {
 		t.Fatal("Clear did not release the lock")
+	}
+}
+
+// A hash this package produces must verify with the same parameters the
+// TypeScript server (Better Auth) uses — that round-trip is the whole
+// point of provisioning users natively.
+func TestHashPasswordRoundTrip(t *testing.T) {
+	stored, err := HashPassword("Go-Provisioned-Pass!9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt, key, found := strings.Cut(stored, ":")
+	if !found || len(salt) != 32 || len(key) != 128 {
+		t.Fatalf("hash shape = %q, want 32-hex-char salt + 128-hex-char key", stored)
+	}
+	if !VerifyPassword(stored, "Go-Provisioned-Pass!9") {
+		t.Error("VerifyPassword rejected a hash HashPassword produced")
+	}
+	if VerifyPassword(stored, "wrong") {
+		t.Error("VerifyPassword accepted the wrong password")
 	}
 }

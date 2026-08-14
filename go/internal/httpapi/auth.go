@@ -88,7 +88,11 @@ func (s *server) withAuth(next http.HandlerFunc) http.HandlerFunc {
 		sw, isStatus := w.(*statusWriter)
 		next(w, r)
 		if !isStatus || (sw.status >= 200 && sw.status < 300) {
-			s.metrics.record(c, r.URL.Path)
+			hash := ""
+			if c.token != nil {
+				hash = c.token.TokenHash
+			}
+			s.metrics.Record(c.userID, hash, r.URL.Path)
 		}
 	}
 }

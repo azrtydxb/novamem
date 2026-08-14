@@ -489,6 +489,10 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 				if lifespan > preBump.IdleDays {
 					if err := e.warm.MarkCold(ctx, id, false); err == nil {
 						item.result["tier"] = "warm"
+						e.promotedSinceLastDecay.Add(1)
+						if e.metrics != nil {
+							e.metrics.RecordPromotion(1)
+						}
 					} else {
 						e.log.Warn("cold→warm promotion failed", "entryId", id, "err", err)
 					}
