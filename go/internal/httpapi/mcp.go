@@ -20,7 +20,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/mcp"
 )
 
-func (s *server) registerMCP(mux *http.ServeMux) *mcp.Server {
+func (s *server) registerMCP(mux *routeMux) *mcp.Server {
 	srv := mcp.NewServer(mcp.Options{
 		Log:            s.log,
 		Instructions:   novamemInstructions,

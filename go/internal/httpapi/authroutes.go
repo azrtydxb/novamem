@@ -27,7 +27,7 @@ const (
 	sessionUpdateAge = 24 * time.Hour
 )
 
-func (s *server) registerAuthRoutes(mux *http.ServeMux) {
+func (s *server) registerAuthRoutes(mux *routeMux) {
 	// NOT wrapped in withAuth: the handler authenticates itself by trying
 	// to rotate the presented bearer (http.ts skips its hook for this URL).
 	mux.HandleFunc("POST /v1/auth/rotate-token", s.handleRotateToken)

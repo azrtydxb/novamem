@@ -26,7 +26,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/auth"
 )
 
-func (s *server) registerAdmin(mux *http.ServeMux) {
+func (s *server) registerAdmin(mux *routeMux) {
 	post := func(path string, h http.HandlerFunc) { mux.HandleFunc("POST "+path, s.withAuth(h)) }
 	post("/v1/admin/tokens/revoke", s.handleAdminRevoke)
 	post("/v1/admin/users", s.handleAdminUserCreate)

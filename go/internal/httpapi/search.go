@@ -14,7 +14,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/engine"
 )
 
-func (s *server) registerSearchPlane(mux *http.ServeMux) {
+func (s *server) registerSearchPlane(mux *routeMux) {
 	mux.HandleFunc("POST /v1/search", s.withAuth(s.handleSearch))
 	mux.HandleFunc("POST /v1/context", s.withAuth(s.handleContext))
 	mux.HandleFunc("POST /v1/neighbors", s.withAuth(s.handleNeighbors))

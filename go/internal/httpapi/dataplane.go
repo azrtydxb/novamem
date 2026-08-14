@@ -263,7 +263,7 @@ func shapeContent(results []engine.SearchResultItem, mode string) {
 
 // ─── Routes ────────────────────────────────────────────────────────────
 
-func (s *server) registerDataPlane(mux *http.ServeMux) {
+func (s *server) registerDataPlane(mux *routeMux) {
 	mux.HandleFunc("POST /v1/remember", s.withAuth(s.handleRemember))
 	mux.HandleFunc("POST /v1/capture", s.withAuth(s.handleCapture))
 	mux.HandleFunc("POST /v1/session-recap", s.withAuth(s.handleSessionRecap))

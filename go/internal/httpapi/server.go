@@ -1,6 +1,7 @@
 // Package httpapi carries the HTTP surface: the three health probes with
-// the TS server's exact bodies, /openapi.json serving the frozen
-// contract document, and the slice-2 data plane (dataplane.go) behind
+// the TS server's exact bodies, /openapi.json serving the contract
+// document rendered from this server's own route table (openapi.go +
+// openapi_routes.go), and the slice-2 data plane (dataplane.go) behind
 // the none|bearer auth middleware (auth.go).
 //
 // Contract notes transcribed from packages/server/src/http.ts:
@@ -15,7 +16,6 @@ package httpapi
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -32,12 +32,10 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
-// The frozen OpenAPI contract (docs/api/openapi.json). The copy here is
-// written by packages/server's `docs:api` generator alongside the
-// canonical file, and the existing CI drift gate keeps both honest.
-//
-//go:embed openapi.json
-var openapiDoc []byte
+// The OpenAPI contract, rendered from this server's own route table
+// (openapi_routes.go). `go run ./cmd/gen-openapi` writes the same bytes
+// to docs/api/openapi.json, and CI regenerates + diffs.
+var openapiDoc = buildOpenAPI()
 
 type Options struct {
 	Pool   *pgxpool.Pool
@@ -89,6 +87,13 @@ type server struct {
 }
 
 func New(opts Options) http.Handler {
+	h, _ := newHandler(opts)
+	return h
+}
+
+// newHandler also reports every mux pattern it registered — the input to
+// the OpenAPI route cross-check.
+func newHandler(opts Options) (http.Handler, []string) {
 	s := &server{
 		log:            opts.Log,
 		engine:         opts.Engine,
@@ -104,7 +109,7 @@ func New(opts Options) http.Handler {
 		metrics:        opts.Metrics,
 		adminDashboard: opts.AdminDashboard,
 	}
-	mux := http.NewServeMux()
+	mux := &routeMux{ServeMux: http.NewServeMux()}
 
 	ok := []byte(`{"ok":true}`)
 	notOK := []byte(`{"ok":false}`)
@@ -169,7 +174,21 @@ func New(opts Options) http.Handler {
 	// routes so its headers land on every answered request, and the JSON
 	// body guard sits where Fastify's content-type parser does — after
 	// routing, before the handler.
-	return requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux)))))
+	return requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux.ServeMux))))), mux.patterns
+}
+
+// routeMux is http.ServeMux plus the list of patterns registered on it.
+// The OpenAPI document is checked against that list (openapi_test.go),
+// so a route can neither be served without being documented nor
+// documented without being served.
+type routeMux struct {
+	*http.ServeMux
+	patterns []string
+}
+
+func (m *routeMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
+	m.patterns = append(m.patterns, pattern)
+	m.ServeMux.HandleFunc(pattern, h)
 }
 
 // sendNotFound is Fastify's default 404 envelope — callers (and the

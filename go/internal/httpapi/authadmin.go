@@ -41,7 +41,7 @@ const (
 	maxPasswordLength = 256
 )
 
-func (s *server) registerAuthAdmin(mux *http.ServeMux) {
+func (s *server) registerAuthAdmin(mux *routeMux) {
 	mux.HandleFunc("GET /api/auth/admin/list-users", s.handleBAListUsers)
 	mux.HandleFunc("POST /api/auth/admin/create-user", s.handleBACreateUser)
 	mux.HandleFunc("POST /api/auth/admin/set-role", s.handleBASetRole)

@@ -34,7 +34,7 @@ const dashboardCSP = "default-src 'self'; img-src 'self' data:; style-src 'self'
 // adminPublicURLs — http.ts's ADMIN_PUBLIC_URLS.
 var adminPublicURLs = map[string]bool{"/admin": true, "/admin/": true, "/admin/index.html": true}
 
-func (s *server) registerDashboard(mux *http.ServeMux) {
+func (s *server) registerDashboard(mux *routeMux) {
 	if !s.adminDashboard {
 		return
 	}

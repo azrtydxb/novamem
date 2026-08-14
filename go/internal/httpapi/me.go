@@ -20,7 +20,7 @@ import (
 
 var tokenHashRe = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
-func (s *server) registerMe(mux *http.ServeMux) {
+func (s *server) registerMe(mux *routeMux) {
 	get := func(path string, h http.HandlerFunc) { mux.HandleFunc("GET "+path, s.withAuth(h)) }
 	mux.HandleFunc("GET /v1/me/metrics", s.withAuth(s.handleMeMetrics))
 	get("/v1/me/metrics/history", s.handleMeMetricsHistory)

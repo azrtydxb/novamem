@@ -1,0 +1,1 @@
+ALTER TABLE "cold_orphans" ADD COLUMN "kind" text DEFAULT 'delete' NOT NULL;

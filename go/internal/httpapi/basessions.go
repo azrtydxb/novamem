@@ -60,7 +60,7 @@ const (
 	baValidationErrorMsg = "VALIDATION_ERROR"
 )
 
-func (s *server) registerBASessions(mux *http.ServeMux) {
+func (s *server) registerBASessions(mux *routeMux) {
 	mux.HandleFunc("GET /api/auth/list-sessions", s.handleBAListSessions)
 	mux.HandleFunc("POST /api/auth/revoke-session", s.handleBARevokeSession)
 	mux.HandleFunc("POST /api/auth/reset-password", s.handleBAResetPassword)

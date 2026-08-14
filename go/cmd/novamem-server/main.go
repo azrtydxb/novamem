@@ -88,19 +88,19 @@ func run() error {
 	}
 	defer pool.Close()
 
-	// Same stance as the TS server's bootstrap: refuse to serve against a
-	// schema this build does not understand. Retry briefly — on a fresh
-	// deploy Postgres may still be starting.
-	checkCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// This server owns the schema (warmstore/migrations.go): apply what's
+	// pending, exactly as the TS server's WarmStore.initialize() did.
+	// Retry briefly — on a fresh deploy Postgres may still be starting.
+	migrateCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	for {
-		err = warmstore.CheckMigrationVersion(checkCtx, pool)
+		err = warmstore.Migrate(migrateCtx, pool, log)
 		if err == nil {
 			break
 		}
 		select {
-		case <-checkCtx.Done():
-			return fmt.Errorf("migration check never succeeded: %w", err)
+		case <-migrateCtx.Done():
+			return fmt.Errorf("migrations never succeeded: %w", err)
 		case <-time.After(2 * time.Second):
 		}
 	}
@@ -306,7 +306,7 @@ func run() error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	log.Info("novamem-go listening", "addr", srv.Addr, "latestMigration", warmstore.ExpectedLatestMigration)
+	log.Info("novamem-go listening", "addr", srv.Addr, "latestMigration", warmstore.LatestMigration())
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
