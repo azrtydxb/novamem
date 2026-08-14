@@ -1,4 +1,4 @@
-import { Agent } from "undici";
+import { Agent, fetch } from "undici";
 import { env } from "./env.js";
 
 const RUN = `conf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -25,8 +25,9 @@ export async function api<T = unknown>(
   const method = opts.method ?? (opts.body !== undefined ? "POST" : "GET");
   const r = await fetch(`${env.url}${path}`, {
     method,
-    // @ts-expect-error -- `dispatcher` is undici's fetch extension, not in
-    // the standard lib.dom fetch typings that TS resolves `fetch` against.
+    // undici's own fetch takes its own Agent directly — mixing the
+    // package's Agent into Node's bundled-undici global fetch is
+    // version-fragile.
     dispatcher,
     headers: {
       // Only set content-type when there's actually a JSON body to

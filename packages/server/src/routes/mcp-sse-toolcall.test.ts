@@ -56,7 +56,7 @@ describe("mcp-sse: tools/call round-trip", () => {
       }
       return true;
     };
-    await readUntil(() => /sessionId=/.test(buf), 5000);
+    expect(await readUntil(() => /sessionId=/.test(buf), 5000), "endpoint frame with sessionId").toBe(true);
     const sid = buf.match(/sessionId=([A-Za-z0-9-]+)/)![1];
     const post = (body: unknown) =>
       fetch(`${baseUrl}/mcp/messages?sessionId=${sid}`, {

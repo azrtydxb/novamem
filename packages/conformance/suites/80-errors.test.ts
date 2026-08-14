@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { adminApi, api, ns } from "../src/client.js";
+import { api, ns } from "../src/client.js";
 import { env, skipUnless } from "../src/env.js";
 import { ErrorBody } from "../src/schemas.js";
 
