@@ -55,6 +55,7 @@ func TestHealthContract(t *testing.T) {
 		if rec.Body.Len() > len(`{"ok":false}`) {
 			t.Fatalf("%s: body leaks detail: %s", path, rec.Body.String())
 		}
+		assertHardeningHeaders(t, path, rec)
 	}
 }
 
@@ -74,5 +75,21 @@ func TestOpenAPIDocServed(t *testing.T) {
 	}
 	if doc.OpenAPI == "" || len(doc.Paths) <= 20 {
 		t.Fatalf("doc looks wrong: openapi=%q paths=%d", doc.OpenAPI, len(doc.Paths))
+	}
+	assertHardeningHeaders(t, "/openapi.json", rec)
+}
+
+// The TS server sets these on every response (http.ts global hook); the
+// Go server must not drift.
+func assertHardeningHeaders(t *testing.T, path string, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	for header, want := range map[string]string{
+		"X-Frame-Options":        "DENY",
+		"X-Content-Type-Options": "nosniff",
+		"Referrer-Policy":        "no-referrer",
+	} {
+		if got := rec.Header().Get(header); got != want {
+			t.Fatalf("%s: header %s = %q, want %q", path, header, got, want)
+		}
 	}
 }
