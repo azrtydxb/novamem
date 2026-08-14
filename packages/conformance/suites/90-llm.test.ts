@@ -101,13 +101,22 @@ gated("query decomposition", () => {
 
 gated("fact extraction", () => {
   it("a written chunk yields derived facts pointing back at it", async () => {
-    const marker = `conformance extraction probe ${NS}`;
+    // The subject has to be unique per run, not just a trailing marker.
+    // Exact-duplicate suppression is scoped to (user, project,
+    // content_hash) and deliberately ignores namespace, so a derived
+    // fact identical to one an earlier run already stored is silently
+    // not re-inserted — and this test would then find nothing in its own
+    // namespace and blame extraction. With a generic subject that
+    // happened whenever the model didn't echo the marker into the fact
+    // text: green on the first run, red on later ones, for a server
+    // doing exactly the right thing. An invented subject can't collide.
+    const subject = `Quorlax-${NS}`;
     const chunk = await api<unknown>("/v1/remember", {
       body: {
         namespace: NS,
         content:
-          `Pascal runs the kw Kubernetes cluster from Dubai, uses Longhorn for replicated ` +
-          `block storage, and pulls espresso on a Lelit Bianca every morning. (${marker})`,
+          `${subject} runs the kw Kubernetes cluster from Dubai, uses Longhorn for replicated ` +
+          `block storage, and pulls espresso on a Lelit Bianca every morning.`,
       },
     });
     expect(chunk.status).toBe(201);
