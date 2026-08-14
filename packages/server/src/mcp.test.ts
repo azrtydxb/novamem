@@ -710,3 +710,66 @@ describe("mcp: shared tool surface vs. shim", () => {
     expect([...shimNames].sort()).toEqual([...TOOL_NAMES].sort());
   });
 });
+
+describe("mcp: TTL + contentMode passthrough (issue: validated-then-dropped)", () => {
+  const toolText = (r: unknown) =>
+    JSON.parse((r as { content: Array<{ text: string }> }).content[0]!.text);
+
+  it("advertises expiresAt and contentMode in the tool schemas", async () => {
+    const { engine } = makeEngine();
+    const server = buildMcpServer(engine, "public");
+    const r = (await callList(server)) as {
+      tools: Array<{ name: string; inputSchema: { properties: Record<string, unknown> } }>;
+    };
+    const byName = new Map(r.tools.map((t) => [t.name, t.inputSchema.properties]));
+    for (const tool of ["memory_capture", "memory_remember"]) {
+      expect(byName.get(tool), tool).toHaveProperty("expiresAt");
+    }
+    for (const tool of ["memory_search", "memory_recent", "memory_today"]) {
+      expect(byName.get(tool), tool).toHaveProperty("contentMode");
+    }
+  });
+
+  it("memory_remember persists expiresAt; expired entries vanish from reads", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const future = new Date(Date.now() + 3600_000).toISOString();
+    const saved = toolText(
+      await callTool(server, "memory_remember", {
+        content: "the staging freeze ends tomorrow afternoon for the cluster",
+        expiresAt: future,
+      }),
+    );
+    expect(saved.id).toBeTruthy();
+    expect(warm.rows.get(saved.id)!.metadata.expiresAt).toBe(future);
+    // Force-expire and confirm the read path hides it.
+    const row = warm.rows.get(saved.id)!;
+    row.metadata = { ...row.metadata, expiresAt: new Date(Date.now() - 1000).toISOString() };
+    const recent = toolText(await callTool(server, "memory_recent", {}));
+    expect(recent.results.some((e: { id: string }) => e.id === saved.id)).toBe(false);
+  });
+
+  it("contentMode ids/snippet shape memory_search and memory_recent output", async () => {
+    const { engine, warm } = makeEngine();
+    const server = buildMcpServer(engine, "public", asWarm(warm));
+    const long =
+      "the deployment pipeline uses a registry cache on the cluster and " +
+      "falls back to plain builds when the cache is unreachable; ".repeat(4);
+    const saved = toolText(await callTool(server, "memory_remember", { content: long }));
+    expect(saved.id).toBeTruthy();
+    const ids = toolText(
+      await callTool(server, "memory_search", {
+        query: "deployment pipeline registry",
+        contentMode: "ids",
+      }),
+    );
+    expect(ids.results.length).toBeGreaterThan(0);
+    expect(ids.results[0].content).toBeUndefined();
+    expect(ids.results[0].metadata).toBeUndefined();
+    const snip = toolText(await callTool(server, "memory_recent", { contentMode: "snippet" }));
+    const hit = snip.results.find((e: { id: string }) => e.id === saved.id);
+    expect(hit.truncated).toBe(true);
+    expect(hit.content.endsWith("…")).toBe(true);
+    expect(hit.content.length).toBeLessThan(long.length);
+  });
+});

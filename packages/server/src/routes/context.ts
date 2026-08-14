@@ -266,3 +266,33 @@ export async function checkProjectAccess(
   }
   return true;
 }
+
+// ─── Content shaping (contentMode) ─────────────────────────────────────
+
+const SNIPPET_CHARS = 240;
+
+/** Post-shape results for callers that rank first and hydrate later.
+ *  Applied at the delivery layer (HTTP routes AND the MCP tools) so the
+ *  engine's fusion — which needs full content for recency/entity signals
+ *  and reranking — is untouched; only the wire payload shrinks. */
+export function shapeContent<T extends { results: unknown[] }>(
+  result: T,
+  mode: "full" | "snippet" | "ids" | undefined,
+): T {
+  if (!mode || mode === "full") return result;
+  for (const r of result.results as Array<Record<string, unknown>>) {
+    const content = typeof r.content === "string" ? r.content : "";
+    if (mode === "ids") {
+      delete r.content;
+      delete r.metadata;
+    } else if (content.length > SNIPPET_CHARS) {
+      const cut = content.slice(0, SNIPPET_CHARS);
+      // Any whitespace is a boundary — logs and markdown break on
+      // newlines/tabs at least as often as on spaces.
+      const boundary = cut.search(/\s\S*$/);
+      r.content = (boundary > SNIPPET_CHARS / 2 ? cut.slice(0, boundary) : cut) + "\u2026";
+      r.truncated = true;
+    }
+  }
+  return result;
+}
