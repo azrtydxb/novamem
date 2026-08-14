@@ -6,6 +6,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -93,11 +94,13 @@ type projectScope struct {
 }
 
 // checkProjectAccess resolves project refs (id or name) to ULIDs,
-// verifies membership, and applies active-project defaulting. Token
-// confinement is omitted: none|bearer requests carry no per-token
-// identity (slice 5). Returns false when it already sent the response.
+// verifies membership, and applies active-project defaulting. Returns
+// false when it already sent the response.
 func (s *server) checkProjectAccess(w http.ResponseWriter, r *http.Request, userID string, body *projectScope, unionWithActive bool) bool {
 	ctx := r.Context()
+	if tok := callerOf(r).token; tok != nil && tok.ProjectID != nil {
+		return s.confineToTokenProject(w, r, userID, *tok.ProjectID, body)
+	}
 	noScope := body.Project == nil && len(body.IncludeProjects) == 0
 	if noScope {
 		active, err := s.warm.GetActiveProject(ctx, userID)
@@ -160,6 +163,52 @@ func (s *server) checkProjectAccess(w http.ResponseWriter, r *http.Request, user
 			return false
 		}
 		body.IncludeProjects[i] = id
+	}
+	return true
+}
+
+// resolveProjectRef maps an id-or-name to a project id.
+func (s *server) resolveProjectRef(ctx context.Context, userID, ref string) (string, bool, error) {
+	if id, found, err := s.warm.GetProject(ctx, ref); err != nil || found {
+		return id, found, err
+	}
+	return s.warm.FindProjectByName(ctx, userID, ref)
+}
+
+// confineToTokenProject forces every data-plane call carried by a
+// project-confined bearer into that project. An explicit request for
+// anything else is a 403 — not a silent rewrite, because a caller that
+// asked for another scope and got this one would misattribute what it
+// reads and writes. `body.project` alone is the engine's "this project
+// only" read scope, so confinement also excludes the user-global store.
+func (s *server) confineToTokenProject(w http.ResponseWriter, r *http.Request, userID, tokenProject string, body *projectScope) bool {
+	ctx := r.Context()
+	explicit := body.IncludeProjects
+	if body.Project != nil {
+		explicit = append([]string{*body.Project}, explicit...)
+	}
+	for _, ref := range explicit {
+		id, found, err := s.resolveProjectRef(ctx, userID, ref)
+		if err != nil {
+			s.sendEngineErr(w, r, err)
+			return false
+		}
+		if !found || id != tokenProject {
+			s.sendError(w, http.StatusForbidden, "token is confined to its project")
+			return false
+		}
+	}
+	body.Project = &tokenProject
+	body.IncludeProjects = nil
+	// A token whose user was since removed from the project must not pass.
+	member, err := s.warm.GetProjectMembership(ctx, tokenProject, userID)
+	if err != nil {
+		s.sendEngineErr(w, r, err)
+		return false
+	}
+	if !member {
+		s.sendError(w, http.StatusForbidden, "not a member of the token's project")
+		return false
 	}
 	return true
 }
