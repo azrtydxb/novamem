@@ -24,6 +24,7 @@ import {
   resolveScope,
 } from "./mcp-tools.js";
 import { buildAdoptionReport } from "./adoption.js";
+import { shapeContent } from "./routes/context.js";
 
 export interface McpContext {
   /** Memory-owner id — the user the caller's bearer maps to. */
@@ -121,6 +122,7 @@ export function buildMcpServer(
             confidence: args.confidence,
             force: args.force,
             sensitivity: args.sensitivity,
+            expiresAt: args.expiresAt,
             project: scope.project,
           });
           return { content: [{ type: "text", text: JSON.stringify({ saved: r.id ? 1 : 0, results: [r] }) }] };
@@ -194,7 +196,7 @@ export function buildMcpServer(
             weights: args.weights,
             maxSensitivity: args.maxSensitivity,
           });
-          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+          return { content: [{ type: "text", text: JSON.stringify(shapeContent(r, args.contentMode)) }] };
         }
         case "memory_remember": {
           const args = parseToolArgs("memory_remember", rawArgs);
@@ -211,6 +213,7 @@ export function buildMcpServer(
             confidence: args.confidence,
             force: args.force,
             sensitivity: args.sensitivity,
+            expiresAt: args.expiresAt,
             project: scope.project,
           });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -232,7 +235,7 @@ export function buildMcpServer(
             includeProjects: scope.includeProjects,
             maxSensitivity: args.maxSensitivity,
           });
-          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+          return { content: [{ type: "text", text: JSON.stringify(shapeContent(r, args.contentMode)) }] };
         }
         case "memory_recent": {
           const args = parseToolArgs("memory_recent", rawArgs);
@@ -250,7 +253,7 @@ export function buildMcpServer(
             includeProjects: scope.includeProjects,
             maxSensitivity: args.maxSensitivity,
           });
-          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+          return { content: [{ type: "text", text: JSON.stringify(shapeContent(r, args.contentMode)) }] };
         }
         case "memory_neighbors": {
           const args = parseToolArgs("memory_neighbors", rawArgs);
