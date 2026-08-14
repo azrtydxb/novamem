@@ -235,7 +235,7 @@ export function buildMcpServer(
             includeProjects: scope.includeProjects,
             maxSensitivity: args.maxSensitivity,
           });
-          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+          return { content: [{ type: "text", text: JSON.stringify(shapeContent(r, args.contentMode)) }] };
         }
         case "memory_recent": {
           const args = parseToolArgs("memory_recent", rawArgs);
@@ -253,7 +253,7 @@ export function buildMcpServer(
             includeProjects: scope.includeProjects,
             maxSensitivity: args.maxSensitivity,
           });
-          return { content: [{ type: "text", text: JSON.stringify(r) }] };
+          return { content: [{ type: "text", text: JSON.stringify(shapeContent(r, args.contentMode)) }] };
         }
         case "memory_neighbors": {
           const args = parseToolArgs("memory_neighbors", rawArgs);
