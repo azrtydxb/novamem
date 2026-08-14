@@ -1632,17 +1632,22 @@ export class WarmStore {
     // orders strict-first — then the JS below keeps only strict rows when
     // any exist, which reproduces the old two-query semantics exactly.
     // The user's text stays a bound parameter throughout.
-    // `= ANY(${array})` looks right but drizzle expands a JS array into a
-    // row constructor — `= ANY((a, b))` — which Postgres rejects with
-    // 42809 "op ANY/ALL (array) requires array on right side". The tier's
-    // catch then swallowed it, so EVERY multi-namespace search (the
-    // default whenever includeNamespaces is set) silently ran with a dead
-    // keyword tier: measured on the bench oracle, single-namespace hits
-    // scored keyword 1.0/0.69 while the same query across two namespaces
-    // scored keyword 0 on every hit. Cast the parameter to text[] so it
-    // binds as an array.
+    // Drizzle expands a JS array inside `sql` into a ROW CONSTRUCTOR —
+    // `ANY(($1, $2))` — so `= ANY(${array})` fails with 42809 and even
+    // `= ANY(${array}::text[])` fails with "cannot cast type record to
+    // text[]": the cast lands on the already-expanded record. ftsSearch's
+    // own catch swallowed both, so EVERY multi-namespace search (the
+    // default whenever includeNamespaces is set, which is what
+    // /v1/context and the MCP tools use) silently ran with a dead
+    // keyword tier. Measured on the live bench oracle with weights
+    // {keyword:1, vector:0}: one namespace scored keyword 1.0/0.69, two
+    // namespaces scored 0 on every hit.
+    //
+    // The fix: build the IN-list from individual bound parameters via
+    // sql.join, which keeps the `f` alias this raw query needs (drizzle's
+    // inArray would emit the fully-qualified column and break the alias).
     const nsSql = useNsArray
-      ? sql`f.namespace = ANY(${args.namespaces!}::text[])`
+      ? sql`f.namespace IN (${sql.join(args.namespaces!.map((n) => sql`${n}`), sql`, `)})`
       : sql`f.namespace = ${args.namespace}`;
     const scopeSql = isProject
       ? sql`f.project_id = ${args.projectId!}`
