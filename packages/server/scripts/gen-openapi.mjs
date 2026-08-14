@@ -6,6 +6,7 @@ import { buildHttpServer } from "../dist/http.js";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const out = resolve(here, "..", "..", "..", "docs", "api", "openapi.json");
+const goCopy = resolve(here, "..", "..", "..", "go", "internal", "httpapi", "openapi.json");
 
 const noop = async () => ({});
 const engine = {
@@ -71,6 +72,11 @@ const app = buildHttpServer({
 });
 
 await app.ready();
-writeFileSync(out, JSON.stringify(app.swagger(), null, 2) + "\n");
+const doc = JSON.stringify(app.swagger(), null, 2) + "\n";
+writeFileSync(out, doc);
+// The Go server go:embeds its own copy (cross-module go:embed can't
+// reach docs/); writing both here keeps the CI drift gate authoritative
+// for each.
+writeFileSync(goCopy, doc);
 await app.close();
-console.log("wrote", out);
+console.log("wrote", out, "and", goCopy);

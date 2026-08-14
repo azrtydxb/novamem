@@ -82,7 +82,23 @@ jobs:
       # a conscious client/docs decision) changing with it. Caught real
       # drift on day one: the snapshot was missing /v1/admin/users.
       - run: pnpm --filter @azrtydxb/novamem-server docs:api
-      - run: git diff --exit-code docs/api/openapi.json
+      - run: git diff --exit-code docs/api/openapi.json go/internal/httpapi/openapi.json
+
+  # ── Go modules (server rewrite + shared client) ───────────────────────
+  go:
+    name: go (build + vet + test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: |
+            go/go.sum
+            clients/go/go.sum
+      - run: cd go && go build ./... && go vet ./... && go test ./...
+      - run: cd clients/go && go build ./... && go vet ./... && go test ./...
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
@@ -132,6 +148,50 @@ jobs:
           path: dist-tarballs/*.tgz
           if-no-files-found: error
           retention-days: 14
+
+  # ── Go server image (migration scaffolding; bench-only consumer) ──────
+  docker-go:
+    name: docker-go (${{ matrix.arch }})
+    permissions:
+      contents: read
+      packages: write
+    needs: [go]
+    timeout-minutes: 15
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: arc-azrtydxb-amd64-publish
+          - arch: arm64
+            runner: arc-azrtydxb-publish
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."192.168.10.123"]
+              insecure = true
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: go/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/novamem-go:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
+            ghcr.io/${{ github.repository_owner }}/novamem-go:main-${{ matrix.arch }}
+          cache-from: type=registry,ref=192.168.10.123/azrtydxb/novamem-go-buildcache:${{ matrix.arch }}
+          cache-to: type=registry,ref=192.168.10.123/azrtydxb/novamem-go-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true
 
   # ── Docker image (native per arch) ────────────────────────────────────
   # Each arch builds on its own native runner — amd64 on novanas ARC,
