@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -115,11 +116,22 @@ func New(opts Options) http.Handler {
 	ready := func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if err := opts.Pool.Ping(ctx); err != nil {
+		// Every dependency the TS readiness check covers, not just the
+		// warm pool: engine.Health pings warm AND cold, so a reachable
+		// Postgres with an unreachable vector store reports 503 on both
+		// servers instead of Go alone claiming ready.
+		healthy := true
+		if opts.Engine != nil {
+			h := opts.Engine.Health(ctx)
+			healthy, _ = h["ok"].(bool)
+		} else if err := opts.Pool.Ping(ctx); err != nil {
+			healthy = false
+		}
+		if !healthy {
 			// Debug, not Warn: readiness is polled every few seconds and a
 			// down dependency would flood the log at higher levels (the TS
 			// server doesn't log per-probe failures at all).
-			opts.Log.Debug("readiness probe failed", "err", err)
+			opts.Log.Debug("readiness probe failed")
 			writeJSON(w, http.StatusServiceUnavailable, notOK)
 			return
 		}
@@ -157,7 +169,7 @@ func New(opts Options) http.Handler {
 	// routes so its headers land on every answered request, and the JSON
 	// body guard sits where Fastify's content-type parser does — after
 	// routing, before the handler.
-	return requestLog(opts.Log, s.cors(s.rateLimit(emptyJSONBodyGuard(mux))))
+	return requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux)))))
 }
 
 // sendNotFound is Fastify's default 404 envelope — callers (and the
@@ -228,6 +240,33 @@ func writeJSON(w http.ResponseWriter, status int, body []byte) {
 // source order, and the two only agree by accident. Every response whose
 // TS counterpart is not alphabetical is built with this (or with a
 // struct, whose fields already marshal in declaration order).
+// maxParamLength mirrors Fastify's default (100). A longer path segment
+// is refused BEFORE routing, with Fastify's exact envelope — captured
+// from the live oracle rather than guessed:
+//
+//	{"error":"Bad Request","code":"FST_ERR_MAX_PARAM_LENGTH",
+//	 "message":"'<path>' is exceeding the max param length",
+//	 "statusCode":414}
+const maxParamLength = 100
+
+func paramLengthGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, seg := range strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/") {
+			if len(seg) <= maxParamLength {
+				continue
+			}
+			writeJSONValue(w, http.StatusRequestURITooLong, obj{
+				{"error", "Bad Request"},
+				{"code", "FST_ERR_MAX_PARAM_LENGTH"},
+				{"message", "'" + r.URL.Path + "' is exceeding the max param length"},
+				{"statusCode", 414},
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type obj []kv
 
 type kv struct {
