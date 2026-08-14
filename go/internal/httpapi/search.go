@@ -135,9 +135,9 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, false)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{{Path: "query", Message: "Required", Code: "invalid_type"}})
+	m, decodeErr := decodeBody(body, false)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -197,9 +197,9 @@ func (s *server) handleContext(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, false)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{{Path: "message", Message: "Required", Code: "invalid_type"}})
+	m, decodeErr := decodeBody(body, false)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -297,9 +297,9 @@ func (s *server) handleNeighbors(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, false)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{{Path: "id", Message: "Required", Code: "invalid_type"}})
+	m, decodeErr := decodeBody(body, false)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -348,9 +348,9 @@ func (s *server) handleHygiene(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, true) // HygieneBody.optional()
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{*decodeIssue})
+	m, decodeErr := decodeBody(body, true) // HygieneBody.optional()
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -373,9 +373,9 @@ func (s *server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, true) // EvaluateBody.optional()
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{*decodeIssue})
+	m, decodeErr := decodeBody(body, true) // EvaluateBody.optional()
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -400,9 +400,9 @@ func (s *server) handleAdoption(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, true) // AdoptionBody.optional()
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{*decodeIssue})
+	m, decodeErr := decodeBody(body, true) // AdoptionBody.optional()
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}

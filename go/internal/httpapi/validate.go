@@ -9,7 +9,9 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 )
@@ -28,6 +30,10 @@ type issue struct {
 	Message string `json:"message"`
 	Code    string `json:"code"`
 }
+
+// Error lets decodeBody return an issue through the error channel; see
+// sendBodyErr for the envelope split.
+func (i *issue) Error() string { return i.Message }
 
 // utf16Len counts UTF-16 code units (JS String.length).
 func utf16Len(s string) int {
@@ -284,9 +290,20 @@ func jsonType(v any) string {
 	}
 }
 
+// errMalformedJSON is the body-parser failure Fastify answers before any
+// schema runs, so it carries no `issues` array. Kept distinct from a
+// schema issue because the two envelopes differ.
+var errMalformedJSON = errors.New("Body is not valid JSON but content-type is set to 'application/json'")
+
 // decodeBody unmarshals a JSON object body. optional=true admits an
 // empty body as an empty object (RecentBody.optional()).
-func decodeBody(body []byte, optional bool) (map[string]any, *issue) {
+//
+// The three failure modes are the three Fastify/Zod produces, and they
+// are distinct on the wire: unparseable input is a body-parser error
+// (errMalformedJSON), valid JSON that isn't an object is a schema
+// issue with an empty path, and an absent body on a required schema is
+// "Required".
+func decodeBody(body []byte, optional bool) (map[string]any, error) {
 	trimmed := strings.TrimSpace(string(body))
 	if trimmed == "" || trimmed == "null" {
 		if optional {
@@ -294,11 +311,29 @@ func decodeBody(body []byte, optional bool) (map[string]any, *issue) {
 		}
 		return nil, &issue{Path: "", Message: "Required", Code: "invalid_type"}
 	}
-	var m map[string]any
-	if err := json.Unmarshal(body, &m); err != nil {
-		return nil, &issue{Path: "", Message: "Invalid JSON", Code: "invalid_type"}
+	var parsed any
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, errMalformedJSON
+	}
+	m, ok := parsed.(map[string]any)
+	if !ok {
+		return nil, &issue{
+			Path:    "",
+			Message: "Invalid input: expected object, received " + jsonType(parsed),
+			Code:    "invalid_type",
+		}
 	}
 	return m, nil
+}
+
+// sendBodyErr answers whichever of decodeBody's two envelopes applies.
+func (s *server) sendBodyErr(w http.ResponseWriter, err error) {
+	var i *issue
+	if errors.As(err, &i) {
+		s.sendIssues(w, []issue{*i})
+		return
+	}
+	s.sendError(w, http.StatusBadRequest, err.Error())
 }
 
 // nullableInt — z.number().int().nonnegative().nullable().optional(),

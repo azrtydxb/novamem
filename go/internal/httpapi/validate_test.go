@@ -169,3 +169,36 @@ func TestBearerAuth(t *testing.T) {
 		t.Fatalf("/live gated: %d", rec.Code)
 	}
 }
+
+// Body-parse failures are their own contract, distinct from schema
+// issues (Fastify answers them before any schema runs). Slice-8 parity
+// audit found every JSON endpoint collapsing all three cases into a
+// bogus "<field> Required" issue.
+func TestMalformedBodyEnvelopes(t *testing.T) {
+	for _, path := range []string{"/v1/remember", "/v1/search", "/v1/forget", "/v1/recent"} {
+		rec, env := doReq(t, "none", "", "POST", path, `{not json`, nil)
+		if rec.Code != 400 {
+			t.Fatalf("%s unparseable: status %d", path, rec.Code)
+		}
+		if env.Error != "Body is not valid JSON but content-type is set to 'application/json'" {
+			t.Fatalf("%s unparseable: error = %q", path, env.Error)
+		}
+		if len(env.Issues) != 0 {
+			t.Fatalf("%s unparseable: parse errors carry no issues, got %v", path, env.Issues)
+		}
+
+		for body, want := range map[string]string{
+			`[1,2]`: "Invalid input: expected object, received array",
+			`"s"`:   "Invalid input: expected object, received string",
+			`5`:     "Invalid input: expected object, received number",
+		} {
+			rec, env := doReq(t, "none", "", "POST", path, body, nil)
+			if rec.Code != 400 || env.Error != "invalid request body" {
+				t.Fatalf("%s %s: %d %q", path, body, rec.Code, env.Error)
+			}
+			if len(env.Issues) != 1 || env.Issues[0].Path != "" || env.Issues[0].Message != want {
+				t.Fatalf("%s %s: issues = %+v, want path \"\" message %q", path, body, env.Issues, want)
+			}
+		}
+	}
+}

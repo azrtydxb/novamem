@@ -267,9 +267,9 @@ func (s *server) handleWrite(w http.ResponseWriter, r *http.Request, capture boo
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, false)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{{Path: "content", Message: "Required", Code: "invalid_type"}})
+	m, decodeErr := decodeBody(body, false)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -324,9 +324,9 @@ func (s *server) handleRecent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, true) // RecentBody.optional()
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{*decodeIssue})
+	m, decodeErr := decodeBody(body, true) // RecentBody.optional()
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -368,9 +368,9 @@ func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, false)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{{Path: "id", Message: "Required", Code: "invalid_type"}})
+	m, decodeErr := decodeBody(body, false)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
@@ -427,9 +427,9 @@ func (s *server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, false)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{*decodeIssue})
+	m, decodeErr := decodeBody(body, false)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}
