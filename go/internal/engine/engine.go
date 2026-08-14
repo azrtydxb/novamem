@@ -3,11 +3,11 @@
 // packages/server/src/engine/index.ts (read-only reference, never
 // imported).
 //
-// Not ported (feature not configured in the Go server, matching TS with
-// the corresponding config unset): fact extraction, the query
-// decomposer, the observer, the dream cycle, decay and the reconcilers.
-// Their debt markers ARE written (graph_pending_at, cold_orphans) so a
-// later slice can drain them.
+// The three LLM-backed subsystems (fact extraction in facts.go, the
+// observer in observer.go, query decomposition + coherence rerank in
+// search.go) are wired here and are nil-gated: with their
+// NOVAMEM_*_ENABLED switch off the engine takes exactly the branches TS
+// takes with the corresponding module unset.
 package engine
 
 import (
@@ -24,6 +24,7 @@ import (
 
 	"github.com/azrtydxb/novamem/go/internal/coldstore"
 	"github.com/azrtydxb/novamem/go/internal/embeddings"
+	"github.com/azrtydxb/novamem/go/internal/llm"
 	"github.com/azrtydxb/novamem/go/internal/metrics"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
@@ -60,17 +61,25 @@ type Quotas struct {
 }
 
 type Engine struct {
-	warm            *warmstore.Store
-	cold            *coldstore.Store   // nil when no cold tier is configured
-	embedder        *embeddings.Client // nil when no embedder is configured
-	reranker        *embeddings.Reranker
-	log             *slog.Logger
-	quotas          Quotas
-	maxContentChars int // NOVAMEM_MAX_CONTENT_CHARS; 0 disables
-	personalTerms   []string
-	minVectorScore  float64
-	rerankPoolMult  int
-	graphLinkFanout int // 0 disables graph enrichment entirely
+	warm     *warmstore.Store
+	cold     *coldstore.Store   // nil when no cold tier is configured
+	embedder *embeddings.Client // nil when no embedder is configured
+	reranker *embeddings.Reranker
+	// The three LLM subsystems; each is nil when its NOVAMEM_*_ENABLED
+	// switch is off, and every call site nil-checks exactly where TS
+	// checks its optional module.
+	extractor          *llm.FactExtractor
+	extractorMaxFacts  int
+	extractorTimeoutMs int
+	decomposer         *llm.QueryDecomposer
+	observer           *llm.Observer
+	log                *slog.Logger
+	quotas             Quotas
+	maxContentChars    int // NOVAMEM_MAX_CONTENT_CHARS; 0 disables
+	personalTerms      []string
+	minVectorScore     float64
+	rerankPoolMult     int
+	graphLinkFanout    int // 0 disables graph enrichment entirely
 	// defaultEffectiveDays is the decay lifespan base (config.ts
 	// decay.defaultEffectiveDays, 7).
 	defaultEffectiveDays float64
@@ -124,7 +133,18 @@ type Options struct {
 	Cold     *coldstore.Store
 	Embedder *embeddings.Client
 	Reranker *embeddings.Reranker
-	Log      *slog.Logger
+	// Extractor / Decomposer / Observer — nil disables the corresponding
+	// feature, which is exactly TS's behaviour with the module unset.
+	Extractor *llm.FactExtractor
+	// ExtractorMaxFacts — extraction.maxFactsPerChunk, re-applied at the
+	// call site as TS does; 0 → 8 (config.ts default).
+	ExtractorMaxFacts int
+	// ExtractorTimeoutMs sizes the detached context of the fire-and-forget
+	// write-path extraction; 0 → 120000 (config.ts default).
+	ExtractorTimeoutMs int
+	Decomposer         *llm.QueryDecomposer
+	Observer           *llm.Observer
+	Log                *slog.Logger
 
 	Quotas          Quotas
 	MaxContentChars int
@@ -149,18 +169,29 @@ func New(o Options) *Engine {
 	if o.DefaultEffectiveDays == 0 {
 		o.DefaultEffectiveDays = 7
 	}
+	if o.ExtractorMaxFacts == 0 {
+		o.ExtractorMaxFacts = 8
+	}
+	if o.ExtractorTimeoutMs == 0 {
+		o.ExtractorTimeoutMs = 120_000
+	}
 	e := &Engine{
-		warm:            o.Warm,
-		cold:            o.Cold,
-		embedder:        o.Embedder,
-		reranker:        o.Reranker,
-		log:             o.Log,
-		quotas:          o.Quotas,
-		maxContentChars: o.MaxContentChars,
-		personalTerms:   o.PersonalTerms,
-		minVectorScore:  o.MinVectorScore,
-		rerankPoolMult:  o.RerankPoolMult,
-		graphLinkFanout: o.GraphLinkFanout,
+		warm:               o.Warm,
+		cold:               o.Cold,
+		embedder:           o.Embedder,
+		reranker:           o.Reranker,
+		extractor:          o.Extractor,
+		extractorMaxFacts:  o.ExtractorMaxFacts,
+		extractorTimeoutMs: o.ExtractorTimeoutMs,
+		decomposer:         o.Decomposer,
+		observer:           o.Observer,
+		log:                o.Log,
+		quotas:             o.Quotas,
+		maxContentChars:    o.MaxContentChars,
+		personalTerms:      o.PersonalTerms,
+		minVectorScore:     o.MinVectorScore,
+		rerankPoolMult:     o.RerankPoolMult,
+		graphLinkFanout:    o.GraphLinkFanout,
 
 		defaultEffectiveDays: o.DefaultEffectiveDays,
 		metrics:              o.Metrics,
@@ -343,6 +374,15 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 		now := e.now()
 		graphPendingAt = &now
 	}
+	// Same in-transaction debt rule: this chunk owes a fact-extraction
+	// pass, and the marker must survive a crash in the window between
+	// INSERT and the fire-and-forget schedule below. Without it a pod
+	// restart mid-drain silently lost the facts of every in-flight chunk.
+	var factsPendingAt *time.Time
+	if e.extractor != nil {
+		now := e.now()
+		factsPendingAt = &now
+	}
 	id, err := e.warm.InsertEntry(ctx, NewULID(), warmstore.InsertEntryArgs{
 		UserID:         userID,
 		ProjectID:      req.Project,
@@ -355,6 +395,7 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 		CapturedFrom:   req.CapturedFrom,
 		Confidence:     req.Confidence,
 		ContentHash:    &contentHash,
+		FactsPendingAt: factsPendingAt,
 		GraphPendingAt: graphPendingAt,
 	})
 	if err != nil {
@@ -416,6 +457,21 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 		e.parkMissingVector(ctx, userID, req.Project, id, namespace,
 			errors.New("embedder returned no vector"))
 	}
+
+	// Schedule LLM fact extraction in the background. Fire-and-forget —
+	// never blocks the write; errors are logged only.
+	// The EXPLICIT request field, not the inferred metadata value: TS
+	// captures `req.sensitivity` here, so a fact only carries a
+	// sensitivity stamp when the caller asked for one.
+	e.scheduleFactExtraction(storeFactsArgs{
+		userID:       userID,
+		projectID:    req.Project,
+		chunkID:      id,
+		chunkContent: req.Content,
+		namespace:    namespace,
+		sensitivity:  req.Sensitivity,
+		parentSource: source,
+	})
 
 	e.logChange(ctx, userID, req.Project, id, "created", map[string]any{"source": source})
 	return RememberResult{ID: &id, Embedded: boolPtr(embedded)}, nil

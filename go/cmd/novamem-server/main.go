@@ -19,6 +19,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/httpapi"
 	"github.com/azrtydxb/novamem/go/internal/jobs"
+	"github.com/azrtydxb/novamem/go/internal/llm"
 	"github.com/azrtydxb/novamem/go/internal/metrics"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
@@ -74,7 +75,14 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, cfg.WarmURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.WarmURL)
+	if err != nil {
+		return fmt.Errorf("warm store url: %w", err)
+	}
+	// NOVAMEM_PG_POOL_MAX — config.ts service.pgPoolMax, applied to the
+	// warm pool exactly as main.ts passes it to WarmStore.
+	poolCfg.MaxConns = int32(cfg.PgPoolMax)
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return fmt.Errorf("warm store pool: %w", err)
 	}
@@ -115,15 +123,21 @@ func run() error {
 	// the same branches the TS server takes with those services down —
 	// writes store with embedded_at NULL and search degrades to keyword.
 	var cold *coldstore.Store
-	if cfg.ColdProvider == "pgvector" {
-		cold, err = coldstore.New(ctx, coldstore.Config{
-			URL:        cfg.ColdURL,
-			VectorSize: cfg.ColdVectorSize,
-			TimeoutMs:  cfg.ColdTimeoutMs,
-		})
+	coldCfg := coldstore.Config{
+		URL:        cfg.ColdURL,
+		APIKey:     cfg.ColdAPIKey,
+		VectorSize: cfg.ColdVectorSize,
+		TimeoutMs:  cfg.ColdTimeoutMs,
+	}
+	switch cfg.ColdProvider {
+	case "pgvector":
+		cold, err = coldstore.New(ctx, coldCfg)
 		if err != nil {
 			return fmt.Errorf("cold store: %w", err)
 		}
+		defer cold.Close()
+	case "qdrant":
+		cold = coldstore.NewQdrant(coldCfg)
 		defer cold.Close()
 	}
 	var embedder *embeddings.Client
@@ -156,6 +170,55 @@ func run() error {
 		})
 	}
 
+	// The three LLM subsystems, each constructed iff its enable flag AND
+	// the required (endpoint, model) are set — main.ts. Left nil, the
+	// engine takes exactly the branches TS takes with the module unset.
+	var extractor *llm.FactExtractor
+	if cfg.ExtractionEnabled && cfg.ExtractionEndpoint != "" && cfg.ExtractionModel != "" {
+		extractor = llm.NewFactExtractor(llm.FactExtractorConfig{
+			Config: llm.Config{
+				Endpoint:  cfg.ExtractionEndpoint,
+				Model:     cfg.ExtractionModel,
+				APIKey:    cfg.ExtractionAPIKey,
+				TimeoutMs: cfg.ExtractionTimeoutMs,
+			},
+			MaxFactsPerChunk: cfg.ExtractionMaxFacts,
+			MaxConcurrent:    cfg.ExtractionMaxConcurrent,
+		})
+		log.Info("fact extraction configured", "model", cfg.ExtractionModel,
+			"maxFacts", cfg.ExtractionMaxFacts, "maxConcurrent", cfg.ExtractionMaxConcurrent)
+	}
+	var decomposer *llm.QueryDecomposer
+	if cfg.QueryDecompEnabled && cfg.QueryDecompEndpoint != "" && cfg.QueryDecompModel != "" {
+		decomposer = llm.NewQueryDecomposer(llm.QueryDecomposerConfig{
+			Config: llm.Config{
+				Endpoint:  cfg.QueryDecompEndpoint,
+				Model:     cfg.QueryDecompModel,
+				APIKey:    cfg.QueryDecompAPIKey,
+				TimeoutMs: cfg.QueryDecompTimeoutMs,
+			},
+			MaxSubqueries:   cfg.QueryDecompMaxSubqueries,
+			CoherenceRerank: cfg.QueryDecompCoherenceRerank,
+		})
+		log.Info("query decomposition configured", "model", cfg.QueryDecompModel,
+			"maxSubqueries", cfg.QueryDecompMaxSubqueries,
+			"coherenceRerank", cfg.QueryDecompCoherenceRerank)
+	}
+	var observer *llm.Observer
+	if cfg.ObserverEnabled && cfg.ObserverEndpoint != "" && cfg.ObserverModel != "" {
+		observer = llm.NewObserver(llm.ObserverConfig{
+			Config: llm.Config{
+				Endpoint:  cfg.ObserverEndpoint,
+				Model:     cfg.ObserverModel,
+				APIKey:    cfg.ObserverAPIKey,
+				TimeoutMs: cfg.ObserverTimeoutMs,
+			},
+			ObserveThreshold: cfg.ObserverObserveThreshold,
+			ReflectThreshold: cfg.ObserverReflectThreshold,
+		})
+		log.Info("observer configured", "model", cfg.ObserverModel)
+	}
+
 	// One collector shared by the engine (lifecycle counters), the HTTP
 	// layer (per-request counters) and the flush job.
 	coll := metrics.New()
@@ -176,17 +239,22 @@ func run() error {
 	})
 
 	eng := engine.New(engine.Options{
-		Warm:            warm,
-		Cold:            cold,
-		Embedder:        embedder,
-		Reranker:        reranker,
-		Log:             log,
-		Quotas:          engine.Quotas{MaxEntries: cfg.QuotaMaxEntries, WritesPerMinute: cfg.QuotaWritesPerMinute},
-		MaxContentChars: cfg.MaxContentChars,
-		PersonalTerms:   cfg.PersonalTerms,
-		MinVectorScore:  cfg.MinVectorScore,
-		RerankPoolMult:  cfg.RerankPoolMult,
-		GraphLinkFanout: cfg.GraphLinkFanout,
+		Warm:               warm,
+		Cold:               cold,
+		Embedder:           embedder,
+		Reranker:           reranker,
+		Extractor:          extractor,
+		ExtractorMaxFacts:  cfg.ExtractionMaxFacts,
+		ExtractorTimeoutMs: cfg.ExtractionTimeoutMs,
+		Decomposer:         decomposer,
+		Observer:           observer,
+		Log:                log,
+		Quotas:             engine.Quotas{MaxEntries: cfg.QuotaMaxEntries, WritesPerMinute: cfg.QuotaWritesPerMinute},
+		MaxContentChars:    cfg.MaxContentChars,
+		PersonalTerms:      cfg.PersonalTerms,
+		MinVectorScore:     cfg.MinVectorScore,
+		RerankPoolMult:     cfg.RerankPoolMult,
+		GraphLinkFanout:    cfg.GraphLinkFanout,
 
 		DefaultEffectiveDays: cfg.DecayEffectiveDays,
 		Metrics:              coll,

@@ -397,13 +397,44 @@ func (s *server) handleReapOrphans(w http.ResponseWriter, r *http.Request) {
 	writeJSONValue(w, http.StatusOK, result)
 }
 
-// handleObserve — the observer LLM module is not ported, so this route
-// answers exactly what the TS server answers with observer.enabled unset.
+// handleObserve triggers an observer + (conditional) reflector pass over
+// recent memories. With NOVAMEM_OBSERVER_ENABLED off the engine returns
+// nil and this answers 503 {"error":"observer disabled"} — the TS
+// contract (routes/data-plane.ts /v1/observe).
 func (s *server) handleObserve(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOperator(w, r) {
 		return
 	}
-	s.sendError(w, http.StatusServiceUnavailable, "observer disabled")
+	c, ok := s.meBody(w, r, true)
+	if !ok {
+		return
+	}
+	// ObserveBody: {project?: string(≤128)|null, limit?: int 1..200}.
+	// `project` is NOT resolved through the project-ref path here — TS
+	// passes the raw body value straight to runObserver.
+	projectRaw, projectSet := c.nullableStr("project", 0, 128)
+	limit, limitSet := c.positiveInt("limit", 200)
+	if len(c.issues) > 0 {
+		s.sendIssues(w, c.issues)
+		return
+	}
+	var project *string
+	if projectSet {
+		project = &projectRaw
+	}
+	if !limitSet {
+		limit = 20 // body.limit ?? 20
+	}
+	result, err := s.engine.RunObserver(r.Context(), s.userID(r), project, limit)
+	if err != nil {
+		s.sendEngineErr(w, r, err)
+		return
+	}
+	if result == nil {
+		s.sendError(w, http.StatusServiceUnavailable, "observer disabled")
+		return
+	}
+	writeJSONValue(w, http.StatusOK, result)
 }
 
 func isTrue(v string) bool {

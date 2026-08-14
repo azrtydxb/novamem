@@ -120,6 +120,18 @@ describe.skipIf(env.authMode !== "user" || !env.adminCookie)(
     it("full lifecycle: project → active-project → remember → today/changes/metrics/onboarding/usage/export → members → tokens → clear/delete", async () => {
       const NS = ns();
 
+      // ── 0. One user-global entry, BEFORE an active project exists ──
+      // /v1/me/onboarding derives `remembered` from recent(user, {k:1})
+      // with no project scope — on both servers — and once an active
+      // project is set, unscoped writes land in that project. Long-lived
+      // oracle accounts already had user-global rows, which masked this;
+      // a fresh account does not. Write one while writes are still
+      // user-global so step 8 tests the endpoint, not account history.
+      const globalWrite = await api("/v1/remember", {
+        body: { content: `onboarding probe entry ${ns()} written user-global` },
+      });
+      expect([200, 201]).toContain(globalWrite.status);
+
       // ── 1. Create a project (adminCookieApi = session cookie) ──────
       const create = await adminCookieApi<{ id: string; name: string; ownerUserId: string }>(
         "/v1/me/projects",
@@ -211,7 +223,13 @@ describe.skipIf(env.authMode !== "user" || !env.adminCookie)(
       MetricsHistoryResponse.parse(history.body);
       expect(history.body.hours).toBe(1);
 
-      // ── 8. Onboarding responds, reflecting the remember above ──────
+      // ── 8. Onboarding responds, reflecting a USER-GLOBAL remember ──
+      // /v1/me/onboarding derives `remembered` from recent(user, {k:1})
+      // with NO project scope — on both servers — so the project-scoped
+      // write above does not set it. Long-lived accounts on the oracle
+      // happen to have user-global rows, which masked this; a fresh
+      // account does not. Write one explicitly so the assertion tests
+      // the endpoint rather than the account's history.
       const onboarding = await api<{ remembered: boolean; userExists: boolean }>("/v1/me/onboarding");
       expect(onboarding.status).toBe(200);
       OnboardingResponse.parse(onboarding.body);

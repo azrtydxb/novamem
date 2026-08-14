@@ -158,9 +158,11 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// asOf: validated for wire compatibility, no effect on search (TS
 	// Phase 4 note — bitemporal filtering lives on /v1/neighbors' edges).
 	c.datetime("asOf", "")
-	// decompose: accepted and ignored — the Go server configures no
-	// query decomposer, matching TS behaviour with decomp unset.
-	c.boolPtr("decompose")
+	// decompose opts into query decomposition + the coherence rerank;
+	// with no decomposer configured the engine ignores it, as TS does.
+	if d := c.boolPtr("decompose"); d != nil {
+		args.Decompose = *d
+	}
 	args.ExpandSourceChunks = c.boolPtr("expandSourceChunks")
 	args.Rerank, _ = c.boolean("rerank")
 	if n, ok := c.number("minVectorScore", 0, 1); ok {
@@ -428,11 +430,27 @@ func (s *server) handleAdoption(w http.ResponseWriter, r *http.Request) {
 	writeJSONValue(w, http.StatusOK, buildAdoptionReport(opts))
 }
 
+// handleContextPrefix — the cacheable per-(user, project) observation
+// prefix. With NOVAMEM_OBSERVER_ENABLED off the engine returns nil and
+// this answers 404 {"error":"observer disabled"}, exactly as TS does
+// (routes/data-plane.ts /v1/context-prefix).
 func (s *server) handleContextPrefix(w http.ResponseWriter, r *http.Request) {
-	// Arch-plan Phase 5 observer prefix. The observer is LLM-backed and
-	// gated behind NOVAMEM_OBSERVER_ENABLED in TS; the Go server does not
-	// configure one (background-LLM features are slice 6), so this always
-	// answers the TS observer-disabled contract: 404 {"error":"observer
-	// disabled"} (routes/data-plane.ts /v1/context-prefix).
-	s.sendError(w, http.StatusNotFound, "observer disabled")
+	// `project` is used verbatim as the scope key, without the
+	// project-ref resolution the write routes perform — TS passes the raw
+	// query value straight through to getContextPrefix.
+	var project *string
+	if q := r.URL.Query(); q.Has("project") {
+		raw := q.Get("project")
+		project = &raw
+	}
+	prefix, err := s.engine.GetContextPrefix(r.Context(), s.userID(r), project)
+	if err != nil {
+		s.sendEngineErr(w, r, err)
+		return
+	}
+	if prefix == nil {
+		s.sendError(w, http.StatusNotFound, "observer disabled")
+		return
+	}
+	writeJSONValue(w, http.StatusOK, map[string]any{"prefix": *prefix})
 }

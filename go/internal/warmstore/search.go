@@ -389,6 +389,14 @@ func (s *Store) RecordColdOrphan(ctx context.Context, id, userID, namespace stri
 	return err
 }
 
+// SetFactsPendingAt clears (or re-arms) the pending-fact-extraction
+// marker (warm-store/index.ts setFactsPendingAt).
+func (s *Store) SetFactsPendingAt(ctx context.Context, id string, at *time.Time) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE memory_entries SET facts_pending_at = $2 WHERE id = $1`, id, at)
+	return err
+}
+
 // SetGraphPendingAt clears (or re-arms) the pending-enrichment marker.
 func (s *Store) SetGraphPendingAt(ctx context.Context, id string, at *time.Time) error {
 	_, err := s.Pool.Exec(ctx,

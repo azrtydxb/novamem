@@ -6,10 +6,12 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"unicode"
 	"unicode/utf16"
 
@@ -30,7 +32,26 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 		writeJSONValue(w, http.StatusBadRequest, map[string]any{"error": "could not read request body"})
 		return nil, false
 	}
+	if len(bytes.TrimSpace(body)) == 0 && isJSONContentType(r) {
+		// Fastify's JSON body parser rejects an empty body before any
+		// schema runs, on EVERY route — including the ones whose schema
+		// is .optional(). Same envelope, same wording (verified live).
+		writeJSONValue(w, http.StatusBadRequest, map[string]any{
+			"error": "Body cannot be empty when content-type is set to 'application/json'",
+		})
+		return nil, false
+	}
 	return body, true
+}
+
+// isJSONContentType is Fastify's parser lookup: the media type before
+// any parameters, case-insensitively `application/json`.
+func isJSONContentType(r *http.Request) bool {
+	ct := r.Header.Get("Content-Type")
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	return strings.EqualFold(strings.TrimSpace(ct), "application/json")
 }
 
 func (s *server) sendError(w http.ResponseWriter, status int, msg string) {

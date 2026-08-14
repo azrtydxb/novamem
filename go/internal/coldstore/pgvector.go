@@ -5,9 +5,8 @@
 // (u:<user> / p:<project>), same SQL for upsert/search/existingIds/
 // delete, same score clip at 0.
 //
-// Qdrant is deliberately NOT ported here — config.Load refuses
-// NOVAMEM_COLD_PROVIDER=qdrant with a clear error (pgvector lands first;
-// design §6 slice 3).
+// The Qdrant backend lives in qdrant.go; both sit behind the Store façade
+// in store.go.
 package coldstore
 
 import (
@@ -33,11 +32,15 @@ type Config struct {
 	// Embedding dimensionality — becomes the vector column's type. A
 	// mismatch against an existing table fails loudly.
 	VectorSize int
-	// Statement timeout; default 15s (TS statement_timeout).
+	// Statement timeout / per-request timeout; default 15s
+	// (TS statement_timeout, and the Qdrant client's ms `timeout`).
 	TimeoutMs int
+	// Qdrant api-key header (NOVAMEM_COLD_API_KEY). Unset — the TS
+	// server's only mode — sends no header at all.
+	APIKey string
 }
 
-type Store struct {
+type pgStore struct {
 	pool *pgxpool.Pool
 	dim  int
 
@@ -48,7 +51,7 @@ type Store struct {
 	ready bool
 }
 
-func New(ctx context.Context, cfg Config) (*Store, error) {
+func newPgvector(ctx context.Context, cfg Config) (*pgStore, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("cold store url: %w", err)
@@ -57,13 +60,16 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	if timeoutMs == 0 {
 		timeoutMs = 15_000
 	}
-	poolCfg.MaxConns = 10 // TS Pool max: 10
+	// TS Pool max: 10 — the cold pgvector pool is deliberately NOT tied to
+	// NOVAMEM_PG_POOL_MAX (cold-store-pgvector.ts hardcodes it; only the
+	// warm pool reads config.service.pgPoolMax).
+	poolCfg.MaxConns = 10
 	poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.Itoa(timeoutMs)
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Store{pool: pool, dim: cfg.VectorSize}, nil
+	return &pgStore{pool: pool, dim: cfg.VectorSize}, nil
 }
 
 // VectorLiteral formats an embedding as a pgvector input literal
@@ -98,7 +104,7 @@ func ScopeOf(userID string, projectID *string) string {
 // The same CREATE IF NOT EXISTS pattern the TS server itself runs
 // outside drizzle, so the Go server can bootstrap a fresh database AND
 // run against one the TS server already prepared.
-func (s *Store) ensureReady(ctx context.Context) error {
+func (s *pgStore) ensureReady(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ready {
@@ -111,7 +117,7 @@ func (s *Store) ensureReady(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) ensureReadyLocked(ctx context.Context) error {
+func (s *pgStore) ensureReadyLocked(ctx context.Context) error {
 	if _, err := s.pool.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
 		return err
 	}
@@ -191,7 +197,7 @@ type UpsertArgs struct {
 	Payload   map[string]any
 }
 
-func (s *Store) Upsert(ctx context.Context, a UpsertArgs) error {
+func (s *pgStore) Upsert(ctx context.Context, a UpsertArgs) error {
 	if err := s.ensureReady(ctx); err != nil {
 		return err
 	}
@@ -234,7 +240,7 @@ type SearchArgs struct {
 	K         int
 }
 
-func (s *Store) Search(ctx context.Context, a SearchArgs) ([]Hit, error) {
+func (s *pgStore) Search(ctx context.Context, a SearchArgs) ([]Hit, error) {
 	if err := s.ensureReady(ctx); err != nil {
 		return nil, err
 	}
@@ -301,7 +307,7 @@ type EntryRef struct {
 // ExistingIds — which of the given entries already have a vector, with
 // full scope discipline (an id under a DIFFERENT tenant/namespace must
 // not count). One grouped query via a VALUES join.
-func (s *Store) ExistingIds(ctx context.Context, entries []EntryRef) (map[string]bool, error) {
+func (s *pgStore) ExistingIds(ctx context.Context, entries []EntryRef) (map[string]bool, error) {
 	if err := s.ensureReady(ctx); err != nil {
 		return nil, err
 	}
@@ -337,7 +343,7 @@ func (s *Store) ExistingIds(ctx context.Context, entries []EntryRef) (map[string
 
 // Delete — namespace is part of the scope exactly as in Search: knowing
 // an id must not be enough to delete across shelves.
-func (s *Store) Delete(ctx context.Context, userID, namespace, id string, projectID *string) error {
+func (s *pgStore) Delete(ctx context.Context, userID, namespace, id string, projectID *string) error {
 	if err := s.ensureReady(ctx); err != nil {
 		return err
 	}
@@ -350,7 +356,7 @@ func (s *Store) Delete(ctx context.Context, userID, namespace, id string, projec
 
 // DeleteAllForUser removes EVERY vector the user owns, in any scope —
 // including rows they wrote into other users' projects.
-func (s *Store) DeleteAllForUser(ctx context.Context, userID string) ([]string, error) {
+func (s *pgStore) DeleteAllForUser(ctx context.Context, userID string) ([]string, error) {
 	if err := s.ensureReady(ctx); err != nil {
 		return nil, err
 	}
@@ -361,7 +367,7 @@ func (s *Store) DeleteAllForUser(ctx context.Context, userID string) ([]string, 
 	return []string{fmt.Sprintf("%s: %d vectors removed for user %s", table, tag.RowsAffected(), userID)}, nil
 }
 
-func (s *Store) DeleteAllForProject(ctx context.Context, projectID string) ([]string, error) {
+func (s *pgStore) DeleteAllForProject(ctx context.Context, projectID string) ([]string, error) {
 	if err := s.ensureReady(ctx); err != nil {
 		return nil, err
 	}
@@ -374,7 +380,7 @@ func (s *Store) DeleteAllForProject(ctx context.Context, projectID string) ([]st
 	return []string{fmt.Sprintf("%s: %d vectors removed for project %s", table, tag.RowsAffected(), projectID)}, nil
 }
 
-func (s *Store) Ping(ctx context.Context) bool {
+func (s *pgStore) Ping(ctx context.Context) bool {
 	if err := s.ensureReady(ctx); err != nil {
 		return false
 	}
@@ -382,4 +388,4 @@ func (s *Store) Ping(ctx context.Context) bool {
 	return s.pool.QueryRow(ctx, "SELECT 1").Scan(&one) == nil
 }
 
-func (s *Store) Close() { s.pool.Close() }
+func (s *pgStore) Close() { s.pool.Close() }

@@ -93,9 +93,9 @@ func Run(ctx context.Context, cfg Config) {
 		}
 	})
 
-	// Reconciler: vectors first (cheap), then the deferred graph
-	// enrichment (the most deferrable — edges are a retrieval
-	// enhancement, not data). Errors are logged and the batch is retried
+	// Reconciler: vectors first (cheap), then fact extraction (LLM-bound),
+	// then the deferred graph enrichment (the most deferrable — edges are
+	// a retrieval enhancement, not data). Errors are logged and retried
 	// next tick; the pending state lives on the row, so nothing is lost.
 	loop(cfg.ReconcileInterval, func(ctx context.Context) {
 		r, err := cfg.Engine.ReconcilePendingEmbeddings(ctx, cfg.ReconcileBatch)
@@ -104,6 +104,17 @@ func Run(ctx context.Context, cfg Config) {
 		} else if r.Scanned > 0 {
 			cfg.Log.Info("reconciled pending embeddings", "scanned", r.Scanned,
 				"embedded", r.Done, "failed", r.Failed, "pending", r.Pending)
+		}
+		// Same tick, same loop: the fact-extraction twin. Runs after
+		// embeddings so a shared outage recovers vectors (cheap) before
+		// facts (LLM-bound). The extractor's semaphore meters the batch's
+		// LLM concurrency exactly as it does for live writes.
+		f, err := cfg.Engine.ReconcilePendingFacts(ctx, cfg.ReconcileBatch)
+		if err != nil {
+			cfg.Log.Error("reconciler error (fact extraction)", "err", err)
+		} else if f.Scanned > 0 {
+			cfg.Log.Info("reconciled pending fact extractions", "scanned", f.Scanned,
+				"extracted", f.Done, "failed", f.Failed, "pending", f.Pending)
 		}
 		g, err := cfg.Engine.ReconcilePendingEnrichment(ctx, cfg.ReconcileBatch)
 		if err != nil {

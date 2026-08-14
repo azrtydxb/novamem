@@ -60,3 +60,29 @@ knowing about.
   suppresses it on 204 by design.
 * Static assets are served with Go's `text/javascript` rather than
   `@fastify/static`'s `application/javascript`; both are correct.
+* **`NOVAMEM_COLD_API_KEY`** has no counterpart in `config.ts` — the TS
+  Qdrant client is constructed without one. Left unset (the only TS
+  behaviour) the Go store sends no `api-key` header either; set, it adds
+  the header so a secured Qdrant is reachable without a proxy.
+
+## Env-var aliases
+
+`NOVAMEM_DECAY_DAYS` is the canonical name for the decay half-life
+(`config.ts` → `decay.defaultEffectiveDays`, default `7`). An early Go
+build read `NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS` instead; that spelling
+is kept as a **deprecated alias** so those deployments keep booting.
+When both are set, `NOVAMEM_DECAY_DAYS` wins.
+
+## Cold tier
+
+Both providers from the TS server are implemented:
+
+| `NOVAMEM_COLD_PROVIDER` | Backend | `NOVAMEM_COLD_URL` default |
+|---|---|---|
+| `pgvector` | `memory_vectors` in Postgres | the warm database |
+| `qdrant` | Qdrant REST API (no SDK dependency) | `http://localhost:6333` |
+| unset | no cold tier — writes land with `embedded_at` NULL and search degrades to keyword, exactly as TS behaves with the cold store down | — |
+
+`NOVAMEM_PG_POOL_MAX` (default `20`) bounds the **warm** pool only; the
+pgvector cold pool is fixed at 10 connections, matching
+`cold-store-pgvector.ts`.
