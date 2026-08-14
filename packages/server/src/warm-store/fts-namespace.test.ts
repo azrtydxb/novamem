@@ -33,12 +33,17 @@ describe("ftsSearch: namespace list binding", () => {
     expect(rendered).toContain("text[]");
   });
 
-  it("the shipped ftsSearch SQL casts the namespace list", async () => {
-    // Read the source of truth: the predicate must carry the cast.
+  it("the shipped ftsSearch binds namespaces as individual parameters", async () => {
+    // A cast can't rescue this — `ANY(${array}::text[])` fails with
+    // "cannot cast type record to text[]" because the cast lands on the
+    // already-expanded record. The predicate must be an IN-list built
+    // from separate bound parameters, and it must keep the `f` alias
+    // (drizzle's inArray would emit the fully-qualified column).
     const { readFileSync } = await import("node:fs");
     const src = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-    const line = src.split("\n").find((l) => l.includes("f.namespace = ANY("));
-    expect(line, "ftsSearch must still build a namespace ANY() predicate").toBeTruthy();
-    expect(line, "namespace array must be cast to text[]").toContain("::text[]");
+    expect(src, "ftsSearch must not pass a JS array into ANY()").not.toContain(
+      "f.namespace = ANY(${args.namespaces",
+    );
+    expect(src, "namespaces must bind as an aliased IN-list").toContain("f.namespace IN (");
   });
 });
