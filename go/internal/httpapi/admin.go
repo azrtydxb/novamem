@@ -321,7 +321,7 @@ func (s *server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 	if s.adminDashboardOff(w) || !s.requireAdmin(w, r) {
 		return
 	}
-	writeJSONValue(w, http.StatusOK, s.metrics.Snapshot(r.Context()))
+	writeJSONValue(w, http.StatusOK, orderedMetrics(s.metrics.Snapshot(r.Context())))
 }
 
 func (s *server) handleAdminMetricsProm(w http.ResponseWriter, r *http.Request) {
@@ -347,7 +347,8 @@ func (s *server) handleAdminHealthDeep(w http.ResponseWriter, r *http.Request) {
 	if ok, _ := h["ok"].(bool); !ok {
 		status = http.StatusServiceUnavailable
 	}
-	writeJSONValue(w, status, h)
+	orderedIn(h, "deps", "warm", "cold", "graph", "embedder")
+	writeJSONValue(w, status, ordered(h, "ok", "deps", "pendingEmbeddings"))
 }
 
 // ─── Operator-gated maintenance ────────────────────────────────────────

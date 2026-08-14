@@ -28,22 +28,48 @@ func (s *server) registerSearchPlane(mux *http.ServeMux) {
 // with zero results is a 503 (the response carries no evidence about
 // the caller's memory at all); degraded with results stays a 200.
 func (s *server) sendSearchResult(w http.ResponseWriter, outcome engine.SearchOutcome) {
-	results := outcome.Results
-	if results == nil {
-		results = []engine.SearchResultItem{}
-	}
+	results := orderedItems(outcome.Results)
 	if outcome.Degraded && len(results) == 0 {
-		writeJSONValue(w, http.StatusServiceUnavailable, map[string]any{
-			"results":  results,
-			"degraded": true,
-			"error":    "search degraded: a backing tier was unavailable and no results could be produced",
+		writeJSONValue(w, http.StatusServiceUnavailable, obj{
+			{"results", results},
+			{"degraded", true},
+			{"error", "search degraded: a backing tier was unavailable and no results could be produced"},
 		})
 		return
 	}
-	writeJSONValue(w, http.StatusOK, map[string]any{
-		"results":  results,
-		"degraded": outcome.Degraded,
+	writeJSONValue(w, http.StatusOK, obj{
+		{"results", results},
+		{"degraded", outcome.Degraded},
 	})
+}
+
+// orderedItems puts routes/data-plane.ts's field order back on the
+// engine's map-shaped result rows. `signals` and `metadata` are absent
+// on some shapes (contentMode=ids drops content+metadata; /v1/recent has
+// no signals) — `ordered` skips keys that aren't there.
+func orderedItems(items []engine.SearchResultItem) []obj {
+	out := make([]obj, 0, len(items))
+	for _, it := range items {
+		m := map[string]any(it)
+		orderedIn(m, "signals", "keyword", "vector", "graph", "recency", "entity")
+		out = append(out, ordered(m, "id", "score", "content", "tier", "namespace",
+			"project", "source", "metadata", "signals"))
+	}
+	return out
+}
+
+// orderedPack applies the same ordering to every section of a context
+// pack (engine.BuildContextPack returns map[string][]SearchResultItem in
+// context-pack.ts's own section order).
+func orderedPack(pack map[string]any) obj {
+	for k, v := range pack {
+		if items, ok := v.([]engine.SearchResultItem); ok {
+			pack[k] = orderedItems(items)
+		}
+	}
+	return ordered(pack, "userGlobal", "projectScoped", "userPreferences", "currentSetup",
+		"projectConventions", "decisions", "bugRootCauses", "deploymentState",
+		"safetyConstraints", "pitfalls", "recentDecisions", "all")
 }
 
 // checkStrict rejects unknown keys for the .strict() bodies
@@ -55,7 +81,7 @@ func checkStrict(c *v, allowed ...string) {
 	}
 	for key := range c.m {
 		if !ok[key] {
-			c.add("", "Unrecognized key(s) in object: '"+key+"'", "unrecognized_keys")
+			c.add("", `Unrecognized key: "`+key+`"`, "unrecognized_keys")
 		}
 	}
 }
@@ -69,7 +95,7 @@ func (c *v) parseWeights() *engine.WeightsOverride {
 	}
 	m, ok := raw.(map[string]any)
 	if !ok {
-		c.add("weights", "Expected object, received "+jsonType(raw), "invalid_type")
+		c.add("weights", "Invalid input: expected object, received "+jsonType(raw), "invalid_type")
 		return nil
 	}
 	out := &engine.WeightsOverride{}
@@ -80,7 +106,7 @@ func (c *v) parseWeights() *engine.WeightsOverride {
 		}
 		n, ok := v.(float64)
 		if !ok {
-			c.add("weights."+key, "Expected number, received "+jsonType(v), "invalid_type")
+			c.add("weights."+key, "Invalid input: expected number, received "+jsonType(v), "invalid_type")
 			return nil
 		}
 		return &n
@@ -101,7 +127,7 @@ func (c *v) boolPtr(key string) *bool {
 	}
 	b, ok := raw.(bool)
 	if !ok {
-		c.add(key, "Expected boolean, received "+jsonType(raw), "invalid_type")
+		c.add(key, "Invalid input: expected boolean, received "+jsonType(raw), "invalid_type")
 		return nil
 	}
 	return &b
@@ -120,11 +146,11 @@ func (c *v) agentName() (val *string, set bool) {
 	}
 	str, ok := raw.(string)
 	if !ok {
-		c.add("agentName", "Expected string, received "+jsonType(raw), "invalid_type")
+		c.add("agentName", "Invalid input: expected string, received "+jsonType(raw), "invalid_type")
 		return nil, false
 	}
 	if utf16Len(str) > 128 {
-		c.add("agentName", "String must contain at most 128 character(s)", "too_big")
+		c.add("agentName", "Too big: expected string to have <=128 characters", "too_big")
 		return nil, false
 	}
 	return &str, true
@@ -147,10 +173,10 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	args.Namespace, _ = c.str("namespace", false, 0, 128)
 	args.AgentName, args.AgentNameSet = c.agentName()
 	args.Project, _ = c.projectRef("project")
-	args.IncludeProjects, _ = c.strArray("includeProjects", 16,
+	args.IncludeProjects, _ = c.strArray("includeProjects", 16, 1, 128,
 		func(s string) bool { return utf16Len(s) >= 1 && utf16Len(s) <= 128 && projectRefRe.MatchString(s) },
 		"project ref contains control characters")
-	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, validNamespaceItem,
+	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 		"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 	args.Weights = c.parseWeights()
 	contentMode, _ := c.enum("contentMode", "full", "snippet", "ids")
@@ -209,10 +235,10 @@ func (s *server) handleContext(w http.ResponseWriter, r *http.Request) {
 	k, kSet := c.positiveInt("k", 50)
 	namespace, _ := c.str("namespace", false, 0, 128)
 	project, _ := c.projectRef("project")
-	includeProjects, _ := c.strArray("includeProjects", 16,
+	includeProjects, _ := c.strArray("includeProjects", 16, 1, 128,
 		func(s string) bool { return utf16Len(s) >= 1 && utf16Len(s) <= 128 && projectRefRe.MatchString(s) },
 		"project ref contains control characters")
-	includeNamespaces, _ := c.strArray("includeNamespaces", 16, validNamespaceItem,
+	includeNamespaces, _ := c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 		"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 	weights := c.parseWeights()
 	maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
@@ -273,24 +299,24 @@ func (s *server) handleContext(w http.ResponseWriter, r *http.Request) {
 	if relevant.Results == nil {
 		relevant.Results = []engine.SearchResultItem{}
 	}
-	relevantBody := map[string]any{"results": relevant.Results, "degraded": relevant.Degraded}
-	recentBody := map[string]any{"results": recentResults}
+	relevantBody := obj{{"results", orderedItems(relevant.Results)}, {"degraded", relevant.Degraded}}
+	recentBody := obj{{"results", orderedItems(recentResults)}}
 	// Same rule as /v1/search: a degraded search that produced nothing is
 	// a 503 here too — the guidance text literally tells the caller to
 	// proceed, so an outage must not read as "the store is empty".
 	if relevant.Degraded && len(relevant.Results) == 0 {
-		writeJSONValue(w, http.StatusServiceUnavailable, map[string]any{
-			"relevant": relevantBody,
-			"recent":   recentBody,
-			"error":    "context degraded: a backing tier was unavailable and no relevant memories could be produced",
+		writeJSONValue(w, http.StatusServiceUnavailable, obj{
+			{"relevant", relevantBody},
+			{"recent", recentBody},
+			{"error", "context degraded: a backing tier was unavailable and no relevant memories could be produced"},
 		})
 		return
 	}
-	writeJSONValue(w, http.StatusOK, map[string]any{
-		"relevant":    relevantBody,
-		"recent":      recentBody,
-		"contextPack": engine.BuildContextPack(relevant.Results, recentResults),
-		"guidance":    contextGuidance,
+	writeJSONValue(w, http.StatusOK, obj{
+		{"relevant", relevantBody},
+		{"recent", recentBody},
+		{"contextPack", orderedPack(engine.BuildContextPack(relevant.Results, recentResults))},
+		{"guidance", contextGuidance},
 	})
 }
 
@@ -310,10 +336,10 @@ func (s *server) handleNeighbors(w http.ResponseWriter, r *http.Request) {
 	args.Depth, _ = c.positiveInt("depth", 3)
 	args.K, _ = c.positiveInt("k", 50)
 	args.Project, _ = c.projectRef("project")
-	args.IncludeProjects, _ = c.strArray("includeProjects", 16,
+	args.IncludeProjects, _ = c.strArray("includeProjects", 16, 1, 128,
 		func(s string) bool { return utf16Len(s) >= 1 && utf16Len(s) <= 128 && projectRefRe.MatchString(s) },
 		"project ref contains control characters")
-	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, validNamespaceItem,
+	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 		"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 	args.MaxSensitivity, _ = c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 	if len(c.issues) > 0 {
@@ -334,11 +360,11 @@ func (s *server) handleNeighbors(w http.ResponseWriter, r *http.Request) {
 		// produced nothing, so the caller learns nothing about this
 		// seed's neighbours — say so with a 503.
 		s.log.Warn("[/v1/neighbors] degraded", "err", err)
-		writeJSONValue(w, http.StatusServiceUnavailable, map[string]any{
-			"seed":     args.ID,
-			"results":  []engine.SearchResultItem{},
-			"degraded": true,
-			"error":    "neighbors degraded: graph traversal failed and no results could be produced",
+		writeJSONValue(w, http.StatusServiceUnavailable, obj{
+			{"seed", args.ID},
+			{"results", []obj{}},
+			{"degraded", true},
+			{"error", "neighbors degraded: graph traversal failed and no results could be produced"},
 		})
 		return
 	}
@@ -367,7 +393,16 @@ func (s *server) handleHygiene(w http.ResponseWriter, r *http.Request) {
 		s.sendEngineErr(w, r, err)
 		return
 	}
-	writeJSONValue(w, http.StatusOK, report)
+	writeJSONValue(w, http.StatusOK, orderedHygiene(report))
+}
+
+// orderedHygiene puts routes/hygiene.ts's key order back on the engine's
+// map-shaped report.
+func orderedHygiene(report map[string]any) obj {
+	orderedIn(report, "summary", "scanned", "lowValue", "stale",
+		"duplicateClusters", "contradictionCandidates", "orphanCandidates")
+	return ordered(report, "summary", "lowValue", "stale",
+		"duplicateClusters", "contradictionCandidates", "orphanCandidates")
 }
 
 func (s *server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
@@ -392,7 +427,12 @@ func (s *server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		s.sendEngineErr(w, r, err)
 		return
 	}
-	writeJSONValue(w, http.StatusOK, report)
+	orderedIn(report, "summary", "total", "passed", "failed")
+	if h, ok := report["hygiene"].(map[string]any); ok {
+		report["hygiene"] = orderedHygiene(h)
+	}
+	writeJSONValue(w, http.StatusOK,
+		ordered(report, "suite", "passed", "summary", "cases", "checks", "hygiene"))
 }
 
 var instructionsHashRe = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
@@ -411,14 +451,13 @@ func (s *server) handleAdoption(w http.ResponseWriter, r *http.Request) {
 	checkStrict(c, "client", "observedTools", "observedInstructionsHash")
 	var opts adoptionOptions
 	opts.Client, _ = c.str("client", false, 0, 64)
-	if tools, ok := c.strArray("observedTools", 128,
-		func(s string) bool { return utf16Len(s) >= 1 && utf16Len(s) <= 128 }, "Invalid"); ok {
+	if tools, ok := c.strArray("observedTools", 128, 1, 128, noItemRule, ""); ok {
 		opts.ObservedTools = tools
 		opts.ObservedToolsSet = true
 	}
 	if hash, ok := c.str("observedInstructionsHash", false, 0, 1<<30); ok {
 		if !instructionsHashRe.MatchString(hash) {
-			c.add("observedInstructionsHash", "Invalid", "invalid_string")
+			c.add("observedInstructionsHash", `Invalid string: must match pattern /^[a-fA-F0-9]{64}$/`, "invalid_format")
 		} else {
 			opts.ObservedInstructionsHash = &hash
 		}

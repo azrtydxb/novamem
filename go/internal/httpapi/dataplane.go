@@ -6,7 +6,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -30,15 +29,6 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 			return nil, false
 		}
 		writeJSONValue(w, http.StatusBadRequest, map[string]any{"error": "could not read request body"})
-		return nil, false
-	}
-	if len(bytes.TrimSpace(body)) == 0 && isJSONContentType(r) {
-		// Fastify's JSON body parser rejects an empty body before any
-		// schema runs, on EVERY route — including the ones whose schema
-		// is .optional(). Same envelope, same wording (verified live).
-		writeJSONValue(w, http.StatusBadRequest, map[string]any{
-			"error": "Body cannot be empty when content-type is set to 'application/json'",
-		})
 		return nil, false
 	}
 	return body, true
@@ -356,10 +346,10 @@ func (s *server) handleRecent(w http.ResponseWriter, r *http.Request) {
 	args.K, _ = c.positiveInt("k", 200)
 	args.Since, _ = c.datetime("since", "since must be ISO-8601 (e.g. 2026-05-02T17:00:00Z)")
 	args.Project, _ = c.projectRef("project")
-	args.IncludeProjects, _ = c.strArray("includeProjects", 16,
+	args.IncludeProjects, _ = c.strArray("includeProjects", 16, 1, 128,
 		func(s string) bool { return utf16Len(s) >= 1 && utf16Len(s) <= 128 && projectRefRe.MatchString(s) },
 		"project ref contains control characters")
-	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, validNamespaceItem,
+	args.IncludeNamespaces, _ = c.strArray("includeNamespaces", 16, 1, 128, validNamespaceItem,
 		"namespace must start alphanumeric and contain only letters, digits, dot, colon, underscore, or dash")
 	args.MaxSensitivity, _ = c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 	contentMode, _ := c.enum("contentMode", "full", "snippet", "ids")
@@ -381,7 +371,7 @@ func (s *server) handleRecent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shapeContent(results, contentMode)
-	writeJSONValue(w, http.StatusOK, map[string]any{"results": results})
+	writeJSONValue(w, http.StatusOK, obj{{"results", orderedItems(results)}})
 }
 
 func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {

@@ -47,15 +47,13 @@ func (s *server) handleSessionRecap(w http.ResponseWriter, r *http.Request) {
 	// .strict(): unknown keys → zod unrecognized_keys.
 	for key := range m {
 		if !recapKnownKeys[key] {
-			c.add("", fmt.Sprintf("Unrecognized key(s) in object: '%s'", key), "unrecognized_keys")
+			c.add("", fmt.Sprintf("Unrecognized key: %q", key), "unrecognized_keys")
 		}
 	}
 	items := map[string][]string{}
 	for _, g := range recapGroups {
 		// z.array(z.string().min(12).max(4000)).optional()
-		arr, ok := c.strArray(g.field, 1<<30,
-			func(s string) bool { return utf16Len(s) >= 12 && utf16Len(s) <= 4000 },
-			"String must contain at least 12 character(s)")
+		arr, ok := c.strArray(g.field, 1<<30, 12, 4000, noItemRule, "")
 		if ok {
 			items[g.field] = arr
 		}
@@ -80,7 +78,7 @@ func (s *server) handleSessionRecap(w http.ResponseWriter, r *http.Request) {
 	if raw, present := m["metadata"]; present && raw != nil {
 		mm, ok := raw.(map[string]any)
 		if !ok {
-			c.add("metadata", fmt.Sprintf("Expected object, received %s", jsonType(raw)), "invalid_type")
+			c.add("metadata", fmt.Sprintf("Invalid input: expected record, received %s", jsonType(raw)), "invalid_type")
 		} else {
 			metadata = mm
 		}
@@ -146,5 +144,5 @@ func (s *server) handleSessionRecap(w http.ResponseWriter, r *http.Request) {
 			results = append(results, result)
 		}
 	}
-	writeJSONValue(w, http.StatusCreated, map[string]any{"saved": saved, "results": results})
+	writeJSONValue(w, http.StatusCreated, obj{{"saved", saved}, {"results", results}})
 }

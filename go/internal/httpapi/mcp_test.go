@@ -18,29 +18,29 @@ func TestCallToolValidation(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := s.callTool(ctx, "public", "memory_search", map[string]any{})
-	if err == nil || err.Error() != "invalid argument 'query': Required" {
+	if err == nil || err.Error() != "invalid argument 'query': Invalid input: expected string, received undefined" {
 		t.Fatalf("memory_search{}: %v", err)
 	}
 
 	_, err = s.callTool(ctx, "public", "memory_remember", map[string]any{})
-	if err == nil || err.Error() != "invalid argument 'content': Required" {
+	if err == nil || err.Error() != "invalid argument 'content': Invalid input: expected string, received undefined" {
 		t.Fatalf("memory_remember{}: %v", err)
 	}
 
 	_, err = s.callTool(ctx, "public", "memory_neighbors", map[string]any{"depth": float64(2)})
-	if err == nil || err.Error() != "invalid argument 'id': Required" {
+	if err == nil || err.Error() != "invalid argument 'id': Invalid input: expected string, received undefined" {
 		t.Fatalf("memory_neighbors: %v", err)
 	}
 
 	// Strict empty schemas reject unknown keys like zod .strict().
 	_, err = s.callTool(ctx, "public", "memory_stats", map[string]any{"bogus": true})
-	if err == nil || !strings.Contains(err.Error(), "Unrecognized key(s) in object: 'bogus'") {
+	if err == nil || !strings.Contains(err.Error(), `Unrecognized key: "bogus"`) {
 		t.Fatalf("memory_stats strict: %v", err)
 	}
 
 	// Wrong-typed argument surfaces the zod-style message.
 	_, err = s.callTool(ctx, "public", "memory_search", map[string]any{"query": float64(7)})
-	if err == nil || !strings.Contains(err.Error(), "invalid argument 'query': Expected string") {
+	if err == nil || !strings.Contains(err.Error(), "invalid argument 'query': Invalid input: expected string") {
 		t.Fatalf("memory_search typed: %v", err)
 	}
 
@@ -59,16 +59,16 @@ func TestCallToolAdoptionReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, ok := r.(map[string]any)
+	report, ok := r.(obj)
 	if !ok {
 		t.Fatalf("report type %T", r)
 	}
-	mcpInfo := report["mcp"].(map[string]any)
-	if mcpInfo["toolCount"] != 21 {
-		t.Fatalf("toolCount = %v", mcpInfo["toolCount"])
+	mcpInfo := report.get("mcp").(obj)
+	if mcpInfo.get("toolCount") != 21 {
+		t.Fatalf("toolCount = %v", mcpInfo.get("toolCount"))
 	}
-	if report["requestedClient"] != "claude-code" {
-		t.Fatalf("requestedClient = %v", report["requestedClient"])
+	if report.get("requestedClient") != "claude-code" {
+		t.Fatalf("requestedClient = %v", report.get("requestedClient"))
 	}
 }
 

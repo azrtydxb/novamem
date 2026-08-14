@@ -13,11 +13,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -150,20 +153,57 @@ func New(opts Options) http.Handler {
 	s.registerDashboard(mux)
 
 	// Order matters and mirrors http.ts: CORS answers the preflight
-	// before anything else can 401 it, and the rate limiter sits outside
-	// the routes so its headers land on every answered request.
-	return requestLog(opts.Log, s.cors(s.rateLimit(mux)))
+	// before anything else can 401 it, the rate limiter sits outside the
+	// routes so its headers land on every answered request, and the JSON
+	// body guard sits where Fastify's content-type parser does — after
+	// routing, before the handler.
+	return requestLog(opts.Log, s.cors(s.rateLimit(emptyJSONBodyGuard(mux))))
 }
 
 // sendNotFound is Fastify's default 404 envelope — callers (and the
 // conformance suite) parse `error` off every 4xx body, so net/http's
 // text/plain "404 page not found" is not an option.
 func sendNotFound(w http.ResponseWriter, r *http.Request) {
-	writeJSONValue(w, http.StatusNotFound, map[string]any{
-		"message":    "Route " + r.Method + ":" + r.URL.Path + " not found",
-		"error":      "Not Found",
-		"statusCode": 404,
+	writeJSONValue(w, http.StatusNotFound, obj{
+		{"message", "Route " + r.Method + ":" + r.URL.Path + " not found"},
+		{"error", "Not Found"},
+		{"statusCode", 404},
 	})
+}
+
+// emptyJSONBodyGuard is Fastify's JSON content-type parser: a request
+// that declares `application/json` and carries no body is rejected
+// before the handler runs — on EVERY route, including the ones whose
+// schema is .optional() and the ones that never read a body at all.
+// Only routes that exist are checked, because Fastify parses after
+// routing (an unrouted path 404s without the parser ever running).
+func emptyJSONBodyGuard(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if isJSONContentType(r) {
+				if _, pattern := mux.Handler(r); pattern != "" && pattern != "/" {
+					var first [1]byte
+					n, _ := io.ReadFull(r.Body, first[:])
+					if n == 0 {
+						writeJSONValue(w, http.StatusBadRequest, map[string]any{
+							"error": "Body cannot be empty when content-type is set to 'application/json'",
+						})
+						return
+					}
+					r.Body = readCloser{io.MultiReader(bytes.NewReader(first[:n]), r.Body), r.Body}
+				}
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// readCloser re-attaches the original Closer to a peeked body.
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
 
 func setHardeningHeaders(w http.ResponseWriter) {
@@ -183,10 +223,105 @@ func writeJSON(w http.ResponseWriter, status int, body []byte) {
 	_, _ = w.Write(body)
 }
 
+// obj is a JSON object that marshals in insertion order. Go's
+// encoding/json sorts map keys; the TS server emits object literals in
+// source order, and the two only agree by accident. Every response whose
+// TS counterpart is not alphabetical is built with this (or with a
+// struct, whose fields already marshal in declaration order).
+type obj []kv
+
+type kv struct {
+	K string
+	V any
+}
+
+func (o obj) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, e := range o {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		key, err := marshalJS(e.K)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(key)
+		b.WriteByte(':')
+		val, err := marshalJS(e.V)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(val)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+// ordered projects a map into an obj in the given key order, so a
+// response the engine hands back as a Go map still marshals in the TS
+// object literal's order. Keys not listed keep encoding/json's sorted
+// order at the end, so a field added upstream can never be dropped
+// here — it only lands in the wrong place, which the differential
+// harness catches.
+func ordered(m map[string]any, keys ...string) obj {
+	out := make(obj, 0, len(m))
+	seen := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			out = append(out, kv{k, v})
+			seen[k] = true
+		}
+	}
+	rest := make([]string, 0, len(m))
+	for k := range m {
+		if !seen[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		out = append(out, kv{k, m[k]})
+	}
+	return out
+}
+
+// get looks a key up in an obj — the read side of the ordered form,
+// used by tests and by handlers that post-process a built response.
+func (o obj) get(key string) any {
+	for _, e := range o {
+		if e.K == key {
+			return e.V
+		}
+	}
+	return nil
+}
+
+// orderedIn applies `ordered` to a nested map value in place.
+func orderedIn(m map[string]any, key string, keys ...string) {
+	if nested, ok := m[key].(map[string]any); ok {
+		m[key] = ordered(nested, keys...)
+	}
+}
+
+// marshalJS is json.Marshal without Go's HTML escaping. JSON.stringify
+// emits `<`, `>` and `&` literally; encoding/json turns them into
+// \u003c/\u003e/\u0026, which shows up in every zod message that
+// carries a comparison operator ("expected number to be >=0").
+func marshalJS(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
 // writeJSONValue marshals v — used by the data plane where bodies are
 // built structs/maps rather than fixed byte strings.
 func writeJSONValue(w http.ResponseWriter, status int, value any) {
-	body, err := json.Marshal(value)
+	body, err := marshalJS(value)
 	if err != nil {
 		body = []byte(`{"error":"internal server error"}`)
 		status = http.StatusInternalServerError

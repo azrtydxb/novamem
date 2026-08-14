@@ -88,12 +88,6 @@ func (s *server) baAdmin(w http.ResponseWriter, r *http.Request, deniedCode, den
 	return u
 }
 
-// baValidation is better-call's body-schema rejection.
-func baValidation(w http.ResponseWriter, field string) {
-	baErr(w, http.StatusBadRequest, "VALIDATION_ERROR",
-		"[body."+field+"] Invalid input: expected string, received undefined")
-}
-
 func (s *server) handleBAListUsers(w http.ResponseWriter, r *http.Request) {
 	u := s.baAdmin(w, r, "YOU_ARE_NOT_ALLOWED_TO_LIST_USERS", "You are not allowed to list users")
 	if u == nil {
@@ -107,19 +101,18 @@ func (s *server) handleBAListUsers(w http.ResponseWriter, r *http.Request) {
 		s.sendEngineErr(w, r, err)
 		return
 	}
-	body := map[string]any{"users": users, "total": total}
+	body := obj{{"users", users}, {"total", total}}
 	if limit > 0 {
-		body["limit"] = limit
+		body = append(body, kv{"limit", limit})
 	}
 	if offset > 0 {
-		body["offset"] = offset
+		body = append(body, kv{"offset", offset})
 	}
 	writeJSONValue(w, http.StatusOK, body)
 }
 
 func (s *server) handleBACreateUser(w http.ResponseWriter, r *http.Request) {
-	if !s.trustedOrigin(r) {
-		baErr(w, http.StatusForbidden, "INVALID_ORIGIN", "Invalid origin")
+	if !s.baOrigin(w, r) {
 		return
 	}
 	body, ok := s.baBody(w, r)
@@ -130,15 +123,17 @@ func (s *server) handleBACreateUser(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		return
 	}
-	email, _ := body["email"].(string)
+	email, hasEmail := body["email"].(string)
 	name, hasName := body["name"].(string)
 	password, _ := body["password"].(string)
-	if email == "" {
-		baValidation(w, "email")
-		return
+	var msgs []string
+	if !hasEmail {
+		msgs = append(msgs, baMissingString("email"))
 	}
 	if !hasName {
-		baValidation(w, "name")
+		msgs = append(msgs, baMissingString("name"))
+	}
+	if baIssues(w, msgs) {
 		return
 	}
 	role, _ := body["role"].(string)
@@ -164,30 +159,32 @@ func (s *server) handleBACreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleBASetRole(w http.ResponseWriter, r *http.Request) {
-	if !s.trustedOrigin(r) {
-		baErr(w, http.StatusForbidden, "INVALID_ORIGIN", "Invalid origin")
+	if !s.baOrigin(w, r) {
 		return
 	}
 	body, ok := s.baBody(w, r)
 	if !ok {
 		return
 	}
-	userID, _ := body["userId"].(string)
+	userID, hasID := coercedString(body, "userId")
 	role, hasRole := body["role"].(string)
 	// guardLastAdmin runs before the session check, as in routes/auth.ts.
-	if userID != "" && role != "admin" && !s.guardLastAdmin(w, r, userID, "demote") {
+	if hasID && role != "admin" && !s.guardLastAdmin(w, r, userID, "demote") {
 		return
 	}
 	u := s.baAdmin(w, r, "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE", "You are not allowed to change users role")
 	if u == nil {
 		return
 	}
-	if userID == "" {
-		baValidation(w, "userId")
-		return
+	var msgs []string
+	if !hasID {
+		msgs = append(msgs, baMissingCoerced("userId"))
 	}
 	if !hasRole {
-		baValidation(w, "role")
+		// z.union([...]) has no single expected type to name.
+		msgs = append(msgs, "[body.role] Invalid input")
+	}
+	if baIssues(w, msgs) {
 		return
 	}
 	target, err := s.warm.GetBAUser(r.Context(), userID)
@@ -208,24 +205,23 @@ func (s *server) handleBASetRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleBARemoveUser(w http.ResponseWriter, r *http.Request) {
-	if !s.trustedOrigin(r) {
-		baErr(w, http.StatusForbidden, "INVALID_ORIGIN", "Invalid origin")
+	if !s.baOrigin(w, r) {
 		return
 	}
 	body, ok := s.baBody(w, r)
 	if !ok {
 		return
 	}
-	userID, _ := body["userId"].(string)
-	if userID != "" && !s.guardLastAdmin(w, r, userID, "delete") {
+	userID, hasID := coercedString(body, "userId")
+	if hasID && !s.guardLastAdmin(w, r, userID, "delete") {
 		return
 	}
 	u := s.baAdmin(w, r, "YOU_ARE_NOT_ALLOWED_TO_DELETE_USERS", "You are not allowed to delete users")
 	if u == nil {
 		return
 	}
-	if userID == "" {
-		baValidation(w, "userId")
+	if !hasID {
+		baIssues(w, []string{baMissingCoerced("userId")})
 		return
 	}
 	if userID == u.ID {
@@ -267,8 +263,7 @@ func (s *server) guardLastAdmin(w http.ResponseWriter, r *http.Request, targetID
 }
 
 func (s *server) handleBAChangePassword(w http.ResponseWriter, r *http.Request) {
-	if !s.trustedOrigin(r) {
-		baErr(w, http.StatusForbidden, "INVALID_ORIGIN", "Invalid origin")
+	if !s.baOrigin(w, r) {
 		return
 	}
 	body, ok := s.baBody(w, r)
@@ -296,14 +291,15 @@ func (s *server) handleBAChangePassword(w http.ResponseWriter, r *http.Request) 
 	}
 	current, hasCurrent := body["currentPassword"].(string)
 	next, hasNext := body["newPassword"].(string)
+	var msgs []string
 	if !hasNext {
-		fail(http.StatusBadRequest, "VALIDATION_ERROR",
-			"[body.newPassword] Invalid input: expected string, received undefined")
-		return
+		msgs = append(msgs, baMissingString("newPassword"))
 	}
 	if !hasCurrent {
-		fail(http.StatusBadRequest, "VALIDATION_ERROR",
-			"[body.currentPassword] Invalid input: expected string, received undefined")
+		msgs = append(msgs, baMissingString("currentPassword"))
+	}
+	if len(msgs) > 0 {
+		fail(http.StatusBadRequest, baValidationErrorMsg, strings.Join(msgs, "; "))
 		return
 	}
 	revoke, _ := body["revokeOtherSessions"].(bool)

@@ -176,7 +176,7 @@ func (c *v) enum(key string, allowed ...string) (string, bool) {
 			return s, true
 		}
 	}
-	c.add(key, fmt.Sprintf("Invalid option: expected one of %q", strings.Join(allowed, `"|"`)), "invalid_value")
+	c.add(key, `Invalid option: expected one of "`+strings.Join(allowed, `"|"`)+`"`, "invalid_value")
 	return "", false
 }
 
@@ -242,7 +242,15 @@ func (c *v) metadata(key string) (map[string]any, bool) {
 	return m, true
 }
 
-func (c *v) strArray(key string, maxItems int, itemCheck func(string) bool, itemMessage string) ([]string, bool) {
+// noItemRule is the item rule for arrays whose only per-item constraint
+// is the length bound strArray already applies.
+func noItemRule(string) bool { return true }
+
+// strArray validates z.array(z.string().min(minLen).max(maxLen)<rule>)
+// .max(maxItems). Length violations carry zod's own too_small/too_big
+// issues; itemCheck is the rule on top (a regex, typically) and reports
+// invalid_format with itemMessage.
+func (c *v) strArray(key string, maxItems, minLen, maxLen int, itemCheck func(string) bool, itemMessage string) ([]string, bool) {
 	raw, ok := c.m[key]
 	if !ok || raw == nil {
 		return nil, false
@@ -261,6 +269,15 @@ func (c *v) strArray(key string, maxItems int, itemCheck func(string) bool, item
 		s, ok := item.(string)
 		if !ok {
 			c.add(fmt.Sprintf("%s.%d", key, i), fmt.Sprintf("Invalid input: expected string, received %s", jsonType(item)), "invalid_type")
+			return nil, false
+		}
+		if n := utf16Len(s); n < minLen {
+			c.add(fmt.Sprintf("%s.%d", key, i),
+				fmt.Sprintf("Too small: expected string to have >=%d characters", minLen), "too_small")
+			return nil, false
+		} else if n > maxLen {
+			c.add(fmt.Sprintf("%s.%d", key, i),
+				fmt.Sprintf("Too big: expected string to have <=%d characters", maxLen), "too_big")
 			return nil, false
 		}
 		if !itemCheck(s) {

@@ -107,37 +107,25 @@ func sha256HexStr(s string) string {
 }
 
 // refreshGuidance — adoption.ts refreshGuidance(), verbatim.
-func refreshGuidance() map[string]any {
-	return map[string]any{
-		"hermes": map[string]any{
-			"commands":           []string{"/reload-mcp", "/reload-skills", "/reset"},
-			"requiresNewSession": true,
-			"note":               "Hermes can reload MCP/skills, but the active prompt/tool schema is safest after /reset or a fresh session.",
-		},
-		"claudeCode": map[string]any{
-			"commands":           []string{"restart Claude Code session", "re-run tools/list"},
-			"requiresNewSession": true,
-			"note":               "Claude Code snapshots MCP tools/instructions at session start; start a new session after server or shim updates.",
-		},
-		"claudeDesktop": map[string]any{
-			"commands":           []string{"restart Claude Desktop", "open a new chat"},
-			"requiresNewSession": true,
-			"note":               "Claude Desktop loads stdio MCP servers on app/session start; restart the app after changing config or shim version.",
-		},
-		"codex": map[string]any{
-			"commands":           []string{"restart Codex CLI", "re-run tools/list"},
-			"requiresNewSession": true,
-			"note":               "Codex CLI should refresh by starting a new process/session; prefer the stdio shim if remote transport compatibility is uncertain.",
-		},
-		"generic": map[string]any{
-			"commands":           []string{"call initialize", "call tools/list", "compare tool count/names and instructionsHash", "start a new MCP session if stale"},
-			"requiresNewSession": true,
-			"note":               "Most MCP clients snapshot tools and instructions per session. Treat a mismatch as stale and reconnect.",
-		},
+func refreshGuidance() obj {
+	client := func(commands []string, note string) obj {
+		return obj{{"commands", commands}, {"requiresNewSession", true}, {"note", note}}
+	}
+	return obj{
+		{"hermes", client([]string{"/reload-mcp", "/reload-skills", "/reset"},
+			"Hermes can reload MCP/skills, but the active prompt/tool schema is safest after /reset or a fresh session.")},
+		{"claudeCode", client([]string{"restart Claude Code session", "re-run tools/list"},
+			"Claude Code snapshots MCP tools/instructions at session start; start a new session after server or shim updates.")},
+		{"claudeDesktop", client([]string{"restart Claude Desktop", "open a new chat"},
+			"Claude Desktop loads stdio MCP servers on app/session start; restart the app after changing config or shim version.")},
+		{"codex", client([]string{"restart Codex CLI", "re-run tools/list"},
+			"Codex CLI should refresh by starting a new process/session; prefer the stdio shim if remote transport compatibility is uncertain.")},
+		{"generic", client([]string{"call initialize", "call tools/list", "compare tool count/names and instructionsHash", "start a new MCP session if stale"},
+			"Most MCP clients snapshot tools and instructions per session. Treat a mismatch as stale and reconnect.")},
 	}
 }
 
-func buildAdoptionReport(opts adoptionOptions) map[string]any {
+func buildAdoptionReport(opts adoptionOptions) obj {
 	tools := append([]string{}, toolNames...)
 	sort.Strings(tools)
 	toolSet := map[string]bool{}
@@ -213,59 +201,59 @@ func buildAdoptionReport(opts adoptionOptions) map[string]any {
 		client = "generic"
 	}
 
-	return map[string]any{
-		"server": map[string]any{"name": "novamem", "adoptionSchema": 1},
-		"mcp": map[string]any{
-			"toolCount":           len(tools),
-			"tools":               tools,
-			"instructionsHash":    instructionsHash,
-			"instructionsPreview": utf16Prefix(novamemInstructions, 240),
-			"listChanged":         false,
-		},
-		"requiredTools": requiredTools,
-		"features": map[string]any{
-			"proactiveContext":         toolSet["memory_context"] && (!toolsObserved || observedSet["memory_context"]),
-			"durableCapture":           toolSet["memory_capture"] && (!toolsObserved || observedSet["memory_capture"]),
-			"sessionRecap":             toolSet["memory_session_recap"],
-			"hygiene":                  toolSet["memory_hygiene"],
-			"evaluation":               toolSet["memory_evaluate"],
-			"sensitivity":              true,
-			"projectAwareContextPacks": true,
-			"retentionDecay":           true,
-		},
-		"refresh":         refreshGuidance(),
-		"requestedClient": client,
-		"diagnostics": []map[string]any{
+	return obj{
+		{"server", obj{{"name", "novamem"}, {"adoptionSchema", 1}}},
+		{"mcp", obj{
+			{"toolCount", len(tools)},
+			{"tools", tools},
+			{"instructionsHash", instructionsHash},
+			{"instructionsPreview", utf16Prefix(novamemInstructions, 240)},
+			{"listChanged", false},
+		}},
+		{"requiredTools", requiredTools},
+		{"features", obj{
+			{"proactiveContext", toolSet["memory_context"] && (!toolsObserved || observedSet["memory_context"])},
+			{"durableCapture", toolSet["memory_capture"] && (!toolsObserved || observedSet["memory_capture"])},
+			{"sessionRecap", toolSet["memory_session_recap"]},
+			{"hygiene", toolSet["memory_hygiene"]},
+			{"evaluation", toolSet["memory_evaluate"]},
+			{"sensitivity", true},
+			{"projectAwareContextPacks", true},
+			{"retentionDecay", true},
+		}},
+		{"refresh", refreshGuidance()},
+		{"requestedClient", client},
+		{"diagnostics", []obj{
 			{
-				"check":                "tool_surface",
-				"ok":                   toolsObserved && !toolSurfaceStale,
-				"status":               toolSurfaceStatus,
-				"expectedCount":        len(tools),
-				"observedCount":        observedCount,
-				"missingRequiredTools": missingRequiredTools,
-				"missingTools":         missingTools,
-				"extraTools":           extraTools,
-				"action":               toolSurfaceAction,
+				{"check", "tool_surface"},
+				{"ok", toolsObserved && !toolSurfaceStale},
+				{"status", toolSurfaceStatus},
+				{"expectedCount", len(tools)},
+				{"observedCount", observedCount},
+				{"missingRequiredTools", missingRequiredTools},
+				{"missingTools", missingTools},
+				{"extraTools", extraTools},
+				{"action", toolSurfaceAction},
 			},
 			{
-				"check":    "instructions_hash",
-				"ok":       instructionsObserved && !instructionMismatch,
-				"status":   instructionsStatus,
-				"expected": instructionsHash,
-				"observed": observedHash,
-				"action":   instructionsAction,
+				{"check", "instructions_hash"},
+				{"ok", instructionsObserved && !instructionMismatch},
+				{"status", instructionsStatus},
+				{"expected", instructionsHash},
+				{"observed", observedHash},
+				{"action", instructionsAction},
 			},
 			{
-				"check": "mandatory_protocol",
+				{"check", "mandatory_protocol"},
 				// NOVAMEM_INSTRUCTIONS.includes("Before answering any
 				// substantive request") && memory_context && memory_capture
 				// — statically true for this build, evaluated anyway so a
 				// future instructions edit can flip it exactly like TS.
-				"ok":                  strings.Contains(novamemInstructions, "Before answering any substantive request") && toolSet["memory_context"] && toolSet["memory_capture"],
-				"verifiableAtRuntime": false,
-				"action":              "ensure host LLM receives MCP initialize instructions or install the novamem skill bundle; MCP cannot force host compliance without client-side call telemetry",
+				{"ok", strings.Contains(novamemInstructions, "Before answering any substantive request") && toolSet["memory_context"] && toolSet["memory_capture"]},
+				{"verifiableAtRuntime", false},
+				{"action", "ensure host LLM receives MCP initialize instructions or install the novamem skill bundle; MCP cannot force host compliance without client-side call telemetry"},
 			},
-		},
+		}},
 	}
 }
 

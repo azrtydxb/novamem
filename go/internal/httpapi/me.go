@@ -6,6 +6,8 @@
 package httpapi
 
 import (
+	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -100,18 +102,31 @@ func (s *server) handleMeMetrics(w http.ResponseWriter, r *http.Request) {
 		global := s.metrics.Snapshot(ctx)
 		global["tokens"] = snap["tokens"]
 		global["_hasMyTokens"] = len(tokens) > 0
-		writeJSONValue(w, http.StatusOK, global)
+		writeJSONValue(w, http.StatusOK, orderedMetrics(global))
 		return
 	}
-	writeJSONValue(w, http.StatusOK, snap)
+	writeJSONValue(w, http.StatusOK, orderedMetrics(snap))
+}
+
+// orderedMetrics puts admin/metrics.ts's key order back on the
+// collector's map-shaped snapshot (both the global and per-user shapes;
+// `ordered` skips keys a given shape does not carry).
+func orderedMetrics(m map[string]any) obj {
+	orderedIn(m, "counters", "queries_total", "queries_zero_hit", "remembers_total",
+		"forgets_total", "hits_warm_total", "hits_cold_total", "hits_graph_total",
+		"promotions_total", "demotions_total", "decay_runs_total", "orphans_reaped_total",
+		"search_errors_total", "remember_errors_total")
+	orderedIn(m, "gauges", "warm_entries", "cold_entries", "graph_edges", "orphans_pending",
+		"pending_embeddings", "pending_facts", "last_decay_run_iso")
+	orderedIn(m, "rates", "queries_per_sec_60s", "remembers_per_sec_60s")
+	return ordered(m, "userId", "counters", "gauges", "rates", "uptime_ms", "tokens", "_hasMyTokens")
 }
 
 func (s *server) handleMeMetricsHistory(w http.ResponseWriter, r *http.Request) {
 	hours := 24
 	if raw := r.URL.Query().Get("hours"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 48 {
-			s.sendIssues(w, []issue{{Path: "hours", Message: "invalid", Code: "invalid_type"}})
+		n, ok := s.queryInt(w, raw, "hours", 1, 48, false)
+		if !ok {
 			return
 		}
 		hours = n
@@ -122,7 +137,7 @@ func (s *server) handleMeMetricsHistory(w http.ResponseWriter, r *http.Request) 
 		s.sendEngineErr(w, r, err)
 		return
 	}
-	writeJSONValue(w, http.StatusOK, map[string]any{"hours": hours, "samples": samples})
+	writeJSONValue(w, http.StatusOK, obj{{"hours", hours}, {"samples", samples}})
 }
 
 // ─── Tokens ────────────────────────────────────────────────────────────
@@ -203,21 +218,21 @@ func (s *server) handleMeTokenMint(w http.ResponseWriter, r *http.Request) {
 		iso := jsTime(*expiresAt)
 		expiresISO = &iso
 	}
-	writeJSONValue(w, http.StatusCreated, map[string]any{
-		"token":     token,
-		"userId":    u.ID,
-		"createdAt": jsTime(createdAt),
-		"scope":     scope,
-		"projectId": projectID,
-		"expiresAt": expiresISO,
-		"warning":   "Store this token now — it will not be shown again. Server retains only a sha256 hash.",
+	writeJSONValue(w, http.StatusCreated, obj{
+		{"token", token},
+		{"userId", u.ID},
+		{"createdAt", jsTime(createdAt)},
+		{"scope", scope},
+		{"projectId", projectID},
+		{"expiresAt", expiresISO},
+		{"warning", "Store this token now — it will not be shown again. Server retains only a sha256 hash."},
 	})
 }
 
 func (s *server) handleMeTokenDelete(w http.ResponseWriter, r *http.Request) {
 	hash := r.PathValue("hash")
 	if !tokenHashRe.MatchString(hash) {
-		s.sendIssues(w, []issue{{Path: "hash", Message: "Invalid", Code: "invalid_string"}})
+		s.sendIssues(w, []issue{{Path: "hash", Message: `Invalid string: must match pattern /^[a-f0-9]{64}$/i`, Code: "invalid_format"}})
 		return
 	}
 	deleted, err := s.warm.DeleteUserTokenByHash(r.Context(), s.dashUser(r).ID, hash)
@@ -339,15 +354,8 @@ func (s *server) handleMeMembersList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleMeMemberAdd(w http.ResponseWriter, r *http.Request) {
-	u := s.dashUser(r)
-	p, ok := s.meProject(w, r)
-	if !ok {
-		return
-	}
-	if p.OwnerUserID != u.ID {
-		s.sendError(w, http.StatusForbidden, "only the owner can add members")
-		return
-	}
+	// The schema runs before the handler in Fastify, so a bad body is a
+	// 400 even when the project in the path does not exist.
 	c, ok := s.meBody(w, r, false)
 	if !ok {
 		return
@@ -356,6 +364,15 @@ func (s *server) handleMeMemberAdd(w http.ResponseWriter, r *http.Request) {
 	role, _ := c.enum("role", "owner", "member")
 	if len(c.issues) > 0 {
 		s.sendIssues(w, c.issues)
+		return
+	}
+	u := s.dashUser(r)
+	p, ok := s.meProject(w, r)
+	if !ok {
+		return
+	}
+	if p.OwnerUserID != u.ID {
+		s.sendError(w, http.StatusForbidden, "only the owner can add members")
 		return
 	}
 	if role == "" {
@@ -470,7 +487,7 @@ func (s *server) handleMeActiveSet(w http.ResponseWriter, r *http.Request) {
 	}
 	ref, _ := c.projectRef("project")
 	if ref == nil {
-		c.add("project", "Required", "invalid_type")
+		c.add("project", "Invalid input: expected string, received undefined", "invalid_type")
 	}
 	if len(c.issues) > 0 {
 		s.sendIssues(w, c.issues)
@@ -510,22 +527,48 @@ func (s *server) handleMeActiveClear(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// queryInt validates a `z.coerce.number().int()` query parameter with
+// zod v4's own messages: an unparseable value coerces to NaN, and the
+// bounds report as too_small / too_big.
+func (s *server) queryInt(w http.ResponseWriter, raw, path string, min, max int, minExclusive bool) (int, bool) {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		s.sendIssues(w, []issue{{Path: path,
+			Message: "Invalid input: expected number, received NaN", Code: "invalid_type"}})
+		return 0, false
+	}
+	if n < min {
+		msg := fmt.Sprintf("Too small: expected number to be >=%d", min)
+		if minExclusive {
+			msg = fmt.Sprintf("Too small: expected number to be >%d", min-1)
+		}
+		s.sendIssues(w, []issue{{Path: path, Message: msg, Code: "too_small"}})
+		return 0, false
+	}
+	if n > max {
+		s.sendIssues(w, []issue{{Path: path,
+			Message: fmt.Sprintf("Too big: expected number to be <=%d", max), Code: "too_big"}})
+		return 0, false
+	}
+	return n, true
+}
+
 // ─── Export / import / usage / changes ─────────────────────────────────
 
 func (s *server) handleMeExport(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit := 0
 	if raw := q.Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 1000 {
-			s.sendIssues(w, []issue{{Path: "limit", Message: "invalid", Code: "invalid_type"}})
+		n, ok := s.queryInt(w, raw, "limit", 1, 1000, true)
+		if !ok {
 			return
 		}
 		limit = n
 	}
 	afterID := q.Get("afterId")
-	if len(afterID) > 64 {
-		s.sendIssues(w, []issue{{Path: "afterId", Message: "Too big", Code: "too_big"}})
+	if utf16Len(afterID) > 64 {
+		s.sendIssues(w, []issue{{Path: "afterId",
+			Message: "Too big: expected string to have <=64 characters", Code: "too_big"}})
 		return
 	}
 	entries, err := s.warm.ExportEntries(r.Context(), s.dashUser(r).ID, afterID, limit)
@@ -533,18 +576,18 @@ func (s *server) handleMeExport(w http.ResponseWriter, r *http.Request) {
 		s.sendEngineErr(w, r, err)
 		return
 	}
-	out := make([]map[string]any, 0, len(entries))
+	out := make([]obj, 0, len(entries))
 	for _, e := range entries {
 		metadata := e.Metadata
 		if metadata == nil {
 			metadata = map[string]any{}
 		}
-		out = append(out, map[string]any{
-			"id": e.ID, "projectId": e.ProjectID, "content": e.Content,
-			"namespace": e.Namespace, "source": e.Source, "agentName": e.AgentName,
-			"metadata": metadata, "sourceType": e.SourceType, "capturedFrom": e.CapturedFrom,
-			"confidence": e.Confidence,
-			"createdAt":  jsTime(e.CreatedAt), "updatedAt": jsTime(e.UpdatedAt),
+		out = append(out, obj{
+			{"id", e.ID}, {"projectId", e.ProjectID}, {"content", e.Content},
+			{"namespace", e.Namespace}, {"source", e.Source}, {"agentName", e.AgentName},
+			{"metadata", metadata}, {"sourceType", e.SourceType}, {"capturedFrom", e.CapturedFrom},
+			{"confidence", e.Confidence},
+			{"createdAt", jsTime(e.CreatedAt)}, {"updatedAt", jsTime(e.UpdatedAt)},
 		})
 	}
 	var next *string
@@ -552,7 +595,7 @@ func (s *server) handleMeExport(w http.ResponseWriter, r *http.Request) {
 		id := entries[len(entries)-1].ID
 		next = &id
 	}
-	writeJSONValue(w, http.StatusOK, map[string]any{"entries": out, "nextAfterId": next})
+	writeJSONValue(w, http.StatusOK, obj{{"entries", out}, {"nextAfterId", next}})
 }
 
 func (s *server) handleMeImport(w http.ResponseWriter, r *http.Request) {
@@ -562,9 +605,26 @@ func (s *server) handleMeImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rawEntries, _ := c.m["entries"].([]any)
-	if len(rawEntries) == 0 || len(rawEntries) > 200 {
-		s.sendIssues(w, []issue{{Path: "entries", Message: "invalid", Code: "invalid_type"}})
+	raw, present := c.m["entries"]
+	rawEntries, isArray := raw.([]any)
+	switch {
+	case !isArray:
+		// An absent key is `undefined` in zod's wording, not `null`.
+		got := "undefined"
+		if present {
+			got = jsonType(raw)
+		}
+		s.sendIssues(w, []issue{{Path: "entries",
+			Message: "Invalid input: expected array, received " + got,
+			Code:    "invalid_type"}})
+		return
+	case len(rawEntries) == 0:
+		s.sendIssues(w, []issue{{Path: "entries",
+			Message: "Too small: expected array to have >=1 items", Code: "too_small"}})
+		return
+	case len(rawEntries) > 200:
+		s.sendIssues(w, []issue{{Path: "entries",
+			Message: "Too big: expected array to have <=200 items", Code: "too_big"}})
 		return
 	}
 	reqs := make([]engine.RememberRequest, 0, len(rawEntries))
@@ -572,7 +632,9 @@ func (s *server) handleMeImport(w http.ResponseWriter, r *http.Request) {
 		m, isObj := raw.(map[string]any)
 		if !isObj {
 			s.sendIssues(w, []issue{{
-				Path: "entries." + strconv.Itoa(i), Message: "Expected object", Code: "invalid_type",
+				Path:    "entries." + strconv.Itoa(i),
+				Message: "Invalid input: expected object, received " + jsonType(raw),
+				Code:    "invalid_type",
 			}})
 			return
 		}
@@ -692,30 +754,29 @@ func (s *server) handleMeChanges(w http.ResponseWriter, r *http.Request) {
 	var since *time.Time
 	if raw := q.Get("since"); raw != "" {
 		if !isoDatetimeRe.MatchString(raw) {
-			s.sendIssues(w, []issue{{Path: "since", Message: "Invalid datetime", Code: "invalid_string"}})
+			s.sendIssues(w, []issue{{Path: "since", Message: "Invalid ISO datetime", Code: "invalid_format"}})
 			return
 		}
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			s.sendIssues(w, []issue{{Path: "since", Message: "Invalid datetime", Code: "invalid_string"}})
+			s.sendIssues(w, []issue{{Path: "since", Message: "Invalid ISO datetime", Code: "invalid_format"}})
 			return
 		}
 		since = &t
 	}
 	var afterSeq *int64
 	if raw := q.Get("afterSeq"); raw != "" {
-		n, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || n < 0 {
-			s.sendIssues(w, []issue{{Path: "afterSeq", Message: "invalid", Code: "invalid_type"}})
+		n, ok := s.queryInt(w, raw, "afterSeq", 0, math.MaxInt32, false)
+		if !ok {
 			return
 		}
-		afterSeq = &n
+		n64 := int64(n)
+		afterSeq = &n64
 	}
 	limit := 0
 	if raw := q.Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 500 {
-			s.sendIssues(w, []issue{{Path: "limit", Message: "invalid", Code: "invalid_type"}})
+		n, ok := s.queryInt(w, raw, "limit", 1, 500, true)
+		if !ok {
 			return
 		}
 		limit = n
