@@ -1,8 +1,7 @@
-// Package warmstore is the Postgres warm tier. In the skeleton slice it
-// only carries the migration-version startup check: Drizzle (the TS
-// server's migrator) remains the single owner of the schema for the
-// whole migration, and this server refuses to start against a schema
-// version it does not know (frozen-contract rule from the design spec).
+// Package warmstore is the Postgres warm tier. Drizzle (the TS server's
+// migrator) remains the single owner of the schema for the whole
+// migration; this server refuses to start against a schema version it
+// does not know (frozen-contract rule from the design spec).
 package warmstore
 
 import (
@@ -12,28 +11,31 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ExpectedMigrations is the number of applied drizzle migrations this
-// build understands (0000..000N in packages/server/src/warm-store/
-// migrations). Bump it in the same PR as any new migration.
-// ponytail: a count, not a hash chain — good enough to catch "schema
-// moved without a Go release"; upgrade to journal-hash comparison when
-// Go owns queries that a reordered migration could silently break.
-const ExpectedMigrations = 9
+// ExpectedLatestMigration is the `when` timestamp of the LAST entry in
+// packages/server/src/warm-store/migrations/meta/_journal.json. Bump it
+// in the same PR as any new migration; migrations_journal_test.go reads
+// the journal and fails when this drifts.
+//
+// Latest-timestamp, not row count: the journal table carries residue
+// rows from a pre-campaign squash (observed on the bench: ids 1,2 then
+// 25..32), so counts differ across environments while the latest
+// applied migration is the invariant that actually matters. Nothing
+// NEWER than this build knows may be applied either — that means the
+// schema moved without a Go release.
+const ExpectedLatestMigration = 1786611692270
 
-// CheckMigrationVersion refuses unknown schema versions. Fewer applied
-// migrations than expected is equally fatal: the code would query
-// columns that don't exist yet.
+// CheckMigrationVersion refuses unknown schema versions.
 func CheckMigrationVersion(ctx context.Context, pool *pgxpool.Pool) error {
-	var n int
+	var latest int64
 	err := pool.QueryRow(ctx,
-		`SELECT count(*) FROM drizzle.__drizzle_migrations`).Scan(&n)
+		`SELECT coalesce(max(created_at), 0) FROM drizzle.__drizzle_migrations`).Scan(&latest)
 	if err != nil {
 		return fmt.Errorf("reading drizzle migration journal: %w", err)
 	}
-	if n != ExpectedMigrations {
+	if latest != ExpectedLatestMigration {
 		return fmt.Errorf(
-			"schema at drizzle migration %d, this build expects %d — refusing to start against an unknown schema version",
-			n, ExpectedMigrations)
+			"schema's latest applied migration is %d, this build expects %d — refusing to start against an unknown schema version",
+			latest, ExpectedLatestMigration)
 	}
 	return nil
 }
