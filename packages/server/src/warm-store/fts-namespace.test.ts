@@ -41,9 +41,15 @@ describe("ftsSearch: namespace list binding", () => {
     // (drizzle's inArray would emit the fully-qualified column).
     const { readFileSync } = await import("node:fs");
     const src = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-    expect(src, "ftsSearch must not pass a JS array into ANY()").not.toContain(
-      "f.namespace = ANY(${args.namespaces",
+    // Regex, not substring: catches the array-into-ANY() shape however it
+    // is spelled (whitespace, a cast, a renamed variable) rather than only
+    // the exact form that regressed.
+    expect(
+      src,
+      "ftsSearch must not interpolate a JS array into ANY() — drizzle expands it to a row constructor",
+    ).not.toMatch(/ANY\(\s*\$\{[^}]*namespaces[^}]*\}/);
+    expect(src, "namespaces must bind as an aliased IN-list").toMatch(
+      /f\.namespace\s+IN\s*\(/,
     );
-    expect(src, "namespaces must bind as an aliased IN-list").toContain("f.namespace IN (");
   });
 });
