@@ -37,6 +37,7 @@ func (s *server) registerAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/sign-in/email", s.handleSignIn)
 	mux.HandleFunc("POST /api/auth/sign-out", s.handleSignOut)
 	mux.HandleFunc("GET /api/auth/get-session", s.handleGetSession)
+	s.registerAuthAdmin(mux)
 }
 
 func (s *server) handleRotateToken(w http.ResponseWriter, r *http.Request) {

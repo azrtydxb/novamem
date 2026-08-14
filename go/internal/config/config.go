@@ -78,6 +78,13 @@ type Config struct {
 	DecayEffectiveDays  float64 // NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS, default 7
 	ReconcileIntervalMs int     // NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS, default 60000
 	ReconcileBatch      int     // NOVAMEM_EMBEDDINGS_RECONCILE_BATCH, default 400
+	// RateLimitPerMinute — global per-IP request cap
+	// (NOVAMEM_RATE_LIMIT_PER_MINUTE, config.ts default 600).
+	RateLimitPerMinute int
+	// BootstrapAdminEmail / -Password seed the first admin when the
+	// deployment has none (NOVAMEM_BOOTSTRAP_ADMIN_EMAIL / _PASSWORD).
+	BootstrapAdminEmail    string
+	BootstrapAdminPassword string
 	// AdminDashboard — master switch for /v1/admin/metrics{,/prom}
 	// (NOVAMEM_ADMIN_DASHBOARD; "0"/"false"/"no"/"off" disable it).
 	AdminDashboard bool
@@ -214,6 +221,15 @@ func Load() (Config, error) {
 	if c.ReconcileBatch, err = intEnv("NOVAMEM_EMBEDDINGS_RECONCILE_BATCH", 400); err != nil {
 		return c, err
 	}
+	if c.RateLimitPerMinute, err = intEnv("NOVAMEM_RATE_LIMIT_PER_MINUTE", 600); err != nil {
+		return c, err
+	}
+	c.BootstrapAdminEmail = os.Getenv("NOVAMEM_BOOTSTRAP_ADMIN_EMAIL")
+	c.BootstrapAdminPassword = os.Getenv("NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD")
+	// main.ts scrubs the password from the environment right after
+	// reading it so a later `env` dump (or a child process) can't see it.
+	_ = os.Unsetenv("NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD")
+
 	// Unset (or anything that isn't a falsy spelling) leaves the admin
 	// surface enabled — config.ts admin.dashboard.
 	switch raw := strings.ToLower(strings.TrimSpace(os.Getenv("NOVAMEM_ADMIN_DASHBOARD"))); raw {
