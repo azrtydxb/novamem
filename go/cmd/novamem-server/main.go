@@ -13,7 +13,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/azrtydxb/novamem/go/internal/coldstore"
 	"github.com/azrtydxb/novamem/go/internal/config"
+	"github.com/azrtydxb/novamem/go/internal/embeddings"
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/httpapi"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
@@ -65,19 +67,76 @@ func run() error {
 	}
 
 	warm := warmstore.New(pool)
-	eng := engine.New(warm, log,
-		engine.Quotas{MaxEntries: cfg.QuotaMaxEntries, WritesPerMinute: cfg.QuotaWritesPerMinute},
-		cfg.MaxContentChars, nil)
+
+	// Cold tier and embedder are optional: unconfigured, the engine takes
+	// the same branches the TS server takes with those services down —
+	// writes store with embedded_at NULL and search degrades to keyword.
+	var cold *coldstore.Store
+	if cfg.ColdProvider == "pgvector" {
+		cold, err = coldstore.New(ctx, coldstore.Config{
+			URL:        cfg.ColdURL,
+			VectorSize: cfg.ColdVectorSize,
+			TimeoutMs:  cfg.ColdTimeoutMs,
+		})
+		if err != nil {
+			return fmt.Errorf("cold store: %w", err)
+		}
+		defer cold.Close()
+	}
+	var embedder *embeddings.Client
+	if cfg.EmbeddingsProvider == "openai-compatible" {
+		embedder, err = embeddings.New(embeddings.Config{
+			Endpoint:       cfg.EmbeddingsEndpoint,
+			Model:          cfg.EmbeddingsModel,
+			APIKey:         cfg.EmbeddingsAPIKey,
+			Dimensions:     cfg.EmbeddingsDim,
+			TimeoutMs:      cfg.EmbeddingsTimeoutMs,
+			QueryPrefix:    cfg.EmbeddingsQueryPrefix,
+			DocumentPrefix: cfg.EmbeddingsDocumentPrefix,
+			Log:            log,
+		})
+		if err != nil {
+			return fmt.Errorf("embedder: %w", err)
+		}
+		log.Info("embedder configured", "model", embedder.ModelID(),
+			"dimensions", embedder.Dimensions(),
+			"queryPrefix", embedder.Prefixes().Query,
+			"documentPrefix", embedder.Prefixes().Document)
+	}
+	var reranker *embeddings.Reranker
+	if cfg.RerankEnabled {
+		reranker = embeddings.NewReranker(embeddings.RerankerConfig{
+			Endpoint:  cfg.RerankEndpoint,
+			Model:     cfg.RerankModel,
+			APIKey:    cfg.RerankAPIKey,
+			TimeoutMs: cfg.RerankTimeoutMs,
+		})
+	}
+
+	eng := engine.New(engine.Options{
+		Warm:            warm,
+		Cold:            cold,
+		Embedder:        embedder,
+		Reranker:        reranker,
+		Log:             log,
+		Quotas:          engine.Quotas{MaxEntries: cfg.QuotaMaxEntries, WritesPerMinute: cfg.QuotaWritesPerMinute},
+		MaxContentChars: cfg.MaxContentChars,
+		PersonalTerms:   cfg.PersonalTerms,
+		MinVectorScore:  cfg.MinVectorScore,
+		RerankPoolMult:  cfg.RerankPoolMult,
+		GraphLinkFanout: cfg.GraphLinkFanout,
+	})
 
 	srv := &http.Server{
 		Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Handler: httpapi.New(httpapi.Options{
-			Pool:      pool,
-			Log:       log,
-			Engine:    eng,
-			Warm:      warm,
-			AuthMode:  cfg.AuthMode,
-			AuthToken: cfg.AuthToken,
+			Pool:        pool,
+			Log:         log,
+			Engine:      eng,
+			Warm:        warm,
+			AuthMode:    cfg.AuthMode,
+			AuthToken:   cfg.AuthToken,
+			CorsOrigins: cfg.CorsOrigins,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

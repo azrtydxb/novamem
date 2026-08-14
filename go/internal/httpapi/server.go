@@ -42,23 +42,28 @@ type Options struct {
 	// refuses it before we get here). AuthToken required for "bearer".
 	AuthMode  string
 	AuthToken string
+	// CorsOrigins is the MCP browser-origin allow-list (http.ts
+	// corsOrigins / NOVAMEM_CORS_ORIGINS).
+	CorsOrigins []string
 }
 
 type server struct {
-	log       *slog.Logger
-	engine    *engine.Engine
-	warm      *warmstore.Store
-	authMode  string
-	authToken string
+	log         *slog.Logger
+	engine      *engine.Engine
+	warm        *warmstore.Store
+	authMode    string
+	authToken   string
+	corsOrigins []string
 }
 
 func New(opts Options) http.Handler {
 	s := &server{
-		log:       opts.Log,
-		engine:    opts.Engine,
-		warm:      opts.Warm,
-		authMode:  opts.AuthMode,
-		authToken: opts.AuthToken,
+		log:         opts.Log,
+		engine:      opts.Engine,
+		warm:        opts.Warm,
+		authMode:    opts.AuthMode,
+		authToken:   opts.AuthToken,
+		corsOrigins: opts.CorsOrigins,
 	}
 	mux := http.NewServeMux()
 
@@ -96,6 +101,8 @@ func New(opts Options) http.Handler {
 	})
 
 	s.registerDataPlane(mux)
+	s.registerSearchPlane(mux)
+	s.registerMCP(mux)
 
 	return requestLog(opts.Log, mux)
 }
@@ -150,3 +157,17 @@ func (s *statusWriter) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
 }
+
+// Flush must pass through: the MCP SSE streams write their frames and
+// flush, and a wrapper that swallows Flush leaves the handshake frame
+// sitting in net/http's buffer until the stream ends — the client waits
+// forever for an endpoint event that was already written.
+func (s *statusWriter) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer
+// (deadline control on the long-lived SSE responses).
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }

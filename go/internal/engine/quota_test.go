@@ -11,7 +11,7 @@ import (
 // newQuotaEngine builds an engine whose DB seams are pure functions —
 // the window/counting logic under test never touches Postgres.
 func newQuotaEngine(quotas Quotas, count *int) (*Engine, *time.Time) {
-	e := New(nil, slog.New(slog.DiscardHandler), quotas, 0, nil)
+	e := New(Options{Log: slog.New(slog.DiscardHandler), Quotas: quotas})
 	clock := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
 	e.now = func() time.Time { return clock }
 	e.getUserQuota = func(context.Context, string) (*int, *int, error) { return nil, nil, nil }
