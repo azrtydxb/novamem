@@ -1632,8 +1632,17 @@ export class WarmStore {
     // orders strict-first — then the JS below keeps only strict rows when
     // any exist, which reproduces the old two-query semantics exactly.
     // The user's text stays a bound parameter throughout.
+    // `= ANY(${array})` looks right but drizzle expands a JS array into a
+    // row constructor — `= ANY((a, b))` — which Postgres rejects with
+    // 42809 "op ANY/ALL (array) requires array on right side". The tier's
+    // catch then swallowed it, so EVERY multi-namespace search (the
+    // default whenever includeNamespaces is set) silently ran with a dead
+    // keyword tier: measured on the bench oracle, single-namespace hits
+    // scored keyword 1.0/0.69 while the same query across two namespaces
+    // scored keyword 0 on every hit. Cast the parameter to text[] so it
+    // binds as an array.
     const nsSql = useNsArray
-      ? sql`f.namespace = ANY(${args.namespaces!})`
+      ? sql`f.namespace = ANY(${args.namespaces!}::text[])`
       : sql`f.namespace = ${args.namespace}`;
     const scopeSql = isProject
       ? sql`f.project_id = ${args.projectId!}`
