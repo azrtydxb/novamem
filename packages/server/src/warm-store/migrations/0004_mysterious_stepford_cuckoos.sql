@@ -1,2 +1,0 @@
-ALTER TABLE "memory_entries" ADD COLUMN "facts_pending_at" timestamp with time zone;--> statement-breakpoint
-CREATE INDEX "idx_entries_facts_pending" ON "memory_entries" USING btree ("facts_pending_at") WHERE "memory_entries"."facts_pending_at" IS NOT NULL;
