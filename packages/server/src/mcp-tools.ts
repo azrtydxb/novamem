@@ -127,6 +127,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         project: { type: "string", description: "Optional project (sub-brain) to scope to." },
         metadata: { type: "object" },
         sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        expiresAt: {
+          type: "string",
+          description:
+            "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted.",
+        },
       },
       required: ["content"],
     },
@@ -248,6 +253,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
             graph: { type: "number", description: "Graph-neighbour weight" },
           },
         },
+        contentMode: {
+          type: "string",
+          enum: ["full", "snippet", "ids"],
+          description:
+            "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\".",
+        },
       },
       required: ["query"],
     },
@@ -285,6 +296,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           type: "string",
           description: "Optional project (sub-brain) to scope to.",
         },
+        expiresAt: {
+          type: "string",
+          description:
+            "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted.",
+        },
       },
       required: ["content"],
     },
@@ -308,6 +324,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
         maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        contentMode: {
+          type: "string",
+          enum: ["full", "snippet", "ids"],
+          description:
+            "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\".",
+        },
         k: { type: "number" },
         project: { type: "string", description: "Project id or name." },
         includeProjects: { type: "array", items: { type: "string" } },
@@ -337,6 +359,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         since: { type: "string", description: "ISO-8601 timestamp" },
         project: { type: "string", description: "Project id or name." },
         includeProjects: { type: "array", items: { type: "string" } },
+        contentMode: {
+          type: "string",
+          enum: ["full", "snippet", "ids"],
+          description:
+            "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\".",
+        },
       },
     },
     annotations: {
