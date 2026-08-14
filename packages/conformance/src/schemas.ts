@@ -159,3 +159,146 @@ export const ReapOrphansResponse = z
 export const ObserveResponse = z
   .object({ observed: z.number(), reflected: z.boolean(), logChars: z.number() })
   .passthrough();
+
+/** POST /v1/me/projects response (201): `{id, name, ownerUserId, createdAt}`. */
+export const ProjectResponse = z
+  .object({
+    id: z.string().min(1),
+    name: z.string(),
+    ownerUserId: z.string(),
+    createdAt: z.string(),
+  })
+  .passthrough();
+
+/** GET /v1/me/active-project response (200): `{active: {id, name?} | null}`. */
+export const ActiveProjectResponse = z
+  .object({ active: z.object({ id: z.string(), name: z.string().optional() }).nullable() })
+  .passthrough();
+
+/** GET /v1/me/today response (200). */
+export const TodayResponse = z
+  .object({
+    events: z.array(
+      z
+        .object({
+          kind: z.enum(["remember", "token", "project", "audit"]),
+          at: z.string(),
+          text: z.string(),
+          project: z.string().nullable(),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+/** GET /v1/me/onboarding response (200). */
+export const OnboardingResponse = z
+  .object({
+    bootstrapDone: z.boolean(),
+    userExists: z.boolean(),
+    mintedToken: z.boolean(),
+    remembered: z.boolean(),
+    userId: z.string().nullable(),
+  })
+  .passthrough();
+
+/** GET /v1/me/metrics/history response (200): `{hours, samples: [...]}`. */
+export const MetricsHistoryResponse = z
+  .object({
+    hours: z.number(),
+    samples: z.array(
+      z.object({ sampledAt: z.string(), queries: z.number(), remembers: z.number() }).passthrough(),
+    ),
+  })
+  .passthrough();
+
+/** GET /v1/me/tokens response (200): `{tokens: [...]}`. */
+export const TokenListResponse = z
+  .object({ tokens: z.array(z.record(z.string(), z.unknown())) })
+  .passthrough();
+
+/** POST /v1/me/tokens response (201). */
+export const MintTokenResponse = z
+  .object({
+    token: z.string(),
+    userId: z.string(),
+    createdAt: z.string(),
+    scope: z.string(),
+    projectId: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+    warning: z.string(),
+  })
+  .passthrough();
+
+/** GET /v1/me/projects/{id}/members response (200). */
+export const MembersResponse = z
+  .object({
+    members: z.array(
+      z
+        .object({ userId: z.string(), username: z.string(), role: z.string(), joinedAt: z.string() })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+/** GET /v1/me/usage response (200): `{entries, quota: {maxEntries, writesPerMinute}}`. */
+export const UsageResponse = z
+  .object({
+    entries: z.number(),
+    quota: z
+      .object({
+        maxEntries: z.number().nullable(),
+        writesPerMinute: z.number().nullable(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+/** GET /v1/me/changes response (200): `{changes: [...], nextSeq}`. */
+export const ChangesResponse = z
+  .object({
+    changes: z.array(
+      z
+        .object({
+          seq: z.number(),
+          entryId: z.string(),
+          projectId: z.string().nullable(),
+          change: z.enum(["created", "updated", "superseded", "deleted", "expired"]),
+          detail: z.record(z.string(), z.unknown()).nullable(),
+          at: z.string(),
+        })
+        .passthrough(),
+    ),
+    nextSeq: z.number().nullable(),
+  })
+  .passthrough();
+
+/** GET /v1/me/export response (200): `{entries: [...], nextAfterId}`. */
+export const ExportResponse = z
+  .object({
+    entries: z.array(
+      z
+        .object({
+          id: z.string(),
+          projectId: z.string().nullable(),
+          content: z.string(),
+          namespace: z.string(),
+          source: z.string(),
+          createdAt: z.string(),
+          updatedAt: z.string(),
+        })
+        .passthrough(),
+    ),
+    nextAfterId: z.string().nullable(),
+  })
+  .passthrough();
+
+/** POST /v1/me/import response (201 fully/partially imported, 400 all
+ *  entries failed): `{imported, deduplicated, failed: [{index, error}]}`. */
+export const ImportResponse = z
+  .object({
+    imported: z.number(),
+    deduplicated: z.number(),
+    failed: z.array(z.object({ index: z.number(), error: z.string() }).passthrough()),
+  })
+  .passthrough();
