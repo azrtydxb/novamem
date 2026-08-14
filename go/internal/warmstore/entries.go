@@ -181,25 +181,30 @@ func (s *Store) SetEmbeddedAt(ctx context.Context, id string, at *time.Time) err
 }
 
 // scopeClause reproduces the three isolation modes shared by
-// listNamespaces / listRecent in TS. Returns SQL referencing $1=userID
-// plus appended args.
+// listNamespaces / listRecent in TS, appending its own parameters.
+// The clause appends exactly the parameters it references — a
+// project-scoped read must not leave an unreferenced $1 in the statement,
+// which Postgres rejects outright ("could not determine data type of
+// parameter $1").
 func scopeClause(userID string, projectID *string, includeProjects []string, args *[]any) string {
 	if len(includeProjects) > 0 {
-		*args = append(*args, includeProjects)
-		return fmt.Sprintf(`((user_id = $1 AND project_id IS NULL) OR project_id = ANY($%d))`, len(*args))
+		*args = append(*args, userID, includeProjects)
+		n := len(*args)
+		return fmt.Sprintf(`((user_id = $%d AND project_id IS NULL) OR project_id = ANY($%d))`, n-1, n)
 	}
 	if projectID != nil {
 		*args = append(*args, *projectID)
 		return fmt.Sprintf(`project_id = $%d`, len(*args))
 	}
-	return `(user_id = $1 AND project_id IS NULL)`
+	*args = append(*args, userID)
+	return fmt.Sprintf(`(user_id = $%d AND project_id IS NULL)`, len(*args))
 }
 
 // ListNamespaces — distinct namespaces with entries visible in scope
 // (warm-store/index.ts listNamespaces). Used for the recent fanout when
 // the caller specifies neither namespace nor includeNamespaces.
 func (s *Store) ListNamespaces(ctx context.Context, userID string, projectID *string, includeProjects []string) ([]string, error) {
-	args := []any{userID}
+	args := []any{}
 	scope := scopeClause(userID, projectID, includeProjects, &args)
 	rows, err := s.Pool.Query(ctx,
 		`SELECT DISTINCT namespace FROM memory_entries WHERE `+scope, args...)
@@ -224,7 +229,7 @@ func (s *Store) ListRecent(ctx context.Context, userID string, namespaces []stri
 	if len(namespaces) == 0 {
 		return nil, nil
 	}
-	args := []any{userID}
+	args := []any{}
 	scope := scopeClause(userID, projectID, includeProjects, &args)
 	args = append(args, namespaces)
 	nsCond := fmt.Sprintf(`namespace = ANY($%d)`, len(args))

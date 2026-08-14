@@ -38,7 +38,7 @@ func newTestServer(t *testing.T, authMode, authToken string) http.Handler {
 	pool := deadPool(t)
 	log := slog.New(slog.DiscardHandler)
 	warm := warmstore.New(pool)
-	eng := engine.New(warm, log, engine.Quotas{}, 4000, nil)
+	eng := engine.New(engine.Options{Warm: warm, Log: log, MaxContentChars: 4000})
 	return New(Options{Pool: pool, Log: log, Engine: eng, Warm: warm, AuthMode: authMode, AuthToken: authToken})
 }
 
