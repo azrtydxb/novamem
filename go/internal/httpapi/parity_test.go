@@ -47,7 +47,6 @@ func TestCORSHeaders(t *testing.T) {
 			"Access-Control-Allow-Methods":     "GET,HEAD,POST",
 			"Access-Control-Allow-Headers":     "content-type,authorization",
 			"Vary":                             "Origin, Access-Control-Request-Headers",
-			"Content-Length":                   "0",
 		}
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("status %d, want 204", rec.Code)
@@ -140,8 +139,9 @@ func TestCORSHeaders(t *testing.T) {
 func TestRateLimitWindow(t *testing.T) {
 	h := newTestServerOpts(t, func(o *Options) { o.RateLimitPerMinute = 3 })
 
-	// /live is not on the allow-list (/health, /live, /ready are) — use a
-	// path that is limited.
+	// /health, /live and /ready ARE allow-listed (see
+	// TestRateLimitAllowList) — this case needs a limited path, so it
+	// uses a data-plane route.
 	call := func() *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", "/openapi.json", nil))

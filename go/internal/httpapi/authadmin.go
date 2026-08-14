@@ -334,8 +334,17 @@ func (s *server) handleBAChangePassword(w http.ResponseWriter, r *http.Request) 
 		s.sendEngineErr(w, r, err)
 		return
 	}
-	if _, err := s.warm.SetCredentialPassword(ctx, u.ID, hash); err != nil {
+	updated, err := s.warm.SetCredentialPassword(ctx, u.ID, hash)
+	if err != nil {
 		s.sendEngineErr(w, r, err)
+		return
+	}
+	if !updated {
+		// The credential row vanished between the verify above and this
+		// write (deleted account, or a concurrent change). Reporting 200
+		// here would tell the caller their password changed when it did
+		// not — the one outcome this handler must never produce.
+		s.sendError(w, http.StatusBadRequest, "INVALID_PASSWORD")
 		return
 	}
 	s.limiter.Clear(key)
