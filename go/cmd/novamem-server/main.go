@@ -30,6 +30,35 @@ func main() {
 	}
 }
 
+func seedBootstrapAdmin(ctx context.Context, warm *warmstore.Store, log *slog.Logger, email, password string) error {
+	admins, err := warm.CountAdmins(ctx)
+	if err != nil {
+		return err
+	}
+	if admins > 0 {
+		return nil
+	}
+	u, err := warm.CreateBAUser(ctx, email, "bootstrap-admin", password, "admin")
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		// The email is taken by a non-admin — promote it rather than
+		// leaving the deployment without an operator account.
+		existing, err := warm.FindUserByExactEmail(ctx, email)
+		if err != nil || existing == nil {
+			return err
+		}
+		if _, err := warm.SetBAUserRole(ctx, existing.ID, "admin"); err != nil {
+			return err
+		}
+		log.Info("promoted existing user to bootstrap admin", "email", email)
+		return nil
+	}
+	log.Info("seeded bootstrap admin", "email", email)
+	return nil
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -69,6 +98,18 @@ func run() error {
 	}
 
 	warm := warmstore.New(pool)
+
+	// Bootstrap admin (main.ts): seed the operator account when the
+	// deployment has NO admin yet — even if regular users already exist.
+	// `name` is a fixed sentinel rather than the email on purpose: the
+	// `name` column has no uniqueness constraint, so reusing the email
+	// there would let a later account collide with it in any name-based
+	// lookup. Failure is logged, never fatal.
+	if cfg.BootstrapAdminEmail != "" && cfg.BootstrapAdminPassword != "" {
+		if err := seedBootstrapAdmin(ctx, warm, log, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
+			log.Error("bootstrap admin failed", "err", err)
+		}
+	}
 
 	// Cold tier and embedder are optional: unconfigured, the engine takes
 	// the same branches the TS server takes with those services down —
@@ -181,10 +222,11 @@ func run() error {
 			// The same list Better Auth was configured with (main.ts):
 			// base URL + the dev SPA origin, plus any operator-allowed
 			// CORS origins.
-			TrustedOrigins: append([]string{cfg.BaseURL, "http://localhost:5173"}, cfg.CorsOrigins...),
-			CorsOrigins:    cfg.CorsOrigins,
-			AdminDashboard: cfg.AdminDashboard,
-			Metrics:        coll,
+			TrustedOrigins:     append([]string{cfg.BaseURL, "http://localhost:5173"}, cfg.CorsOrigins...),
+			CorsOrigins:        cfg.CorsOrigins,
+			AdminDashboard:     cfg.AdminDashboard,
+			RateLimitPerMinute: cfg.RateLimitPerMinute,
+			Metrics:            coll,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

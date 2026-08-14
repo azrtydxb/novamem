@@ -57,6 +57,9 @@ type Options struct {
 	// CorsOrigins is the MCP browser-origin allow-list (http.ts
 	// corsOrigins / NOVAMEM_CORS_ORIGINS).
 	CorsOrigins []string
+	// RateLimitPerMinute is NOVAMEM_RATE_LIMIT_PER_MINUTE (default 600
+	// in config.ts); 0 disables the limiter entirely.
+	RateLimitPerMinute int
 	// AdminDashboard is NOVAMEM_ADMIN_DASHBOARD — the master switch for
 	// /v1/admin/metrics{,/prom}. Off → both 404 "admin disabled" for
 	// every caller.
@@ -76,6 +79,7 @@ type server struct {
 	trustedOrigins []string
 	corsOrigins    []string
 	limiter        *auth.Limiter
+	limitPerMinute int
 	metrics        *metrics.Collector
 	adminDashboard bool
 }
@@ -92,6 +96,7 @@ func New(opts Options) http.Handler {
 		trustedOrigins: opts.TrustedOrigins,
 		corsOrigins:    opts.CorsOrigins,
 		limiter:        auth.NewLimiter(),
+		limitPerMinute: opts.RateLimitPerMinute,
 		metrics:        opts.Metrics,
 		adminDashboard: opts.AdminDashboard,
 	}
@@ -138,18 +143,27 @@ func New(opts Options) http.Handler {
 	// Unmatched routes answer Fastify's default 404 envelope rather than
 	// net/http's text/plain "404 page not found" — callers (and the
 	// conformance suite) parse `error` off every 4xx body.
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSONValue(w, http.StatusNotFound, map[string]any{
-			"message":    "Route " + r.Method + ":" + r.URL.Path + " not found",
-			"error":      "Not Found",
-			"statusCode": 404,
-		})
-	})
+	mux.HandleFunc("/", sendNotFound)
 	if opts.AuthMode == "user" {
 		s.registerMe(mux)
 	}
+	s.registerDashboard(mux)
 
-	return requestLog(opts.Log, mux)
+	// Order matters and mirrors http.ts: CORS answers the preflight
+	// before anything else can 401 it, and the rate limiter sits outside
+	// the routes so its headers land on every answered request.
+	return requestLog(opts.Log, s.cors(s.rateLimit(mux)))
+}
+
+// sendNotFound is Fastify's default 404 envelope — callers (and the
+// conformance suite) parse `error` off every 4xx body, so net/http's
+// text/plain "404 page not found" is not an option.
+func sendNotFound(w http.ResponseWriter, r *http.Request) {
+	writeJSONValue(w, http.StatusNotFound, map[string]any{
+		"message":    "Route " + r.Method + ":" + r.URL.Path + " not found",
+		"error":      "Not Found",
+		"statusCode": 404,
+	})
 }
 
 func setHardeningHeaders(w http.ResponseWriter) {
