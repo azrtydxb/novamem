@@ -167,6 +167,7 @@ const TOOL_DEFINITIONS = [
         project: { type: "string" },
         metadata: { type: "object" },
         sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        expiresAt: { type: "string", description: "Explicit TTL (ISO-8601). Past it the entry is hidden from reads and later hard-deleted. Use when the fact has a known lifetime." },
       },
       required: ["content"],
     },
@@ -238,6 +239,7 @@ const TOOL_DEFINITIONS = [
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
         maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        contentMode: { type: "string", enum: ["full", "snippet", "ids"], description: "\"snippet\" truncates content ~240 chars; \"ids\" omits content/metadata (rank first, hydrate later). Default \"full\"." },
         project: {
           type: "string",
           description: "Project id or name. Omit for user-wide entries.",
@@ -269,6 +271,7 @@ const TOOL_DEFINITIONS = [
         confidence: { type: "number", description: "0..1" },
         force: { type: "boolean" },
         project: { type: "string", description: "Project id or name." },
+        expiresAt: { type: "string", description: "Explicit TTL (ISO-8601). Past it the entry is hidden from reads and later hard-deleted. Use when the fact has a known lifetime." },
       },
       required: ["content"],
     },
@@ -536,6 +539,7 @@ export function buildRemoteMcpServer(
             project,
             metadata: args.metadata && typeof args.metadata === "object" ? args.metadata : undefined,
             sensitivity: optStr(args.sensitivity),
+            expiresAt: optStr(args.expiresAt),
           } as unknown as Parameters<typeof client.capture>[0];
           const r = await client.capture(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -615,6 +619,7 @@ export function buildRemoteMcpServer(
             includeProjects,
             weights,
             maxSensitivity: optStr(args.maxSensitivity),
+            contentMode: optStr(args.contentMode),
           } as unknown as Parameters<typeof client.search>[0];
           const r = await client.search(searchBody);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -632,6 +637,7 @@ export function buildRemoteMcpServer(
             force: optBool(args.force),
             project,
             sensitivity: optStr(args.sensitivity),
+            expiresAt: optStr(args.expiresAt),
           } as unknown as Parameters<typeof client.remember>[0];
           const r = await client.remember(rememberBody);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
