@@ -269,8 +269,14 @@ func readBASession(rows pgx.Rows) (*BASession, error) {
 	return &s, nil
 }
 
-// ListBASessions returns every live session for a user, oldest first —
+// ListBASessions returns the live sessions for a user —
 // internalAdapter.listSessions, which filters expired rows out.
+//
+// Deliberately unordered: Better Auth calls adapter.findMany with no
+// sortBy, so the TS server's query carries no ORDER BY either and
+// Postgres may return these rows in any order. Adding one here would
+// read as a tidy-up but would be a divergence from the oracle, and the
+// LIMIT means it could also change WHICH rows come back.
 func (s *Store) ListBASessions(ctx context.Context, userID string) ([]BASession, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+baSessionCols+` FROM "session"
 		 WHERE "userId" = $1 AND "expiresAt" > now() LIMIT `+itoa(baFindManyLimit), userID)

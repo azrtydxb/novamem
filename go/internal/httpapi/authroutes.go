@@ -217,8 +217,9 @@ func baErr(w http.ResponseWriter, status int, code, message string) {
 // like Better Auth's own default (memory) storage — N replicas means an
 // effective ceiling of N x max. Move to the DB store if that matters.
 type baRateLimit struct {
-	mu sync.Mutex
-	at map[string][]time.Time
+	mu    sync.Mutex
+	at    map[string][]time.Time
+	sweep time.Time
 }
 
 // allow reports whether the request passes, and if not, the whole
@@ -229,6 +230,18 @@ func (b *baRateLimit) allow(key string, window time.Duration, max int) (bool, in
 	defer b.mu.Unlock()
 	if b.at == nil {
 		b.at = map[string][]time.Time{}
+	}
+	// A key whose attempts have all aged out would otherwise sit in the
+	// map forever, so every caller IP that ever reached sign-in would
+	// cost a permanent entry. Sweep at most once per window — the map
+	// only grows on sign-in attempts, so this stays cheap and bounded.
+	if now.After(b.sweep) {
+		for k, ts := range b.at {
+			if len(ts) == 0 || now.Sub(ts[len(ts)-1]) >= window {
+				delete(b.at, k)
+			}
+		}
+		b.sweep = now.Add(window)
 	}
 	kept := b.at[key][:0]
 	for _, t := range b.at[key] {
