@@ -745,3 +745,29 @@ to test is not one.
   (`novamem-go` deployment) was not redeployed with these fixes — the
   spec's "deployed and exercised live" gate is **not** satisfied by this
   audit.
+
+## Addendum — ledger closed (2026-08-14)
+
+Every divergence in §7 is now closed in the Go server, including the
+rows previously marked ACCEPTED or "won't fix": the LLM subsystems
+(#14) are ported, Qdrant is implemented, `NOVAMEM_PG_POOL_MAX` (#15) is
+honored, zod wording (#8), key ordering (#12) and empty-body
+strictness (#13) all match, and `NOVAMEM_COLD_PROVIDER` now defaults to
+`qdrant` exactly as `config.ts` does.
+
+Two rows remain by explicit decision rather than omission:
+
+- **In-process embeddings (`local-transformers`).** Owner decision: the
+  Go server points at an API endpoint and never embeds a model. Running
+  ONNX in process needs cgo and costs the single static binary; a
+  local-only deployment runs a serving container instead. The TS
+  server's path is untouched.
+- **`pprof` / goroutine metrics (#16).** Neither server exposes them,
+  so this was never a parity gap; worth adding when Go becomes primary.
+
+The verdict in §9 is superseded: the blockers it named (dashboard,
+`/api/auth/*`, CORS, rate limiting, bootstrap seed) are all implemented
+and the retrieval-behaviour caveat is resolved — the Go server now runs
+extraction, observer and decomposition exactly as bench's TS
+deployment does.
+

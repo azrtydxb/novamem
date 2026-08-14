@@ -64,7 +64,8 @@ type Config struct {
 	ColdTimeoutMs  int    // NOVAMEM_COLD_TIMEOUT_MS, default 15000
 
 	// Embedder. Only the openai-compatible provider is ported (the TS
-	// default local-transformers has no Go equivalent).
+	// default local-transformers is deliberately unsupported — see the
+	// switch below).
 	EmbeddingsProvider       string // NOVAMEM_EMBEDDINGS_PROVIDER
 	EmbeddingsEndpoint       string // NOVAMEM_EMBEDDINGS_ENDPOINT
 	EmbeddingsModel          string // NOVAMEM_EMBEDDINGS_MODEL
@@ -227,7 +228,16 @@ func Load() (Config, error) {
 	switch c.EmbeddingsProvider {
 	case "", "openai-compatible":
 	case "local-transformers":
-		return c, fmt.Errorf("NOVAMEM_EMBEDDINGS_PROVIDER=local-transformers is not ported to the Go server — use openai-compatible")
+		// Product decision (owner, 2026-08-14): the Go server does not
+		// embed a local model — it points at an API endpoint. In-process
+		// ONNX would need cgo and forfeit the single static binary, and
+		// the deployments that want fully-local embeddings run a small
+		// serving container and set NOVAMEM_EMBEDDINGS_ENDPOINT at it.
+		// This is intentional, not an unfinished port.
+		return c, fmt.Errorf(
+			"NOVAMEM_EMBEDDINGS_PROVIDER=local-transformers is not supported by the Go server by design — " +
+				"run your embedding model behind an OpenAI-compatible endpoint and set " +
+				"NOVAMEM_EMBEDDINGS_PROVIDER=openai-compatible with NOVAMEM_EMBEDDINGS_ENDPOINT")
 	default:
 		return c, fmt.Errorf("NOVAMEM_EMBEDDINGS_PROVIDER %q is not one of openai-compatible", c.EmbeddingsProvider)
 	}
