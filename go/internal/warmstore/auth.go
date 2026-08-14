@@ -116,6 +116,12 @@ func (s *Store) SessionUser(ctx context.Context, token string) (*User, time.Time
 func (s *Store) RefreshSession(ctx context.Context, token string, ttl, updateAge time.Duration) (time.Time, bool, error) {
 	var updatedAt time.Time
 	err := s.Pool.QueryRow(ctx, `SELECT "updatedAt" FROM "session" WHERE token = $1`, token).Scan(&updatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Missing session is "nothing to refresh", not a fault — same
+		// stance as SessionUser, so a signed-out cookie can't turn a
+		// request into a 500.
+		return time.Time{}, false, nil
+	}
 	if err != nil {
 		return time.Time{}, false, err
 	}

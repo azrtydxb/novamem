@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/azrtydxb/novamem/go/internal/auth"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
@@ -200,6 +201,17 @@ func (s *server) sessionUser(r *http.Request) *warmstore.User {
 			return nil
 		}
 		if u != nil {
+			// Better Auth's rolling expiry (updateAge): a session older
+			// than sessionUpdateAge gets its window extended, so an
+			// active user never hits a forced re-login. Off the response
+			// path — a failed refresh must not fail the request.
+			go func(token string) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if _, _, err := s.warm.RefreshSession(ctx, token, sessionTTL, sessionUpdateAge); err != nil {
+					s.log.Warn("session refresh failed", "err", err)
+				}
+			}(tok)
 			return u
 		}
 	}
