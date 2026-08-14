@@ -4,7 +4,7 @@ title: Environment reference
 
 # Environment variable reference
 
-Every novamem-server config knob lives in env vars. The schema is enforced at startup by [`packages/server/src/config.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/config.ts) — boot fails fast if anything required is missing.
+Every novamem-server config knob lives in env vars. The schema is enforced at startup by [`go/internal/config/config.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/config/config.go) — boot fails fast if anything required is missing.
 
 ## Required for production
 

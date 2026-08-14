@@ -74,4 +74,4 @@ Without decay, every entry stays warm forever. The warm tier (Postgres) becomes 
 
 ## Source
 
-[`packages/server/src/engine/index.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/engine/index.ts) — `decay()`, `maybePromote()`, `dreamCycle()`.
+[`go/internal/engine/`](https://github.com/azrtydxb/novamem/blob/main/go/internal/engine/) — decay, promotion and the dream cycle (`jobs.go`, `dream.go`).

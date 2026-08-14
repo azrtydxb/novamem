@@ -23,37 +23,37 @@ novamem/
 ├── .changeset/                 — pending version bumps for the npm packages
 ├── .github/workflows/          — CI, Release, Pages
 ├── docker-compose.yaml         — single-host stack
-├── Dockerfile                  — multi-arch server image
+├── go/Dockerfile               — multi-arch server image
 ├── pnpm-workspace.yaml
 └── tsconfig.base.json          — root tsconfig with workspace path mappings
 ```
 
-## packages/server
+## go/
 
-The bulk of the code. Subdirs:
+The server itself — a single static Go binary that embeds the admin SPA,
+the migrations and the OpenAPI document.
 
 ```
-src/
-├── main.ts              — bootstrap: load config, start Fastify, seed admin
-├── config.ts            — Zod-validated env schema
-├── http.ts              — Fastify wiring: hooks, plugins, route registration
-├── mcp.ts               — MCP server impl (in-process)
-├── mcp-tools.ts         — tool definitions (single source for SSE + stdio)
-├── mcp-instructions.ts  — NOVAMEM_INSTRUCTIONS for the agent
-├── openapi.ts           — Swagger generation
-├── engine/              — MemoryEngine: search, remember, neighbors, decay…
-├── warm-store/          — Postgres + drizzle layer
-├── cold-store.ts        — Qdrant client wrapper
-├── routes/              — per-section route registration (data-plane, admin, me, mcp-sse, auth)
-├── admin/               — metrics + audit-log helpers
-└── *.test.ts            — colocated vitest specs
+cmd/novamem-server/      — bootstrap: load config, migrate, serve
+cmd/gen-openapi/         — writes docs/api/openapi.json from the route table
+internal/
+├── config/              — env schema, validated at startup
+├── httpapi/             — routing, auth, CORS, rate limiting, /v1 + /api/auth
+│   ├── openapi.go       — the OpenAPI source of truth
+│   └── admin-ui/        — the embedded dashboard build
+├── engine/              — search, remember, neighbors, decay, dream, facts
+├── warmstore/           — Postgres layer
+│   └── migrations/      — embedded SQL + drizzle-format journal
+├── coldstore/           — pgvector and Qdrant backends
+├── mcp/                 — MCP server: 21 tools over Streamable HTTP + SSE
+└── auth/                — Better Auth-compatible hashing, cookies, JWKS
 ```
 
 ## packages/admin-ui
 
 React 19 + Vite + Tailwind v4. Pages live under `src/pages/`. Shared components in `src/components/`. Theme tokens (the Grid palette) in `src/index.css` via `@theme`.
 
-The build outputs to `dist/`, then a `build:assets` step in the server's pretest hook copies it into `packages/server/dist/admin/ui/`. The server serves the SPA from there at `/admin/*`.
+The build outputs to `dist/`, then `go/scripts/sync-admin-ui.sh` copies it into `go/internal/httpapi/admin-ui/`, where `go:embed` bakes it into the binary. The server serves the SPA from there at `/admin/*`.
 
 ## packages/init
 
@@ -65,7 +65,7 @@ Tiny wrapper that proxies stdio JSON-RPC ↔ SSE. Why it exists: many MCP hosts 
 
 ## packages/client
 
-Hand-written typed TypeScript client. Re-exports the request/response types from `packages/server/src/types.ts` so a consumer of the client gets the same types the server emits.
+Hand-written typed TypeScript client. Its types are kept in step with `docs/api/openapi.json`, which the Go server generates from its own route table.
 
 ## packages/docs-site
 
@@ -79,10 +79,10 @@ This site. VitePress + markdown. Builds into `site/docs/` so the Pages workflow 
 
 | I want to… | Look in |
 |---|---|
-| Add a new memory operation | `packages/server/src/engine/index.ts` + `packages/server/src/mcp-tools.ts` |
+| Add a new memory operation | `go/internal/engine/` + `go/internal/mcp/tooldefs.json` |
 | Change the dashboard | `packages/admin-ui/src/pages/` |
 | Tweak the install CLI | `packages/init/src/` |
 | Update a doc | `packages/docs-site/<section>/` |
-| Add an env var | `.env.example` + `packages/server/src/config.ts` + `packages/docs-site/install/env-reference.md` |
+| Add an env var | `.env.example` + `go/internal/config/config.go` + `packages/docs-site/install/env-reference.md` |
 | Fix a CI failure | `.github/workflows/` |
 | Bump a package version | `pnpm changeset` (npm packages) or manual `chore(release):` PR (server) |

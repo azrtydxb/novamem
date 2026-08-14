@@ -43,7 +43,7 @@ cp .env.example .env
 #   NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=...   # min 8 chars
 
 set -a; source .env; set +a
-node packages/server/dist/main.js
+./novamem-server
 ```
 
 Or run under a process supervisor:
@@ -52,7 +52,7 @@ Or run under a process supervisor:
 # systemd unit (excerpt)
 [Service]
 EnvironmentFile=/etc/novamem.env
-ExecStart=/usr/bin/node /opt/novamem/packages/server/dist/main.js
+ExecStart=/opt/novamem/novamem-server
 Restart=always
 User=novamem
 ```

@@ -98,4 +98,4 @@ After fusion, `metrics.recordQuery(tenantId, { warm, cold, graph })` counts how 
 
 ## Source of truth
 
-[`packages/server/src/engine/hybrid-search.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/engine/hybrid-search.ts) is the small (≤200 line) file that implements the fuse — start there if you want to change the algorithm. The engine method `search()` orchestrates the per-tier calls.
+[`go/internal/engine/search.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/engine/search.go) implements the fuse — start there if you want to change the algorithm. The engine method `search()` orchestrates the per-tier calls.

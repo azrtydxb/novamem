@@ -173,7 +173,7 @@ FTS, `EXTRACT(EPOCH …)`, and the GENERATED `tsv` column). Drizzle owns
 the schema; that's where the migrations live; that's the table-shape
 source of truth.
 
-The engine layer (`packages/server/src/engine/index.ts`) deliberately
+The engine layer (`go/internal/engine/`) deliberately
 uses raw `warm.pool.query` for its ~10 cross-cutting queries (decay
 loop, orphan reaper, dream-cycle compaction, edge promotion, the
 transactional `forget`). Reason: tests run against a `FakeWarmStore`
@@ -185,7 +185,7 @@ engine is "business logic with direct SQL access for tests".
 
 ### Schema management
 
-Schema is managed by **drizzle-kit migrations** (`packages/server/src/warm-store/migrations/`). On every boot, `WarmStore.initialize()` runs:
+Schema is managed by **migrations embedded in the server binary** (`go/internal/warmstore/migrations/`), in the drizzle journal format the database already carries. On every boot the migration runner does:
 
 1. Idempotent legacy cleanups (`DROP CONSTRAINT IF EXISTS`, `DROP TABLE IF EXISTS`) for pre-Better-Auth artefacts on existing databases.
 2. Better Auth + Postgres-FTS scaffolding (Better Auth's tables and the `tsv tsvector GENERATED ALWAYS AS (...)` column on `memory_fts` — drizzle's schema DSL doesn't model GENERATED columns).
@@ -210,7 +210,7 @@ Co-occurrence edges live in the bitemporal `memory_relations` table (`valid_from
 
 ## Dashboard
 
-`packages/admin-ui` — React 19 + Vite + Tailwind 4. Built and copied into `packages/server/dist/admin/ui/` by the server build; served by `@fastify/static` under `/admin/`. CSP is strict (`default-src 'self'`); Inter + JetBrains Mono are bundled (no CDN).
+`packages/admin-ui` — React 19 + Vite + Tailwind 4. Built and synced into `go/internal/httpapi/admin-ui/`, then embedded in the binary with `go:embed` and served under `/admin/`. CSP is strict (`default-src 'self'`); Inter + JetBrains Mono are bundled (no CDN).
 
 Sign-in calls `POST /api/auth/sign-in/email`. Better Auth sets the HttpOnly session cookie; the SPA reads the user via `GET /api/auth/get-session` on every page load. Admin user CRUD is wired directly to `/api/auth/admin/{create-user,list-users,set-role,remove-user}`.
 

@@ -185,7 +185,7 @@ The Postgres pod needs: a pgvector-enabled image
 (`pgvector/pgvector:pg16` is drop-in for `postgres:16`), and a
 memory-backed `/dev/shm` (see the example in `postgres.yaml`) sized
 well below the container memory limit. For migrating an existing
-Qdrant deployment, `packages/server/scripts/sync-qdrant-to-pgvector.mjs`
+Qdrant deployment, `scripts/sync-qdrant-to-pgvector.mjs`
 copies vectors without re-embedding.
 
 **Postgres sizing for pgvector.** Measured with pgbench (persistent

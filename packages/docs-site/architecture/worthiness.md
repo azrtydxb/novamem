@@ -59,7 +59,7 @@ Dedup is per `(user, project, namespace)` — the same content under different n
 
 ## Source
 
-[`packages/server/src/engine/index.ts`](https://github.com/azrtydxb/novamem/blob/main/packages/server/src/engine/index.ts) — `shouldReject()`, exact dedup in `remember()`, and capture duplicate/supersession handling.
+[`go/internal/engine/engine.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/engine/engine.go) — worthiness rejection, exact dedup on remember, and capture duplicate/supersession handling.
 
 
 ## Semantic duplicate/update (`memory_capture`)

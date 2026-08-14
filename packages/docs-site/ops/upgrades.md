@@ -52,11 +52,11 @@ kubectl -n novamem set image deployment/novamem novamem=ghcr.io/azrtydxb/novamem
 kubectl -n novamem rollout status deployment/novamem --timeout=300s
 ```
 
-novamem runs migrations on boot via `drizzle-kit`. The first pod of the new replica set runs them; the others wait. Migrations are idempotent — a half-finished rollout is recoverable.
+novamem runs migrations on boot from inside the server binary — no drizzle-kit, no separate migration job. The first pod of the new replica set runs them; the others wait. Migrations are idempotent — a half-finished rollout is recoverable.
 
 ## Schema migrations
 
-Forward-only. The migrator (`packages/server/src/warm-store/migrate.ts`) tracks state in `__drizzle_migrations`. Steps are SQL files in `packages/server/src/warm-store/migrations/`.
+Forward-only. The migrator is built into the server binary (`go/internal/warmstore/migrations.go`) and tracks state in `drizzle.__drizzle_migrations`. Steps are SQL files in `go/internal/warmstore/migrations/`, embedded at build time.
 
 If a migration fails:
 
