@@ -1,7 +1,9 @@
 package mcp
 
-import "testing"
-import "encoding/json"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // TS emits {jsonrpc, error, id}; encoding/json sorts map keys, which
 // silently reordered these envelopes.

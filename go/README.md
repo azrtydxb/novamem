@@ -50,12 +50,14 @@ knowing about.
   ingress in one bucket). Counters are in-memory and per-replica, like
   `@fastify/rate-limit`'s default store and like the existing quota
   limiter: N replicas means an effective ceiling of N × max.
-* **`/api/auth/*`** implements the five endpoints the dashboard calls
-  (`admin/list-users`, `admin/create-user`, `admin/set-role`,
-  `admin/remove-user`, `change-password`) plus sign-in/sign-out/
-  get-session. Better Auth's other routes are not served. A POST with no
-  `Origin` header at all is accepted (Better Auth 403s it); a POST with
-  an untrusted `Origin` is refused, as everywhere else in this server.
+* **All 25 allow-listed `/api/auth/*` routes are served natively** —
+  sessions, JWT/JWKS, change-password and the full admin plugin
+  (create/update/set-role/set-user-password/remove, ban/unban,
+  list-user-sessions, revoke-user-session(s), impersonate and
+  stop-impersonating). Routes the TypeScript server deliberately does
+  not mount answer identically, `sign-up/email`'s 404 included.
+  Origin/CSRF follows Better Auth: the check runs only when the request
+  carries a `Cookie` header.
 * **204 preflight responses carry no `Content-Length: 0`** — net/http
   suppresses it on 204 by design.
 * Static assets are served with Go's `text/javascript` rather than
@@ -81,7 +83,7 @@ Both providers from the TS server are implemented:
 |---|---|---|
 | `pgvector` | `memory_vectors` in Postgres | the warm database |
 | `qdrant` | Qdrant REST API (no SDK dependency) | `http://localhost:6333` |
-| unset | no cold tier — writes land with `embedded_at` NULL and search degrades to keyword, exactly as TS behaves with the cold store down | — |
+| unset | defaults to `qdrant`, exactly as `config.ts` does | `http://localhost:6333` |
 
 `NOVAMEM_PG_POOL_MAX` (default `20`) bounds the **warm** pool only; the
 pgvector cold pool is fixed at 10 connections, matching

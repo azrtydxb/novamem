@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -289,8 +290,12 @@ func Load() (Config, error) {
 	if c.PgPoolMax, err = intEnv("NOVAMEM_PG_POOL_MAX", 20); err != nil {
 		return c, err
 	}
-	if c.PgPoolMax < 1 {
-		return c, fmt.Errorf("NOVAMEM_PG_POOL_MAX must be a positive integer")
+	// Upper bound as well as lower: pgxpool takes an int32, and an
+	// unbounded int→int32 conversion on a 64-bit platform silently wraps
+	// (CodeQL flagged exactly this). No real deployment wants more than
+	// a few hundred connections, so refuse absurd values loudly instead.
+	if c.PgPoolMax < 1 || c.PgPoolMax > math.MaxInt32 {
+		return c, fmt.Errorf("NOVAMEM_PG_POOL_MAX must be a positive integer below %d", int64(math.MaxInt32))
 	}
 	c.BootstrapAdminEmail = os.Getenv("NOVAMEM_BOOTSTRAP_ADMIN_EMAIL")
 	c.BootstrapAdminPassword = os.Getenv("NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD")
