@@ -22,6 +22,11 @@ export const env = {
   adminCookie: process.env.NOVAMEM_ADMIN_COOKIE ?? "",
   adminEmail: process.env.NOVAMEM_ADMIN_EMAIL ?? "",
   adminPassword: process.env.NOVAMEM_ADMIN_PASSWORD ?? "",
+  /** Origin header for Better Auth sign-in. BA's trusted-origin check
+   *  rejects `Origin: null` — which is exactly what undici's fetch sends
+   *  on POST — while a MISSING origin (curl) passes. Must match the
+   *  server's NOVAMEM_BASE_URL. */
+  origin: process.env.NOVAMEM_ORIGIN ?? "",
 };
 
 /** Returns whether the current test should be SKIPPED, because the live

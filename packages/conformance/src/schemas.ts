@@ -302,3 +302,93 @@ export const ImportResponse = z
     failed: z.array(z.object({ index: z.number(), error: z.string() }).passthrough()),
   })
   .passthrough();
+
+/** GET /v1/admin/users row shape (part of AdminUsersResponse below). */
+export const AdminUserRow = z
+  .object({
+    id: z.string().min(1),
+    email: z.string(),
+    name: z.string().nullable().optional(),
+    role: z.enum(["admin", "user"]),
+    createdAt: z.string(),
+    entryCount: z.number(),
+    tokenCount: z.number(),
+  })
+  .passthrough();
+
+/** GET /v1/admin/users response (200). */
+export const AdminUsersResponse = z.object({ users: z.array(AdminUserRow) }).passthrough();
+
+/** POST /v1/admin/users response (201): `{userId, email, token?}` — `token`
+ *  is only present when the request included `tokenLabel`. */
+export const AdminCreateUserResponse = z
+  .object({
+    userId: z.string().min(1),
+    email: z.string(),
+    token: z.string().optional(),
+  })
+  .passthrough();
+
+/** DELETE /v1/admin/users/{id} response (200, `dryRun` unset):
+ *  `{deleted, entriesRemoved, tokensRemoved, projectsDeleted, coldCleanupOk}`. */
+export const AdminDeleteUserResponse = z
+  .object({
+    deleted: z.boolean(),
+    entriesRemoved: z.number(),
+    tokensRemoved: z.number(),
+    projectsDeleted: z.array(z.unknown()),
+    coldCleanupOk: z.boolean(),
+  })
+  .passthrough();
+
+/** PUT /v1/admin/users/{id}/quota response (200, transcribed from
+ *  `feat/user-quotas`'s `admin.ts` — this worktree's checked-out admin
+ *  route file predates the route entirely): `{userId, quota}`. */
+export const AdminQuotaResponse = z
+  .object({
+    userId: z.string(),
+    quota: z
+      .object({
+        maxEntries: z.number().nullable(),
+        writesPerMinute: z.number().nullable(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+/** POST /v1/admin/tokens/revoke response (200): `{revoked: boolean}`. */
+export const AdminRevokeResponse = z.object({ revoked: z.boolean() }).passthrough();
+
+/** GET /v1/admin/audit-log entry + response shapes. */
+export const AdminAuditLogEntry = z
+  .object({
+    id: z.number(),
+    ts: z.string(),
+    actorUserId: z.string().nullable(),
+    actorLabel: z.string(),
+    action: z.string(),
+    target: z.string().nullable(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    requestIp: z.string().nullable(),
+  })
+  .passthrough();
+
+export const AdminAuditLogResponse = z
+  .object({ entries: z.array(AdminAuditLogEntry) })
+  .passthrough();
+
+/** GET /v1/admin/health/deep response (200/503): per-dependency snapshot. */
+export const AdminHealthDeepResponse = z
+  .object({
+    ok: z.boolean(),
+    deps: z
+      .object({
+        warm: z.enum(["ok", "unreachable"]),
+        cold: z.enum(["ok", "unreachable"]),
+        graph: z.enum(["ok", "unreachable", "disabled"]),
+        embedder: z.enum(["ok", "failing"]),
+      })
+      .passthrough(),
+    pendingEmbeddings: z.number().nullable(),
+  })
+  .passthrough();
