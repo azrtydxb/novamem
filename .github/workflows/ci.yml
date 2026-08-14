@@ -152,13 +152,15 @@ jobs:
   # Each arch builds on its own native runner — amd64 on novanas ARC,
   # arm64 on KW ARC. No buildx --platform with QEMU. Trivy gates the build before it gets pushed; only main-branch
   # pushes (not PRs) end up in ghcr.io. fail-fast:false so the two arches
-  # fail independently. needs:[test] gates on a green test run.
+  # fail independently. needs:[go, test] gates on BOTH suites: the binary
+  # is Go, but the admin dashboard it embeds is built from
+  # packages/admin-ui, so a red Node suite must not publish an image.
   docker:
     name: docker (${{ matrix.arch }})
     permissions:
       contents: read
       packages: write   # publish container images to ghcr.io
-    needs: [go]
+    needs: [go, test]
     timeout-minutes: 20
     strategy:
       fail-fast: false

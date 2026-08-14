@@ -86,13 +86,13 @@ pnpm build
 Outputs:
 
 - `go/novamem-server` — the compiled server binary
-- `packages/admin-ui/dist/` — the SPA bundle, copied into the server's `dist/admin/ui/` by the `build:assets` step
+- `packages/admin-ui/dist/` — the SPA bundle, synced into `go/internal/httpapi/admin-ui/` by `go/scripts/sync-admin-ui.sh` and embedded in the binary
 - `packages/client/dist/`, `packages/mcp/dist/`, `packages/init/dist/` — published packages
 
 ## Build the docker image locally
 
 ```bash
-docker build -t novamem:dev .
+docker build -f go/Dockerfile -t novamem:dev .
 docker run --rm -p 7778:7778 \
   -e NOVAMEM_WARM_URL=postgres://novamem:novamem@host.docker.internal:5432/novamem \
   -e NOVAMEM_COLD_URL=http://host.docker.internal:6333 \

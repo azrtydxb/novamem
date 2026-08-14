@@ -42,7 +42,7 @@ The server isn't published to npm. The release artifact is the docker image.
 ### Workflow
 
 1. **Branch** off main: `chore/release-vX.Y.Z`.
-2. **Bump** the version in `go/internal/version.go` (or the release tag alone — the image is the artifact).
+2. **Bump** the `version` in the OpenAPI info block (`go/internal/httpapi/openapi_routes.go`) and regenerate with `cd go && go run ./cmd/gen-openapi`. The release tag is what names the image; this keeps the served spec honest about which release it is.
 3. **Open PR** + auto-merge. CI runs the test suite.
 4. **Tag** on the merge commit:
 

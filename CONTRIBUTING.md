@@ -19,33 +19,31 @@ The warm store schema is defined by the migrations in [`go/internal/warmstore/mi
 
 **On every schema change**:
 
-1. Edit `schema.ts`
-2. `pnpm --filter @azrtydxb/novamem-server db:generate`
-   - Runs `drizzle-kit generate`
-   - Write a new file under `go/internal/warmstore/migrations/<NNNN>_<name>.sql` and add it to `meta/_journal.json`
-   - Updates `migrations/meta/_journal.json`
-3. **Review the generated SQL**. Drizzle's diff is usually right but not always — particularly for column renames (it may emit DROP + ADD instead of ALTER … RENAME COLUMN, which loses data). For destructive or rename operations, hand-edit the migration file.
-4. Commit `schema.ts` and the new migration **together** in one commit.
-5. CI runs `pnpm db:check` to catch schema/migration drift; the build fails if you forgot step 2.
+1. Write the SQL by hand in a new file: `go/internal/warmstore/migrations/<NNNN>_<name>.sql`, numbered one past the current highest.
+2. Split independent statements with `--> statement-breakpoint`, the separator the runner splits on.
+3. Register it in `go/internal/warmstore/migrations/meta/_journal.json` with the next `idx` and a `when` timestamp in milliseconds. **The journal order is the apply order**, and `when` is what the runner compares against the database's high-water mark.
+4. Commit the SQL and the journal entry **together** — a migration missing from the journal never runs, and a journal entry missing its file fails the build (the files are embedded with `go:embed`).
 
-**At runtime**, the server's `WarmStore.initialize()` (called from `main.ts` on boot) runs:
+There is no generator: the schema is the SQL, not a model it is diffed against, so nothing can drift between the two. `go test ./internal/warmstore/` checks that the journal is ordered, that every entry resolves to an embedded file, and that each file's hash still matches the one pinned in `migrations_journal_test.go` — the values live databases already recorded. **Editing an applied migration fails that test on purpose**: a database that applied the old text would never apply the new one, so its schema would silently diverge from the SQL in the tree. Write a new migration instead.
 
-1. Legacy cleanups (idempotent — drops pre-Better-Auth FKs and the retired `users` / `sessions` tables)
-2. Better Auth + Postgres-FTS scaffolding (CREATE TABLE IF NOT EXISTS for the `"user"` / `"session"` / `"account"` / `"verification"` / `"jwks"` tables Better Auth owns)
-3. `drizzle-orm/migrator.migrate()` — applies anything new from `dist/warm-store/migrations/` since the last run, tracked in the `__drizzle_migrations` table
-4. The `tsv tsvector GENERATED ALWAYS AS (...)` column on `memory_fts` + its GIN index (drizzle's schema DSL doesn't support GENERATED columns, so we add it post-migration)
+**At runtime**, the server applies migrations on boot:
 
-The first migration (`0000_*.sql`) uses `CREATE TABLE IF NOT EXISTS` everywhere so it's a no-op on databases that pre-date drizzle-kit. Subsequent migrations are plain — they apply to a database that's known to already have the prior schema.
+1. Create the `drizzle` schema and `drizzle.__drizzle_migrations` if absent (a fresh database).
+2. Read `max(created_at)` from the journal table — the high-water mark.
+3. Refuse to start if the database carries a migration **newer** than anything the binary ships: that schema came from a newer release and may have moved underneath this one.
+4. Apply every embedded migration whose `when` is past the high-water mark, in journal order, inside a single transaction, recording each in the journal table.
+
+The first migration (`0000_*.sql`) uses `CREATE TABLE IF NOT EXISTS` everywhere so it's a no-op against databases that pre-date the journal. Subsequent migrations are plain — they apply to a database known to already have the prior schema.
+
+Because the journal format and hashes are drizzle's, a database migrated by the retired TypeScript server continues without any conversion step: the Go runner reads the same table and picks up exactly where drizzle-kit left off.
 
 ### Renames and destructive changes
 
-drizzle-kit doesn't always detect renames correctly:
+Hand-written SQL removes the generator's guesswork, but the traps remain:
 
-- **Rename column**: drizzle may emit `DROP COLUMN old; ADD COLUMN new`. Hand-edit to `ALTER TABLE … RENAME COLUMN old TO new` to preserve data.
-- **Rename table**: same. Hand-edit to `ALTER TABLE … RENAME TO …`.
-- **Type changes** (e.g. text → varchar(255)): review carefully. May need `USING` clause or staged migration.
-
-When in doubt: write the SQL by hand in the generated migration file. drizzle-kit will use it as-is.
+- **Rename column**: `ALTER TABLE … RENAME COLUMN old TO new`, never `DROP` + `ADD` — the latter silently discards the data.
+- **Rename table**: `ALTER TABLE … RENAME TO …`, same reason.
+- **Type changes** (e.g. text → varchar(255)): may need a `USING` clause, or a staged migration if the table is large enough that a rewrite would lock it too long.
 
 ### Data migrations
 
@@ -72,23 +70,26 @@ Each release ships a self-contained migration; the application code in each rele
 
 | Command | What it does |
 |---|---|
-| `pnpm db:generate` | Diff schema.ts vs. the last snapshot; emit a new migration |
-| `pnpm db:check` | Validate that schema.ts and migrations/ are in sync (CI runs this) |
-| `pnpm db:introspect` | Reverse: read an existing DB and emit drizzle types from it (rarely used; only if you need to onboard an existing un-managed schema) |
+| `cd go && go test ./internal/warmstore/` | Checks journal order, that every entry resolves to an embedded file, and that no applied migration's hash changed |
+| `cd go && go run ./cmd/gen-openapi` | Regenerates `docs/api/openapi.json` from the server's own route table (CI fails on drift) |
+| `go/scripts/sync-admin-ui.sh` | Copies a fresh `packages/admin-ui/dist` into the binary's embedded assets |
 
-`pnpm db:push` exists in drizzle-kit (apply schema directly without migration files) but **don't use it on production-grade databases** — it skips the migration history and makes future schema changes ambiguous. Migrations are the only path.
+Never apply schema changes to a production-grade database by hand or with an
+ad-hoc tool: that skips the journal and makes every later migration ambiguous
+about what state it is starting from. Migrations are the only path.
 
 ## Tests
 
 - `pnpm test` from the repo root runs every package's vitest suite.
-- The server's unit tests use `FakeWarmStore` (in-memory) — they don't exercise `migrate()` or hit Postgres. The init package's tests use temp dirs and mock fetch.
-- For integration tests that hit a real database stack: `pnpm --filter @azrtydxb/novamem-server test:integration`. Requires `docker compose up -d` first (uses NOVAMEM_INTEGRATION=1 to gate them in).
+- `cd go && go test ./...` runs the server's own suite. The httpapi tests use an in-memory fake store — they don't hit Postgres.
+- The contract that matters is `packages/conformance`: a black-box suite run against a live server (`pnpm conformance` with `NOVAMEM_URL` et al.). It is the oracle — behaviour is what it says it is, not what a unit test asserts.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to main and on PRs:
 
-- **test (amd64)** + **test (arm64)** on native runners — typecheck, build, vitest, db:check
+- **test (amd64)** + **test (arm64)** on native runners — typecheck, build, vitest
+- **go** — `go build`, `go vet`, `go test` for the server and the shared client, plus the OpenAPI drift gate
 - **audit** — `pnpm audit --prod --audit-level=high`
 - **package (npm)** — `pnpm pack` artefacts uploaded for the three published packages
 - **docker (amd64)** + **docker (arm64)** — native build + Trivy HIGH/CRITICAL scan, pushed to ghcr.io on main
