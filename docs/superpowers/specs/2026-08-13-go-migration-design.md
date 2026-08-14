@@ -1,7 +1,14 @@
 # Gradual Go migration of novamem-server — design
 
 **Date:** 2026-08-13
-**Status:** Approved (design); implementation plan to follow
+**Status:** Implemented. All eight slices are in `go/`, the parity audit
+is at [go-parity-audit.md](../../architecture/go-parity-audit.md), and
+the full conformance suite is green against the Go server (102 passed,
+1 skipped, 0 failed — the skip is the write-quota 429, which needs a
+per-user quota low enough to starve the rest of the run and so passes
+in a dedicated run). What remains is the cleanup phase below: the Go
+server becoming the novamem-bench default, then deleting
+`packages/server`.
 
 ## Goal
 
