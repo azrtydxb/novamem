@@ -9,6 +9,7 @@ package warmstore
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -185,6 +186,11 @@ func (s *Store) BumpHitsMany(ctx context.Context, ids []string) error {
 			unique = append(unique, id)
 		}
 	}
+	// Sorted so every concurrent bump takes row locks in the same order.
+	// ON CONFLICT DO UPDATE locks in array order, so two searches whose
+	// top-k overlap in opposite orders deadlock — observed as
+	// "deadlock detected (SQLSTATE 40P01)" under the slice-8 soak.
+	slices.Sort(unique)
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO memory_access (entry_id, hits, last_accessed)
 		SELECT unnest($1::text[]), 1, now()

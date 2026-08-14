@@ -38,9 +38,9 @@ func (s *server) handleSessionRecap(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	m, decodeIssue := decodeBody(body, false)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{*decodeIssue})
+	m, decodeErr := decodeBody(body, false)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return
 	}
 	c := &v{m: m}

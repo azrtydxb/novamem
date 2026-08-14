@@ -64,9 +64,9 @@ func (s *server) meBody(w http.ResponseWriter, r *http.Request, optional bool) (
 	if !ok {
 		return nil, false
 	}
-	m, decodeIssue := decodeBody(body, optional)
-	if decodeIssue != nil {
-		s.sendIssues(w, []issue{*decodeIssue})
+	m, decodeErr := decodeBody(body, optional)
+	if decodeErr != nil {
+		s.sendBodyErr(w, decodeErr)
 		return nil, false
 	}
 	return &v{m: m}, true
@@ -89,8 +89,21 @@ func (s *server) handleMeMetrics(w http.ResponseWriter, r *http.Request) {
 		tokens = append(tokens, metrics.TokenMetrics{TokenHash: t.TokenHash, Label: t.Label})
 	}
 	ctx := r.Context()
-	writeJSONValue(w, http.StatusOK, s.metrics.SnapshotForUser(u.ID, tokens,
-		s.metrics.UserWarmEntries(ctx, u.ID), s.metrics.UserColdEntries(ctx, u.ID)))
+	snap := s.metrics.SnapshotForUser(u.ID, tokens,
+		s.metrics.UserWarmEntries(ctx, u.ID), s.metrics.UserColdEntries(ctx, u.ID))
+	// me.ts: an admin reading their own metrics gets the *global*
+	// snapshot (that is what the dashboard's Metrics page renders —
+	// pending_embeddings, orphans_pending, graph_edges …), with the
+	// per-token rows kept and `_hasMyTokens` telling the SPA whether to
+	// offer the per-token breakdown.
+	if u.Role == "admin" {
+		global := s.metrics.Snapshot(ctx)
+		global["tokens"] = snap["tokens"]
+		global["_hasMyTokens"] = len(tokens) > 0
+		writeJSONValue(w, http.StatusOK, global)
+		return
+	}
+	writeJSONValue(w, http.StatusOK, snap)
 }
 
 func (s *server) handleMeMetricsHistory(w http.ResponseWriter, r *http.Request) {
