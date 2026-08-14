@@ -24,6 +24,7 @@ import (
 
 	"github.com/azrtydxb/novamem/go/internal/auth"
 	"github.com/azrtydxb/novamem/go/internal/engine"
+	"github.com/azrtydxb/novamem/go/internal/metrics"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -56,6 +57,12 @@ type Options struct {
 	// CorsOrigins is the MCP browser-origin allow-list (http.ts
 	// corsOrigins / NOVAMEM_CORS_ORIGINS).
 	CorsOrigins []string
+	// AdminDashboard is NOVAMEM_ADMIN_DASHBOARD — the master switch for
+	// /v1/admin/metrics{,/prom}. Off → both 404 "admin disabled" for
+	// every caller.
+	AdminDashboard bool
+	// Metrics is the shared collector (the engine holds the same one).
+	Metrics *metrics.Collector
 }
 
 type server struct {
@@ -69,7 +76,8 @@ type server struct {
 	trustedOrigins []string
 	corsOrigins    []string
 	limiter        *auth.Limiter
-	metrics        *collector
+	metrics        *metrics.Collector
+	adminDashboard bool
 }
 
 func New(opts Options) http.Handler {
@@ -84,7 +92,8 @@ func New(opts Options) http.Handler {
 		trustedOrigins: opts.TrustedOrigins,
 		corsOrigins:    opts.CorsOrigins,
 		limiter:        auth.NewLimiter(),
-		metrics:        newCollector(),
+		metrics:        opts.Metrics,
+		adminDashboard: opts.AdminDashboard,
 	}
 	mux := http.NewServeMux()
 
@@ -125,6 +134,7 @@ func New(opts Options) http.Handler {
 	s.registerSearchPlane(mux)
 	s.registerMCP(mux)
 	s.registerAuthRoutes(mux)
+	s.registerAdmin(mux)
 	// Unmatched routes answer Fastify's default 404 envelope rather than
 	// net/http's text/plain "404 page not found" — callers (and the
 	// conformance suite) parse `error` off every 4xx body.

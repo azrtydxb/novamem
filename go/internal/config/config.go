@@ -73,6 +73,15 @@ type Config struct {
 	MinVectorScore  float64 // NOVAMEM_SEARCH_MIN_VECTOR_SCORE, default 0.25
 	GraphLinkFanout int     // NOVAMEM_GRAPH_LINK_FANOUT, default 3 (0 disables)
 
+	// Background jobs (main.ts timers).
+	DecayIntervalMs     int     // NOVAMEM_DECAY_INTERVAL_MS, default 6h
+	DecayEffectiveDays  float64 // NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS, default 7
+	ReconcileIntervalMs int     // NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS, default 60000
+	ReconcileBatch      int     // NOVAMEM_EMBEDDINGS_RECONCILE_BATCH, default 400
+	// AdminDashboard — master switch for /v1/admin/metrics{,/prom}
+	// (NOVAMEM_ADMIN_DASHBOARD; "0"/"false"/"no"/"off" disable it).
+	AdminDashboard bool
+
 	// Phase 5 cross-encoder rerank (opt-in per request; off unless enabled).
 	RerankEnabled   bool   // NOVAMEM_RERANK_ENABLED
 	RerankEndpoint  string // NOVAMEM_RERANK_ENDPOINT (full URL)
@@ -193,6 +202,27 @@ func Load() (Config, error) {
 		return c, err
 	}
 
+	if c.DecayIntervalMs, err = intEnv("NOVAMEM_DECAY_INTERVAL_MS", 6*60*60*1000); err != nil {
+		return c, err
+	}
+	if c.DecayEffectiveDays, err = posFloatEnv("NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS", 7); err != nil {
+		return c, err
+	}
+	if c.ReconcileIntervalMs, err = intEnv("NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS", 60_000); err != nil {
+		return c, err
+	}
+	if c.ReconcileBatch, err = intEnv("NOVAMEM_EMBEDDINGS_RECONCILE_BATCH", 400); err != nil {
+		return c, err
+	}
+	// Unset (or anything that isn't a falsy spelling) leaves the admin
+	// surface enabled — config.ts admin.dashboard.
+	switch raw := strings.ToLower(strings.TrimSpace(os.Getenv("NOVAMEM_ADMIN_DASHBOARD"))); raw {
+	case "0", "false", "no", "off":
+		c.AdminDashboard = false
+	default:
+		c.AdminDashboard = true
+	}
+
 	c.RerankEnabled = boolEnv("NOVAMEM_RERANK_ENABLED")
 	c.RerankEndpoint = os.Getenv("NOVAMEM_RERANK_ENDPOINT")
 	c.RerankModel = os.Getenv("NOVAMEM_RERANK_MODEL")
@@ -244,6 +274,20 @@ func floatEnv(key string, def float64) (float64, error) {
 	n, err := strconv.ParseFloat(raw, 64)
 	if err != nil || n < 0 || n > 1 {
 		return def, fmt.Errorf("%s %q is not a number in [0,1]", key, raw)
+	}
+	return n, nil
+}
+
+// posFloatEnv — a positive float (the [0,1]-bounded floatEnv above is
+// for score thresholds).
+func posFloatEnv(key string, def float64) (float64, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.ParseFloat(raw, 64)
+	if err != nil || n <= 0 {
+		return def, fmt.Errorf("%s %q is not a positive number", key, raw)
 	}
 	return n, nil
 }

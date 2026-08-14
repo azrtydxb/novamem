@@ -18,6 +18,8 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/embeddings"
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/httpapi"
+	"github.com/azrtydxb/novamem/go/internal/jobs"
+	"github.com/azrtydxb/novamem/go/internal/metrics"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -113,6 +115,25 @@ func run() error {
 		})
 	}
 
+	// One collector shared by the engine (lifecycle counters), the HTTP
+	// layer (per-request counters) and the flush job.
+	coll := metrics.New()
+	coll.BindGauges(metrics.GaugeSources{
+		WarmEntries:    func(ctx context.Context) (int, error) { return warm.CountEntries(ctx, false) },
+		ColdEntries:    func(ctx context.Context) (int, error) { return warm.CountEntries(ctx, true) },
+		GraphEdges:     warm.CountRelations,
+		OrphansPending: warm.CountColdOrphans,
+		// Read-through on scrape rather than off the reconciler's cached
+		// tick, so the alerting signal is current even if the loop itself
+		// has wedged — which is one of the things it needs to catch.
+		PendingEmbeddings: warm.CountPendingEmbedding,
+		PendingFacts:      warm.CountPendingFacts,
+	})
+	coll.BindUserGauges(metrics.UserGaugeSources{
+		WarmEntries: func(ctx context.Context, u string) (int, error) { return warm.CountEntriesFor(ctx, u, false) },
+		ColdEntries: func(ctx context.Context, u string) (int, error) { return warm.CountEntriesFor(ctx, u, true) },
+	})
+
 	eng := engine.New(engine.Options{
 		Warm:            warm,
 		Cold:            cold,
@@ -125,7 +146,26 @@ func run() error {
 		MinVectorScore:  cfg.MinVectorScore,
 		RerankPoolMult:  cfg.RerankPoolMult,
 		GraphLinkFanout: cfg.GraphLinkFanout,
+
+		DefaultEffectiveDays: cfg.DecayEffectiveDays,
+		Metrics:              coll,
 	})
+
+	// Background timers. Cancelled with the process context; Run returns
+	// once every loop has finished the tick it was in.
+	jobsDone := make(chan struct{})
+	go func() {
+		defer close(jobsDone)
+		jobs.Run(ctx, jobs.Config{
+			Engine:            eng,
+			Warm:              warm,
+			Metrics:           coll,
+			Log:               log,
+			DecayInterval:     time.Duration(cfg.DecayIntervalMs) * time.Millisecond,
+			ReconcileInterval: time.Duration(cfg.ReconcileIntervalMs) * time.Millisecond,
+			ReconcileBatch:    cfg.ReconcileBatch,
+		})
+	}()
 
 	srv := &http.Server{
 		Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
@@ -143,6 +183,8 @@ func run() error {
 			// CORS origins.
 			TrustedOrigins: append([]string{cfg.BaseURL, "http://localhost:5173"}, cfg.CorsOrigins...),
 			CorsOrigins:    cfg.CorsOrigins,
+			AdminDashboard: cfg.AdminDashboard,
+			Metrics:        coll,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -158,5 +200,6 @@ func run() error {
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	<-jobsDone
 	return nil
 }

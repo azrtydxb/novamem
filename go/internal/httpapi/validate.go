@@ -300,3 +300,28 @@ func decodeBody(body []byte, optional bool) (map[string]any, *issue) {
 	}
 	return m, nil
 }
+
+// nullableInt — z.number().int().nonnegative().nullable().optional(),
+// the admin quota-override shape: absent and null both mean "clear the
+// override", so both return nil.
+func (c *v) nullableInt(key string) *int {
+	raw, ok := c.m[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	n, ok := raw.(float64)
+	if !ok {
+		c.add(key, fmt.Sprintf("Expected number, received %s", jsonType(raw)), "invalid_type")
+		return nil
+	}
+	if n != float64(int64(n)) {
+		c.add(key, "Expected integer, received float", "invalid_type")
+		return nil
+	}
+	if n < 0 {
+		c.add(key, "Number must be greater than or equal to 0", "too_small")
+		return nil
+	}
+	i := int(n)
+	return &i
+}

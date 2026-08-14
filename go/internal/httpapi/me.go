@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/azrtydxb/novamem/go/internal/engine"
+	"github.com/azrtydxb/novamem/go/internal/metrics"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -80,18 +81,16 @@ func (s *server) handleMeMetrics(w http.ResponseWriter, r *http.Request) {
 		s.sendEngineErr(w, r, err)
 		return
 	}
-	tokens := []tokenMetrics{}
+	tokens := []metrics.TokenMetrics{}
 	for _, t := range rows {
 		if t.Revoked {
 			continue
 		}
-		tokens = append(tokens, tokenMetrics{TokenHash: t.TokenHash, Label: t.Label})
+		tokens = append(tokens, metrics.TokenMetrics{TokenHash: t.TokenHash, Label: t.Label})
 	}
-	var warmEntries *int
-	if n, err := s.warm.CountEntriesForUser(r.Context(), u.ID); err == nil {
-		warmEntries = &n
-	}
-	writeJSONValue(w, http.StatusOK, s.metrics.snapshotForUser(u.ID, tokens, warmEntries))
+	ctx := r.Context()
+	writeJSONValue(w, http.StatusOK, s.metrics.SnapshotForUser(u.ID, tokens,
+		s.metrics.UserWarmEntries(ctx, u.ID), s.metrics.UserColdEntries(ctx, u.ID)))
 }
 
 func (s *server) handleMeMetricsHistory(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +216,7 @@ func (s *server) handleMeTokenDelete(w http.ResponseWriter, r *http.Request) {
 		s.sendError(w, http.StatusNotFound, "token not found")
 		return
 	}
-	s.metrics.forgetToken(hash)
+	s.metrics.ForgetToken(hash)
 	writeJSONValue(w, http.StatusOK, map[string]any{"deleted": true})
 }
 

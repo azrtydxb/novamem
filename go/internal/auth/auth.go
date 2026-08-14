@@ -62,6 +62,25 @@ func VerifyPassword(stored, password string) bool {
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
+// HashPassword produces a hash in Better Auth's stored format so an
+// account provisioned by this server signs in against the TypeScript
+// server too: a 16-byte random salt rendered as hex, then
+// scrypt(NFKC(password), <that 32-char hex string>, N, r, p, dkLen),
+// joined "<salthex>:<keyhex>". Same parameters VerifyPassword checks.
+func HashPassword(password string) (string, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+	saltHex := hex.EncodeToString(salt)
+	key, err := scrypt.Key([]byte(norm.NFKC.String(password)), []byte(saltHex),
+		scryptN, scryptR, scryptP, scryptKeyLen)
+	if err != nil {
+		return "", err
+	}
+	return saltHex + ":" + hex.EncodeToString(key), nil
+}
+
 // SignCookie returns better-call's signed-cookie value for a session token.
 func SignCookie(secret, value string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
