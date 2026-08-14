@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/azrtydxb/novamem/go/internal/engine"
+	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
 // A pool aimed at a dead address: /live must still 200 (liveness checks
@@ -26,8 +30,20 @@ func deadPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+// newTestServer builds a handler over the dead pool — enough for the
+// health probes, auth middleware, and validation-layer tests (none of
+// which reach Postgres).
+func newTestServer(t *testing.T, authMode, authToken string) http.Handler {
+	t.Helper()
+	pool := deadPool(t)
+	log := slog.New(slog.DiscardHandler)
+	warm := warmstore.New(pool)
+	eng := engine.New(warm, log, engine.Quotas{}, 4000, nil)
+	return New(Options{Pool: pool, Log: log, Engine: eng, Warm: warm, AuthMode: authMode, AuthToken: authToken})
+}
+
 func TestHealthContract(t *testing.T) {
-	h := New(deadPool(t), slog.New(slog.DiscardHandler))
+	h := newTestServer(t, "none", "")
 	for path, want := range map[string]struct {
 		status int
 		ok     bool
@@ -60,7 +76,7 @@ func TestHealthContract(t *testing.T) {
 }
 
 func TestOpenAPIDocServed(t *testing.T) {
-	h := New(deadPool(t), slog.New(slog.DiscardHandler))
+	h := newTestServer(t, "none", "")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/openapi.json", nil))
 	if rec.Code != 200 {

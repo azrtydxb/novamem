@@ -22,7 +22,7 @@ import (
 // applied migration is the invariant that actually matters. Nothing
 // NEWER than this build knows may be applied either — that means the
 // schema moved without a Go release.
-const ExpectedLatestMigration int64 = 1786611692270
+const ExpectedLatestMigration = 1786611692270
 
 // CheckMigrationVersion refuses unknown schema versions.
 func CheckMigrationVersion(ctx context.Context, pool *pgxpool.Pool) error {
