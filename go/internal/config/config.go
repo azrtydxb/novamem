@@ -18,11 +18,19 @@ type Config struct {
 	WarmURL  string // NOVAMEM_WARM_URL (Postgres DSN) — required
 	LogLevel string // LOG_LEVEL, default info
 
-	// Auth. TS default is "user" (config.ts); the Go server serves only
-	// none|bearer until slice 5, and Load refuses "user" loudly rather
-	// than silently downgrading isolation.
-	AuthMode  string // NOVAMEM_AUTH_MODE: none | bearer
+	// Auth. TS default is "user" (config.ts).
+	AuthMode  string // NOVAMEM_AUTH_MODE: none | bearer | user
 	AuthToken string // NOVAMEM_AUTH_TOKEN — required when mode=bearer
+	// CookieSecret signs session cookies (NOVAMEM_COOKIE_SECRET).
+	// Required whenever mode != none — an ephemeral fallback would let a
+	// forgotten env var silently invalidate every session on restart.
+	CookieSecret string
+	// InsecureCookies drops the Secure attribute (NOVAMEM_INSECURE_COOKIES)
+	// for a k3s LB without TLS, or local dev.
+	InsecureCookies bool
+	// BaseURL (NOVAMEM_BASE_URL) — the public origin; seeds the trusted
+	// origin list for the sign-in CSRF check.
+	BaseURL string
 
 	// Server-wide per-user write quotas; 0 = unlimited (quotas are
 	// opt-in — config.ts quotas defaults).
@@ -104,10 +112,16 @@ func Load() (Config, error) {
 			return c, fmt.Errorf("auth.mode = 'bearer' requires auth.token to be set (NOVAMEM_AUTH_TOKEN)")
 		}
 	case "user":
-		return c, fmt.Errorf("NOVAMEM_AUTH_MODE 'user' is not implemented in the Go server yet (slice 5) — set NOVAMEM_AUTH_MODE=none or bearer")
 	default:
 		return c, fmt.Errorf("NOVAMEM_AUTH_MODE %q is not one of none|bearer|user", c.AuthMode)
 	}
+	c.CookieSecret = os.Getenv("NOVAMEM_COOKIE_SECRET")
+	if c.AuthMode != "none" && len(c.CookieSecret) < 16 {
+		return c, fmt.Errorf("NOVAMEM_COOKIE_SECRET is required when auth.mode != 'none'. " +
+			"Generate one with `openssl rand -hex 32` and set it in your environment.")
+	}
+	c.InsecureCookies = boolEnv("NOVAMEM_INSECURE_COOKIES")
+	c.BaseURL = getenv("NOVAMEM_BASE_URL", fmt.Sprintf("http://%s:%d", c.Host, c.Port))
 	var err error
 	if c.QuotaMaxEntries, err = intEnv("NOVAMEM_QUOTA_MAX_ENTRIES", 0); err != nil {
 		return c, err

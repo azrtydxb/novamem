@@ -22,6 +22,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/azrtydxb/novamem/go/internal/auth"
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
@@ -38,32 +39,52 @@ type Options struct {
 	Log    *slog.Logger
 	Engine *engine.Engine
 	Warm   *warmstore.Store
-	// AuthMode "none" or "bearer" (mode "user" is slice 5 — config.Load
-	// refuses it before we get here). AuthToken required for "bearer".
+	// AuthMode "none", "bearer" or "user". AuthToken required for
+	// "bearer"; CookieSecret required for "user".
 	AuthMode  string
 	AuthToken string
+	// CookieSecret signs the Better Auth session cookie — the same
+	// NOVAMEM_COOKIE_SECRET the TS server used, so existing sessions
+	// keep verifying.
+	CookieSecret string
+	// SecureCookies mirrors !NOVAMEM_INSECURE_COOKIES: it decides both
+	// the Secure attribute and the `__Secure-` cookie-name prefix.
+	SecureCookies bool
+	// TrustedOrigins is the CSRF allow-list for the sign-in / sign-out
+	// endpoints (base URL + configured CORS origins).
+	TrustedOrigins []string
 	// CorsOrigins is the MCP browser-origin allow-list (http.ts
 	// corsOrigins / NOVAMEM_CORS_ORIGINS).
 	CorsOrigins []string
 }
 
 type server struct {
-	log         *slog.Logger
-	engine      *engine.Engine
-	warm        *warmstore.Store
-	authMode    string
-	authToken   string
-	corsOrigins []string
+	log            *slog.Logger
+	engine         *engine.Engine
+	warm           *warmstore.Store
+	authMode       string
+	authToken      string
+	cookieSecret   string
+	secureCookies  bool
+	trustedOrigins []string
+	corsOrigins    []string
+	limiter        *auth.Limiter
+	metrics        *collector
 }
 
 func New(opts Options) http.Handler {
 	s := &server{
-		log:         opts.Log,
-		engine:      opts.Engine,
-		warm:        opts.Warm,
-		authMode:    opts.AuthMode,
-		authToken:   opts.AuthToken,
-		corsOrigins: opts.CorsOrigins,
+		log:            opts.Log,
+		engine:         opts.Engine,
+		warm:           opts.Warm,
+		authMode:       opts.AuthMode,
+		authToken:      opts.AuthToken,
+		cookieSecret:   opts.CookieSecret,
+		secureCookies:  opts.SecureCookies,
+		trustedOrigins: opts.TrustedOrigins,
+		corsOrigins:    opts.CorsOrigins,
+		limiter:        auth.NewLimiter(),
+		metrics:        newCollector(),
 	}
 	mux := http.NewServeMux()
 
@@ -103,6 +124,20 @@ func New(opts Options) http.Handler {
 	s.registerDataPlane(mux)
 	s.registerSearchPlane(mux)
 	s.registerMCP(mux)
+	s.registerAuthRoutes(mux)
+	// Unmatched routes answer Fastify's default 404 envelope rather than
+	// net/http's text/plain "404 page not found" — callers (and the
+	// conformance suite) parse `error` off every 4xx body.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSONValue(w, http.StatusNotFound, map[string]any{
+			"message":    "Route " + r.Method + ":" + r.URL.Path + " not found",
+			"error":      "Not Found",
+			"statusCode": 404,
+		})
+	})
+	if opts.AuthMode == "user" {
+		s.registerMe(mux)
+	}
 
 	return requestLog(opts.Log, mux)
 }

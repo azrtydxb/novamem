@@ -130,13 +130,19 @@ func run() error {
 	srv := &http.Server{
 		Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Handler: httpapi.New(httpapi.Options{
-			Pool:        pool,
-			Log:         log,
-			Engine:      eng,
-			Warm:        warm,
-			AuthMode:    cfg.AuthMode,
-			AuthToken:   cfg.AuthToken,
-			CorsOrigins: cfg.CorsOrigins,
+			Pool:          pool,
+			Log:           log,
+			Engine:        eng,
+			Warm:          warm,
+			AuthMode:      cfg.AuthMode,
+			AuthToken:     cfg.AuthToken,
+			CookieSecret:  cfg.CookieSecret,
+			SecureCookies: !cfg.InsecureCookies,
+			// The same list Better Auth was configured with (main.ts):
+			// base URL + the dev SPA origin, plus any operator-allowed
+			// CORS origins.
+			TrustedOrigins: append([]string{cfg.BaseURL, "http://localhost:5173"}, cfg.CorsOrigins...),
+			CorsOrigins:    cfg.CorsOrigins,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
