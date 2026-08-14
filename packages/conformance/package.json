@@ -1,0 +1,18 @@
+{
+  "name": "@azrtydxb/novamem-conformance",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "test": "echo 'conformance is a live-target suite; run: pnpm conformance (needs NOVAMEM_URL et al.)'",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo no lint configured",
+    "conformance": "vitest run"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "undici": "^7.16.0",
+    "vitest": "^4.1.10",
+    "zod": "^3.24.0"
+  }
+}
