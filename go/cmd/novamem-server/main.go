@@ -76,7 +76,7 @@ func run() error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	log.Info("novamem-go listening", "addr", srv.Addr, "migrations", warmstore.ExpectedMigrations)
+	log.Info("novamem-go listening", "addr", srv.Addr, "latestMigration", warmstore.ExpectedLatestMigration)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
