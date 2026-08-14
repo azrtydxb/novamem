@@ -50,7 +50,7 @@ jobs:
             node: 24
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # PINNED TO v4 DELIBERATELY — do not take dependabot's v6 bump.
       # v6 installs pnpm as a native binary (@pnpm/exe) which needs
       # libatomic.so.1; the self-hosted arc-azrtydxb-amd64 runner image does
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
@@ -124,7 +124,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
@@ -172,7 +172,7 @@ jobs:
             runner: arc-azrtydxb-publish
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
         with:
           # The in-cluster Zot cache registry serves a self-signed cert;
