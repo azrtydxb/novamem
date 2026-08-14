@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/azrtydxb/novamem/go/internal/config"
+	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/httpapi"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
@@ -63,9 +64,21 @@ func run() error {
 		}
 	}
 
+	warm := warmstore.New(pool)
+	eng := engine.New(warm, log,
+		engine.Quotas{MaxEntries: cfg.QuotaMaxEntries, WritesPerMinute: cfg.QuotaWritesPerMinute},
+		cfg.MaxContentChars, nil)
+
 	srv := &http.Server{
-		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Handler:           httpapi.New(pool, log),
+		Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		Handler: httpapi.New(httpapi.Options{
+			Pool:      pool,
+			Log:       log,
+			Engine:    eng,
+			Warm:      warm,
+			AuthMode:  cfg.AuthMode,
+			AuthToken: cfg.AuthToken,
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {

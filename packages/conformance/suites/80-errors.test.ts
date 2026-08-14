@@ -26,7 +26,10 @@ describe("error shapes", () => {
   });
 
   it.skipIf(skipUnless(["user", "bearer"]))("401: no token → {error: \"unauthorized\"}", async () => {
-    const r = await api<{ error: string }>("/v1/search", { body: { query: "x" }, token: "" });
+    // /v1/remember rather than /v1/search: same 401 contract on the TS
+    // oracle, but remember exists from Go slice 2 while search arrives in
+    // slice 3 — the probe should test auth, not route existence.
+    const r = await api<{ error: string }>("/v1/remember", { body: { content: "x" }, token: "" });
     expect(r.status).toBe(401);
     expect(ErrorBody.parse(r.body).error).toBe("unauthorized");
   });
