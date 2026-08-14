@@ -1,10 +1,12 @@
 // Request-body validation reproducing the TS server's zod schemas
 // (routes/schemas.ts) and the error envelope from http.ts's error
 // handler: 400 {"error":"invalid request body","issues":[{path,message,
-// code}]}. Codes follow zod's issue-code vocabulary (invalid_type,
-// too_small, too_big, invalid_string, invalid_enum_value, custom) —
-// the conformance suite pins the envelope shape and the "content" path
-// entry; messages follow zod's default wording.
+// code}]}. Codes follow zod v4's issue-code vocabulary (invalid_type,
+// too_small, too_big, invalid_format, invalid_value, unrecognized_keys,
+// custom) — the conformance suite pins the envelope shape and the
+// "content" path entry. Messages are zod v4's defaults, transcribed
+// verbatim from a live TS server: v4 rewrote every default message
+// relative to v3 (see docs/architecture/go-parity-audit.md §5).
 package httpapi
 
 import (
@@ -77,22 +79,22 @@ func (c *v) str(key string, required bool, min, max int) (string, bool) {
 	raw, ok := c.m[key]
 	if !ok || raw == nil {
 		if required {
-			c.add(key, "Required", "invalid_type")
+			c.add(key, "Invalid input: expected string, received undefined", "invalid_type")
 		}
 		return "", false
 	}
 	s, ok := raw.(string)
 	if !ok {
-		c.add(key, fmt.Sprintf("Expected string, received %s", jsonType(raw)), "invalid_type")
+		c.add(key, fmt.Sprintf("Invalid input: expected string, received %s", jsonType(raw)), "invalid_type")
 		return "", false
 	}
 	n := utf16Len(s)
 	if n < min {
-		c.add(key, fmt.Sprintf("String must contain at least %d character(s)", min), "too_small")
+		c.add(key, fmt.Sprintf("Too small: expected string to have >=%d characters", min), "too_small")
 		return "", false
 	}
 	if n > max {
-		c.add(key, fmt.Sprintf("String must contain at most %d character(s)", max), "too_big")
+		c.add(key, fmt.Sprintf("Too big: expected string to have <=%d characters", max), "too_big")
 		return "", false
 	}
 	return s, true
@@ -110,7 +112,7 @@ func (c *v) boolean(key string) (bool, bool) {
 	}
 	b, ok := raw.(bool)
 	if !ok {
-		c.add(key, fmt.Sprintf("Expected boolean, received %s", jsonType(raw)), "invalid_type")
+		c.add(key, fmt.Sprintf("Invalid input: expected boolean, received %s", jsonType(raw)), "invalid_type")
 		return false, false
 	}
 	return b, true
@@ -123,15 +125,15 @@ func (c *v) number(key string, min, max float64) (float64, bool) {
 	}
 	n, ok := raw.(float64)
 	if !ok {
-		c.add(key, fmt.Sprintf("Expected number, received %s", jsonType(raw)), "invalid_type")
+		c.add(key, fmt.Sprintf("Invalid input: expected number, received %s", jsonType(raw)), "invalid_type")
 		return 0, false
 	}
 	if n < min {
-		c.add(key, fmt.Sprintf("Number must be greater than or equal to %g", min), "too_small")
+		c.add(key, fmt.Sprintf("Too small: expected number to be >=%g", min), "too_small")
 		return 0, false
 	}
 	if n > max {
-		c.add(key, fmt.Sprintf("Number must be less than or equal to %g", max), "too_big")
+		c.add(key, fmt.Sprintf("Too big: expected number to be <=%g", max), "too_big")
 		return 0, false
 	}
 	return n, true
@@ -145,20 +147,20 @@ func (c *v) positiveInt(key string, max int) (int, bool) {
 	}
 	n, ok := raw.(float64)
 	if !ok {
-		c.add(key, fmt.Sprintf("Expected number, received %s", jsonType(raw)), "invalid_type")
+		c.add(key, fmt.Sprintf("Invalid input: expected number, received %s", jsonType(raw)), "invalid_type")
 		return 0, false
 	}
 	if n != float64(int64(n)) {
-		c.add(key, "Expected integer, received float", "invalid_type")
+		c.add(key, "Invalid input: expected int, received number", "invalid_type")
 		return 0, false
 	}
 	i := int(n)
 	if i <= 0 {
-		c.add(key, "Number must be greater than 0", "too_small")
+		c.add(key, "Too small: expected number to be >0", "too_small")
 		return 0, false
 	}
 	if i > max {
-		c.add(key, fmt.Sprintf("Number must be less than or equal to %d", max), "too_big")
+		c.add(key, fmt.Sprintf("Too big: expected number to be <=%d", max), "too_big")
 		return 0, false
 	}
 	return i, true
@@ -174,8 +176,7 @@ func (c *v) enum(key string, allowed ...string) (string, bool) {
 			return s, true
 		}
 	}
-	c.add(key, fmt.Sprintf("Invalid enum value. Expected '%s', received '%s'",
-		strings.Join(allowed, "' | '"), s), "invalid_enum_value")
+	c.add(key, `Invalid option: expected one of "`+strings.Join(allowed, `"|"`)+`"`, "invalid_value")
 	return "", false
 }
 
@@ -186,9 +187,9 @@ func (c *v) datetime(key, message string) (string, bool) {
 	}
 	if !isoDatetimeRe.MatchString(s) {
 		if message == "" {
-			message = "Invalid datetime"
+			message = "Invalid ISO datetime"
 		}
-		c.add(key, message, "invalid_string")
+		c.add(key, message, "invalid_format")
 		return "", false
 	}
 	return s, true
@@ -202,7 +203,7 @@ func (c *v) projectRef(key string) (*string, bool) {
 		return nil, false
 	}
 	if !projectRefRe.MatchString(s) {
-		c.add(key, "project ref contains control characters", "invalid_string")
+		c.add(key, "project ref contains control characters", "invalid_format")
 		return nil, false
 	}
 	return &s, true
@@ -221,7 +222,7 @@ func (c *v) metadata(key string) (map[string]any, bool) {
 	}
 	m, ok := raw.(map[string]any)
 	if !ok {
-		c.add(key, fmt.Sprintf("Expected object, received %s", jsonType(raw)), "invalid_type")
+		c.add(key, fmt.Sprintf("Invalid input: expected record, received %s", jsonType(raw)), "invalid_type")
 		return nil, false
 	}
 	for k := range m {
@@ -241,29 +242,46 @@ func (c *v) metadata(key string) (map[string]any, bool) {
 	return m, true
 }
 
-func (c *v) strArray(key string, maxItems int, itemCheck func(string) bool, itemMessage string) ([]string, bool) {
+// noItemRule is the item rule for arrays whose only per-item constraint
+// is the length bound strArray already applies.
+func noItemRule(string) bool { return true }
+
+// strArray validates z.array(z.string().min(minLen).max(maxLen)<rule>)
+// .max(maxItems). Length violations carry zod's own too_small/too_big
+// issues; itemCheck is the rule on top (a regex, typically) and reports
+// invalid_format with itemMessage.
+func (c *v) strArray(key string, maxItems, minLen, maxLen int, itemCheck func(string) bool, itemMessage string) ([]string, bool) {
 	raw, ok := c.m[key]
 	if !ok || raw == nil {
 		return nil, false
 	}
 	arr, ok := raw.([]any)
 	if !ok {
-		c.add(key, fmt.Sprintf("Expected array, received %s", jsonType(raw)), "invalid_type")
+		c.add(key, fmt.Sprintf("Invalid input: expected array, received %s", jsonType(raw)), "invalid_type")
 		return nil, false
 	}
 	if len(arr) > maxItems {
-		c.add(key, fmt.Sprintf("Array must contain at most %d element(s)", maxItems), "too_big")
+		c.add(key, fmt.Sprintf("Too big: expected array to have <=%d items", maxItems), "too_big")
 		return nil, false
 	}
 	out := make([]string, 0, len(arr))
 	for i, item := range arr {
 		s, ok := item.(string)
 		if !ok {
-			c.add(fmt.Sprintf("%s.%d", key, i), fmt.Sprintf("Expected string, received %s", jsonType(item)), "invalid_type")
+			c.add(fmt.Sprintf("%s.%d", key, i), fmt.Sprintf("Invalid input: expected string, received %s", jsonType(item)), "invalid_type")
+			return nil, false
+		}
+		if n := utf16Len(s); n < minLen {
+			c.add(fmt.Sprintf("%s.%d", key, i),
+				fmt.Sprintf("Too small: expected string to have >=%d characters", minLen), "too_small")
+			return nil, false
+		} else if n > maxLen {
+			c.add(fmt.Sprintf("%s.%d", key, i),
+				fmt.Sprintf("Too big: expected string to have <=%d characters", maxLen), "too_big")
 			return nil, false
 		}
 		if !itemCheck(s) {
-			c.add(fmt.Sprintf("%s.%d", key, i), itemMessage, "invalid_string")
+			c.add(fmt.Sprintf("%s.%d", key, i), itemMessage, "invalid_format")
 			return nil, false
 		}
 		out = append(out, s)
@@ -360,15 +378,15 @@ func (c *v) nullableInt(key string) *int {
 	}
 	n, ok := raw.(float64)
 	if !ok {
-		c.add(key, fmt.Sprintf("Expected number, received %s", jsonType(raw)), "invalid_type")
+		c.add(key, fmt.Sprintf("Invalid input: expected number, received %s", jsonType(raw)), "invalid_type")
 		return nil
 	}
 	if n != float64(int64(n)) {
-		c.add(key, "Expected integer, received float", "invalid_type")
+		c.add(key, "Invalid input: expected int, received number", "invalid_type")
 		return nil
 	}
 	if n < 0 {
-		c.add(key, "Number must be greater than or equal to 0", "too_small")
+		c.add(key, "Too small: expected number to be >=0", "too_small")
 		return nil
 	}
 	i := int(n)

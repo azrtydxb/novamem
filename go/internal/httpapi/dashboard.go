@@ -34,14 +34,21 @@ const dashboardCSP = "default-src 'self'; img-src 'self' data:; style-src 'self'
 // adminPublicURLs — http.ts's ADMIN_PUBLIC_URLS.
 var adminPublicURLs = map[string]bool{"/admin": true, "/admin/": true, "/admin/index.html": true}
 
-func (s *server) registerDashboard(mux *http.ServeMux) {
-	if !s.adminDashboard {
-		return
-	}
-	root, err := fs.Sub(adminUIFS, "admin-ui")
-	if err != nil {
-		s.log.Warn("admin dashboard assets unavailable", "err", err)
-		return
+func (s *server) registerDashboard(mux *routeMux) {
+	// The prefix is claimed even with the dashboard switched off. In the
+	// TS server auth is a global `onRequest` hook, which Fastify also runs
+	// for its 404 handler, so a non-public /admin path is answered 401 by
+	// the hook before routing ever reports it missing — in both modes.
+	// Go routes first and authenticates inside the handler, so the handler
+	// has to exist for that ordering to survive.
+	var root fs.FS
+	if s.adminDashboard {
+		sub, err := fs.Sub(adminUIFS, "admin-ui")
+		if err != nil {
+			s.log.Warn("admin dashboard assets unavailable", "err", err)
+		} else {
+			root = sub
+		}
 	}
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +58,11 @@ func (s *server) registerDashboard(mux *http.ServeMux) {
 			if _, ok := s.resolveCaller(w, r); !ok {
 				return
 			}
+		}
+		if root == nil {
+			// Dashboard off: past the auth gate, nothing is mounted.
+			sendNotFound(w, r)
+			return
 		}
 		name := "index.html"
 		if !adminPublicURLs[r.URL.Path] {

@@ -441,6 +441,10 @@ func (e *Engine) Health(ctx context.Context) map[string]any {
 	if n := e.pendingEmbeddings.Load(); n >= 0 {
 		v := int(n)
 		pending = &v
+	} else if n, err := e.warm.CountPendingEmbedding(ctx); err == nil {
+		// TS queries this on demand; a Go server whose gauge has not been
+		// populated yet reported null where TS reports a number.
+		pending = &n
 	}
 	return map[string]any{
 		"ok": warmOK && coldOK,

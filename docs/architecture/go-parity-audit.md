@@ -745,3 +745,56 @@ to test is not one.
   (`novamem-go` deployment) was not redeployed with these fixes — the
   spec's "deployed and exercised live" gate is **not** satisfied by this
   audit.
+
+## Addendum — ledger closed (2026-08-14)
+
+Every divergence in §7 is now closed in the Go server, including the
+rows previously marked ACCEPTED or "won't fix": the LLM subsystems
+(#14) are ported, Qdrant is implemented, `NOVAMEM_PG_POOL_MAX` (#15) is
+honored, zod wording (#8), key ordering (#12) and empty-body
+strictness (#13) all match, and `NOVAMEM_COLD_PROVIDER` now defaults to
+`qdrant` exactly as `config.ts` does.
+
+Two rows remain by explicit decision rather than omission:
+
+- **In-process embeddings (`local-transformers`).** Owner decision: the
+  Go server points at an API endpoint and never embeds a model. Running
+  ONNX in process needs cgo and costs the single static binary; a
+  local-only deployment runs a serving container instead. The TS
+  server's path is untouched.
+- **`pprof` / goroutine metrics (#16).** Neither server exposes them,
+  so this was never a parity gap; worth adding when Go becomes primary.
+
+The verdict in §9 is superseded: the blockers it named (dashboard,
+`/api/auth/*`, CORS, rate limiting, bootstrap seed) are all implemented
+and the retrieval-behaviour caveat is resolved — the Go server now runs
+extraction, observer and decomposition exactly as bench's TS
+deployment does.
+
+
+## 11. Three divergences the conformance coverage found afterwards
+
+The audit above was a reading of both codebases. The conformance suite
+was then extended to cover the surfaces the migration had added —
+dashboard, all 25 `/api/auth/*` routes, CORS, rate limiting, LLM
+subsystems — and immediately found three behaviours no amount of reading
+had caught, because each lives in a *default* rather than in code either
+server spells out.
+
+| # | Divergence | Class | How it was resolved |
+|---|---|---|---|
+| 17 | A **banned account could still sign in**. `admin/ban-user` set `banned: true` and returned 200, but `POST /api/auth/sign-in/email` then minted a session. TS answers 403 `BANNED_USER`. | Defect (security) | Refused after the password check — a ban must not become a credential oracle — honouring an elapsed `banExpires`. |
+| 18 | **No per-IP sign-in throttle.** Better Auth rate-limits sign-in; Go accepted attempts without bound. | Defect | Fixed window per (IP, path): three attempts per ten seconds, then 429 with an `x-retry-after` header and Better Auth's bare `message` body. |
+| 19 | **`/admin/<non-public>` answered 404 with the dashboard disabled**, where TS answers 401. | Defect | In TS, auth is a global `onRequest` hook, which Fastify runs for its 404 handler too, so the 401 lands before routing reports the path missing. Go routes first, so the `/admin/` prefix is now claimed in both modes and the handler authenticates before reporting 404. |
+
+Each contract was measured against the live TypeScript server before
+being implemented — the ban body and the exact `x-retry-after` value
+from the bench oracle, the 401-with-dashboard-off from bench itself,
+which runs `NOVAMEM_ADMIN_DASHBOARD=0`. All three pass against both
+servers now.
+
+The lesson is worth keeping: **a divergence in a framework default is
+invisible to code review of either side.** Nothing in `http.ts` says
+"a banned user cannot sign in" and nothing in the Go tree said it
+either; the behaviour lived in a Better Auth plugin and in Fastify's
+hook ordering. Only a black-box test that drives the surface can see it.

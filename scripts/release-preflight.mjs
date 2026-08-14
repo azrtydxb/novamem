@@ -6,7 +6,8 @@
 //      package.json. Private packages (server, admin-ui) are skipped.
 //   2. CHANGELOG.md has a non-empty `## [X.Y.Z]` section for the
 //      canonical version.
-//   3. docs/api/openapi.json is fresh — `pnpm docs:api` regenerates it
+//   3. docs/api/openapi.json is fresh — the GO server generates it now
+//      (`go run ./cmd/gen-openapi`); the TS generator is gone.
 //      and the working tree must stay clean.
 //   4. Working tree stays clean after `pnpm -r build`.
 //
@@ -114,14 +115,14 @@ function checkOpenApiFresh() {
     return;
   }
   try {
-    sh("pnpm", ["docs:api"], { stdio: ["ignore", "pipe", "pipe"] });
+    sh("go", ["run", "./cmd/gen-openapi"], { cwd: join(ROOT, "go"), stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
-    fail(`pnpm docs:api failed: ${err.message}`);
+    fail(`go run ./cmd/gen-openapi failed: ${err.message}`);
     return;
   }
   const after = gitStatusPorcelain();
   if (after.length > 0) {
-    fail(`docs/api/openapi.json (or related) is stale — \`pnpm docs:api\` produced changes:\n${after}`);
+    fail(`docs/api/openapi.json is stale — \`cd go && go run ./cmd/gen-openapi\` produced changes:\n${after}`);
   }
 }
 

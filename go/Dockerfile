@@ -1,8 +1,8 @@
-# Static Go server. Build context is the REPO ROOT: the binary embeds
-# both the frozen openapi.json (checked in under go/internal/httpapi/,
-# kept in sync by packages/server's docs:api generator + the CI drift
-# gate) and the admin dashboard SPA, which is built here and synced into
-# the module by go/scripts/sync-admin-ui.sh before `go build` runs.
+# Static Go server. Build context is the REPO ROOT: the OpenAPI document
+# is generated from Go source (internal/httpapi/openapi.go) rather than
+# embedded from a TypeScript artefact, and the binary embeds the admin
+# dashboard SPA, which is built here and synced into the module by
+# go/scripts/sync-admin-ui.sh before `go build` runs.
 
 # ─── Admin dashboard (packages/admin-ui → dist/) ─────────────────────
 FROM node:22-bookworm AS ui

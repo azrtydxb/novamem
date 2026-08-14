@@ -27,10 +27,12 @@ type InsertEntryArgs struct {
 	CapturedFrom *string
 	Confidence   *float64 // nil → column default 1.0
 	ContentHash  *string
-	// facts_pending_at stays NULL in slice 2 (no fact extractor is
-	// configured in the Go server, matching TS with extractor unset).
-	// graph_pending_at is set by the engine (fanout > 0 in TS defaults)
-	// so the enrichment debt is recorded for the reconciler / slice 3.
+	// facts_pending_at / graph_pending_at are written in the SAME
+	// statement as the row: this chunk owes a fact-extraction pass and
+	// vector-neighbour edges, and the debt must survive a crash in the
+	// window between INSERT and the fire-and-forget schedule. Both are
+	// nil when the corresponding feature is unconfigured.
+	FactsPendingAt *time.Time
 	GraphPendingAt *time.Time
 }
 
@@ -56,11 +58,11 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 		INSERT INTO memory_entries
 			(id, user_id, project_id, content, namespace, source, agent_name, metadata,
 			 source_type, captured_from, confidence, content_hash, facts_pending_at, graph_pending_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11::real, 1.0),$12,NULL,$13)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11::real, 1.0),$12,$13,$14)
 		ON CONFLICT DO NOTHING
 		RETURNING id`,
 		id, a.UserID, a.ProjectID, a.Content, a.Namespace, a.Source, a.AgentName, metadata,
-		a.SourceType, a.CapturedFrom, a.Confidence, a.ContentHash, a.GraphPendingAt,
+		a.SourceType, a.CapturedFrom, a.Confidence, a.ContentHash, a.FactsPendingAt, a.GraphPendingAt,
 	).Scan(&winner)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Lost the race — return the concurrent writer's id (dedup hit).

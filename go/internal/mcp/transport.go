@@ -8,6 +8,7 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -32,6 +33,48 @@ func keepaliveInterval() time.Duration {
 		return time.Duration(n) * time.Millisecond
 	}
 	return defaultKeepalive
+}
+
+// rpcObj preserves key order the way a TS object literal does;
+// encoding/json sorts map keys, which made JSON-RPC envelopes read
+// {error,id,jsonrpc} against TS's {jsonrpc,error,id}.
+type rpcObj []rpcKV
+
+type rpcKV struct {
+	K string
+	V any
+}
+
+func (o rpcObj) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, e := range o {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		k, err := json.Marshal(e.K)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(k)
+		b.WriteByte(':')
+		v, err := json.Marshal(e.V)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(v)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+// rpcErrEnvelope is the {jsonrpc,error,id} envelope in TS key order.
+func rpcErrEnvelope(code int, message string) rpcObj {
+	return rpcObj{
+		{"jsonrpc", "2.0"},
+		{"error", rpcObj{{"code", code}, {"message", message}}},
+		{"id", nil},
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -166,14 +209,8 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 }
 
 func (s *Server) missingSession(w http.ResponseWriter) {
-	writeJSON(w, http.StatusBadRequest, map[string]any{
-		"jsonrpc": "2.0",
-		"error": map[string]any{
-			"code":    -32000,
-			"message": "Bad Request: missing Mcp-Session-Id (only POST initialize may omit it)",
-		},
-		"id": nil,
-	})
+	writeJSON(w, http.StatusBadRequest, rpcErrEnvelope(-32000,
+		"Bad Request: missing Mcp-Session-Id (only POST initialize may omit it)"))
 }
 
 // ─── Legacy SSE (/mcp/sse + /mcp/messages) ─────────────────────────────

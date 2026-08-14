@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { afterAll, describe, expect, it } from "vitest";
 import { adminCookieApi, api, ns } from "../src/client.js";
-import { env } from "../src/env.js";
+import { env, hasAdminIdentity } from "../src/env.js";
 import { ErrorBody } from "../src/schemas.js";
 
 /**
@@ -63,14 +63,20 @@ describe("auth gates", () => {
     ErrorBody.parse(r.body);
   });
 
-  it("data-plane token cannot reach /v1/admin/metrics", async () => {
-    // On this oracle the admin dashboard/metrics surface is disabled
-    // outright (`ctx.adminDashboard`/`ctx.metrics` unset) — that gate
-    // fires before `requireAdmin` and answers 404 "admin disabled"
-    // regardless of who's asking. Whatever the reason, a data-plane
-    // bearer must never see a 2xx here.
-    const r = await api<{ error: string }>("/v1/admin/metrics");
-    expect([401, 403, 404]).toContain(r.status);
+  it("an unauthenticated caller cannot reach /v1/admin/metrics", async () => {
+    // Two legitimate answers, depending on the target's
+    // NOVAMEM_ADMIN_DASHBOARD: 404 "admin disabled" (the surface gate
+    // fires before `requireAdmin`, so it answers the same to everyone)
+    // or 401 (surface on, credentials missing). Never a 2xx.
+    //
+    // This used to send `env.testToken` and assert the same thing — which
+    // silently depended on that token NOT belonging to an admin. It does
+    // on some targets and doesn't on others, and the assertion passed
+    // either way only because the bench oracle had metrics switched off.
+    // The genuine "authenticated non-admin is denied" case now lives in
+    // 60-admin, which provisions a real non-admin bearer to make it with.
+    const r = await api<{ error: string }>("/v1/admin/metrics", { token: "" });
+    expect([401, 404]).toContain(r.status);
     ErrorBody.parse(r.body);
   });
 });
@@ -127,7 +133,7 @@ describe.skipIf(env.authMode !== "user")("rotate-token (user mode)", () => {
   });
 });
 
-describe.skipIf(env.authMode !== "user" || !env.adminCookie)(
+describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
   "project-confined + read-only tokens (user mode)",
   () => {
     it("confined token: cross-project write is 403, own-project write succeeds", async () => {

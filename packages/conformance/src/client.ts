@@ -66,7 +66,7 @@ let cookiePromise: Promise<string> | null = null;
  *  set-cookie for the whole run (env.ts promised this; it was previously
  *  unimplemented and cookie-gated suites 401'd unless the operator minted
  *  a cookie by hand). */
-async function adminCookie(): Promise<string> {
+export async function adminCookie(): Promise<string> {
   if (env.adminCookie) return env.adminCookie;
   if (!env.adminEmail || !env.adminPassword) {
     throw new Error(
@@ -74,24 +74,94 @@ async function adminCookie(): Promise<string> {
     );
   }
   cookiePromise ??= (async () => {
-    const r = await api<unknown>("/api/auth/sign-in/email", {
-      body: { email: env.adminEmail, password: env.adminPassword },
-      token: "",
-      // undici sends `Origin: null` on POST, which Better Auth's
-      // trusted-origin check rejects outright; a matching Origin passes.
-      headers: env.origin ? { origin: env.origin } : {},
-    });
+    // `signInRaw` sends the matching Origin (undici sends `Origin: null`
+    // on POST, which Better Auth's trusted-origin check rejects outright)
+    // and waits out Better Auth's own 3-per-10s sign-in throttle.
+    const r = await signInRaw(env.adminEmail, env.adminPassword);
     if (r.status !== 200) {
       cookiePromise = null; // allow retry on transient failure
       throw new Error(`conformance: admin sign-in failed (${r.status})`);
     }
-    const setCookie = r.headers.getSetCookie?.() ?? [];
-    const cookie = setCookie.map((c) => c.split(";")[0]).join("; ");
+    const cookie = cookieHeaderFrom(r);
     if (!cookie) throw new Error("conformance: sign-in returned no set-cookie");
     return cookie;
   })();
   return cookiePromise;
 }
+
+/** Join a response's `set-cookie` list into a `Cookie:` request header,
+ *  applying browser semantics: last value wins per name, and an empty
+ *  value (`name=; Max-Age=0`) is a DELETION, not a cookie worth sending.
+ *  Both matter for `/api/auth/admin/impersonate-user`, whose response
+ *  clears `nm.session_token` and then re-sets it in the same reply — a
+ *  naive join sends the cleared one first and the session resolves to
+ *  null. */
+export const cookieHeaderFrom = (r: ApiResult<unknown>): string => {
+  const jar = new Map<string, string>();
+  for (const raw of r.headers.getSetCookie?.() ?? []) {
+    const pair = raw.split(";")[0] ?? "";
+    const eq = pair.indexOf("=");
+    if (eq < 1) continue;
+    const name = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (value === "") jar.delete(name);
+    else jar.set(name, value);
+  }
+  return [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+};
+
+/** Better Auth ships its OWN per-IP limiter in front of `/sign-in/email`
+ *  (3 requests per 10s window, on top of novamem's per-account 5-strike
+ *  limiter). A suite that mints several sessions trips it in seconds —
+ *  and it is a genuine 429, not a credential failure, so the right
+ *  response is to wait out the window rather than fail the test. The
+ *  message is BA's; novamem's own limiter answers `{error, retryAfter}`
+ *  and must NOT be retried away. */
+const BA_THROTTLE = "Too many requests. Please try again later.";
+const isBaThrottle = (r: ApiResult<unknown>): boolean =>
+  r.status === 429 && (r.body as { message?: string } | null)?.message === BA_THROTTLE;
+
+export async function signInRaw(email: string, password: string): Promise<ApiResult<unknown>> {
+  let r!: ApiResult<unknown>;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    r = await api<unknown>("/api/auth/sign-in/email", {
+      body: { email, password },
+      token: "",
+      headers: env.origin ? { origin: env.origin } : {},
+    });
+    if (!isBaThrottle(r)) return r;
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+  }
+  return r;
+}
+
+/** Sign in as an arbitrary account and return its session cookie. Used by
+ *  41-better-auth to drive the destructive Better Auth surface (password
+ *  change, session revocation, ban) against THROWAWAY users rather than
+ *  the shared admin identity every other suite depends on. */
+export async function signIn(email: string, password: string): Promise<string> {
+  const r = await signInRaw(email, password);
+  if (r.status !== 200) {
+    throw new Error(
+      `conformance: sign-in as ${email} failed (${r.status}) ${JSON.stringify(r.body)}`,
+    );
+  }
+  const cookie = cookieHeaderFrom(r);
+  if (!cookie) throw new Error(`conformance: sign-in as ${email} returned no set-cookie`);
+  return cookie;
+}
+
+/** Same as `api`, but authenticated by an explicit session cookie. */
+export const cookieApi = <T = unknown>(
+  cookie: string,
+  path: string,
+  opts: Parameters<typeof api>[1] = {},
+): Promise<ApiResult<T>> =>
+  api<T>(path, {
+    ...opts,
+    token: "",
+    headers: { cookie, ...(env.origin ? { origin: env.origin } : {}), ...opts.headers },
+  });
 
 export const adminCookieApi = async <T = unknown>(
   path: string,

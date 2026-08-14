@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { afterAll, describe, expect, it } from "vitest";
 import { adminCookieApi, api, ns } from "../src/client.js";
-import { env } from "../src/env.js";
+import { env, hasAdminIdentity } from "../src/env.js";
 import {
   AdminAuditLogResponse,
   AdminCreateUserResponse,
@@ -86,7 +86,7 @@ afterAll(async () => {
   }
 });
 
-describe.skipIf(env.authMode !== "user" || (!env.adminCookie && !env.adminEmail))("admin plane (user mode)", () => {
+describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)("admin plane (user mode)", () => {
   it("unauthenticated is 401 across every requireAdmin-gated /v1/admin/* route", async () => {
     const noAuth = { token: "" };
     const getUsers = await api<z.infer<typeof ErrorBody>>("/v1/admin/users", noAuth);
@@ -133,21 +133,44 @@ describe.skipIf(env.authMode !== "user" || (!env.adminCookie && !env.adminEmail)
     expect(putQuota.body.error).toBe("unauthorized");
   });
 
-  it("/v1/admin/metrics and /v1/admin/metrics/prom are 404 'admin disabled' on this oracle, for any caller", async () => {
-    // This oracle runs with the metrics/dashboard surface unwired
-    // (`ctx.adminDashboard`/`ctx.metrics` falsy) — the check in
-    // `admin.ts` fires before `requireAdmin`, so it's 404 unconditionally,
-    // not 401/403/200. Asserted for both an unauthenticated caller and
-    // the admin session cookie to prove it really is caller-independent.
+  it("/v1/admin/metrics and /v1/admin/metrics/prom follow the dashboard master switch", async () => {
+    // `admin.ts` gates both routes on `ctx.adminDashboard`/`ctx.metrics`
+    // BEFORE `requireAdmin`, so with the surface off they are 404 "admin
+    // disabled" for EVERY caller — admin cookie included. With it on they
+    // are ordinary admin routes: 401 unauthenticated, 200 for an admin.
+    //
+    // This test used to assert only the disabled branch ("on this
+    // oracle"), which made it a configuration transcript rather than a
+    // contract — it went red the moment it met a target with the
+    // dashboard switched on. `dashboardEnabled` is probed rather than
+    // read from env so it cannot drift from the target.
+    const probe = await api("/admin", { token: "" });
+    const enabled = probe.status === 200;
+
     for (const path of ["/v1/admin/metrics", "/v1/admin/metrics/prom"] as const) {
       const unauth = await api<z.infer<typeof ErrorBody>>(path, { token: "" });
-      expect(unauth.status).toBe(404);
       ErrorBody.parse(unauth.body);
-      expect(unauth.body.error).toBe("admin disabled");
+      const cookie = await adminCookieApi<unknown>(path);
 
-      const cookie = await adminCookieApi<z.infer<typeof ErrorBody>>(path);
-      expect(cookie.status).toBe(404);
-      expect(cookie.body.error).toBe("admin disabled");
+      if (!enabled) {
+        expect(unauth.status).toBe(404);
+        expect(unauth.body.error).toBe("admin disabled");
+        expect(cookie.status).toBe(404);
+        expect((cookie.body as z.infer<typeof ErrorBody>).error).toBe("admin disabled");
+        continue;
+      }
+
+      expect(unauth.status).toBe(401);
+      expect(unauth.body.error).toBe("unauthorized");
+      expect(cookie.status).toBe(200);
+      const ct = cookie.headers.get("content-type") ?? "";
+      if (path.endsWith("/prom")) {
+        expect(ct).toMatch(/^text\/plain/);
+        expect(typeof cookie.body).toBe("string");
+      } else {
+        expect(ct).toMatch(/^application\/json/);
+        expect(typeof cookie.body).toBe("object");
+      }
     }
   });
 

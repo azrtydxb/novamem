@@ -48,7 +48,7 @@ func TestZodEnvelopeMissingContent(t *testing.T) {
 	for _, i := range env.Issues {
 		if i.Path == "content" {
 			found = true
-			if i.Code != "invalid_type" || i.Message != "Required" {
+			if i.Code != "invalid_type" || i.Message != "Invalid input: expected string, received undefined" {
 				t.Fatalf("content issue = %+v", i)
 			}
 		}
@@ -85,11 +85,11 @@ func TestZodEnvelopeFieldRules(t *testing.T) {
 	}{
 		{"content wrong type", `{"content": 7}`, "content", "invalid_type"},
 		{"namespace too long", `{"content":"a valid fact of length","namespace":"` + strings.Repeat("n", 129) + `"}`, "namespace", "too_big"},
-		{"bad sensitivity", `{"content":"a valid fact of length","sensitivity":"topsecret"}`, "sensitivity", "invalid_enum_value"},
+		{"bad sensitivity", `{"content":"a valid fact of length","sensitivity":"topsecret"}`, "sensitivity", "invalid_value"},
 		{"confidence over 1", `{"content":"a valid fact of length","confidence":1.5}`, "confidence", "too_big"},
-		{"bad expiresAt", `{"content":"a valid fact of length","expiresAt":"tomorrow"}`, "expiresAt", "invalid_string"},
+		{"bad expiresAt", `{"content":"a valid fact of length","expiresAt":"tomorrow"}`, "expiresAt", "invalid_format"},
 		{"metadata key too long", `{"content":"a valid fact of length","metadata":{"` + strings.Repeat("k", 65) + `":1}}`, "metadata", "custom"},
-		{"project control chars", "{\"content\":\"a valid fact of length\",\"project\":\"a\\u0007b\"}", "project", "invalid_string"},
+		{"project control chars", "{\"content\":\"a valid fact of length\",\"project\":\"a\\u0007b\"}", "project", "invalid_format"},
 		{"force wrong type", `{"content":"a valid fact of length","force":"yes"}`, "force", "invalid_type"},
 	}
 	for _, tt := range tests {
@@ -217,5 +217,48 @@ func TestNullBodyEnvelope(t *testing.T) {
 	}
 	if m, err := decodeBody([]byte("null"), true); err != nil || len(m) != 0 {
 		t.Fatalf("optional null should be an empty object: %v %v", m, err)
+	}
+}
+
+// Fastify's JSON body parser rejects an empty body on EVERY route — the
+// .optional()-schema ones included, and the ones that never read a body.
+// Verified against a live TS server; pinned here because the guard sits
+// in one middleware and a refactor could quietly re-exempt a route.
+func TestEmptyJSONBodyRejected(t *testing.T) {
+	const want = "Body cannot be empty when content-type is set to 'application/json'"
+	json := map[string]string{"Content-Type": "application/json"}
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/v1/recent"},   // RecentBody.optional()
+		{"POST", "/v1/hygiene"},  // HygieneBody.optional()
+		{"POST", "/v1/evaluate"}, // EvaluateBody.optional()
+		{"POST", "/v1/remember"}, // required schema
+		{"POST", "/mcp"},         // never reaches a zod schema
+	} {
+		rec, env := doReq(t, "none", "", tc.method, tc.path, "", json)
+		if rec.Code != 400 || env.Error != want {
+			t.Errorf("%s %s: %d %q", tc.method, tc.path, rec.Code, env.Error)
+		}
+	}
+	// …but only when the caller declares JSON, and never on a GET.
+	if rec, _ := doReq(t, "none", "", "GET", "/live", "", json); rec.Code != 200 {
+		t.Errorf("GET /live with a JSON content-type: %d", rec.Code)
+	}
+	// An unrouted path 404s without the parser ever running (Fastify
+	// parses after routing).
+	if rec, _ := doReq(t, "none", "", "POST", "/v1/nope", "", json); rec.Code != 404 {
+		t.Errorf("POST /v1/nope: %d", rec.Code)
+	}
+}
+
+// Go's encoding/json sorts map keys and escapes <, > and &; the TS
+// server does neither. Both bite the same responses, so pin one of each.
+func TestJSONShapeMatchesJS(t *testing.T) {
+	rec, _ := doReq(t, "none", "", "POST", "/v1/search", `{"query":"q","k":0}`, nil)
+	if got := rec.Body.String(); !strings.Contains(got, `"message":"Too small: expected number to be >0"`) {
+		t.Errorf("HTML-escaped or reordered: %s", got)
+	}
+	rec, _ = doReq(t, "none", "", "GET", "/v1/nope", "", nil)
+	if got := rec.Body.String(); !strings.HasPrefix(got, `{"message":"Route GET:/v1/nope not found","error":"Not Found"`) {
+		t.Errorf("404 envelope key order: %s", got)
 	}
 }

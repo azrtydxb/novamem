@@ -1,7 +1,14 @@
 # Gradual Go migration of novamem-server — design
 
 **Date:** 2026-08-13
-**Status:** Approved (design); implementation plan to follow
+**Status:** Implemented. All eight slices are in `go/`, the parity audit
+is at [go-parity-audit.md](../../architecture/go-parity-audit.md), and
+the full conformance suite is green against the Go server (102 passed,
+1 skipped, 0 failed — the skip is the write-quota 429, which needs a
+per-user quota low enough to starve the rest of the run and so passes
+in a dedicated run). What remains is the cleanup phase below: the Go
+server becoming the novamem-bench default, then deleting
+`packages/server`.
 
 ## Goal
 
@@ -132,6 +139,21 @@ plugin. In Go:
 Result at cutover: no re-login, no token re-issue, no schema break.
 
 ## 5. Embeddings and LLM calls
+
+**Decision (owner, 2026-08-14):** the Go server never embeds a model in
+process. `NOVAMEM_EMBEDDINGS_PROVIDER=local-transformers` is refused at
+startup with a message pointing at the API-endpoint path; deployments
+that want fully-local embeddings run the model behind an
+OpenAI-compatible endpoint and point `NOVAMEM_EMBEDDINGS_ENDPOINT` at
+it. The TypeScript server's in-process path is left as it is. This is
+the one intentional behavioural difference in an otherwise 100%-parity
+port, and it exists to keep the single static binary.
+
+Everything else that calls a model — fact extraction, the observer /
+reflector, and query decomposition — IS ported, because those already
+call external endpoints in both servers. (An earlier audit misfiled
+them as out of scope; they are in.)
+
 
 External OpenAI-compatible endpoints only — embeddings, reranker, and
 fact-extractor/dream LLM calls. No in-process ONNX (cgo would compromise
