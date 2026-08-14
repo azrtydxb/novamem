@@ -158,7 +158,7 @@ describe.skipIf(env.authMode !== "user" || !env.adminCookie)(
       });
       expect(crossProject.status).toBe(403);
       ErrorBody.parse(crossProject.body);
-      expect(crossProject.body.error).toContain("confined");
+      expect(crossProject.body.error).toBe("token is confined to its project");
 
       // Own (confined) project — succeeds; body.project gets rewritten to
       // the token's project regardless, but passing it explicitly here
