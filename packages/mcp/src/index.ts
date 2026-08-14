@@ -167,7 +167,7 @@ const TOOL_DEFINITIONS = [
         project: { type: "string" },
         metadata: { type: "object" },
         sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
-        expiresAt: { type: "string", description: "Explicit TTL (ISO-8601). Past it the entry is hidden from reads and later hard-deleted. Use when the fact has a known lifetime." },
+        expiresAt: { type: "string", description: "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted." },
       },
       required: ["content"],
     },
@@ -271,7 +271,7 @@ const TOOL_DEFINITIONS = [
         confidence: { type: "number", description: "0..1" },
         force: { type: "boolean" },
         project: { type: "string", description: "Project id or name." },
-        expiresAt: { type: "string", description: "Explicit TTL (ISO-8601). Past it the entry is hidden from reads and later hard-deleted. Use when the fact has a known lifetime." },
+        expiresAt: { type: "string", description: "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted." },
       },
       required: ["content"],
     },
@@ -288,6 +288,7 @@ const TOOL_DEFINITIONS = [
         k: { type: "number" },
         project: { type: "string" },
         includeProjects: { type: "array", items: { type: "string" } },
+        contentMode: { type: "string", enum: ["full", "snippet", "ids"], description: "\"snippet\" truncates content ~240 chars; \"ids\" omits content/metadata. Default \"full\"." },
       },
     },
   },
@@ -305,6 +306,7 @@ const TOOL_DEFINITIONS = [
         since: { type: "string" },
         project: { type: "string" },
         includeProjects: { type: "array", items: { type: "string" } },
+        contentMode: { type: "string", enum: ["full", "snippet", "ids"], description: "\"snippet\" truncates content ~240 chars; \"ids\" omits content/metadata. Default \"full\"." },
       },
     },
   },
@@ -652,6 +654,7 @@ export function buildRemoteMcpServer(
             project,
             includeProjects,
             maxSensitivity: optStr(args.maxSensitivity),
+            contentMode: optStr(args.contentMode),
           } as unknown as Parameters<typeof client.recent>[0];
           const r = await client.recent(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -665,6 +668,7 @@ export function buildRemoteMcpServer(
             project,
             includeProjects,
             maxSensitivity: optStr(args.maxSensitivity),
+            contentMode: optStr(args.contentMode),
           } as unknown as Parameters<typeof client.recent>[0];
           const r = await client.recent(body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
