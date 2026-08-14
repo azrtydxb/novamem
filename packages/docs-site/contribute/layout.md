@@ -49,6 +49,11 @@ internal/
 └── auth/                — Better Auth-compatible hashing, cookies, JWKS
 ```
 
+The TypeScript server this replaced (`packages/server`) was removed once
+the Go server became the novamem-bench default and the conformance suite
+was green against it there. There is no fallback and no legacy mode —
+the git history is the archive.
+
 ## packages/admin-ui
 
 React 19 + Vite + Tailwind v4. Pages live under `src/pages/`. Shared components in `src/components/`. Theme tokens (the Grid palette) in `src/index.css` via `@theme`.
