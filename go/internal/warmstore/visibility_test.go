@@ -27,10 +27,23 @@ func TestVisibleEntriesKeepsBothBranches(t *testing.T) {
 	if !strings.Contains(sql, "user_id = $1 AND project_id IS NULL") {
 		t.Errorf("missing the own-rows branch:\n%s", sql)
 	}
-	// Branch two: project rows, joined through the unique membership
-	// index — that uniqueness is what makes UNION ALL exact.
-	if !strings.Contains(sql, "JOIN project_members pm") {
-		t.Errorf("missing the project-membership branch:\n%s", sql)
+	// Branch two: project rows, as a semi-join. It must NOT be a plain
+	// JOIN — that pulls project_members into scope, and its own
+	// user_id/project_id columns then make those names ambiguous for
+	// any caller whose `cols` mentions them. Two of the three call
+	// sites did, and the generated SQL failed at runtime with
+	// "column reference is ambiguous" while every unit test passed.
+	if !strings.Contains(sql, "project_id IN (SELECT project_id FROM project_members WHERE user_id = $1)") {
+		t.Errorf("project branch must be a semi-join through IN:\n%s", sql)
+	}
+	if strings.Contains(sql, "JOIN project_members") {
+		t.Errorf("a JOIN makes user_id/project_id ambiguous in cols:\n%s", sql)
+	}
+	// The ambiguity only bites when cols names a column both tables
+	// have, so assert with such a cols — the shape the bug shipped in.
+	amb := visibleEntries("id, user_id, project_id")
+	if strings.Contains(amb, "JOIN project_members") {
+		t.Errorf("ambiguous-prone cols must still avoid a join:\n%s", amb)
 	}
 	if strings.Contains(sql, "UNION\n") || strings.Contains(sql, "UNION ALL ALL") {
 		t.Errorf("unexpected set operator:\n%s", sql)

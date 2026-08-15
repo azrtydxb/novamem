@@ -24,14 +24,19 @@ package warmstore
 //     NULL rows, the second only rows whose project_id matches a
 //     membership row and is therefore NOT NULL — so nothing is counted
 //     twice;
-//   - uq_project_members is UNIQUE on (project_id, user_id), so the join
-//     matches at most one membership row per entry and cannot fan out
-//     the way a join otherwise might. That uniqueness is what makes a
-//     join safe where the original used a semi-join.
+//   - the second branch is a semi-join through IN, so it yields each
+//     entry at most once no matter how the membership table is shaped.
+//     An inner JOIN would have been equivalent here — uq_project_members
+//     is UNIQUE on (project_id, user_id) — but it also drags
+//     project_members into scope, where its own user_id and project_id
+//     columns make those names ambiguous in `cols`. IN keeps the only
+//     table in scope memory_entries, so callers can pass plain column
+//     names and expressions over them.
 //
-// `cols` must name columns of memory_entries (the table is not aliased,
-// so qualified references work in both branches) and must include
-// anything the caller ORDER BYs, since the sort happens outside.
+// `cols` is spliced into both branches, so it may name any column of
+// memory_entries or any expression over them (`left(content, 160) AS
+// snippet` is fine). It must include anything the caller ORDER BYs,
+// since the sort happens outside the subquery.
 func visibleEntries(cols string) string {
 	return `(SELECT ` + cols + `
 		   FROM memory_entries
@@ -39,6 +44,5 @@ func visibleEntries(cols string) string {
 		  UNION ALL
 		 SELECT ` + cols + `
 		   FROM memory_entries
-		   JOIN project_members pm
-		     ON pm.project_id = memory_entries.project_id AND pm.user_id = $1)`
+		  WHERE project_id IN (SELECT project_id FROM project_members WHERE user_id = $1))`
 }
