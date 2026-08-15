@@ -389,3 +389,5 @@ func (s *pgStore) Ping(ctx context.Context) bool {
 }
 
 func (s *pgStore) Close() { s.pool.Close() }
+
+func (*pgStore) Provider() string { return "pgvector" }

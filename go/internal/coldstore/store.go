@@ -13,6 +13,10 @@ type backend interface {
 	DeleteAllForUser(ctx context.Context, userID string) ([]string, error)
 	DeleteAllForProject(ctx context.Context, projectID string) ([]string, error)
 	Ping(ctx context.Context) bool
+	// Provider names the backend for operators — the dashboard's health
+	// page used to hardcode "qdrant" regardless of what was configured,
+	// which told a pgvector deployment it was running Qdrant.
+	Provider() string
 	Close()
 }
 

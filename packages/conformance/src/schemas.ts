@@ -385,10 +385,12 @@ export const AdminHealthDeepResponse = z
       .object({
         warm: z.enum(["ok", "unreachable"]),
         cold: z.enum(["ok", "unreachable"]),
-        graph: z.enum(["ok", "unreachable", "disabled"]),
         embedder: z.enum(["ok", "failing"]),
       })
       .passthrough(),
+    // Which vector backend is configured, so the dashboard can name it
+    // instead of assuming. `none` when no cold tier is set up.
+    coldProvider: z.enum(["pgvector", "qdrant", "none"]),
     pendingEmbeddings: z.number().nullable(),
   })
   .passthrough();

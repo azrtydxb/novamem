@@ -446,16 +446,27 @@ func (e *Engine) Health(ctx context.Context) map[string]any {
 		// populated yet reported null where TS reports a number.
 		pending = &n
 	}
+	// `graph` used to be reported here as a permanent "disabled", a
+	// leftover of the retired TypeScript server's shape. Nothing served
+	// it — relations live in SQL, there has been no graph service for a
+	// long time — and the dashboard rendered it as a FalkorDB dependency
+	// card, so an operator saw a product this deployment does not use.
+	// The shim outlived the server it was compatible with.
+	coldProvider := "none"
+	if e.cold != nil {
+		coldProvider = e.cold.Provider()
+	}
 	return map[string]any{
 		"ok": warmOK && coldOK,
 		"deps": map[string]any{
-			"warm": state(warmOK),
-			"cold": state(coldOK),
-			// No graph service exists (relations live in SQL); the field
-			// stays for wire compatibility.
-			"graph":    "disabled",
+			"warm":     state(warmOK),
+			"cold":     state(coldOK),
 			"embedder": embedder,
 		},
+		// Which vector backend is actually configured. The dashboard had
+		// no way to know, so it hardcoded "qdrant" and mislabelled every
+		// pgvector deployment.
+		"coldProvider":      coldProvider,
 		"pendingEmbeddings": pending,
 	}
 }
