@@ -24,11 +24,17 @@ interface Dep {
  *  which the server does report and which genuinely can fail, was not
  *  shown at all. */
 function depsOf(data: HealthSnapshot | undefined): Dep[] {
-  return [
-    { key: "warm", name: "postgres", role: "warm store" },
-    { key: "cold", name: data?.coldProvider ?? "vector store", role: "cold / vector" },
-    { key: "embedder", name: "embeddings", role: "embedding service" },
-  ];
+  const deps: Dep[] = [{ key: "warm", name: "postgres", role: "warm store" }];
+  // No cold tier means no card. The server reports `cold: "ok"` when
+  // none is configured — there is nothing to be unreachable — so a card
+  // here would assert a healthy dependency that does not exist, which is
+  // the same class of lie this page was fixed for. Naming it "none"
+  // would just read as a service called none.
+  if (data?.coldProvider !== "none") {
+    deps.push({ key: "cold", name: data?.coldProvider ?? "vector store", role: "cold / vector" });
+  }
+  deps.push({ key: "embedder", name: "embeddings", role: "embedding service" });
+  return deps;
 }
 
 /** Health page — Grid 2-col grid of dependency cards. Each card has a
