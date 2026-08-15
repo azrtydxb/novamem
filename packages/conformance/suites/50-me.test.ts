@@ -14,6 +14,7 @@ import {
   MintTokenResponse,
   OnboardingResponse,
   ProjectResponse,
+  RecentResponse,
   TodayResponse,
   TokenListResponse,
   UsageResponse,
@@ -264,7 +265,24 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       expect(imp.body.imported).toBe(1);
       expect(imp.body.failed).toEqual([]);
       const after = await api<{ entries: number }>("/v1/me/usage");
-      expect(after.body.entries).toBe(before.body.entries + 1);
+      // At least one, not exactly one: `/v1/me/usage` counts every entry
+      // the user owns, and on a target running fact extraction the
+      // chunks written earlier in this lifecycle keep landing derived
+      // facts asynchronously. One of those inside this window makes the
+      // count rise by two, which says nothing about whether the import
+      // worked. Observed against novamem-bench: expected 209, got 210.
+      expect(after.body.entries).toBeGreaterThanOrEqual(before.body.entries + 1);
+
+      // The count was doing the real work, so replace it with something
+      // exact rather than just looser: read the entry back and match its
+      // content. Ids are deployment-local ULIDs and not preserved across
+      // an export/import, which is why the original checked a count at
+      // all — but the content is preserved, and that is the property
+      // import actually promises.
+      const imported = await api<unknown>("/v1/recent", { body: { namespace: NS, k: 200 } });
+      expect(imported.status).toBe(200);
+      const importedContents = RecentResponse.parse(imported.body).results.map((e) => e.content);
+      expect(importedContents, "the imported entry did not come back").toContain(importContent);
 
       // ── 12. Members: single-bench-user failure contracts ────────────
       const members = await api<{ members: Array<{ userId: string; role: string }> }>(
