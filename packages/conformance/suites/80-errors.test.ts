@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { api, ns } from "../src/client.js";
 import { env, skipUnless } from "../src/env.js";
@@ -13,6 +13,17 @@ import { ErrorBody } from "../src/schemas.js";
  */
 
 describe("error shapes", () => {
+  // Every token this suite mints gets revoked. The read-only probe below
+  // used to leak one per run: 18 live `conf-err-ro-*` tokens had piled up
+  // on novamem-bench, each one a working credential and every one of them
+  // cluttering the dashboard's per-token usage table.
+  const mintedTokens: string[] = [];
+  afterAll(async () => {
+    for (const token of mintedTokens) {
+      await api("/v1/admin/tokens/revoke", { body: { token }, token: env.adminToken });
+    }
+  });
+
   it("400: zod envelope with issues[] for a missing required field", async () => {
     const r = await api<{ error: string; issues: Array<{ path: string; message: string; code: string }> }>(
       "/v1/remember",
@@ -40,6 +51,7 @@ describe("error shapes", () => {
       token: env.adminToken,
     });
     expect(mint.status).toBe(201);
+    mintedTokens.push(mint.body.token);
     const r = await api<{ error: string }>("/v1/remember", {
       body: { content: "a write that the read-only token must not perform" },
       token: mint.body.token,
