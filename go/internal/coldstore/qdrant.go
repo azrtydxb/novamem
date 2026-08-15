@@ -459,3 +459,5 @@ func (s *qdrantStore) Ping(ctx context.Context) bool {
 }
 
 func (s *qdrantStore) Close() { s.http.CloseIdleConnections() }
+
+func (*qdrantStore) Provider() string { return "qdrant" }

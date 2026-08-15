@@ -12,14 +12,24 @@ interface Dep {
   key: keyof HealthSnapshot["deps"];
   name: string;
   role: string;
-  host: string;
 }
 
-const DEPS: Dep[] = [
-  { key: "warm", name: "postgres", role: "warm store", host: "pg-primary.internal" },
-  { key: "cold", name: "qdrant", role: "cold / vector", host: "qdrant.internal" },
-  { key: "graph", name: "falkordb", role: "graph", host: "falkor.internal" },
-];
+/** Cards are derived from what the server reports, not from a fixed
+ *  list. The fixed list claimed three dependencies: postgres, "qdrant"
+ *  and "falkordb", each with an invented hostname. Two of those were
+ *  wrong — the cold tier is whichever backend is configured (this
+ *  deployment runs pgvector) and there has been no graph service for a
+ *  long time, so an operator was shown a retired product sitting at
+ *  "falkor.internal" as though it were part of the stack. The embedder,
+ *  which the server does report and which genuinely can fail, was not
+ *  shown at all. */
+function depsOf(data: HealthSnapshot | undefined): Dep[] {
+  return [
+    { key: "warm", name: "postgres", role: "warm store" },
+    { key: "cold", name: data?.coldProvider ?? "vector store", role: "cold / vector" },
+    { key: "embedder", name: "embeddings", role: "embedding service" },
+  ];
+}
 
 /** Health page — Grid 2-col grid of dependency cards. Each card has a
  *  status dot with halo and a pill in the matching tone. We intentionally
@@ -63,7 +73,7 @@ export function HealthPage() {
         }
       />
       <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {DEPS.map((d) => (
+        {depsOf(data).map((d) => (
           <DepCard key={d.key} dep={d} status={data?.deps?.[d.key] ?? null} />
         ))}
       </div>
@@ -76,7 +86,7 @@ function DepCard({
   status,
 }: {
   dep: Dep;
-  status: "ok" | "unreachable" | "disabled" | null;
+  status: "ok" | "unreachable" | "disabled" | "failing" | null;
 }) {
   const ok = status === "ok";
   const disabled = status === "disabled";
@@ -102,7 +112,6 @@ function DepCard({
           <h3 className="text-[15px] font-semibold text-ink">{dep.name}</h3>
           <span className="font-mono text-[10px] text-dim">{dep.role}</span>
         </div>
-        <div className="mt-1.5 font-mono text-[11px] text-dim">{dep.host}</div>
       </div>
       <div className="text-right">
         <div className="text-lg font-semibold tabular-nums" style={{ color: colorVar }}>

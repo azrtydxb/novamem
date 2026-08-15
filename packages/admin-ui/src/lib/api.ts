@@ -88,8 +88,12 @@ export interface HealthSnapshot {
   deps: {
     warm: "ok" | "unreachable" | "disabled";
     cold: "ok" | "unreachable" | "disabled";
-    graph: "ok" | "unreachable" | "disabled";
+    embedder: "ok" | "failing";
   };
+  /** Which vector backend is configured — `pgvector`, `qdrant`, or
+   *  `none`. The health page names the cold tier from this instead of
+   *  assuming Qdrant, which mislabelled every pgvector deployment. */
+  coldProvider: string;
 }
 
 export interface MetricsSnapshot {
