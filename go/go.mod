@@ -3,7 +3,7 @@ module github.com/azrtydxb/novamem/go
 go 1.26.0
 
 require (
-	github.com/jackc/pgx/v5 v5.9.0
+	github.com/jackc/pgx/v5 v5.10.0
 	golang.org/x/crypto v0.52.0
 	golang.org/x/text v0.39.0
 )

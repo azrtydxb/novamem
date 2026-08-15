@@ -50,7 +50,7 @@ jobs:
             node: 24
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # PINNED TO v4 DELIBERATELY — do not take dependabot's v6 bump.
       # v6 installs pnpm as a native binary (@pnpm/exe) which needs
       # libatomic.so.1; the self-hosted arc-azrtydxb-amd64 runner image does
@@ -58,7 +58,7 @@ jobs:
       # libraries ... exits with code 127". v4 uses the JS distribution and
       # works on both hosted and self-hosted runners.
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -79,8 +79,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
           cache-dependency-path: |
@@ -105,9 +105,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
       # `pnpm audit` reads pnpm-lock.yaml directly — no install needed.
@@ -124,9 +124,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -141,7 +141,7 @@ jobs:
           ( cd packages/mcp    && pnpm pack --pack-destination ../../dist-tarballs )
           ( cd packages/init   && pnpm pack --pack-destination ../../dist-tarballs )
           ls -la dist-tarballs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: npm-tarballs
           path: dist-tarballs/*.tgz
@@ -172,8 +172,8 @@ jobs:
             runner: arc-azrtydxb-publish
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
         with:
           # The in-cluster Zot cache registry serves a self-signed cert;
           # BuildKit runs in its own container and doesn't inherit the
@@ -233,7 +233,7 @@ jobs:
           ignore-unfixed: true
       - name: Login to ghcr.io
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -281,9 +281,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Login to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
