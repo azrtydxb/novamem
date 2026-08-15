@@ -19,8 +19,23 @@ describe("error shapes", () => {
   // cluttering the dashboard's per-token usage table.
   const mintedTokens: string[] = [];
   afterAll(async () => {
+    const failed: string[] = [];
     for (const token of mintedTokens) {
-      await api("/v1/admin/tokens/revoke", { body: { token }, token: env.adminToken });
+      const r = await api<{ revoked: boolean }>("/v1/admin/tokens/revoke", {
+        body: { token },
+        token: env.adminToken,
+      });
+      // Fail loudly rather than leak quietly. A cleanup that swallows its
+      // own errors is how the 18 tokens got there in the first place: the
+      // run stays green while working credentials pile up on the target.
+      if (r.status !== 200 || r.body?.revoked !== true) {
+        failed.push(`${token.slice(0, 12)}… → ${r.status} ${JSON.stringify(r.body)}`);
+      }
+    }
+    if (failed.length > 0) {
+      throw new Error(
+        `conformance leaked ${failed.length} live token(s) — revoke failed:\n  ${failed.join("\n  ")}`,
+      );
     }
   });
 
