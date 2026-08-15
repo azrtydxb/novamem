@@ -400,10 +400,7 @@ type StatsRow struct {
 
 func (s *Store) Stats(ctx context.Context, userID string) ([]StatsRow, *time.Time, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT namespace, cold, count(*) FROM memory_entries
-		WHERE (user_id = $1 AND project_id IS NULL)
-		   OR EXISTS (SELECT 1 FROM project_members pm
-		              WHERE pm.project_id = memory_entries.project_id AND pm.user_id = $1)
+		SELECT namespace, cold, count(*) FROM `+visibleEntries("namespace, cold")+` v
 		GROUP BY namespace, cold`, userID)
 	if err != nil {
 		return nil, nil, err
