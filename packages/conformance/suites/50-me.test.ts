@@ -264,7 +264,14 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       expect(imp.body.imported).toBe(1);
       expect(imp.body.failed).toEqual([]);
       const after = await api<{ entries: number }>("/v1/me/usage");
-      expect(after.body.entries).toBe(before.body.entries + 1);
+      // At least one, not exactly one: `/v1/me/usage` counts every entry
+      // the user owns, and on a target running fact extraction the
+      // chunks written earlier in this lifecycle keep landing derived
+      // facts asynchronously. One of those inside this window makes the
+      // count rise by two, which says nothing about whether the import
+      // worked — `imported: 1` and the round-tripped content already do.
+      // Observed against novamem-bench: expected 209, got 210.
+      expect(after.body.entries).toBeGreaterThanOrEqual(before.body.entries + 1);
 
       // ── 12. Members: single-bench-user failure contracts ────────────
       const members = await api<{ members: Array<{ userId: string; role: string }> }>(
