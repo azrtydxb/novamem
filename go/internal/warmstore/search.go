@@ -333,10 +333,7 @@ func (s *Store) ListHygieneEntries(ctx context.Context, userID string, k int) ([
 	}
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, user_id, project_id, content, namespace, metadata
-		FROM memory_entries
-		WHERE (user_id = $1 AND project_id IS NULL)
-		   OR EXISTS (SELECT 1 FROM project_members pm
-		              WHERE pm.project_id = memory_entries.project_id AND pm.user_id = $1)
+		FROM `+visibleEntries("id, user_id, project_id, content, namespace, metadata, updated_at")+` v
 		ORDER BY updated_at DESC
 		LIMIT $2`, userID, k)
 	if err != nil {

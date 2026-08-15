@@ -93,11 +93,8 @@ func (s *Store) ListRecentActivity(ctx context.Context, userID string, limit int
 		limit = 200
 	}
 	rows, err := s.Pool.Query(ctx, `
-		SELECT 'remember'::text, created_at, left(content, 160), project_id
-		  FROM memory_entries
-		 WHERE (user_id = $1 AND project_id IS NULL)
-		    OR EXISTS (SELECT 1 FROM project_members pm
-		                WHERE pm.project_id = memory_entries.project_id AND pm.user_id = $1)
+		SELECT 'remember'::text, created_at, snippet, project_id
+		  FROM `+visibleEntries("created_at, left(content, 160) AS snippet, project_id")+` v
 		UNION ALL
 		SELECT 'token'::text, created_at, 'Minted token: ' || COALESCE(label, '(no label)'), NULL::text
 		  FROM user_tokens WHERE user_id = $1 AND revoked_at IS NULL
