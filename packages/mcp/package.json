@@ -41,7 +41,7 @@
     "url": "https://github.com/azrtydxb/novamem/issues"
   },
   "devDependencies": {
-    "@types/node": "^20.19",
+    "@types/node": "^26.2",
     "vitest": "^4.1.7"
   }
 }
