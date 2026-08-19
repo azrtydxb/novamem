@@ -265,4 +265,4 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
 - The OpenAPI spec is generated from the Fastify route tree and route Zod schemas via `@fastify/swagger`; `/openapi.json` should be smoke-checked after adding routes.
 
-See [../CHANGELOG.md](../CHANGELOG.md) for behaviour shifts and [../SECURITY.md](../SECURITY.md) for the production hardening checklist.
+See [CHANGELOG.md](https://github.com/azrtydxb/novamem/blob/main/CHANGELOG.md) for behaviour shifts and [the hardening guide](../ops/hardening.md) for the production hardening checklist.

@@ -62,7 +62,7 @@ The skill teaches the agent _when_ to call the tools and _how_ to phrase saves; 
 
 ### Layout
 
-The bundle lives at [`skills/novamem/`](../../skills/novamem) and follows the agentskills.io spec:
+The bundle lives at [`skills/novamem/`](https://github.com/azrtydxb/novamem/tree/main/skills/novamem) and follows the agentskills.io spec:
 
 ```
 skills/novamem/
@@ -106,6 +106,6 @@ For a host without dedicated docs:
 2. Try the SSE config first — that works for any modern MCP host.
 3. Fall back to the stdio shim if SSE isn't supported.
 4. Optionally drop the Skills bundle in the client's skills directory for richer behaviour rules.
-5. If your client speaks neither MCP nor Skills, use the [HTTP API](../api/README.md) directly — the OpenAPI spec covers every operation.
+5. If your client speaks neither MCP nor Skills, use the [HTTP API](../api/index.md) directly — the OpenAPI spec covers every operation.
 
 If you wire up a new client, a PR adding it to this directory is welcome.

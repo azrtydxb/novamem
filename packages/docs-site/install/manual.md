@@ -2,7 +2,7 @@
 
 Run novamem and its two datastores directly on a host. Use this if you already operate Postgres / Qdrant and don't want another container layer, or if you're hacking on the server itself.
 
-For most deployments [Docker Compose](docker.md) is simpler. For multi-node use [Kubernetes](kubernetes.md).
+For most deployments [Docker Compose](./docker-compose.md) is simpler. For multi-node use [Kubernetes](kubernetes.md).
 
 ## Prerequisites
 
@@ -66,7 +66,7 @@ When `NOVAMEM_AUTH_MODE=user` and no admin user exists, novamem seeds one from `
 
 ## Configuration
 
-Full env reference: [.env.example](../../.env.example). The fields you'll touch most:
+Full env reference: [.env.example](https://github.com/azrtydxb/novamem/blob/main/.env.example). The fields you'll touch most:
 
 | Var                           | Default                 | Notes                                                                                              |
 | ----------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |

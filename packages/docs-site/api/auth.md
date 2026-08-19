@@ -51,7 +51,7 @@ Response includes the plaintext bearer once:
 {
   "tokenHash": "287e1876...",
   "label": "ci-runner",
-  "token": "nm_zEQs..."
+  "token": "nm_your-token-here"
 }
 ```
 
@@ -59,7 +59,7 @@ Use it on data-plane requests:
 
 ```bash
 curl -X POST https://novamem.example.com/v1/search \
-  -H "Authorization: Bearer nm_zEQs..." \
+  -H "Authorization: Bearer $NOVAMEM_TOKEN" \
   -d '{ "query": "..." }'
 ```
 

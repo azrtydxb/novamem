@@ -62,7 +62,9 @@ def chat(
             choice = (out.get("choices") or [{}])[0]
             msg = choice.get("message") or {}
             txt = msg.get("content") or ""
-            txt = re.sub(r"<think>[\s\S]*?</think>", "", txt, flags=re.IGNORECASE).strip()
+            txt = re.sub(
+                r"<think>[\s\S]*?</think>", "", txt, flags=re.IGNORECASE
+            ).strip()
             if txt:
                 return txt
             # Empty content is never a legitimate answer. Surface it rather

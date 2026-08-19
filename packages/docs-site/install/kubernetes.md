@@ -1,6 +1,6 @@
 # Kubernetes install
 
-For a single host see [Docker Compose](docker.md). For local dev see [Manual](manual.md).
+For a single host see [Docker Compose](./docker-compose.md). For local dev see [Manual](manual.md).
 
 > **The committed manifests are templates.** `secrets.yaml` ships with `CHANGE_ME` placeholders and `ingress.yaml` references `novamem.example.com`. Do **not** `kubectl apply -k deploy/k8s/` as-is — follow [Configure](#configure) first.
 
@@ -26,7 +26,7 @@ ghcr.io/azrtydxb/novamem:main         # mutable, rebuilt on every main push by C
 ghcr.io/azrtydxb/novamem:sha-<short>  # immutable per commit, also multi-arch
 ```
 
-CI builds, scans (Trivy HIGH/CRITICAL with `--ignore-unfixed`), and pushes both tags from the [CI workflow](../../.github/workflows/ci.yml). The `:main` tag updates on every push to the `main` branch; pin `image:` to a `:sha-…` tag in `novamem.yaml` if you want immutability.
+CI builds, scans (Trivy HIGH/CRITICAL with `--ignore-unfixed`), and pushes both tags from the [CI workflow](https://github.com/azrtydxb/novamem/blob/main/.github/workflows/ci.yml). The `:main` tag updates on every push to the `main` branch; pin `image:` to a `:sha-…` tag in `novamem.yaml` if you want immutability.
 
 To roll forward after a CI publish:
 

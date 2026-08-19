@@ -19,7 +19,7 @@ docker compose up -d
 docker compose logs -f novamem  # watch the bootstrap
 ```
 
-The compose file is the source of truth for ports + env wiring: [docker-compose.yaml](../../docker-compose.yaml).
+The compose file is the source of truth for ports + env wiring: [docker-compose.yaml](https://github.com/azrtydxb/novamem/blob/main/docker-compose.yaml).
 
 | Service    | Image                     | Host port |
 | ---------- | ------------------------- | --------- |
@@ -37,7 +37,7 @@ Sign in at <http://localhost:7778/admin> with the email + password you set, then
 
 ## Configuration
 
-Override env via `.env` (compose reads it automatically) or by editing the `environment:` block in `docker-compose.yaml`. The full reference is [.env.example](../../.env.example). The fields you'll touch most for compose:
+Override env via `.env` (compose reads it automatically) or by editing the `environment:` block in `docker-compose.yaml`. The full reference is [.env.example](https://github.com/azrtydxb/novamem/blob/main/.env.example). The fields you'll touch most for compose:
 
 | Var                                | Compose default                         | Notes                                                                                           |
 | ---------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -80,7 +80,7 @@ The compose file is geared for development:
 - Compose now requires `POSTGRES_PASSWORD` (no default — `docker compose up` fails fast if it's unset). Keep the generated value strong and secret, and don't expose the Postgres port to anything other than the application container.
 - `NOVAMEM_INSECURE_COOKIES=1` allows plain-HTTP cookies — flip to `0` and put a TLS-terminating reverse proxy (nginx, Caddy, Traefik) in front
 - `NOVAMEM_BASE_URL` must match the public URL exactly (Better Auth checks Origin)
-- Read [SECURITY.md](../../SECURITY.md) for the full hardening checklist
+- Read [the hardening guide](../ops/hardening.md) for the full hardening checklist
 
 For multi-node use [Kubernetes](kubernetes.md) instead.
 

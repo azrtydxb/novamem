@@ -178,7 +178,7 @@ def aggregate(per_q, cutoffs):
         key = f"top_{k}"
         rows = [q["metrics"][key] for q in per_q if key in q["metrics"]]
 
-        def mean(field):
+        def mean(field, rows=rows):
             return (sum(r[field] for r in rows) / len(rows)) if rows else 0.0
 
         by_type = {}

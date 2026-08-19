@@ -1,6 +1,6 @@
 # Usage
 
-What novamem does, when to use each tool, what the gates and decay loops mean for you. For the underlying mechanics see [architecture.md](architecture.md). For per-tool field reference see [skills/novamem/references/](../skills/novamem/references) or the [OpenAPI spec](api/README.md).
+What novamem does, when to use each tool, what the gates and decay loops mean for you. For the underlying mechanics see [the system architecture](../architecture/system.md). For per-tool field reference see [skills/novamem/references/](https://github.com/azrtydxb/novamem/tree/main/skills/novamem/references) or the [OpenAPI spec](../api/openapi.md).
 
 ## Mental model
 
@@ -194,7 +194,7 @@ Response: `{ walked, merged, edgesPromoted, durationMs }`.
 
 ## Per-host wiring
 
-For agent-host integrations (when to remember, what weights to pick, project scoping conventions), see the [Connect](README.md#connect-an-ai-tool) guides — each one has the host-specific behaviour rules and a `verify` snippet.
+For agent-host integrations (when to remember, what weights to pick, project scoping conventions), see the [Connect](../getting-started.md) guides — each one has the host-specific behaviour rules and a `verify` snippet.
 
 ## Errors and signals
 
