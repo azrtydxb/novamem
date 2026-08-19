@@ -67,5 +67,5 @@ Tags are easy to forget; projects are explicit. The visibility boundary is the s
 
 ## See also
 
-- [Mental model](/concepts/mental-model) — projects vs namespaces
-- [Multi-tenancy architecture](/architecture/multi-tenancy) — how projects scale across tenants
+- [Mental model](../concepts/mental-model.md) — projects vs namespaces
+- [Multi-tenancy architecture](../architecture/multi-tenancy.md) — how projects scale across tenants

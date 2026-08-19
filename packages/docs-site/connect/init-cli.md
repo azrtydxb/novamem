@@ -136,6 +136,6 @@ For stdio-only hosts, the equivalent stdio shim entry:
 
 ## See also
 
-- [Claude Code setup](/connect/claude-code) — what `.mcp.json` + `commands/` look like
-- [Custom HTTP integration](/connect/http) — for hosts the CLI doesn't handle
-- [API tokens](/dashboard/tokens) — manage / revoke tokens after the fact
+- [Claude Code setup](./claude-code.md) — what `.mcp.json` + `commands/` look like
+- [Custom HTTP integration](./http.md) — for hosts the CLI doesn't handle
+- [API tokens](../dashboard/tokens.md) — manage / revoke tokens after the fact

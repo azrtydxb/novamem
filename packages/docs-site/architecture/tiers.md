@@ -68,6 +68,6 @@ A fresh entry (1 hit) lives `7 days`. After 7 hits it lives `7 · log₂(8) = 21
 
 ## See also
 
-- [Hybrid search internals](/architecture/hybrid-search)
-- [Decay & dream cycle](/architecture/decay)
-- [System shape](/architecture/system) — how tiers fit together with the engine layer
+- [Hybrid search internals](./hybrid-search.md)
+- [Decay & dream cycle](./decay.md)
+- [System shape](./system.md) — how tiers fit together with the engine layer

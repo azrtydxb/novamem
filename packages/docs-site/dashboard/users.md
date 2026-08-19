@@ -36,5 +36,5 @@ If you click Users and see only the "Loading users…" card, then nothing — th
 
 ## See also
 
-- [Sign in & roles](/dashboard/auth-roles) — what each role can do
-- [Security model](/ops/security) — Better Auth setup + session handling
+- [Sign in & roles](./auth-roles.md) — what each role can do
+- [Security model](../ops/security.md) — Better Auth setup + session handling

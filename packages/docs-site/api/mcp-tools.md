@@ -11,7 +11,7 @@ novamem advertises 21 tools via the Model Context Protocol. The same shapes live
 | Tool | Purpose |
 |---|---|
 | `memory_context` | Low-friction first-pass grounding for the current user message; combines relevant search + recent context. |
-| `memory_search` | Hybrid retrieval. See [data plane](/api/data-plane#post-v1-search) for full args. |
+| `memory_search` | Hybrid retrieval. See [data plane](./data-plane.md#post-v1-search) for full args. |
 | `memory_capture` | Preferred agent-facing durable write. Applies provenance defaults, typed `memoryType`, worthiness scoring, semantic duplicate/update, and contradiction supersession. |
 | `memory_session_recap` | Batch ingest curated end-of-session recap items as typed durable memories. |
 | `memory_hygiene` | Read-only curation report: low-value, stale, duplicate, contradiction, and orphan candidates. |
@@ -91,6 +91,6 @@ Pin the version (`@1.2.0`) for reproducibility.
 
 ## See also
 
-- [Mental model](/concepts/mental-model)
-- [Hybrid search internals](/architecture/hybrid-search)
-- [novamem-init CLI](/connect/init-cli) — wires the SSE/stdio config for you
+- [Mental model](../concepts/mental-model.md)
+- [Hybrid search internals](../architecture/hybrid-search.md)
+- [novamem-init CLI](../connect/init-cli.md) — wires the SSE/stdio config for you

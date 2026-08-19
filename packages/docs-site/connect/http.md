@@ -8,7 +8,7 @@ If your tool isn't an MCP host, you can still talk to novamem over plain JSON HT
 
 ## Authenticate
 
-Mint a tenant token from the dashboard (or via [`POST /v1/me/tokens`](/api/auth)) and send it as a bearer:
+Mint a tenant token from the dashboard (or via [`POST /v1/me/tokens`](../api/auth.md)) and send it as a bearer:
 
 ```bash
 curl -H "Authorization: Bearer nm_..." \
@@ -77,4 +77,4 @@ await nm.remember({ content: "...", namespace: "decisions" });
 const r = await nm.search({ query: "why did we pick Postgres" });
 ```
 
-See [API → Data plane](/api/data-plane) for the full route list.
+See [API → Data plane](../api/data-plane.md) for the full route list.

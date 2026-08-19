@@ -6,7 +6,7 @@ title: Metrics
 
 The Metrics page is the dashboard's home for both users (their own throughput) and admins (tenant-aggregate). It's built from in-process counters + 24 h of persisted minute-buckets.
 
-![Metrics page](/dashboard.png)
+![Metrics page](./dashboard.png)
 
 ## What's on the page
 
@@ -59,5 +59,5 @@ Counter increments are pure observation — never affect call behaviour. The 24 
 
 ## See also
 
-- [API → Admin metrics](/api/admin#v1-admin-metrics) — the `GET /v1/admin/metrics` endpoint
-- [Hardening](/ops/hardening) — turning the dashboard off (`NOVAMEM_ADMIN_DASHBOARD=0`)
+- [API → Admin metrics](../api/admin.md#v1-admin-metrics) — the `GET /v1/admin/metrics` endpoint
+- [Hardening](../ops/hardening.md) — turning the dashboard off (`NOVAMEM_ADMIN_DASHBOARD=0`)

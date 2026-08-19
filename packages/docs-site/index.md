@@ -9,10 +9,10 @@ title: novamem · documentation
 This is the long-form documentation. For the marketing landing page see [novamem.github.io/novamem](https://azrtydxb.github.io/novamem/). For source see [github.com/azrtydxb/novamem](https://github.com/azrtydxb/novamem).
 
 ::: tip Where to start
-- New to novamem? → [Getting started](/getting-started)
-- Standing up a server? → [Docker Compose](/install/docker-compose) or [Kubernetes](/install/kubernetes)
-- Connecting your AI host? → [novamem-init CLI](/connect/init-cli)
-- Understanding the model? → [Mental model](/concepts/mental-model)
+- New to novamem? → [Getting started](./getting-started.md)
+- Standing up a server? → [Docker Compose](./install/docker-compose.md) or [Kubernetes](./install/kubernetes.md)
+- Connecting your AI host? → [novamem-init CLI](./connect/init-cli.md)
+- Understanding the model? → [Mental model](./concepts/mental-model.md)
 :::
 
 ## What's here

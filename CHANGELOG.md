@@ -2,16 +2,16 @@
 
 All notable changes to novamem are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## Unreleased
 
-## [1.1.2] - 2026-05-05
+## 1.1.2 - 2026-05-05
 
 ### Fixed
 
 - **`@azrtydxb/novamem-init` configured Claude Desktop with an invalid MCP entry.** The installer wrote `{"type": "sse", "url": …, "headers": …}` to `claude_desktop_config.json`, which Claude Desktop rejects on launch with "not valid MCP server configurations and were skipped: novamem" — its loader only accepts stdio entries (`command`/`args`). Fix: switch the `claude-desktop` adapter from `transport: "sse"` to `transport: "stdio"`, so the bundled `@azrtydxb/novamem-mcp` shim runs locally and bridges to the server. New regression test in `packages/init/test/tools.test.ts`.
 - **`docs/connect/claude-desktop.md`** rewritten to match — stdio is the documented path; the SSE example is gone.
 
-## [1.1.1] - 2026-05-05
+## 1.1.1 - 2026-05-05
 
 ### Fixed
 
@@ -20,7 +20,7 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 - **ProjectsPage "Add a member" form** said "by username" / placeholder "carol"; server requires exact email per #62. Now labeled "by email" / "carol@example.com" with `type="email"`. Internal state renamed `username` → `email` to match.
 - **`packages/init` test gap.** Added `test/cli.test.ts` regression that runs the CLI through a symlink and asserts `--version` matches `package.json` exactly. The earlier 56 tests imported `runCli` directly and never exercised the bin entrypoint path.
 
-## [1.1.0] - 2026-05-05
+## 1.1.0 - 2026-05-05
 
 Issue cleanup release. 18 GH issues from the post-v1.0.0 audit triaged and closed across docs, server hardening, deploy improvements, observability, and test coverage. Two architectural issues (#68, #69 — single source of truth for the API contract) deferred to a future release.
 
@@ -48,7 +48,7 @@ Issue cleanup release. 18 GH issues from the post-v1.0.0 audit triaged and close
 - **MCP SSE session ownership** — `POST /mcp/messages?sessionId=…` now verifies `session.userId === req.userId`; cross-user POSTs return 403. (#57)
 - **`revokeMyToken` return type** in the TS SDK was `{ revoked: boolean }` but the server returns `{ deleted: true }`. Aligned. (#66)
 
-## [1.0.0] - 2026-05-05
+## 1.0.0 - 2026-05-05
 
 End-to-end production deploy on a real k3s cluster surfaced and fixed four real bugs; full-codebase review closed 14 quality + 7 security issues; CI gates and dependabot auto-merge wired so future bumps land safely without manual review.
 
@@ -90,7 +90,7 @@ End-to-end production deploy on a real k3s cluster surfaced and fixed four real 
 - **Stale `P0/P1/P2` review markers** — 25 review-tracker comments scrubbed across the codebase (mechanical sweep).
 - **`Co-Authored-By: Claude` trailers** — git history rewrite stripped the trailer from all 61 commits on `main`. The `v0.1.0` tag still resolves to the original SHA so npm Sigstore provenance attestations remain valid.
 
-## [0.1.0] - 2026-05-04
+## 0.1.0 - 2026-05-04
 
 First public npm release. Three packages on the `@azrtydxb` scope:
 

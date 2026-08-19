@@ -49,6 +49,6 @@ Rotate `NOVAMEM_COOKIE_SECRET` to forcibly invalidate every active session.
 
 ## See also
 
-- [Users (admin)](/dashboard/users) — create / role / ban
-- [API tokens](/dashboard/tokens) — bearer lifecycle
-- [Security model](/ops/security) — full auth flow + threat model
+- [Users (admin)](./users.md) — create / role / ban
+- [API tokens](./tokens.md) — bearer lifecycle
+- [Security model](../ops/security.md) — full auth flow + threat model

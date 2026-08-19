@@ -91,5 +91,5 @@ Note that changing `NOVAMEM_EMBEDDINGS_MODEL` on an existing deployment invalida
 ## See also
 
 - [`/.env.example`](https://github.com/azrtydxb/novamem/blob/main/.env.example) — annotated template
-- [Docker Compose install](/install/docker-compose) — how Compose feeds these vars
-- [Kubernetes install](/install/kubernetes) — how the manifest maps these into ConfigMap + Secret
+- [Docker Compose install](./docker-compose.md) — how Compose feeds these vars
+- [Kubernetes install](./kubernetes.md) — how the manifest maps these into ConfigMap + Secret

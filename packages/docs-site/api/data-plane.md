@@ -219,5 +219,5 @@ Every route returns:
 
 ## See also
 
-- [MCP tools](/api/mcp-tools) — same operations exposed over MCP
-- [Hybrid search internals](/architecture/hybrid-search) — what the `weights` knob does
+- [MCP tools](./mcp-tools.md) — same operations exposed over MCP
+- [Hybrid search internals](../architecture/hybrid-search.md) — what the `weights` knob does

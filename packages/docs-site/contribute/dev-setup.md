@@ -128,6 +128,6 @@ pnpm --filter @azrtydxb/novamem-server migrate
 
 ## See also
 
-- [Project layout](/contribute/layout) — what lives where
-- [Testing](/contribute/testing) — vitest patterns, fakes, integration tests
-- [Filing bugs](/contribute/bugs)
+- [Project layout](./layout.md) — what lives where
+- [Testing](./testing.md) — vitest patterns, fakes, integration tests
+- [Filing bugs](./bugs.md)

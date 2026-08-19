@@ -59,5 +59,5 @@ The `<hash>` is the SHA-256 hex listed by the GET — never the plaintext.
 
 ## See also
 
-- [novamem-init CLI](/connect/init-cli) — automates mint + host wiring
-- [Security model](/ops/security) — full auth model
+- [novamem-init CLI](../connect/init-cli.md) — automates mint + host wiring
+- [Security model](../ops/security.md) — full auth model

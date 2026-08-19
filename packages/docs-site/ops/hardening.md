@@ -47,7 +47,7 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 
 ## Audit
 
-- [ ] [`admin_audit_log`](/ops/audit-log) reviewed periodically — NovaMem-owned admin actions are recorded; corroborate Better Auth plugin actions with auth/session logs.
+- [ ] [`admin_audit_log`](./audit-log.md) reviewed periodically — NovaMem-owned admin actions are recorded; corroborate Better Auth plugin actions with auth/session logs.
 - [ ] User table reviewed quarterly — disable accounts of departed teammates.
 
 ## Headers
