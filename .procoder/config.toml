@@ -1,0 +1,12 @@
+# procoder configuration — every knob the harness reads lives here.
+
+[git]
+# What happens when work lands directly on the default branch:
+#   "report" (default) — the agent is told; branching stays its decision
+#   "block"            — the gate fails until the work moves to a branch
+default_branch_policy = "report"
+
+# Files larger than this (MB) block the gate. Raised from the 5 MB default
+# so the tracked bench fixture bench/p6-ingest.json (6 MB) passes — bench
+# fixtures are deliberately in-repo so the conformance oracle is hermetic.
+max_file_mb = 10
