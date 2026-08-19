@@ -1,0 +1,15 @@
+# Reviewed gitleaks false positives. Every entry is a deliberate decision —
+# see the commit that added it for context. Format: file:rule:line.
+
+# Local-only operator credential: gitignored and never committed (gitleaks
+# scans the working tree, so it still trips the scanner).
+.admin-token.local:generic-api-key:1
+
+# Docs show a deliberately truncated placeholder token ("nm_zEQs...") in a
+# curl example — not a real credential.
+packages/docs-site/api/auth.md:curl-auth-header:61
+
+# Untracked Claude Code worktree copies of the same docs placeholder.
+.claude/worktrees/jolly-lamarr-f960ea/packages/docs-site/api/auth.md:curl-auth-header:69
+.claude/worktrees/jovial-panini-ff849f/packages/docs-site/api/auth.md:curl-auth-header:69
+.claude/worktrees/sad-kapitsa-e27a62/packages/docs-site/api/auth.md:curl-auth-header:69

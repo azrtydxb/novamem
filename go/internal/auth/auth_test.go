@@ -16,8 +16,8 @@ const (
 		"09dbfc80bce5106a4ad04995349393129665b8d7fefd62f4b223149261bb929b" +
 		"7af4e089816db0485c1b2103a6b15ab863ee05969ded2a486b5a2e1330e08981"
 
-	tsCookieSecret = "conformance-slice5-cookie-secret-0123456789"
-	tsSessionToken = "ySeO74P1FwlxrMcDsCXTG8pY2wWmMLWm"
+	tsCookieSecret = "conformance-slice5-cookie-secret-0123456789" // gitleaks:allow — golden test vector, not a live secret
+	tsSessionToken = "ySeO74P1FwlxrMcDsCXTG8pY2wWmMLWm"            // gitleaks:allow — golden test vector, not a live secret
 	tsSignedCookie = tsSessionToken + ".ziJbBC1afNAz8xD9JpLeb17J6HmAoGxYIhmcVCYYdyo="
 )
 
