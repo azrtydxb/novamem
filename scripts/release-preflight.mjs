@@ -28,7 +28,12 @@ function fail(msg) {
 }
 
 function sh(cmd, args, opts = {}) {
-  return execFileSync(cmd, args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts });
+  return execFileSync(cmd, args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...opts,
+  });
 }
 
 function gitStatusPorcelain() {
@@ -75,13 +80,17 @@ async function checkVersions() {
 // ── 2. CHANGELOG entry ────────────────────────────────────────────────
 async function checkChangelog(canonical) {
   if (!canonical) return;
-  const text = await readFile(join(ROOT, "CHANGELOG.md"), "utf8").catch(() => null);
+  const text = await readFile(join(ROOT, "CHANGELOG.md"), "utf8").catch(
+    () => null
+  );
   if (!text) {
     fail("CHANGELOG.md missing");
     return;
   }
   const lines = text.split(/\r?\n/);
-  const headingRe = new RegExp(`^##\\s*\\[${canonical.replace(/\./g, "\\.")}\\]`);
+  const headingRe = new RegExp(
+    `^##\\s*\\[${canonical.replace(/\./g, "\\.")}\\]`
+  );
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
     if (headingRe.test(lines[i])) {
@@ -115,14 +124,19 @@ function checkOpenApiFresh() {
     return;
   }
   try {
-    sh("go", ["run", "./cmd/gen-openapi"], { cwd: join(ROOT, "go"), stdio: ["ignore", "pipe", "pipe"] });
+    sh("go", ["run", "./cmd/gen-openapi"], {
+      cwd: join(ROOT, "go"),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   } catch (err) {
     fail(`go run ./cmd/gen-openapi failed: ${err.message}`);
     return;
   }
   const after = gitStatusPorcelain();
   if (after.length > 0) {
-    fail(`docs/api/openapi.json is stale — \`cd go && go run ./cmd/gen-openapi\` produced changes:\n${after}`);
+    fail(
+      `docs/api/openapi.json is stale — \`cd go && go run ./cmd/gen-openapi\` produced changes:\n${after}`
+    );
   }
 }
 

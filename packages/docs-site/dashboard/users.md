@@ -8,23 +8,23 @@ Visible only to admins. Lists every dashboard user and lets you manage them. Bac
 
 ## What you can do
 
-| Action | Effect |
-|---|---|
-| **Create user** | Email + password + role. The user can sign in immediately; their private memory is empty. |
-| **Set role** | Toggle `admin` ↔ `user`. Effective on the user's next request — existing sessions are not invalidated. |
-| **Reset password** | Sets a new password and signs the user out everywhere (revokes all sessions). |
-| **Ban / unban** | Marks the user as banned; they can't sign in. Existing memory is preserved; un-ban restores access. |
-| **Delete user** | Hard delete. Cascades: removes the user, their sessions, their user API tokens, their project memberships. Their private memory entries go with them. **Irreversible.** |
+| Action             | Effect                                                                                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Create user**    | Email + password + role. The user can sign in immediately; their private memory is empty.                                                                               |
+| **Set role**       | Toggle `admin` ↔ `user`. Effective on the user's next request — existing sessions are not invalidated.                                                                  |
+| **Reset password** | Sets a new password and signs the user out everywhere (revokes all sessions).                                                                                           |
+| **Ban / unban**    | Marks the user as banned; they can't sign in. Existing memory is preserved; un-ban restores access.                                                                     |
+| **Delete user**    | Hard delete. Cascades: removes the user, their sessions, their user API tokens, their project memberships. Their private memory entries go with them. **Irreversible.** |
 
 ## Roles
 
-| | admin | user |
-|---|---|---|
-| Manage other users (this page) | ✓ | ✗ |
-| View tenant-aggregate metrics | ✓ | ✗ |
-| Read audit log | ✓ | ✗ |
-| Revoke any token | ✓ | own only |
-| Read other users' private memory | ✗ (until shared via project) | ✗ |
+|                                  | admin                        | user     |
+| -------------------------------- | ---------------------------- | -------- |
+| Manage other users (this page)   | ✓                            | ✗        |
+| View tenant-aggregate metrics    | ✓                            | ✗        |
+| Read audit log                   | ✓                            | ✗        |
+| Revoke any token                 | ✓                            | own only |
+| Read other users' private memory | ✗ (until shared via project) | ✗        |
 
 ## Audit trail
 

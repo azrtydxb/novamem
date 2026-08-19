@@ -31,7 +31,11 @@ function depsOf(data: HealthSnapshot | undefined): Dep[] {
   // the same class of lie this page was fixed for. Naming it "none"
   // would just read as a service called none.
   if (data?.coldProvider !== "none") {
-    deps.push({ key: "cold", name: data?.coldProvider ?? "vector store", role: "cold / vector" });
+    deps.push({
+      key: "cold",
+      name: data?.coldProvider ?? "vector store",
+      role: "cold / vector",
+    });
   }
   deps.push({ key: "embedder", name: "embeddings", role: "embedding service" });
   return deps;
@@ -72,7 +76,12 @@ export function HealthPage() {
                 {data.ok ? "all systems ok" : "degraded"}
               </Pill>
             ) : null}
-            <Button size="sm" variant="ghost" onClick={() => void refetch()} loading={isFetching}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void refetch()}
+              loading={isFetching}
+            >
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </Button>
           </>
@@ -96,7 +105,11 @@ function DepCard({
 }) {
   const ok = status === "ok";
   const disabled = status === "disabled";
-  const tone: "graph" | "warn" | "neutral" = ok ? "graph" : disabled ? "neutral" : "warn";
+  const tone: "graph" | "warn" | "neutral" = ok
+    ? "graph"
+    : disabled
+    ? "neutral"
+    : "warn";
   const colorVar =
     tone === "graph"
       ? "var(--color-graph)"
@@ -111,16 +124,25 @@ function DepCard({
       : "shadow-[0_0_0_3px_var(--color-subtle)]";
 
   return (
-    <Card className="grid items-center gap-3.5 p-[18px]" style={{ gridTemplateColumns: "1fr auto" }}>
+    <Card
+      className="grid items-center gap-3.5 p-[18px]"
+      style={{ gridTemplateColumns: "1fr auto" }}
+    >
       <div>
         <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${haloClass}`} style={{ background: colorVar }} />
+          <span
+            className={`h-2 w-2 rounded-full ${haloClass}`}
+            style={{ background: colorVar }}
+          />
           <h3 className="text-[15px] font-semibold text-ink">{dep.name}</h3>
           <span className="font-mono text-[10px] text-dim">{dep.role}</span>
         </div>
       </div>
       <div className="text-right">
-        <div className="text-lg font-semibold tabular-nums" style={{ color: colorVar }}>
+        <div
+          className="text-lg font-semibold tabular-nums"
+          style={{ color: colorVar }}
+        >
           {status ?? "—"}
         </div>
         <div className="mt-1 inline-block">

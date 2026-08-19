@@ -15,18 +15,17 @@ Modes:
   search   run one named config over the seeded corpus, score it
   purge    delete the seeded namespaces
 """
+
 import argparse
 import json
 import math
-import os
 import re
-import sys
 import threading
 import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib import request, error
+from urllib import error, request
 
 import ijson
 
@@ -72,6 +71,7 @@ def http_json(method, url, token, payload=None, timeout=180, attempts=4):
 
 # ── dataset ────────────────────────────────────────────────────────────
 
+
 def load_subset(dataset, n, skip=0):
     """Stratified pick of n questions across the six LongMemEval types.
 
@@ -109,14 +109,16 @@ def chunks_for_session(qid, sid, date, turns, run_id, turns_per_chunk=2):
     """
     clean = [t for t in turns if (t.get("content") or "").strip()]
     for i in range(0, len(clean), turns_per_chunk):
-        part = clean[i:i + turns_per_chunk]
+        part = clean[i : i + turns_per_chunk]
         lines = [
             f"[LongMemEval run={run_id} question={qid} session={sid} chunk={i // turns_per_chunk}]",
             f"Session: {sid}",
             f"Date: {date}",
         ]
         for t in part:
-            lines.append(f"{t.get('role', 'speaker')}: {(t.get('content') or '').strip()}")
+            lines.append(
+                f"{t.get('role', 'speaker')}: {(t.get('content') or '').strip()}"
+            )
         body = "\n".join(lines)
         # Turn-pairs are not a size bound. One assistant turn in this
         # dataset runs to 78k characters (~19.5k tokens), which bge-m3
@@ -131,11 +133,15 @@ def chunks_for_session(qid, sid, date, turns, run_id, turns_per_chunk=2):
         rest = "\n".join(lines[3:])
         budget = MAX_CHUNK_CHARS - len(head) - 1
         for part_no, start in enumerate(range(0, len(rest), budget)):
-            yield f"{head}\n{rest[start:start + budget]}" if part_no == 0 else \
-                  f"{head} part={part_no}\n{rest[start:start + budget]}"
+            yield (
+                f"{head}\n{rest[start : start + budget]}"
+                if part_no == 0
+                else f"{head} part={part_no}\n{rest[start : start + budget]}"
+            )
 
 
 # ── metrics ────────────────────────────────────────────────────────────
+
 
 def score_ranking(rel_flags, n_relevant_chunks, cutoffs):
     """rel_flags: list of bool, rank-ordered.
@@ -171,14 +177,22 @@ def aggregate(per_q, cutoffs):
     for k in cutoffs:
         key = f"top_{k}"
         rows = [q["metrics"][key] for q in per_q if key in q["metrics"]]
+
         def mean(field):
             return (sum(r[field] for r in rows) / len(rows)) if rows else 0.0
+
         by_type = {}
         for t in types:
-            trows = [q["metrics"][key] for q in per_q if q["question_type"] == t and key in q["metrics"]]
+            trows = [
+                q["metrics"][key]
+                for q in per_q
+                if q["question_type"] == t and key in q["metrics"]
+            ]
             by_type[t] = {
                 "n": len(trows),
-                "any_hit_rate": (sum(r["any_hit"] for r in trows) / len(trows) * 100) if trows else 0.0,
+                "any_hit_rate": (sum(r["any_hit"] for r in trows) / len(trows) * 100)
+                if trows
+                else 0.0,
                 "ndcg": (sum(r["ndcg"] for r in trows) / len(trows)) if trows else 0.0,
             }
         by_cutoff[key] = {
@@ -198,20 +212,29 @@ def aggregate(per_q, cutoffs):
 
 # ── modes ──────────────────────────────────────────────────────────────
 
+
 def ns_for(run_id, qid):
     return f"nb-{run_id}-{qid}"[:120]
 
 
 def do_ingest(args, token, items, out_dir):
     state_path = out_dir / "ingest.json"
-    state = json.loads(state_path.read_text()) if state_path.exists() else {"questions": {}}
+    state = (
+        json.loads(state_path.read_text()) if state_path.exists() else {"questions": {}}
+    )
 
     def one(entry):
         idx, item = entry
         qid = str(item["question_id"])
         if state["questions"].get(qid, {}).get("ingested"):
             prev = state["questions"][qid]
-            return qid, prev["chunks"], prev.get("relevant_chunks", 0), prev.get("id2session", {}), 0.0
+            return (
+                qid,
+                prev["chunks"],
+                prev.get("relevant_chunks", 0),
+                prev.get("id2session", {}),
+                0.0,
+            )
         ns = ns_for(args.run_id, qid)
         answer_sids = set(item.get("answer_session_ids") or [])
         t0 = time.time()
@@ -219,22 +242,36 @@ def do_ingest(args, token, items, out_dir):
         n_rel = 0
         n_dedup = 0
         id2session = {}
-        for sid, date, sess in zip(item.get("haystack_session_ids") or [],
-                                   item.get("haystack_dates") or [],
-                                   item.get("haystack_sessions") or []):
+        for sid, date, sess in zip(
+            item.get("haystack_session_ids") or [],
+            item.get("haystack_dates") or [],
+            item.get("haystack_sessions") or [],
+        ):
             for content in chunks_for_session(qid, sid, date, sess, args.run_id):
                 if sid in answer_sids:
                     n_rel += 1
-                endpoint = "/v1/capture" if args.write_path == "capture" else "/v1/remember"
-                resp = http_json("POST", args.base_url.rstrip("/") + endpoint, token, {
-                    "content": content,
-                    "namespace": ns,
-                    "force": True,
-                    "sourceType": "benchmark",
-                    "source": "novamem-retrieval-harness",
-                    "sensitivity": "internal",
-                    "metadata": {"benchmark": "longmemeval", "question_id": qid, "session_id": sid},
-                }, timeout=180)
+                endpoint = (
+                    "/v1/capture" if args.write_path == "capture" else "/v1/remember"
+                )
+                resp = http_json(
+                    "POST",
+                    args.base_url.rstrip("/") + endpoint,
+                    token,
+                    {
+                        "content": content,
+                        "namespace": ns,
+                        "force": True,
+                        "sourceType": "benchmark",
+                        "source": "novamem-retrieval-harness",
+                        "sensitivity": "internal",
+                        "metadata": {
+                            "benchmark": "longmemeval",
+                            "question_id": qid,
+                            "session_id": sid,
+                        },
+                    },
+                    timeout=180,
+                )
                 n += 1
                 # Extracted facts carry `source_chunk_id`, not the
                 # `session=` marker, so relevance for a fact has to be
@@ -250,7 +287,8 @@ def do_ingest(args, token, items, out_dir):
         if n_dedup and args.write_path == "remember":
             raise RuntimeError(
                 f"{qid}: {n_dedup}/{n} chunks deduplicated onto pre-existing entries — "
-                f"corpus is not isolated in {ns}; vary --run-id or purge prior runs")
+                f"corpus is not isolated in {ns}; vary --run-id or purge prior runs"
+            )
         return qid, n, n_rel, id2session, time.time() - t0
 
     started = time.time()
@@ -264,28 +302,37 @@ def do_ingest(args, token, items, out_dir):
             try:
                 qid, n, n_rel, id2session, secs = fut.result()
                 state["questions"][qid] = {
-                    "ingested": True, "chunks": n, "relevant_chunks": n_rel,
-                    "id2session": id2session, "write_path": args.write_path,
+                    "ingested": True,
+                    "chunks": n,
+                    "relevant_chunks": n_rel,
+                    "id2session": id2session,
+                    "write_path": args.write_path,
                     "namespace": ns_for(args.run_id, qid),
-                    "dataset_index": idx, "question_type": item.get("question_type"),
-                    "question": item.get("question"), "question_date": item.get("question_date"),
+                    "dataset_index": idx,
+                    "question_type": item.get("question_type"),
+                    "question": item.get("question"),
+                    "question_date": item.get("question_date"),
                     "answer": item.get("answer"),
                     "answer_session_ids": list(item.get("answer_session_ids") or []),
                 }
                 done += 1
                 state_path.write_text(json.dumps(state, indent=2))
-                log(f"[{done}/{len(items)}] ingested {qid} chunks={n} in {secs:.0f}s "
-                    f"(elapsed {(time.time()-started)/60:.1f}m)")
+                log(
+                    f"[{done}/{len(items)}] ingested {qid} chunks={n} in {secs:.0f}s "
+                    f"(elapsed {(time.time() - started) / 60:.1f}m)"
+                )
             except Exception as e:
                 failures += 1
                 log(f"ERROR ingest {qid}: {e}")
     state_path.write_text(json.dumps(state, indent=2))
-    log(f"ingest complete: {done} questions, {(time.time()-started)/60:.1f} min")
+    log(f"ingest complete: {done} questions, {(time.time() - started) / 60:.1f} min")
     if failures:
         # State is written (resume covers the gap), but a partial corpus
         # must not look like a successful run to callers like quick-gate.
-        raise SystemExit(f"ingest finished with {failures} failed questions — "
-                         f"re-run to resume; state saved")
+        raise SystemExit(
+            f"ingest finished with {failures} failed questions — "
+            f"re-run to resume; state saved"
+        )
 
 
 def do_search(args, token, out_dir):
@@ -293,7 +340,11 @@ def do_search(args, token, out_dir):
     cutoffs = sorted({int(x) for x in args.cutoffs.split(",") if x.strip()})
     kmax = max(cutoffs)
     cfg = json.loads(args.config) if args.config else {}
-    rel_override = json.loads(Path(args.relevant_counts).read_text()) if args.relevant_counts else {}
+    rel_override = (
+        json.loads(Path(args.relevant_counts).read_text())
+        if args.relevant_counts
+        else {}
+    )
     per_q = []
     search_failures = 0
     lat = []
@@ -307,7 +358,13 @@ def do_search(args, token, out_dir):
         }
         payload.update(cfg)
         t0 = time.time()
-        obj = http_json("POST", args.base_url.rstrip("/") + "/v1/search", token, payload, timeout=240)
+        obj = http_json(
+            "POST",
+            args.base_url.rstrip("/") + "/v1/search",
+            token,
+            payload,
+            timeout=240,
+        )
         ms = (time.time() - t0) * 1000
         rows = (obj or {}).get("results") or []
         answer_sids = set(meta["answer_session_ids"])
@@ -341,9 +398,11 @@ def do_search(args, token, out_dir):
             "n_returned": len(rows),
             "n_answer_sessions": len(answer_sids),
             "n_relevant_chunks": rel_override.get(qid, meta.get("relevant_chunks", 0)),
-            "metrics": score_ranking(flags, rel_override.get(qid, meta.get("relevant_chunks", 0)), cutoffs),
+            "metrics": score_ranking(
+                flags, rel_override.get(qid, meta.get("relevant_chunks", 0)), cutoffs
+            ),
             "latency_ms": ms,
-            "top_ranked": ranked[:max(20, args.store_content)],
+            "top_ranked": ranked[: max(20, args.store_content)],
             "degraded": (obj or {}).get("degraded"),
         }, ms
 
@@ -377,13 +436,24 @@ def do_search(args, token, out_dir):
     }
     path = out_dir / f"search-{args.name}.json"
     path.write_text(json.dumps(report, indent=2))
-    log(json.dumps({"config": args.name, "latency_p95_ms": report["latency_ms"]["p95"],
-                    "metrics": {k: v["overall"] for k, v in report["metrics_by_cutoff"].items()}}, indent=2))
+    log(
+        json.dumps(
+            {
+                "config": args.name,
+                "latency_p95_ms": report["latency_ms"]["p95"],
+                "metrics": {
+                    k: v["overall"] for k, v in report["metrics_by_cutoff"].items()
+                },
+            },
+            indent=2,
+        )
+    )
     log(f"wrote {path}")
     if search_failures:
-        raise SystemExit(f"search finished with {search_failures} failed questions — "
-                         f"report written but the run is INVALID for verdicts")
-
+        raise SystemExit(
+            f"search finished with {search_failures} failed questions — "
+            f"report written but the run is INVALID for verdicts"
+        )
 
 
 def do_purge(args, token, out_dir):
@@ -393,15 +463,24 @@ def do_purge(args, token, out_dir):
     for qid, meta in state["questions"].items():
         ns = meta["namespace"]
         while True:
-            obj = http_json("GET", args.base_url.rstrip("/") +
-                            f"/v1/recent?namespace={ns}&limit=200", token, timeout=120)
+            obj = http_json(
+                "GET",
+                args.base_url.rstrip("/") + f"/v1/recent?namespace={ns}&limit=200",
+                token,
+                timeout=120,
+            )
             rows = (obj or {}).get("results") or obj or []
             if not rows:
                 break
             for r in rows:
                 try:
-                    http_json("POST", args.base_url.rstrip("/") + "/v1/forget", token,
-                              {"id": str(r["id"])}, timeout=60)
+                    http_json(
+                        "POST",
+                        args.base_url.rstrip("/") + "/v1/forget",
+                        token,
+                        {"id": str(r["id"])},
+                        timeout=60,
+                    )
                     total += 1
                 except Exception:
                     pass
@@ -418,20 +497,34 @@ def main():
     ap.add_argument("--token-file", required=True)
     ap.add_argument("--run-id", default="r1")
     ap.add_argument("--limit", type=int, default=30)
-    ap.add_argument("--write-path", choices=["remember", "capture"], default="remember",
-                    help="capture exercises fact extraction + semantic dedupe/supersession — "
-                         "NovaMem's real agent-facing write path")
-    ap.add_argument("--skip", type=int, default=0,
-                    help="Drop the first N stratified picks — use to draw a held-out set")
+    ap.add_argument(
+        "--write-path",
+        choices=["remember", "capture"],
+        default="remember",
+        help="capture exercises fact extraction + semantic dedupe/supersession — "
+        "NovaMem's real agent-facing write path",
+    )
+    ap.add_argument(
+        "--skip",
+        type=int,
+        default=0,
+        help="Drop the first N stratified picks — use to draw a held-out set",
+    )
     ap.add_argument("--max-workers", type=int, default=6)
     ap.add_argument("--cutoffs", default="5,10,20,50,200")
     ap.add_argument("--name", default="baseline")
     ap.add_argument("--config", help="JSON merged into the /v1/search body")
-    ap.add_argument("--relevant-counts",
-                    help="JSON {question_id: n_relevant} overriding the ingest-time chunk count. "
-                         "Required for capture-path corpora, where extracted facts are also relevant.")
-    ap.add_argument("--store-content", type=int, default=0,
-                    help="Keep verbatim content for the top-N results (needed by answer_eval.py)")
+    ap.add_argument(
+        "--relevant-counts",
+        help="JSON {question_id: n_relevant} overriding the ingest-time chunk count. "
+        "Required for capture-path corpora, where extracted facts are also relevant.",
+    )
+    ap.add_argument(
+        "--store-content",
+        type=int,
+        default=0,
+        help="Keep verbatim content for the top-N results (needed by answer_eval.py)",
+    )
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -440,8 +533,10 @@ def main():
 
     if args.mode == "ingest":
         items = load_subset(args.dataset, args.limit, args.skip)
-        log(f"selected {len(items)} questions: " +
-            json.dumps(Counter(i[1].get('question_type') for i in items)))
+        log(
+            f"selected {len(items)} questions: "
+            + json.dumps(Counter(i[1].get("question_type") for i in items))
+        )
         do_ingest(args, token, items, out_dir)
     elif args.mode == "search":
         do_search(args, token, out_dir)

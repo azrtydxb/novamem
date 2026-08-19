@@ -11,13 +11,19 @@
     {
       "id": "pref-reefmat-current",
       "text": "Pascal's RS750 reef tank currently uses a ReefMat 1200 fleece roller and the ReefMat is running low.",
-      "metadata": { "benchmarkFamily": "long-term-memory", "memoryType": "setup_fact" }
+      "metadata": {
+        "benchmarkFamily": "long-term-memory",
+        "memoryType": "setup_fact"
+      }
     },
     {
       "id": "pref-reefmat-old",
       "text": "Pascal's RS750 reef tank uses filter socks instead of a fleece roller.",
       "supersededBy": "pref-reefmat-current",
-      "metadata": { "benchmarkFamily": "novamem-specific", "memoryType": "superseded_fact" }
+      "metadata": {
+        "benchmarkFamily": "novamem-specific",
+        "memoryType": "superseded_fact"
+      }
     },
     {
       "id": "project-port",
@@ -27,12 +33,18 @@
     {
       "id": "needle-timezone",
       "text": "Needle: Pascal's preferred timezone for scheduling is Asia/Dubai (UTC+4).",
-      "metadata": { "benchmarkFamily": "long-context", "memoryType": "preference" }
+      "metadata": {
+        "benchmarkFamily": "long-context",
+        "memoryType": "preference"
+      }
     },
     {
       "id": "adoption-rule",
       "text": "NovaMem agents should call memory_context before substantive work and memory_capture after durable outcomes.",
-      "metadata": { "benchmarkFamily": "agent-adoption", "memoryType": "safety_constraint" }
+      "metadata": {
+        "benchmarkFamily": "agent-adoption",
+        "memoryType": "safety_constraint"
+      }
     }
   ],
   "queries": [

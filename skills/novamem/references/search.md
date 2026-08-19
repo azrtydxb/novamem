@@ -7,6 +7,7 @@ Five MCP tools for reading. All are non-mutating except `memory_search`, which c
 Always runs keyword (FTS) + vector (cosine) + graph (neighbour) + recency rank prior + entity bridge signals in parallel and fuses them with weighted scoring. Default weights `{ keyword: 0.15, vector: 0.65, graph: 0.05, recency: 0.10, entity: 0.05 }` — production calibrations often set graph and entity to 0; tuned for prose.
 
 Inputs:
+
 - `query` (required, string) — natural-language question or topic
 - `k` (number, default 10) — top-K to return
 - `namespace` (string, default `"default"`) — single shelf
@@ -16,6 +17,7 @@ Inputs:
 - `weights` (object) — override one or more of `keyword` / `vector` / `graph` / `recency` / `entity`
 
 Useful weight overrides:
+
 - `{ keyword: 1, vector: 0 }` — exact id / symbol / file / hash lookup
 - `{ vector: 1, keyword: 0 }` — semantic-only (concept over literal tokens)
 - `{ graph: 1 }` — neighbour-driven recall
@@ -28,6 +30,7 @@ on the embedding model in use. Decide from the content.
 Newest-first within a namespace and optional `since` lower bound. Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` does); recall is non-mutating.
 
 Inputs:
+
 - `namespace` (string)
 - `includeNamespaces[]` (string[])
 - `k` (number, default 20, max 200)
@@ -40,6 +43,7 @@ Inputs:
 Sugar for `memory_recent` with `since = now - 24h` baked in. Same return shape.
 
 Inputs:
+
 - `namespace` (string)
 - `k` (number)
 
@@ -48,6 +52,7 @@ Inputs:
 Walks the graph store from a seed entry id. Returns the same hit shape as `search`, scored by graph proximity.
 
 Inputs:
+
 - `id` (required, string) — seed entry ULID
 - `depth` (number, default 1, max 3) — traversal hops; **prefer 1**, larger is exponential and noisy
 - `k` (number, default 10)
@@ -62,6 +67,7 @@ No inputs. Returns counts per namespace + tier (warm vs cold) and an overall tot
 ## Result shape
 
 Every hit carries:
+
 - `id` (ULID)
 - `content` (string)
 - `score` (number)

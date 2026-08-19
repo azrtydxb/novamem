@@ -29,21 +29,25 @@ describe("error shapes", () => {
       // own errors is how the 18 tokens got there in the first place: the
       // run stays green while working credentials pile up on the target.
       if (r.status !== 200 || r.body?.revoked !== true) {
-        failed.push(`${token.slice(0, 12)}… → ${r.status} ${JSON.stringify(r.body)}`);
+        failed.push(
+          `${token.slice(0, 12)}… → ${r.status} ${JSON.stringify(r.body)}`
+        );
       }
     }
     if (failed.length > 0) {
       throw new Error(
-        `conformance leaked ${failed.length} live token(s) — revoke failed:\n  ${failed.join("\n  ")}`,
+        `conformance leaked ${
+          failed.length
+        } live token(s) — revoke failed:\n  ${failed.join("\n  ")}`
       );
     }
   });
 
   it("400: zod envelope with issues[] for a missing required field", async () => {
-    const r = await api<{ error: string; issues: Array<{ path: string; message: string; code: string }> }>(
-      "/v1/remember",
-      { body: {} },
-    );
+    const r = await api<{
+      error: string;
+      issues: Array<{ path: string; message: string; code: string }>;
+    }>("/v1/remember", { body: {} });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("invalid request body");
     expect(Array.isArray(r.body.issues)).toBe(true);
@@ -51,36 +55,48 @@ describe("error shapes", () => {
     expect(issue).toBeTruthy();
   });
 
-  it.skipIf(skipUnless(["user", "bearer"]))("401: no token → {error: \"unauthorized\"}", async () => {
-    // /v1/remember rather than /v1/search: same 401 contract on the TS
-    // oracle, but remember exists from Go slice 2 while search arrives in
-    // slice 3 — the probe should test auth, not route existence.
-    const r = await api<{ error: string }>("/v1/remember", { body: { content: "x" }, token: "" });
-    expect(r.status).toBe(401);
-    expect(ErrorBody.parse(r.body).error).toBe("unauthorized");
-  });
+  it.skipIf(skipUnless(["user", "bearer"]))(
+    '401: no token → {error: "unauthorized"}',
+    async () => {
+      // /v1/remember rather than /v1/search: same 401 contract on the TS
+      // oracle, but remember exists from Go slice 2 while search arrives in
+      // slice 3 — the probe should test auth, not route existence.
+      const r = await api<{ error: string }>("/v1/remember", {
+        body: { content: "x" },
+        token: "",
+      });
+      expect(r.status).toBe(401);
+      expect(ErrorBody.parse(r.body).error).toBe("unauthorized");
+    }
+  );
 
-  it.skipIf(skipUnless(["user"]))("403: read-only token write — exact message", async () => {
-    const mint = await api<{ token: string }>("/v1/me/tokens", {
-      body: { label: `conf-err-ro-${ns()}`, scope: "read_only" },
-      token: env.adminToken,
-    });
-    expect(mint.status).toBe(201);
-    mintedTokens.push(mint.body.token);
-    const r = await api<{ error: string }>("/v1/remember", {
-      body: { content: "a write that the read-only token must not perform" },
-      token: mint.body.token,
-    });
-    expect(r.status).toBe(403);
-    // Message IS contract: clients branch on it.
-    expect(r.body.error).toBe("read-only token");
-  });
+  it.skipIf(skipUnless(["user"]))(
+    "403: read-only token write — exact message",
+    async () => {
+      const mint = await api<{ token: string }>("/v1/me/tokens", {
+        body: { label: `conf-err-ro-${ns()}`, scope: "read_only" },
+        token: env.adminToken,
+      });
+      expect(mint.status).toBe(201);
+      mintedTokens.push(mint.body.token);
+      const r = await api<{ error: string }>("/v1/remember", {
+        body: { content: "a write that the read-only token must not perform" },
+        token: mint.body.token,
+      });
+      expect(r.status).toBe(403);
+      // Message IS contract: clients branch on it.
+      expect(r.body.error).toBe("read-only token");
+    }
+  );
 
   it("404: unknown memory id on update", async () => {
-    const r = await api<{ error: string }>(`/v1/memories/conf-nonexistent-${ns()}`, {
-      method: "PUT",
-      body: { content: "updating a memory that does not exist anywhere" },
-    });
+    const r = await api<{ error: string }>(
+      `/v1/memories/conf-nonexistent-${ns()}`,
+      {
+        method: "PUT",
+        body: { content: "updating a memory that does not exist anywhere" },
+      }
+    );
     expect(r.status).toBe(404);
     ErrorBody.parse(r.body);
   });
@@ -95,10 +111,10 @@ describe("error shapes", () => {
   });
 
   it("429: write quota — loud skip unless quotas are enabled on the target", async (ctx) => {
-    const usage = await api<{ entries: number; quota: { writesPerMinute: number | null } }>(
-      "/v1/me/usage",
-      { token: env.adminToken },
-    );
+    const usage = await api<{
+      entries: number;
+      quota: { writesPerMinute: number | null };
+    }>("/v1/me/usage", { token: env.adminToken });
     if (usage.status !== 200 || !usage.body.quota.writesPerMinute) {
       ctx.skip();
       return;

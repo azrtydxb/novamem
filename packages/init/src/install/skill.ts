@@ -33,13 +33,20 @@ export interface SkillInstallResult {
 export async function installSkill(
   tool: ToolEntry,
   ctx: DetectionContext,
-  opts: { dryRun?: boolean; sourceDir?: string } = {},
+  opts: { dryRun?: boolean; sourceDir?: string } = {}
 ): Promise<SkillInstallResult> {
   const source = opts.sourceDir ?? bundledSkillPath();
   if (!(await exists(source))) {
-    throw new Error(`bundled skill source not found at ${source} (run \`pnpm build\` first)`);
+    throw new Error(
+      `bundled skill source not found at ${source} (run \`pnpm build\` first)`
+    );
   }
-  const destination = join(rootFor(tool, ctx), tool.skillsBase, "skills", "novamem");
+  const destination = join(
+    rootFor(tool, ctx),
+    tool.skillsBase,
+    "skills",
+    "novamem"
+  );
   if (opts.dryRun) {
     return { toolId: tool.id, destination, written: false };
   }

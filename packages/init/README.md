@@ -41,16 +41,16 @@ novamem-init \
   --yes
 ```
 
-| Flag | Env | Purpose |
-|---|---|---|
-| `--base-url <url>` | `NOVAMEM_BASE_URL` | Server URL — skip the prompt |
-| `--email <email>` | — | Dashboard email — skip the prompt |
-| `--password <pwd>` | `NOVAMEM_PASSWORD` | Dashboard password — skip the prompt |
-| `--token <nm_…>` | `NOVAMEM_TOKEN` | Use an existing bearer; skip sign-in entirely |
-| `--tools <ids>` | — | Comma-separated tool ids (`claude-code,cursor,…`) |
-| `--all` | — | Configure every tool in the registry |
-| `-y, --yes` | — | Non-interactive mode (auto-confirm + use detected tools) |
-| `--dry-run` | — | Print what would happen; write nothing |
+| Flag               | Env                | Purpose                                                  |
+| ------------------ | ------------------ | -------------------------------------------------------- |
+| `--base-url <url>` | `NOVAMEM_BASE_URL` | Server URL — skip the prompt                             |
+| `--email <email>`  | —                  | Dashboard email — skip the prompt                        |
+| `--password <pwd>` | `NOVAMEM_PASSWORD` | Dashboard password — skip the prompt                     |
+| `--token <nm_…>`   | `NOVAMEM_TOKEN`    | Use an existing bearer; skip sign-in entirely            |
+| `--tools <ids>`    | —                  | Comma-separated tool ids (`claude-code,cursor,…`)        |
+| `--all`            | —                  | Configure every tool in the registry                     |
+| `-y, --yes`        | —                  | Non-interactive mode (auto-confirm + use detected tools) |
+| `--dry-run`        | —                  | Print what would happen; write nothing                   |
 
 ## Idempotency
 
@@ -58,23 +58,23 @@ Re-running the installer is safe — every config write is a JSON/TOML merge tha
 
 ## What gets written where
 
-| Tool | MCP config | Skills | Commands |
-|---|---|---|---|
-| Claude Code | `<cwd>/.mcp.json` | `<cwd>/.claude/skills/novamem/` | `<cwd>/.claude/commands/` |
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` | `~/.claude/skills/novamem/` | — |
-| Cursor | `<cwd>/.cursor/mcp.json` | `<cwd>/.cursor/skills/novamem/` | `<cwd>/.cursor/commands/` |
-| Kilo Code | `<cwd>/.kilocode/mcp.json` | `<cwd>/.kilocode/skills/novamem/` | `<cwd>/.kilocode/workflows/` |
-| OpenCode | `<cwd>/.opencode/opencode.json` | `<cwd>/.opencode/skills/novamem/` | `<cwd>/.opencode/commands/` |
-| Codex CLI | `~/.codex/config.toml` (TOML, `[mcp_servers.novamem]`) | `~/.codex/skills/novamem/` | `~/.codex/prompts/memory-*.md` |
-| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/skills/novamem/` | `~/.gemini/commands/*.toml` |
-| GitHub Copilot | `<cwd>/.mcp.json` | `<cwd>/.github/skills/novamem/` | `<cwd>/.github/prompts/*.prompt.md` |
-| Continue | — | `<cwd>/.continue/skills/novamem/` | `<cwd>/.continue/prompts/*.prompt` |
-| Cline | — | `<cwd>/.cline/skills/novamem/` | `<cwd>/.clinerules/workflows/` |
-| RooCode | — | `<cwd>/.roo/skills/novamem/` | `<cwd>/.roo/commands/` |
-| Factory | — | `<cwd>/.factory/skills/novamem/` | `<cwd>/.factory/commands/` |
-| Windsurf | — | `<cwd>/.windsurf/skills/novamem/` | `<cwd>/.windsurf/workflows/` |
-| Amazon Q | — | `<cwd>/.amazonq/skills/novamem/` | `<cwd>/.amazonq/prompts/memory-*.md` |
-| Skill-only hosts | — | `<cwd>/<base>/skills/novamem/` | — |
+| Tool             | MCP config                                                        | Skills                            | Commands                             |
+| ---------------- | ----------------------------------------------------------------- | --------------------------------- | ------------------------------------ |
+| Claude Code      | `<cwd>/.mcp.json`                                                 | `<cwd>/.claude/skills/novamem/`   | `<cwd>/.claude/commands/`            |
+| Claude Desktop   | `~/Library/Application Support/Claude/claude_desktop_config.json` | `~/.claude/skills/novamem/`       | —                                    |
+| Cursor           | `<cwd>/.cursor/mcp.json`                                          | `<cwd>/.cursor/skills/novamem/`   | `<cwd>/.cursor/commands/`            |
+| Kilo Code        | `<cwd>/.kilocode/mcp.json`                                        | `<cwd>/.kilocode/skills/novamem/` | `<cwd>/.kilocode/workflows/`         |
+| OpenCode         | `<cwd>/.opencode/opencode.json`                                   | `<cwd>/.opencode/skills/novamem/` | `<cwd>/.opencode/commands/`          |
+| Codex CLI        | `~/.codex/config.toml` (TOML, `[mcp_servers.novamem]`)            | `~/.codex/skills/novamem/`        | `~/.codex/prompts/memory-*.md`       |
+| Gemini CLI       | `~/.gemini/settings.json`                                         | `~/.gemini/skills/novamem/`       | `~/.gemini/commands/*.toml`          |
+| GitHub Copilot   | `<cwd>/.mcp.json`                                                 | `<cwd>/.github/skills/novamem/`   | `<cwd>/.github/prompts/*.prompt.md`  |
+| Continue         | —                                                                 | `<cwd>/.continue/skills/novamem/` | `<cwd>/.continue/prompts/*.prompt`   |
+| Cline            | —                                                                 | `<cwd>/.cline/skills/novamem/`    | `<cwd>/.clinerules/workflows/`       |
+| RooCode          | —                                                                 | `<cwd>/.roo/skills/novamem/`      | `<cwd>/.roo/commands/`               |
+| Factory          | —                                                                 | `<cwd>/.factory/skills/novamem/`  | `<cwd>/.factory/commands/`           |
+| Windsurf         | —                                                                 | `<cwd>/.windsurf/skills/novamem/` | `<cwd>/.windsurf/workflows/`         |
+| Amazon Q         | —                                                                 | `<cwd>/.amazonq/skills/novamem/`  | `<cwd>/.amazonq/prompts/memory-*.md` |
+| Skill-only hosts | —                                                                 | `<cwd>/<base>/skills/novamem/`    | —                                    |
 
 ## What it does NOT do
 

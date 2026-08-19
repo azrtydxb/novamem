@@ -30,9 +30,7 @@
     "/v1/auth/rotate-token": {
       "post": {
         "summary": "Self-rotate the caller's `nm_…` bearer (user mode only)",
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "security": [
           {
             "UserBearer": []
@@ -48,9 +46,7 @@
     "/v1/adoption": {
       "post": {
         "summary": "Client adoption and refresh diagnostics for MCP/tooling integrations",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -99,9 +95,7 @@
     "/v1/hygiene": {
       "post": {
         "summary": "Read-only memory hygiene report",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -139,9 +133,7 @@
     "/v1/evaluate": {
       "post": {
         "summary": "Run built-in memory quality evaluation scenarios",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -178,9 +170,7 @@
     "/v1/search": {
       "post": {
         "summary": "Hybrid search (keyword + vector + graph) over the caller's memories",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -255,20 +245,11 @@
                   },
                   "contentMode": {
                     "type": "string",
-                    "enum": [
-                      "full",
-                      "snippet",
-                      "ids"
-                    ]
+                    "enum": ["full", "snippet", "ids"]
                   },
                   "maxSensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   },
                   "asOf": {
                     "nullable": true,
@@ -297,9 +278,7 @@
                     "maximum": 1000000
                   }
                 },
-                "required": [
-                  "query"
-                ]
+                "required": ["query"]
               }
             }
           }
@@ -322,9 +301,7 @@
     "/v1/context": {
       "post": {
         "summary": "Get first-pass memory context for a user message",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -394,12 +371,7 @@
                   },
                   "maxSensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   },
                   "asOf": {
                     "nullable": true,
@@ -420,9 +392,7 @@
                     "maximum": 1000000
                   }
                 },
-                "required": [
-                  "message"
-                ]
+                "required": ["message"]
               }
             }
           }
@@ -445,9 +415,7 @@
     "/v1/capture": {
       "post": {
         "summary": "Capture a durable memory fact with provenance defaults",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -485,12 +453,7 @@
                   },
                   "sensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   },
                   "sourceType": {
                     "type": "string",
@@ -514,9 +477,7 @@
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                   }
                 },
-                "required": [
-                  "content"
-                ]
+                "required": ["content"]
               }
             }
           }
@@ -539,9 +500,7 @@
     "/v1/session-recap": {
       "post": {
         "summary": "Ingest a concise session recap as typed durable memories",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -650,12 +609,7 @@
                   },
                   "sensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   }
                 },
                 "additionalProperties": false
@@ -681,9 +635,7 @@
     "/v1/remember": {
       "post": {
         "summary": "Store a new memory entry",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -721,12 +673,7 @@
                   },
                   "sensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   },
                   "sourceType": {
                     "type": "string",
@@ -750,9 +697,7 @@
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                   }
                 },
-                "required": [
-                  "content"
-                ]
+                "required": ["content"]
               }
             }
           }
@@ -775,9 +720,7 @@
     "/v1/context-prefix": {
       "get": {
         "summary": "Cacheable observation log prefix for prompt-caching agents",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "parameters": [
           {
             "schema": {
@@ -808,9 +751,7 @@
     "/v1/observe": {
       "post": {
         "summary": "Trigger an observer+reflector pass over recent memories (operator)",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -852,9 +793,7 @@
     "/v1/decay": {
       "post": {
         "summary": "Trigger a decay sweep (operator)",
-        "tags": [
-          "lifecycle"
-        ],
+        "tags": ["lifecycle"],
         "requestBody": {
           "required": true,
           "content": {
@@ -890,9 +829,7 @@
     "/v1/dream-cycle": {
       "post": {
         "summary": "Trigger the dedup-merge + edge-promotion pass (operator)",
-        "tags": [
-          "lifecycle"
-        ],
+        "tags": ["lifecycle"],
         "security": [
           {
             "UserBearer": []
@@ -911,9 +848,7 @@
     "/v1/memories/{id}": {
       "put": {
         "summary": "Update a memory entry's content / metadata / namespace",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -936,12 +871,7 @@
                   },
                   "sensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   },
                   "sourceType": {
                     "type": "string",
@@ -997,9 +927,7 @@
     "/v1/reap-orphans": {
       "post": {
         "summary": "Trigger the cold-orphan reaper (operator)",
-        "tags": [
-          "lifecycle"
-        ],
+        "tags": ["lifecycle"],
         "security": [
           {
             "UserBearer": []
@@ -1018,9 +946,7 @@
     "/v1/recent": {
       "post": {
         "summary": "List recent memories for the caller's scope",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1070,20 +996,11 @@
                   },
                   "maxSensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   },
                   "contentMode": {
                     "type": "string",
-                    "enum": [
-                      "full",
-                      "snippet",
-                      "ids"
-                    ]
+                    "enum": ["full", "snippet", "ids"]
                   }
                 }
               }
@@ -1108,9 +1025,7 @@
     "/v1/neighbors": {
       "post": {
         "summary": "Graph-walk neighbours of a seed memory",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1162,17 +1077,10 @@
                   },
                   "maxSensitivity": {
                     "type": "string",
-                    "enum": [
-                      "public",
-                      "internal",
-                      "private",
-                      "sensitive"
-                    ]
+                    "enum": ["public", "internal", "private", "sensitive"]
                   }
                 },
-                "required": [
-                  "id"
-                ]
+                "required": ["id"]
               }
             }
           }
@@ -1195,9 +1103,7 @@
     "/v1/forget": {
       "post": {
         "summary": "Delete a memory entry by id",
-        "tags": [
-          "memory"
-        ],
+        "tags": ["memory"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1217,9 +1123,7 @@
                     "maxLength": 128
                   }
                 },
-                "required": [
-                  "id"
-                ]
+                "required": ["id"]
               }
             }
           }
@@ -1242,9 +1146,7 @@
     "/v1/stats": {
       "get": {
         "summary": "Per-user counts across warm/cold/graph",
-        "tags": [
-          "lifecycle"
-        ],
+        "tags": ["lifecycle"],
         "security": [
           {
             "UserBearer": []
@@ -1263,9 +1165,7 @@
     "/v1/me/metrics": {
       "get": {
         "summary": "Per-caller throughput + lifetime counters (admins get the global view)",
-        "tags": [
-          "metrics"
-        ],
+        "tags": ["metrics"],
         "security": [
           {
             "SessionCookie": []
@@ -1284,9 +1184,7 @@
     "/v1/me/metrics/history": {
       "get": {
         "summary": "Rolling 1-48h sample history of queries + remembers",
-        "tags": [
-          "metrics"
-        ],
+        "tags": ["metrics"],
         "parameters": [
           {
             "schema": {
@@ -1317,9 +1215,7 @@
     "/v1/me/tokens": {
       "get": {
         "summary": "List the caller's API tokens",
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "security": [
           {
             "SessionCookie": []
@@ -1336,9 +1232,7 @@
       },
       "post": {
         "summary": "Mint a new `nm_…` API token for the caller",
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1352,10 +1246,7 @@
                   },
                   "scope": {
                     "type": "string",
-                    "enum": [
-                      "full",
-                      "read_only"
-                    ]
+                    "enum": ["full", "read_only"]
                   },
                   "project": {
                     "type": "string",
@@ -1391,9 +1282,7 @@
     "/v1/me/tokens/{hash}": {
       "delete": {
         "summary": "Hard-delete a token by its sha256 hash",
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "parameters": [
           {
             "schema": {
@@ -1423,9 +1312,7 @@
     "/v1/me/projects": {
       "get": {
         "summary": "List projects the caller owns or is a member of",
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "security": [
           {
             "SessionCookie": []
@@ -1442,9 +1329,7 @@
       },
       "post": {
         "summary": "Create a project (sub-brain)",
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1458,9 +1343,7 @@
                     "maxLength": 128
                   }
                 },
-                "required": [
-                  "name"
-                ]
+                "required": ["name"]
               }
             }
           }
@@ -1483,9 +1366,7 @@
     "/v1/me/projects/{id}": {
       "delete": {
         "summary": "Delete a project (owner only)",
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "parameters": [
           {
             "schema": {
@@ -1516,9 +1397,7 @@
     "/v1/me/projects/{id}/members": {
       "get": {
         "summary": "List members of a project (member-only)",
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "parameters": [
           {
             "schema": {
@@ -1547,9 +1426,7 @@
       },
       "post": {
         "summary": "Invite a user (by exact email) to a project (owner only)",
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1564,15 +1441,10 @@
                   },
                   "role": {
                     "type": "string",
-                    "enum": [
-                      "owner",
-                      "member"
-                    ]
+                    "enum": ["owner", "member"]
                   }
                 },
-                "required": [
-                  "username"
-                ]
+                "required": ["username"]
               }
             }
           }
@@ -1607,9 +1479,7 @@
     "/v1/me/projects/{id}/members/{userId}": {
       "delete": {
         "summary": "Remove a member from a project (owner can remove anyone; members can leave)",
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "parameters": [
           {
             "schema": {
@@ -1650,9 +1520,7 @@
     "/v1/me/active-project": {
       "get": {
         "summary": "Get the caller's active project (or null)",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "security": [
           {
             "SessionCookie": []
@@ -1669,9 +1537,7 @@
       },
       "put": {
         "summary": "Set the caller's active project",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1685,9 +1551,7 @@
                     "maxLength": 128
                   }
                 },
-                "required": [
-                  "project"
-                ]
+                "required": ["project"]
               }
             }
           }
@@ -1708,9 +1572,7 @@
       },
       "delete": {
         "summary": "Clear the caller's active project",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "security": [
           {
             "SessionCookie": []
@@ -1729,9 +1591,7 @@
     "/v1/me/export": {
       "get": {
         "summary": "Keyset-paged export of every entry the caller owns",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "parameters": [
           {
             "schema": {
@@ -1772,9 +1632,7 @@
     "/v1/me/import": {
       "post": {
         "summary": "Import entries (from an export or a migration) as new memories",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1831,15 +1689,11 @@
                           "maximum": 1
                         }
                       },
-                      "required": [
-                        "content"
-                      ]
+                      "required": ["content"]
                     }
                   }
                 },
-                "required": [
-                  "entries"
-                ]
+                "required": ["entries"]
               }
             }
           }
@@ -1862,9 +1716,7 @@
     "/v1/me/usage": {
       "get": {
         "summary": "The caller's stored-entry count and effective quotas",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "security": [
           {
             "SessionCookie": []
@@ -1883,9 +1735,7 @@
     "/v1/me/changes": {
       "get": {
         "summary": "Per-user memory changelog (created/updated/superseded/deleted/expired)",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "parameters": [
           {
             "schema": {
@@ -1937,9 +1787,7 @@
     "/v1/me/today": {
       "get": {
         "summary": "Lightweight cross-table activity feed for the user dashboard",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "security": [
           {
             "SessionCookie": []
@@ -1958,9 +1806,7 @@
     "/v1/me/onboarding": {
       "get": {
         "summary": "Derived onboarding state for the welcome wizard",
-        "tags": [
-          "self-service"
-        ],
+        "tags": ["self-service"],
         "security": [
           {
             "SessionCookie": []
@@ -1979,9 +1825,7 @@
     "/v1/admin/tokens/revoke": {
       "post": {
         "summary": "Revoke a user bearer by plaintext token",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "requestBody": {
           "required": true,
           "content": {
@@ -1995,9 +1839,7 @@
                     "maxLength": 256
                   }
                 },
-                "required": [
-                  "token"
-                ]
+                "required": ["token"]
               }
             }
           }
@@ -2020,9 +1862,7 @@
     "/v1/admin/users": {
       "post": {
         "summary": "Provision a user (and optionally a bearer token) non-interactively",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "requestBody": {
           "required": true,
           "content": {
@@ -2052,10 +1892,7 @@
                   },
                   "tokenScope": {
                     "type": "string",
-                    "enum": [
-                      "full",
-                      "read_only"
-                    ]
+                    "enum": ["full", "read_only"]
                   },
                   "tokenExpiresInDays": {
                     "type": "integer",
@@ -2064,10 +1901,7 @@
                     "maximum": 3650
                   }
                 },
-                "required": [
-                  "email",
-                  "password"
-                ]
+                "required": ["email", "password"]
               }
             }
           }
@@ -2088,9 +1922,7 @@
       },
       "get": {
         "summary": "List every user with entry + token counts",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "security": [
           {
             "SessionCookie": []
@@ -2109,9 +1941,7 @@
     "/v1/admin/users/{id}": {
       "delete": {
         "summary": "Delete a user and everything they own (irreversible)",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "parameters": [
           {
             "schema": {
@@ -2150,9 +1980,7 @@
     "/v1/admin/users/{id}/quota": {
       "put": {
         "summary": "Set per-user quota overrides (null clears back to server default)",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "requestBody": {
           "required": true,
           "content": {
@@ -2207,9 +2035,7 @@
     "/v1/admin/audit-log": {
       "get": {
         "summary": "Tail the audit log",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "parameters": [
           {
             "schema": {
@@ -2242,9 +2068,7 @@
     "/v1/admin/metrics": {
       "get": {
         "summary": "Global metrics snapshot (JSON)",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "security": [
           {
             "SessionCookie": []
@@ -2263,9 +2087,7 @@
     "/v1/admin/metrics/prom": {
       "get": {
         "summary": "Same metrics in Prometheus exposition format",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "security": [
           {
             "SessionCookie": []
@@ -2284,9 +2106,7 @@
     "/mcp/sse": {
       "get": {
         "summary": "Legacy MCP SSE transport (2024-11-05) — open the event stream",
-        "tags": [
-          "mcp"
-        ],
+        "tags": ["mcp"],
         "description": "Opens the long-lived SSE event stream for the legacy two-endpoint MCP transport. Clients then POST JSON-RPC requests to `/mcp/messages?sessionId=<id>`. New integrations should prefer `/mcp` (Streamable HTTP).",
         "responses": {
           "200": {
@@ -2298,9 +2118,7 @@
     "/mcp/messages": {
       "post": {
         "summary": "Legacy MCP SSE transport — submit a JSON-RPC request",
-        "tags": [
-          "mcp"
-        ],
+        "tags": ["mcp"],
         "description": "Submit a JSON-RPC request on a session opened via `/mcp/sse`. The JSON-RPC response is delivered on the SSE channel, not in this response body.",
         "responses": {
           "200": {
@@ -2312,9 +2130,7 @@
     "/mcp": {
       "post": {
         "summary": "MCP Streamable HTTP transport (2025-03-26+)",
-        "tags": [
-          "mcp"
-        ],
+        "tags": ["mcp"],
         "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
         "responses": {
           "200": {
@@ -2324,9 +2140,7 @@
       },
       "get": {
         "summary": "MCP Streamable HTTP transport (2025-03-26+)",
-        "tags": [
-          "mcp"
-        ],
+        "tags": ["mcp"],
         "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
         "responses": {
           "200": {
@@ -2336,9 +2150,7 @@
       },
       "delete": {
         "summary": "MCP Streamable HTTP transport (2025-03-26+)",
-        "tags": [
-          "mcp"
-        ],
+        "tags": ["mcp"],
         "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
         "responses": {
           "200": {
@@ -2350,9 +2162,7 @@
     "/live": {
       "get": {
         "summary": "Liveness probe — process only, no dependency checks",
-        "tags": [
-          "liveness"
-        ],
+        "tags": ["liveness"],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -2365,9 +2175,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ],
+                  "required": ["ok"],
                   "additionalProperties": false
                 }
               }
@@ -2379,9 +2187,7 @@
     "/ready": {
       "get": {
         "summary": "Readiness probe — dependency checks, boolean only",
-        "tags": [
-          "readiness"
-        ],
+        "tags": ["readiness"],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -2394,9 +2200,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ],
+                  "required": ["ok"],
                   "additionalProperties": false
                 }
               }
@@ -2413,9 +2217,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ],
+                  "required": ["ok"],
                   "additionalProperties": false
                 }
               }
@@ -2427,9 +2229,7 @@
     "/health": {
       "get": {
         "summary": "Readiness probe — dependency checks, boolean only",
-        "tags": [
-          "readiness"
-        ],
+        "tags": ["readiness"],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -2442,9 +2242,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ],
+                  "required": ["ok"],
                   "additionalProperties": false
                 }
               }
@@ -2461,9 +2259,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ],
+                  "required": ["ok"],
                   "additionalProperties": false
                 }
               }
@@ -2475,9 +2271,7 @@
     "/v1/admin/health/deep": {
       "get": {
         "summary": "Admin-only dependency snapshot (warm/cold/graph status)",
-        "tags": [
-          "admin"
-        ],
+        "tags": ["admin"],
         "security": [
           {
             "SessionCookie": []
@@ -2499,40 +2293,22 @@
                       "properties": {
                         "warm": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "unreachable"
-                          ]
+                          "enum": ["ok", "unreachable"]
                         },
                         "cold": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "unreachable"
-                          ]
+                          "enum": ["ok", "unreachable"]
                         },
                         "graph": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "unreachable",
-                            "disabled"
-                          ]
+                          "enum": ["ok", "unreachable", "disabled"]
                         },
                         "embedder": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "failing"
-                          ]
+                          "enum": ["ok", "failing"]
                         }
                       },
-                      "required": [
-                        "warm",
-                        "cold",
-                        "graph",
-                        "embedder"
-                      ],
+                      "required": ["warm", "cold", "graph", "embedder"],
                       "additionalProperties": false
                     },
                     "pendingEmbeddings": {
@@ -2540,11 +2316,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "ok",
-                    "deps",
-                    "pendingEmbeddings"
-                  ],
+                  "required": ["ok", "deps", "pendingEmbeddings"],
                   "additionalProperties": false
                 }
               }
@@ -2561,9 +2333,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
@@ -2584,40 +2354,22 @@
                       "properties": {
                         "warm": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "unreachable"
-                          ]
+                          "enum": ["ok", "unreachable"]
                         },
                         "cold": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "unreachable"
-                          ]
+                          "enum": ["ok", "unreachable"]
                         },
                         "graph": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "unreachable",
-                            "disabled"
-                          ]
+                          "enum": ["ok", "unreachable", "disabled"]
                         },
                         "embedder": {
                           "type": "string",
-                          "enum": [
-                            "ok",
-                            "failing"
-                          ]
+                          "enum": ["ok", "failing"]
                         }
                       },
-                      "required": [
-                        "warm",
-                        "cold",
-                        "graph",
-                        "embedder"
-                      ],
+                      "required": ["warm", "cold", "graph", "embedder"],
                       "additionalProperties": false
                     },
                     "pendingEmbeddings": {
@@ -2625,11 +2377,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "ok",
-                    "deps",
-                    "pendingEmbeddings"
-                  ],
+                  "required": ["ok", "deps", "pendingEmbeddings"],
                   "additionalProperties": false
                 }
               }

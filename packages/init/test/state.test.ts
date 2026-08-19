@@ -1,5 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadState, saveState } from "../src/state.js";
@@ -24,7 +30,10 @@ describe("init state", () => {
   });
 
   it("saveState writes JSON readable by loadState", () => {
-    saveState({ lastBaseUrl: "https://novamem.example.com", lastEmail: "a@b.c" });
+    saveState({
+      lastBaseUrl: "https://novamem.example.com",
+      lastEmail: "a@b.c",
+    });
     expect(loadState()).toEqual({
       lastBaseUrl: "https://novamem.example.com",
       lastEmail: "a@b.c",
@@ -33,7 +42,9 @@ describe("init state", () => {
 
   it("loadState ignores invalid JSON gracefully", () => {
     mkdirSync(join(dir, "novamem"), { recursive: true });
-    writeFileSync(join(dir, "novamem", "init.json"), "not json", { mode: 0o600 });
+    writeFileSync(join(dir, "novamem", "init.json"), "not json", {
+      mode: 0o600,
+    });
     expect(loadState()).toEqual({});
   });
 

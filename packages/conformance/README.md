@@ -65,18 +65,18 @@ the dashboard's API Tokens page.
 
 ## Env contract
 
-| Var | Required | Purpose |
-|-----|----------|---------|
-| `NOVAMEM_URL` | yes | Target server. Trailing slash tolerated. |
-| `NOVAMEM_AUTH_MODE` | default `user` | Which mode the target runs; gates mode-specific suites. |
-| `NOVAMEM_TEST_TOKEN` | user/bearer modes | Data-plane bearer every suite uses. |
-| `NOVAMEM_ADMIN_TOKEN` | admin suites | Admin-owned `nm_` bearer. |
-| `NOVAMEM_ADMIN_EMAIL` / `NOVAMEM_ADMIN_PASSWORD` | cookie-gated suites | Mints a Better Auth session cookie lazily. |
-| `NOVAMEM_ADMIN_COOKIE` | optional | Pre-minted cookie; wins over email/password. |
-| `NOVAMEM_ORIGIN` | user mode | Origin for the sign-in call — Better Auth rejects undici's `Origin: null`; must match the server's `NOVAMEM_BASE_URL`. |
-| `NOVAMEM_CORS_ALLOWED_ORIGIN` | optional | An origin on the target's `NOVAMEM_CORS_ORIGINS` allow-list. Defaults to `http://localhost:5173`, which is `config.ts`'s own default — i.e. what a target that never sets the var actually serves. |
-| `NOVAMEM_ADMIN_DASHBOARD` | optional | Mirrors the server's flag so `42-dashboard` asserts the enabled or the disabled contract. Unset ⇒ the suite probes `/admin` once and infers the mode. |
-| `NOVAMEM_LLM_SUBSYSTEMS` | optional | Set to `1` when the target runs fact extraction / the observer / query decomposition. Unset ⇒ `90-llm` skips loudly instead of waiting on facts that will never be derived. |
+| Var                                              | Required            | Purpose                                                                                                                                                                                            |
+| ------------------------------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOVAMEM_URL`                                    | yes                 | Target server. Trailing slash tolerated.                                                                                                                                                           |
+| `NOVAMEM_AUTH_MODE`                              | default `user`      | Which mode the target runs; gates mode-specific suites.                                                                                                                                            |
+| `NOVAMEM_TEST_TOKEN`                             | user/bearer modes   | Data-plane bearer every suite uses.                                                                                                                                                                |
+| `NOVAMEM_ADMIN_TOKEN`                            | admin suites        | Admin-owned `nm_` bearer.                                                                                                                                                                          |
+| `NOVAMEM_ADMIN_EMAIL` / `NOVAMEM_ADMIN_PASSWORD` | cookie-gated suites | Mints a Better Auth session cookie lazily.                                                                                                                                                         |
+| `NOVAMEM_ADMIN_COOKIE`                           | optional            | Pre-minted cookie; wins over email/password.                                                                                                                                                       |
+| `NOVAMEM_ORIGIN`                                 | user mode           | Origin for the sign-in call — Better Auth rejects undici's `Origin: null`; must match the server's `NOVAMEM_BASE_URL`.                                                                             |
+| `NOVAMEM_CORS_ALLOWED_ORIGIN`                    | optional            | An origin on the target's `NOVAMEM_CORS_ORIGINS` allow-list. Defaults to `http://localhost:5173`, which is `config.ts`'s own default — i.e. what a target that never sets the var actually serves. |
+| `NOVAMEM_ADMIN_DASHBOARD`                        | optional            | Mirrors the server's flag so `42-dashboard` asserts the enabled or the disabled contract. Unset ⇒ the suite probes `/admin` once and infers the mode.                                              |
+| `NOVAMEM_LLM_SUBSYSTEMS`                         | optional            | Set to `1` when the target runs fact extraction / the observer / query decomposition. Unset ⇒ `90-llm` skips loudly instead of waiting on facts that will never be derived.                        |
 
 `NOVAMEM_TEST_TOKEN` must belong to the **same account** as the admin
 identity. `50-me` asserts that the cookie session and the bearer resolve
@@ -87,20 +87,20 @@ one.
 
 ## Deliberate non-tests
 
-* **The global rate limiter is never exhausted.** Its window is one
+- **The global rate limiter is never exhausted.** Its window is one
   minute and its bucket is per-IP, so a test that drove a route to 429
   would throttle every later suite in the same run. `43-cors-ratelimit`
   asserts the `x-ratelimit-*` headers and the `/health|/live|/ready`
   exemption instead.
-* **Better Auth's own sign-in throttle IS exhausted**, at the very end of
+- **Better Auth's own sign-in throttle IS exhausted**, at the very end of
   `41-better-auth`: its window is ~10 seconds, so it is cheap and
   self-healing. `client.ts`'s `signInRaw` waits that window out
   everywhere else.
-* **novamem's per-account 5-strike auth limiter (15-minute window) is
+- **novamem's per-account 5-strike auth limiter (15-minute window) is
   never tripped.** Wrong-credential assertions are made once each,
   against throwaway accounts.
-* **`LAST_ADMIN_PROTECTED` is only probed when the target has exactly one
-  admin** — the guard only fires when the target *is* the last admin, and
+- **`LAST_ADMIN_PROTECTED` is only probed when the target has exactly one
+  admin** — the guard only fires when the target _is_ the last admin, and
   on a multi-admin target the same call would really delete an account.
 
 ## Regenerating the MCP tools snapshot

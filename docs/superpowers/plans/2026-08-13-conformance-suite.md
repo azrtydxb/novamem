@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- The suite must run green against the **TypeScript server first** — the TS server is the oracle. A red test means the *test's expectation* is wrong, unless investigation shows a genuine TS bug (surface it to Pascal; never paper over it in the test).
+- The suite must run green against the **TypeScript server first** — the TS server is the oracle. A red test means the _test's expectation_ is wrong, unless investigation shows a genuine TS bug (surface it to Pascal; never paper over it in the test).
 - Deployment target for live runs is **novamem-bench on the kw cluster only** (plus local docker compose for development of the suite itself).
 - No imports from `packages/server` — black-box only. Types are re-declared locally as zod schemas; drift between those schemas and the server IS the signal.
 - Env contract (all suites): `NOVAMEM_URL` (required), `NOVAMEM_TEST_TOKEN` (data-plane bearer), `NOVAMEM_ADMIN_TOKEN` (admin bearer/session), `NOVAMEM_AUTH_MODE` = `none|bearer|user` (what the target is running; suites skip what the mode makes unreachable, loudly).
@@ -51,16 +51,19 @@ scripts/ (repo root)        conformance-local.sh — compose up, run, teardown
 ### Task 1: Package scaffold + HTTP harness + meta suite
 
 **Files:**
+
 - Create: `packages/conformance/package.json`, `tsconfig.json`, `vitest.config.ts`
 - Create: `packages/conformance/src/env.ts`, `src/client.ts`
 - Test: `packages/conformance/suites/00-meta.test.ts`
 
 **Interfaces:**
+
 - Produces: `env` object `{ url, testToken, adminToken, authMode }`; `api<T>(path, opts?) -> {status, body, headers}`; `ns()` -> unique namespace string; `skipUnless(mode: AuthMode[])` helper. All later suites consume exactly these.
 
 - [ ] **Step 1: Scaffold the package**
 
 `package.json`:
+
 ```json
 {
   "name": "@azrtydxb/novamem-conformance",
@@ -81,11 +84,12 @@ scripts/ (repo root)        conformance-local.sh — compose up, run, teardown
 ```
 
 `vitest.config.ts`:
+
 ```ts
 import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
-    fileParallelism: false,   // suites share one live server; run in order
+    fileParallelism: false, // suites share one live server; run in order
     testTimeout: 30_000,
     include: ["suites/**/*.test.ts"],
   },
@@ -116,15 +120,21 @@ export const env = {
 ```ts
 import { env } from "./env.js";
 
-const RUN = `conf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+const RUN = `conf-${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2, 6)}`;
 let seq = 0;
 export const ns = (): string => `${RUN}-${++seq}`;
 
-export interface ApiResult<T> { status: number; body: T; headers: Headers }
+export interface ApiResult<T> {
+  status: number;
+  body: T;
+  headers: Headers;
+}
 
 export async function api<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown; token?: string } = {},
+  opts: { method?: string; body?: unknown; token?: string } = {}
 ): Promise<ApiResult<T>> {
   const token = opts.token ?? env.testToken;
   const method = opts.method ?? (opts.body !== undefined ? "POST" : "GET");
@@ -138,12 +148,18 @@ export async function api<T = unknown>(
   });
   const text = await r.text();
   let body: unknown = text;
-  try { body = text ? JSON.parse(text) : null; } catch { /* non-JSON stays string */ }
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    /* non-JSON stays string */
+  }
   return { status: r.status, body: body as T, headers: r.headers };
 }
 
-export const adminApi = <T = unknown>(path: string, opts: Parameters<typeof api>[1] = {}) =>
-  api<T>(path, { ...opts, token: env.adminToken });
+export const adminApi = <T = unknown>(
+  path: string,
+  opts: Parameters<typeof api>[1] = {}
+) => api<T>(path, { ...opts, token: env.adminToken });
 ```
 
 - [ ] **Step 4: Write the meta suite** `suites/00-meta.test.ts`
@@ -162,7 +178,9 @@ describe("meta endpoints", () => {
 
   it("GET /openapi.json serves a valid OpenAPI doc", async () => {
     const r = await api<{ openapi: string; paths: Record<string, unknown> }>(
-      "/openapi.json", { token: "" });
+      "/openapi.json",
+      { token: "" }
+    );
     expect(r.status).toBe(200);
     expect(r.body.openapi).toMatch(/^3\./);
     expect(Object.keys(r.body.paths).length).toBeGreaterThan(20);
@@ -189,10 +207,12 @@ git commit -m "feat(conformance): package scaffold, HTTP harness, meta suite"
 ### Task 2: OpenAPI coverage gate
 
 **Files:**
+
 - Create: `packages/conformance/src/coverage.ts`
 - Modify: `packages/conformance/suites/00-meta.test.ts` (append gate test)
 
 **Interfaces:**
+
 - Produces: `COVERAGE: Record<string, string>` mapping `"METHOD /path"` → owning suite file. Later suites add their endpoints here as they are written.
 
 - [ ] **Step 1: Write `src/coverage.ts`** — start with only what Task 1 covers:
@@ -220,12 +240,17 @@ export const EXEMPT: Record<string, string> = {
 ```ts
 it("every live endpoint is claimed by a suite (coverage gate)", async () => {
   const r = await api<{ paths: Record<string, Record<string, unknown>> }>(
-    "/openapi.json", { token: "" });
+    "/openapi.json",
+    { token: "" }
+  );
   const live = Object.entries(r.body.paths).flatMap(([p, methods]) =>
-    Object.keys(methods).map((m) => `${m.toUpperCase()} ${p}`));
+    Object.keys(methods).map((m) => `${m.toUpperCase()} ${p}`)
+  );
   const claimed = new Set([...Object.keys(COVERAGE), ...Object.keys(EXEMPT)]);
   const unclaimed = live.filter((e) => !claimed.has(e));
-  expect(unclaimed, `unclaimed endpoints:\n${unclaimed.join("\n")}`).toEqual([]);
+  expect(unclaimed, `unclaimed endpoints:\n${unclaimed.join("\n")}`).toEqual(
+    []
+  );
 });
 ```
 
@@ -248,9 +273,11 @@ git commit -m "feat(conformance): OpenAPI coverage gate with full endpoint manif
 ### Task 3: Data-plane CRUD suite
 
 **Files:**
+
 - Create: `packages/conformance/src/schemas.ts`, `suites/10-data-plane.test.ts`
 
 **Interfaces:**
+
 - Consumes: `api`, `ns`, `env` from Task 1.
 - Produces: zod schemas `MemoryEntry`, `ErrorBody` in `src/schemas.ts` reused by every later suite.
 
@@ -259,17 +286,20 @@ git commit -m "feat(conformance): OpenAPI coverage gate with full endpoint manif
 ```ts
 import { z } from "zod";
 
-export const MemoryEntry = z.object({
-  id: z.string().min(1),
-  content: z.string(),
-  namespace: z.string().optional(),
-  tier: z.enum(["warm", "cold"]).optional(),
-  createdAt: z.string().optional(),
-  expiresAt: z.string().nullable().optional(),
-}).passthrough();
+export const MemoryEntry = z
+  .object({
+    id: z.string().min(1),
+    content: z.string(),
+    namespace: z.string().optional(),
+    tier: z.enum(["warm", "cold"]).optional(),
+    createdAt: z.string().optional(),
+    expiresAt: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export const ErrorBody = z.object({ error: z.string() }).passthrough();
 ```
+
 (Adjust fields to what `routes/schemas.ts` actually declares — the transcription step is the point.)
 
 - [ ] **Step 2: Write the suite** — full lifecycle in one namespace:
@@ -357,13 +387,15 @@ git commit -m "feat(conformance): data-plane CRUD + TTL suite"
 ### Task 4: Search suite with seeded corpus
 
 **Files:**
+
 - Create: `packages/conformance/suites/20-search.test.ts`
 
 **Interfaces:**
+
 - Consumes: `api`, `ns`, `MemoryEntry`.
 - Produces: `seedCorpus(nsName): Promise<string[]>` local helper pattern copied by suite 30 (kept in-file; DRY across files is not worth a shared fixture module yet).
 
-- [ ] **Step 1: Write the suite.** Seed a deterministic 8-entry corpus with clearly separable topics, then assert *rank-tolerant* expectations (membership and top-k containment — never exact order):
+- [ ] **Step 1: Write the suite.** Seed a deterministic 8-entry corpus with clearly separable topics, then assert _rank-tolerant_ expectations (membership and top-k containment — never exact order):
 
 ```ts
 import { beforeAll, describe, expect, it } from "vitest";
@@ -391,29 +423,35 @@ beforeAll(async () => {
 describe("hybrid search", () => {
   it("finds topical matches in top-k", async () => {
     const r = await api<{ results: Array<{ content: string; score: number }> }>(
-      "/v1/search", { body: { query: "coffee machine", namespace: NS, limit: 4 } });
+      "/v1/search",
+      { body: { query: "coffee machine", namespace: NS, limit: 4 } }
+    );
     expect(r.status).toBe(200);
     const texts = r.body.results.map((x) => x.content);
     expect(texts.some((t) => t.includes("espresso"))).toBe(true);
   });
 
   it("scores are monotonically non-increasing", async () => {
-    const r = await api<{ results: Array<{ score: number }> }>(
-      "/v1/search", { body: { query: "vector storage", namespace: NS, limit: 8 } });
+    const r = await api<{ results: Array<{ score: number }> }>("/v1/search", {
+      body: { query: "vector storage", namespace: NS, limit: 8 },
+    });
     const scores = r.body.results.map((x) => x.score);
     expect([...scores].sort((a, b) => b - a)).toEqual(scores);
   });
 
   it("neighbors returns graph-adjacent entries for a seeded id", async () => {
-    const list = await api<{ entries: Array<{ id: string }> }>(
-      "/v1/recent", { body: { namespace: NS, limit: 1 } });
+    const list = await api<{ entries: Array<{ id: string }> }>("/v1/recent", {
+      body: { namespace: NS, limit: 1 },
+    });
     const id = list.body.entries[0].id;
     const r = await api("/v1/neighbors", { body: { id } });
     expect(r.status).toBe(200);
   });
 
   it("context and context-prefix respond 200 with token-budgeted payloads", async () => {
-    const c = await api("/v1/context", { body: { query: "cluster storage", namespace: NS } });
+    const c = await api("/v1/context", {
+      body: { query: "cluster storage", namespace: NS },
+    });
     expect(c.status).toBe(200);
     const p = await api("/v1/context-prefix", { body: { namespace: NS } });
     expect(p.status).toBe(200);
@@ -438,9 +476,11 @@ git commit -m "feat(conformance): seeded hybrid-search suite with rank-tolerant 
 ### Task 5: Ingest/maintenance suite
 
 **Files:**
+
 - Create: `packages/conformance/suites/30-ingest.test.ts`
 
 **Interfaces:**
+
 - Consumes: `api`, `ns`, `adminApi`.
 
 - [ ] **Step 1: Read `routes/data-plane.ts` handlers for** `/v1/capture`, `/v1/observe`, `/v1/session-recap`, `/v1/evaluate`, `/v1/hygiene`, `/v1/adoption`, and admin-gated `/v1/decay`, `/v1/dream-cycle`, `/v1/reap-orphans`. Transcribe minimal valid request bodies from their zod request schemas.
@@ -459,9 +499,11 @@ git commit -m "feat(conformance): ingest + maintenance endpoint suite"
 ### Task 6: Auth suite
 
 **Files:**
+
 - Create: `packages/conformance/suites/40-auth.test.ts`
 
 **Interfaces:**
+
 - Consumes: `api`, `env`. Produces nothing new.
 
 - [ ] **Step 1: Write mode-aware gate tests:**
@@ -478,7 +520,10 @@ describe("auth gates", () => {
   });
 
   it("garbage bearer is 401 with error body", async () => {
-    const r = await api("/v1/recent", { body: { limit: 1 }, token: "nm_bogus" });
+    const r = await api("/v1/recent", {
+      body: { limit: 1 },
+      token: "nm_bogus",
+    });
     if (env.authMode === "none") return;
     expect(r.status).toBe(401);
   });
@@ -506,9 +551,11 @@ git commit -m "feat(conformance): auth-mode, rotate-token, confined/read-only to
 ### Task 7: /v1/me suite (user mode)
 
 **Files:**
+
 - Create: `packages/conformance/suites/50-me.test.ts`
 
 **Interfaces:**
+
 - Consumes: `api`, `ns`, `env`.
 
 - [ ] **Step 1: Read `routes/me.ts`** for exact shapes of: metrics, metrics/history, tokens (list/create/delete `:hash`), projects (list/create/get/delete), members (list/add/remove), active-project (get/set/clear), today, onboarding.
@@ -527,9 +574,11 @@ git commit -m "feat(conformance): /v1/me lifecycle suite"
 ### Task 8: Admin suite
 
 **Files:**
+
 - Create: `packages/conformance/suites/60-admin.test.ts`
 
 **Interfaces:**
+
 - Consumes: `adminApi`, `api`.
 
 - [ ] **Step 1: Read `routes/admin.ts`** for `/v1/admin/{tokens/revoke,users,audit-log,metrics,metrics/prom}` and `http.ts` for `/v1/admin/health/deep`.
@@ -548,10 +597,12 @@ git commit -m "feat(conformance): admin-plane suite"
 ### Task 9: MCP streamable suite + tools snapshot
 
 **Files:**
+
 - Create: `packages/conformance/suites/70-mcp-streamable.test.ts`
 - Create: `packages/conformance/reference/tools.snapshot.json`
 
 **Interfaces:**
+
 - Consumes: `env`. Uses `@modelcontextprotocol/sdk` `Client` + `StreamableHTTPClientTransport`.
 
 - [ ] **Step 1: Write connection + snapshot test:**
@@ -565,9 +616,12 @@ import { readFileSync } from "node:fs";
 
 async function connect(): Promise<Client> {
   const client = new Client({ name: "novamem-conformance", version: "0.0.1" });
-  const transport = new StreamableHTTPClientTransport(new URL(`${env.url}/mcp`), {
-    requestInit: { headers: { authorization: `Bearer ${env.testToken}` } },
-  });
+  const transport = new StreamableHTTPClientTransport(
+    new URL(`${env.url}/mcp`),
+    {
+      requestInit: { headers: { authorization: `Bearer ${env.testToken}` } },
+    }
+  );
   await client.connect(transport);
   return client;
 }
@@ -578,7 +632,11 @@ describe("MCP streamable", () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     const snapshot = JSON.parse(
-      readFileSync(new URL("../reference/tools.snapshot.json", import.meta.url), "utf8"));
+      readFileSync(
+        new URL("../reference/tools.snapshot.json", import.meta.url),
+        "utf8"
+      )
+    );
     expect(names).toEqual(snapshot.names);
     await client.close();
   });
@@ -586,11 +644,15 @@ describe("MCP streamable", () => {
   it("memory_remember → memory_search → memory_forget round-trip", async () => {
     const client = await connect();
     const fact = `mcp conformance fact ${Date.now()}`;
-    const stored = await client.callTool({ name: "memory_remember",
-      arguments: { content: fact } });
+    const stored = await client.callTool({
+      name: "memory_remember",
+      arguments: { content: fact },
+    });
     expect(stored.isError ?? false).toBe(false);
-    const found = await client.callTool({ name: "memory_search",
-      arguments: { query: "mcp conformance fact" } });
+    const found = await client.callTool({
+      name: "memory_search",
+      arguments: { query: "mcp conformance fact" },
+    });
     expect(JSON.stringify(found.content)).toContain("conformance fact");
     await client.close();
   });
@@ -613,9 +675,11 @@ git commit -m "feat(conformance): MCP streamable suite with tools snapshot + spe
 ### Task 10: MCP SSE (legacy transport) suite
 
 **Files:**
+
 - Create: `packages/conformance/suites/71-mcp-sse.test.ts`
 
 **Interfaces:**
+
 - Consumes: same as Task 9 but `SSEClientTransport` against `/mcp/sse`.
 
 - [ ] **Step 1: Write it:** connect via `SSEClientTransport(new URL(`${env.url}/mcp/sse`))` with the bearer header, `listTools()` must equal the same snapshot, one `memory_stats` call round-trips. That's the whole suite — SSE is legacy; parity of handshake + one call is the contract.
@@ -632,9 +696,11 @@ git commit -m "feat(conformance): MCP legacy SSE transport suite"
 ### Task 11: Error-shape contract suite
 
 **Files:**
+
 - Create: `packages/conformance/suites/80-errors.test.ts`
 
 **Interfaces:**
+
 - Consumes: `api`, `ErrorBody` schema.
 
 - [ ] **Step 1: Write one test per status class, asserting the exact JSON error shape** the Go server must reproduce:
@@ -660,6 +726,7 @@ git commit -m "feat(conformance): error-shape contract suite"
 ### Task 12: Local runner script, docs, baseline record
 
 **Files:**
+
 - Create: `scripts/conformance-local.sh`
 - Create: `packages/conformance/README.md`
 - Modify: root `package.json` (add `"conformance": "pnpm --filter @azrtydxb/novamem-conformance test"`)

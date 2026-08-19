@@ -58,7 +58,7 @@ Same current NovaMem MCP tool surface (`memory_*` + `project_*`).
 
 If your client supports the [Agent Skills](https://agentskills.io) format — Goose, OpenCode, OpenHands, Junie, Roo Code, Factory, and a growing list — you can drop the bundled skill into the client's skills directory **alongside** or **instead of** the MCP server.
 
-The skill teaches the agent *when* to call the tools and *how* to phrase saves; MCP exposes the tools themselves. With both, the skill loads at startup (\~100 tokens for `name` + `description`), expands on demand, and the agent calls `memory_*` / `project_*` over MCP.
+The skill teaches the agent _when_ to call the tools and _how_ to phrase saves; MCP exposes the tools themselves. With both, the skill loads at startup (\~100 tokens for `name` + `description`), expands on demand, and the agent calls `memory_*` / `project_*` over MCP.
 
 ### Layout
 

@@ -12,14 +12,18 @@ const repoRoot = resolve(here, "..", "..", "..");
 const distAssets = resolve(here, "..", "dist", "assets");
 
 const sources = [
-  { from: resolve(repoRoot, "skills", "novamem"), to: resolve(distAssets, "skill") },
+  {
+    from: resolve(repoRoot, "skills", "novamem"),
+    to: resolve(distAssets, "skill"),
+  },
   {
     from: resolve(repoRoot, "integrations", "claude-code", "commands"),
     to: resolve(distAssets, "commands"),
   },
 ];
 
-if (existsSync(distAssets)) await rm(distAssets, { recursive: true, force: true });
+if (existsSync(distAssets))
+  await rm(distAssets, { recursive: true, force: true });
 await mkdir(distAssets, { recursive: true });
 
 for (const { from, to } of sources) {
@@ -28,5 +32,10 @@ for (const { from, to } of sources) {
     process.exit(1);
   }
   await cp(from, to, { recursive: true });
-  console.log(`[copy-assets] ${from.replace(repoRoot + "/", "")} → ${to.replace(repoRoot + "/", "")}`);
+  console.log(
+    `[copy-assets] ${from.replace(repoRoot + "/", "")} → ${to.replace(
+      repoRoot + "/",
+      ""
+    )}`
+  );
 }

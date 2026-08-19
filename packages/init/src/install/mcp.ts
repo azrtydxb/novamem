@@ -47,7 +47,10 @@ export interface McpInstallResult {
 }
 
 /** Build the MCP server entry object from the params + adapter. */
-export function buildMcpEntry(adapter: NonNullable<ToolEntry["mcp"]>, p: McpInstallParams): unknown {
+export function buildMcpEntry(
+  adapter: NonNullable<ToolEntry["mcp"]>,
+  p: McpInstallParams
+): unknown {
   const transport = adapter.transport ?? "sse";
   if (transport === "sse") {
     return {
@@ -87,7 +90,7 @@ export function buildMcpEntry(adapter: NonNullable<ToolEntry["mcp"]>, p: McpInst
  * for unit testing.
  */
 export function findWorkspaceDep(
-  raw: unknown,
+  raw: unknown
 ): { name: string; value: string } | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -122,7 +125,10 @@ export interface ShimVerification {
   ok: boolean;
   reason?: string;
 }
-export async function verifyShim(version: string, opts: { timeoutMs?: number } = {}): Promise<ShimVerification> {
+export async function verifyShim(
+  version: string,
+  opts: { timeoutMs?: number } = {}
+): Promise<ShimVerification> {
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const exec = promisify(execFile);
@@ -131,9 +137,13 @@ export async function verifyShim(version: string, opts: { timeoutMs?: number } =
 
   // 1. Static check: are deps concrete?
   try {
-    const { stdout } = await exec("npm", ["view", spec, "dependencies", "--json"], {
-      timeout: timeoutMs,
-    });
+    const { stdout } = await exec(
+      "npm",
+      ["view", spec, "dependencies", "--json"],
+      {
+        timeout: timeoutMs,
+      }
+    );
     // `npm view` may print nothing (no deps), `null`, an array (multiple
     // versions matched), or an object {name: spec}. Only the object case
     // has fields to inspect — anything else is "no workspace: deps to
@@ -152,7 +162,9 @@ export async function verifyShim(version: string, opts: { timeoutMs?: number } =
   } catch (err) {
     return {
       ok: false,
-      reason: `couldn't fetch ${spec} metadata from npm: ${(err as Error).message}`,
+      reason: `couldn't fetch ${spec} metadata from npm: ${
+        (err as Error).message
+      }`,
     };
   }
 
@@ -194,7 +206,8 @@ export async function verifyShim(version: string, opts: { timeoutMs?: number } =
     });
     child.stdin.end();
   });
-  if (reason) return { ok: false, reason: `${spec} crashed on startup: ${reason}` };
+  if (reason)
+    return { ok: false, reason: `${spec} crashed on startup: ${reason}` };
 
   return { ok: true };
 }
@@ -207,7 +220,7 @@ export async function installMcp(
   tool: ToolEntry,
   ctx: DetectionContext,
   params: McpInstallParams,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean } = {}
 ): Promise<McpInstallResult> {
   if (!tool.mcp) {
     return {
@@ -237,7 +250,13 @@ export async function installMcp(
   deepSet(doc, [rootKey, serverKey], entry);
 
   if (opts.dryRun) {
-    return { toolId: tool.id, configPath, changed: true, skipped: true, reason: "dry-run" };
+    return {
+      toolId: tool.id,
+      configPath,
+      changed: true,
+      skipped: true,
+      reason: "dry-run",
+    };
   }
 
   const serialized =

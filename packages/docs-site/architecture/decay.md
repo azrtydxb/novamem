@@ -14,15 +14,15 @@ Every `NOVAMEM_DECAY_INTERVAL_MS` (default 6 h) the engine sweeps `memory_entrie
 effectiveDays(hits) = NOVAMEM_DECAY_DAYS · log₂(hits + 1)
 ```
 
-| Hits | effectiveDays |
-|---|---|
-| 0 | 0 (rare; entries seeded with hits=1 by remember) |
-| 1 | 7 |
-| 3 | 14 |
-| 7 | 21 |
-| 15 | 28 |
-| 31 | 35 |
-| 1023 | 70 |
+| Hits | effectiveDays                                    |
+| ---- | ------------------------------------------------ |
+| 0    | 0 (rare; entries seeded with hits=1 by remember) |
+| 1    | 7                                                |
+| 3    | 14                                               |
+| 7    | 21                                               |
+| 15   | 28                                               |
+| 31   | 35                                               |
+| 1023 | 70                                               |
 
 Demotion is cheap: `markCold(id, true)` flips a flag and the entry stops appearing in keyword search. The vector copy in Qdrant is unchanged — that's still the cold-tier source. The graph node is unchanged.
 

@@ -68,7 +68,8 @@ import {
  * written outside any project are tracked separately.
  */
 
-const sha256Hex = (s: string): string => createHash("sha256").update(s).digest("hex");
+const sha256Hex = (s: string): string =>
+  createHash("sha256").update(s).digest("hex");
 
 const createdProjectIds: string[] = [];
 const mintedTokenHashes: string[] = [];
@@ -84,7 +85,9 @@ afterAll(async () => {
   }
   for (const hash of mintedTokenHashes) {
     try {
-      const r = await adminCookieApi(`/v1/me/tokens/${hash}`, { method: "DELETE" });
+      const r = await adminCookieApi(`/v1/me/tokens/${hash}`, {
+        method: "DELETE",
+      });
       if (r.status !== 200 && r.status !== 404) {
         console.warn(`cleanup: delete token ${hash} → ${r.status}`, r.body);
       }
@@ -98,7 +101,9 @@ afterAll(async () => {
       // failed mid-lifecycle and left it pointed at a project we're
       // about to remove.
       await adminCookieApi("/v1/me/active-project", { method: "DELETE" });
-      const r = await adminCookieApi(`/v1/me/projects/${id}`, { method: "DELETE" });
+      const r = await adminCookieApi(`/v1/me/projects/${id}`, {
+        method: "DELETE",
+      });
       if (r.status !== 200 && r.status !== 404) {
         console.warn(`cleanup: delete project ${id} → ${r.status}`, r.body);
       }
@@ -134,10 +139,11 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       expect([200, 201]).toContain(globalWrite.status);
 
       // ── 1. Create a project (adminCookieApi = session cookie) ──────
-      const create = await adminCookieApi<{ id: string; name: string; ownerUserId: string }>(
-        "/v1/me/projects",
-        { body: { name: `conf-me-${NS}` } },
-      );
+      const create = await adminCookieApi<{
+        id: string;
+        name: string;
+        ownerUserId: string;
+      }>("/v1/me/projects", { body: { name: `conf-me-${NS}` } });
       expect(create.status).toBe(201);
       ProjectResponse.parse(create.body);
       const projectId = create.body.id;
@@ -145,23 +151,28 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       createdProjectIds.push(projectId);
 
       // ── 2. Set active-project ───────────────────────────────────────
-      const setActive = await adminCookieApi<{ active: { id: string } }>("/v1/me/active-project", {
-        method: "PUT",
-        body: { project: projectId },
-      });
+      const setActive = await adminCookieApi<{ active: { id: string } }>(
+        "/v1/me/active-project",
+        {
+          method: "PUT",
+          body: { project: projectId },
+        }
+      );
       expect(setActive.status).toBe(200);
       expect(setActive.body.active.id).toBe(projectId);
 
       // ── 3. GET active-project confirms it, with the full-scope bearer
       //      too (not just the cookie that set it — same user account) ──
-      const getActiveCookie = await adminCookieApi<{ active: { id: string; name: string } | null }>(
-        "/v1/me/active-project",
-      );
+      const getActiveCookie = await adminCookieApi<{
+        active: { id: string; name: string } | null;
+      }>("/v1/me/active-project");
       expect(getActiveCookie.status).toBe(200);
       ActiveProjectResponse.parse(getActiveCookie.body);
       expect(getActiveCookie.body.active?.id).toBe(projectId);
 
-      const getActiveBearer = await api<{ active: { id: string } | null }>("/v1/me/active-project");
+      const getActiveBearer = await api<{ active: { id: string } | null }>(
+        "/v1/me/active-project"
+      );
       expect(getActiveBearer.status).toBe(200);
       expect(getActiveBearer.body.active?.id).toBe(projectId);
 
@@ -183,19 +194,26 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
 
       // Confirm it actually landed in the active project (not the
       // user-global scope) by reading it back scoped to that project.
-      const recentInProject = await api<{ results: Array<{ id: string; project?: string | null }> }>(
-        "/v1/recent",
-        { body: { project: projectId, k: 10 } },
-      );
+      const recentInProject = await api<{
+        results: Array<{ id: string; project?: string | null }>;
+      }>("/v1/recent", { body: { project: projectId, k: 10 } });
       expect(recentInProject.status).toBe(200);
-      expect(recentInProject.body.results.some((r) => r.id === entryId)).toBe(true);
+      expect(recentInProject.body.results.some((r) => r.id === entryId)).toBe(
+        true
+      );
 
       // ── 5. /v1/me/today shows the remember as recent activity ──────
-      const today = await api<{ events: Array<{ kind: string; text: string }> }>("/v1/me/today");
+      const today = await api<{
+        events: Array<{ kind: string; text: string }>;
+      }>("/v1/me/today");
       expect(today.status).toBe(200);
       TodayResponse.parse(today.body);
       expect(
-        today.body.events.some((e) => e.kind === "remember" && e.text.includes(`conf-me lifecycle probe ${NS}`)),
+        today.body.events.some(
+          (e) =>
+            e.kind === "remember" &&
+            e.text.includes(`conf-me lifecycle probe ${NS}`)
+        )
       ).toBe(true);
 
       // ── 6. /v1/me/changes shows the "created" change — recordChanges
@@ -203,23 +221,31 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       //      synchronous visibility. ─────────────────────────────────
       let sawCreated = false;
       for (let attempt = 0; attempt < 10 && !sawCreated; attempt++) {
-        const changes = await api<{ changes: Array<{ entryId: string; change: string }> }>(
-          `/v1/me/changes?since=${encodeURIComponent(sinceTs)}`,
-          { method: "GET" },
-        );
+        const changes = await api<{
+          changes: Array<{ entryId: string; change: string }>;
+        }>(`/v1/me/changes?since=${encodeURIComponent(sinceTs)}`, {
+          method: "GET",
+        });
         expect(changes.status).toBe(200);
         ChangesResponse.parse(changes.body);
-        sawCreated = changes.body.changes.some((c) => c.entryId === entryId && c.change === "created");
+        sawCreated = changes.body.changes.some(
+          (c) => c.entryId === entryId && c.change === "created"
+        );
         if (!sawCreated) await new Promise((res) => setTimeout(res, 300));
       }
-      expect(sawCreated, "expected a 'created' /v1/me/changes row for the remembered entry").toBe(true);
+      expect(
+        sawCreated,
+        "expected a 'created' /v1/me/changes row for the remembered entry"
+      ).toBe(true);
 
       // ── 7. Metrics + metrics/history respond with sane shapes ──────
       const metrics = await api<Record<string, unknown>>("/v1/me/metrics");
       expect(metrics.status).toBe(200);
       expect(typeof metrics.body).toBe("object");
 
-      const history = await api<{ hours: number; samples: unknown[] }>("/v1/me/metrics/history?hours=1");
+      const history = await api<{ hours: number; samples: unknown[] }>(
+        "/v1/me/metrics/history?hours=1"
+      );
       expect(history.status).toBe(200);
       MetricsHistoryResponse.parse(history.body);
       expect(history.body.hours).toBe(1);
@@ -231,7 +257,10 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       // happen to have user-global rows, which masked this; a fresh
       // account does not. Write one explicitly so the assertion tests
       // the endpoint rather than the account's history.
-      const onboarding = await api<{ remembered: boolean; userExists: boolean }>("/v1/me/onboarding");
+      const onboarding = await api<{
+        remembered: boolean;
+        userExists: boolean;
+      }>("/v1/me/onboarding");
       expect(onboarding.status).toBe(200);
       OnboardingResponse.parse(onboarding.body);
       expect(onboarding.body.userExists).toBe(true);
@@ -244,9 +273,10 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       expect(usage.body.entries).toBeGreaterThan(0);
 
       // ── 10. Export: keyset-paged dump includes our entry ────────────
-      const exp = await api<{ entries: Array<{ id: string }>; nextAfterId: string | null }>(
-        "/v1/me/export?limit=1000",
-      );
+      const exp = await api<{
+        entries: Array<{ id: string }>;
+        nextAfterId: string | null;
+      }>("/v1/me/export?limit=1000");
       expect(exp.status).toBe(200);
       ExportResponse.parse(exp.body);
       expect(exp.body.entries.some((e) => e.id === entryId)).toBe(true);
@@ -256,10 +286,17 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       //       preserved (deployment-local ULIDs) — verify via count. ──
       const importContent = `conf-me import probe ${NS}: the router firmware update is scheduled for Sunday`;
       const before = await api<{ entries: number }>("/v1/me/usage");
-      const imp = await api<{ imported: number; deduplicated: number; failed: unknown[] }>(
-        "/v1/me/import",
-        { body: { entries: [{ content: importContent, namespace: NS, project: projectId }] } },
-      );
+      const imp = await api<{
+        imported: number;
+        deduplicated: number;
+        failed: unknown[];
+      }>("/v1/me/import", {
+        body: {
+          entries: [
+            { content: importContent, namespace: NS, project: projectId },
+          ],
+        },
+      });
       expect(imp.status).toBe(201);
       ImportResponse.parse(imp.body);
       expect(imp.body.imported).toBe(1);
@@ -271,7 +308,9 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       // facts asynchronously. One of those inside this window makes the
       // count rise by two, which says nothing about whether the import
       // worked. Observed against novamem-bench: expected 209, got 210.
-      expect(after.body.entries).toBeGreaterThanOrEqual(before.body.entries + 1);
+      expect(after.body.entries).toBeGreaterThanOrEqual(
+        before.body.entries + 1
+      );
 
       // The count was doing the real work, so replace it with something
       // exact rather than just looser: read the entry back and match its
@@ -279,26 +318,38 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       // an export/import, which is why the original checked a count at
       // all — but the content is preserved, and that is the property
       // import actually promises.
-      const imported = await api<unknown>("/v1/recent", { body: { namespace: NS, k: 200 } });
+      const imported = await api<unknown>("/v1/recent", {
+        body: { namespace: NS, k: 200 },
+      });
       expect(imported.status).toBe(200);
-      const importedContents = RecentResponse.parse(imported.body).results.map((e) => e.content);
-      expect(importedContents, "the imported entry did not come back").toContain(importContent);
+      const importedContents = RecentResponse.parse(imported.body).results.map(
+        (e) => e.content
+      );
+      expect(
+        importedContents,
+        "the imported entry did not come back"
+      ).toContain(importContent);
 
       // ── 12. Members: single-bench-user failure contracts ────────────
-      const members = await api<{ members: Array<{ userId: string; role: string }> }>(
-        `/v1/me/projects/${projectId}/members`,
-      );
+      const members = await api<{
+        members: Array<{ userId: string; role: string }>;
+      }>(`/v1/me/projects/${projectId}/members`);
       expect(members.status).toBe(200);
       MembersResponse.parse(members.body);
-      expect(members.body.members.some((m) => m.userId === ownerUserId && m.role === "owner")).toBe(
-        true,
-      );
+      expect(
+        members.body.members.some(
+          (m) => m.userId === ownerUserId && m.role === "owner"
+        )
+      ).toBe(true);
 
       // Unknown email → 404 "unknown user" (the exact single-user-bench
       // failure contract: no second dashboard user exists to invite).
-      const addUnknown = await api<{ error: string }>(`/v1/me/projects/${projectId}/members`, {
-        body: { username: `nobody-${NS}@example.invalid` },
-      });
+      const addUnknown = await api<{ error: string }>(
+        `/v1/me/projects/${projectId}/members`,
+        {
+          body: { username: `nobody-${NS}@example.invalid` },
+        }
+      );
       expect(addUnknown.status).toBe(404);
       ErrorBody.parse(addUnknown.body);
       expect(addUnknown.body.error).toBe("unknown user");
@@ -307,9 +358,12 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       // them by email resolves to a real user but they're already a
       // member (auto-added as owner on project create): 409.
       if (env.adminEmail) {
-        const addSelf = await api<{ error: string }>(`/v1/me/projects/${projectId}/members`, {
-          body: { username: env.adminEmail },
-        });
+        const addSelf = await api<{ error: string }>(
+          `/v1/me/projects/${projectId}/members`,
+          {
+            body: { username: env.adminEmail },
+          }
+        );
         expect(addSelf.status).toBe(409);
         ErrorBody.parse(addSelf.body);
         expect(addSelf.body.error).toBe("user is already a member");
@@ -319,17 +373,20 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       // 400, distinct from delete-project.
       const removeOwner = await api<{ error: string }>(
         `/v1/me/projects/${projectId}/members/${ownerUserId}`,
-        { method: "DELETE" },
+        { method: "DELETE" }
       );
       expect(removeOwner.status).toBe(400);
       ErrorBody.parse(removeOwner.body);
-      expect(removeOwner.body.error).toBe("owner cannot leave; delete the project instead");
+      expect(removeOwner.body.error).toBe(
+        "owner cannot leave; delete the project instead"
+      );
 
       // ── 13. Token create → list → delete ────────────────────────────
-      const mint = await adminCookieApi<{ token: string; userId: string; scope: string }>(
-        "/v1/me/tokens",
-        { body: { label: `conf-me-token-${NS}` } },
-      );
+      const mint = await adminCookieApi<{
+        token: string;
+        userId: string;
+        scope: string;
+      }>("/v1/me/tokens", { body: { label: `conf-me-token-${NS}` } });
       expect(mint.status).toBe(201);
       MintTokenResponse.parse(mint.body);
       const plaintext = mint.body.token;
@@ -337,54 +394,69 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       const hash = sha256Hex(plaintext);
       mintedTokenHashes.push(hash);
 
-      const list = await api<{ tokens: Array<{ tokenHash: string }> }>("/v1/me/tokens");
+      const list = await api<{ tokens: Array<{ tokenHash: string }> }>(
+        "/v1/me/tokens"
+      );
       expect(list.status).toBe(200);
       TokenListResponse.parse(list.body);
       expect(list.body.tokens.some((t) => t.tokenHash === hash)).toBe(true);
 
-      const del = await api<{ deleted: boolean }>(`/v1/me/tokens/${hash}`, { method: "DELETE" });
+      const del = await api<{ deleted: boolean }>(`/v1/me/tokens/${hash}`, {
+        method: "DELETE",
+      });
       expect(del.status).toBe(200);
       expect(del.body.deleted).toBe(true);
       mintedTokenHashes.pop();
 
       // Deleting an already-deleted token hash is 404.
-      const delAgain = await api<{ error: string }>(`/v1/me/tokens/${hash}`, { method: "DELETE" });
+      const delAgain = await api<{ error: string }>(`/v1/me/tokens/${hash}`, {
+        method: "DELETE",
+      });
       expect(delAgain.status).toBe(404);
       ErrorBody.parse(delAgain.body);
       expect(delAgain.body.error).toBe("token not found");
 
       // ── 14. Clear active-project ─────────────────────────────────────
-      const clearActive = await api("/v1/me/active-project", { method: "DELETE" });
+      const clearActive = await api("/v1/me/active-project", {
+        method: "DELETE",
+      });
       expect(clearActive.status).toBe(204);
 
-      const getActiveAfterClear = await api<{ active: null }>("/v1/me/active-project");
+      const getActiveAfterClear = await api<{ active: null }>(
+        "/v1/me/active-project"
+      );
       expect(getActiveAfterClear.status).toBe(200);
       expect(getActiveAfterClear.body.active).toBeNull();
 
       // ── 15. Delete project (owner only) — removes its entries too ───
-      const del2 = await adminCookieApi<{ deleted: boolean; entriesRemoved: number }>(
-        `/v1/me/projects/${projectId}`,
-        { method: "DELETE" },
-      );
+      const del2 = await adminCookieApi<{
+        deleted: boolean;
+        entriesRemoved: number;
+      }>(`/v1/me/projects/${projectId}`, { method: "DELETE" });
       expect(del2.status).toBe(200);
       expect(del2.body.deleted).toBe(true);
       expect(del2.body.entriesRemoved).toBeGreaterThanOrEqual(2);
       createdProjectIds.splice(createdProjectIds.indexOf(projectId), 1);
 
       // Deleting an already-deleted project is 404 "unknown project".
-      const del2Again = await adminCookieApi<{ error: string }>(`/v1/me/projects/${projectId}`, {
-        method: "DELETE",
-      });
+      const del2Again = await adminCookieApi<{ error: string }>(
+        `/v1/me/projects/${projectId}`,
+        {
+          method: "DELETE",
+        }
+      );
       expect(del2Again.status).toBe(404);
       ErrorBody.parse(del2Again.body);
       expect(del2Again.body.error).toBe("unknown project");
     }, 60_000);
 
     it("GET /v1/me/projects lists projects for both cookie and bearer identities", async () => {
-      const viaCookie = await adminCookieApi<{ projects: unknown[] }>("/v1/me/projects");
+      const viaCookie = await adminCookieApi<{ projects: unknown[] }>(
+        "/v1/me/projects"
+      );
       expect(viaCookie.status).toBe(200);
       const viaBearer = await api<{ projects: unknown[] }>("/v1/me/projects");
       expect(viaBearer.status).toBe(200);
     });
-  },
+  }
 );

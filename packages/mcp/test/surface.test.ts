@@ -3,9 +3,14 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(resolve(__dirname, "../src/index.ts"), "utf8");
-const instructions = source.match(/const NOVAMEM_INSTRUCTIONS = `([\s\S]*?)`;\n\n\/\*\*/)?.[1] ?? "";
-const toolDefSource = source.match(/const TOOL_DEFINITIONS = \[([\s\S]*?)\] as const;/)?.[1] ?? "";
-const toolNames = [...toolDefSource.matchAll(/name: "([^"]+)"/g)].map((m) => m[1]);
+const instructions =
+  source.match(/const NOVAMEM_INSTRUCTIONS = `([\s\S]*?)`;\n\n\/\*\*/)?.[1] ??
+  "";
+const toolDefSource =
+  source.match(/const TOOL_DEFINITIONS = \[([\s\S]*?)\] as const;/)?.[1] ?? "";
+const toolNames = [...toolDefSource.matchAll(/name: "([^"]+)"/g)].map(
+  (m) => m[1]
+);
 
 describe("stdio MCP surface", () => {
   it("mentions every advertised tool in initialize instructions", () => {

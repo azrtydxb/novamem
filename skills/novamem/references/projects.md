@@ -13,6 +13,7 @@ Use this when the user says "what projects do I have access to" or before activa
 ## project_create
 
 Inputs:
+
 - `name` (required, string, 1–128 chars) — human-readable project name
 
 Caller becomes owner. Returns the new project's server-assigned ULID. Use when the user says "start a new project for X" or "spin up a sub-brain for the Y migration".
@@ -20,6 +21,7 @@ Caller becomes owner. Returns the new project's server-assigned ULID. Use when t
 ## project_delete
 
 Inputs:
+
 - `project` (required, string) — id or human name
 
 **Owner-only.** Removes every memory entry, vector, and graph node belonging to the project. Irrecoverable. Confirm with the user before calling unless they explicitly said "delete it".
@@ -27,9 +29,11 @@ Inputs:
 ## project_activate
 
 Inputs:
+
 - `project` (required, string) — id or human name
 
 Sets the caller's active project. Subsequent `memory_*` calls without an explicit `project` arg default to it:
+
 - `search` / `recent` / `neighbors` union it with user-global
 - `remember` / `forget` / `update` target it directly
 
@@ -44,6 +48,7 @@ Use when the user signals they're done with the current project ("switching cont
 ## project_share
 
 Inputs:
+
 - `project` (required, string) — id or human name
 - `username` (required, string) — invitee's **exact email address**
 
@@ -52,6 +57,7 @@ Inputs:
 ## project_unshare
 
 Inputs:
+
 - `project` (required, string) — id or human name
 - `username` (required, string) — member's **exact email address**
 

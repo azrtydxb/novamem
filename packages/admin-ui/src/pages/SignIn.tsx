@@ -24,17 +24,23 @@ export function SignIn() {
   // hits "Sign in" without creds gets the generic invalid-credentials
   // message. Operators with the bootstrap env set will succeed on the
   // first sign-in attempt against that account.
-  useEffect(() => { setBootstrapNeeded(false); }, []);
+  useEffect(() => {
+    setBootstrapNeeded(false);
+  }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) return;
     setBusy(true);
     setError(null);
-    const r = await api<BetterAuthSignInResp>("POST", "/api/auth/sign-in/email", {
-      email: email.trim(),
-      password,
-    });
+    const r = await api<BetterAuthSignInResp>(
+      "POST",
+      "/api/auth/sign-in/email",
+      {
+        email: email.trim(),
+        password,
+      }
+    );
     setBusy(false);
     if (r.ok && r.body?.user) {
       const u = r.body.user;
@@ -59,7 +65,13 @@ export function SignIn() {
           <div className="h-9 w-9 rounded-[10px] bg-accent flex items-center justify-center">
             {/* novamem mark — 4-node graph traces an 'N'. Reads as graph
                 (the product) and as the letter (the brand). */}
-            <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true" fill="none">
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 32 32"
+              aria-hidden="true"
+              fill="none"
+            >
               <g stroke="white" strokeWidth="1.7" strokeLinecap="round">
                 <line x1="7" y1="24" x2="7" y2="8" />
                 <line x1="7" y1="8" x2="25" y2="24" />
@@ -91,9 +103,14 @@ export function SignIn() {
             <AlertTriangle className="h-4 w-4 mt-0.5 text-warn flex-none" />
             <div className="text-xs text-dim">
               <span className="text-ink font-medium">No admin yet.</span> Set{" "}
-              <code className="text-accent">NOVAMEM_BOOTSTRAP_ADMIN_USERNAME</code> +{" "}
-              <code className="text-accent">NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD</code> on the server
-              and restart to seed one.
+              <code className="text-accent">
+                NOVAMEM_BOOTSTRAP_ADMIN_USERNAME
+              </code>{" "}
+              +{" "}
+              <code className="text-accent">
+                NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD
+              </code>{" "}
+              on the server and restart to seed one.
             </div>
           </div>
         ) : null}
@@ -129,7 +146,6 @@ export function SignIn() {
             <LogIn className="h-3.5 w-3.5" /> Continue
           </Button>
         </form>
-
       </div>
     </div>
   );

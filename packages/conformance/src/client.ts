@@ -1,7 +1,9 @@
 import { Agent, fetch } from "undici";
 import { env } from "./env.js";
 
-const RUN = `conf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+const RUN = `conf-${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2, 6)}`;
 let seq = 0;
 export const ns = (): string => `${RUN}-${++seq}`;
 
@@ -15,11 +17,20 @@ export const ns = (): string => `${RUN}-${++seq}`;
 // and harmless — it only raises a ceiling, it never slows down a fast call.
 const dispatcher = new Agent({ headersTimeout: 660_000, bodyTimeout: 660_000 });
 
-export interface ApiResult<T> { status: number; body: T; headers: Headers }
+export interface ApiResult<T> {
+  status: number;
+  body: T;
+  headers: Headers;
+}
 
 export async function api<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown; token?: string; headers?: Record<string, string> } = {},
+  opts: {
+    method?: string;
+    body?: unknown;
+    token?: string;
+    headers?: Record<string, string>;
+  } = {}
 ): Promise<ApiResult<T>> {
   const token = opts.token ?? env.testToken;
   const method = opts.method ?? (opts.body !== undefined ? "POST" : "GET");
@@ -38,7 +49,9 @@ export async function api<T = unknown>(
       // POST /v1/reap-orphans have no `body` schema at all, so sending
       // this header on those unauthenticated auth-gate probes masked the
       // real 401 behind a spurious 400.
-      ...(opts.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(opts.body !== undefined
+        ? { "content-type": "application/json" }
+        : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...opts.headers,
     },
@@ -46,12 +59,18 @@ export async function api<T = unknown>(
   });
   const text = await r.text();
   let body: unknown = text;
-  try { body = text ? JSON.parse(text) : null; } catch { /* non-JSON stays string */ }
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    /* non-JSON stays string */
+  }
   return { status: r.status, body: body as T, headers: r.headers };
 }
 
-export const adminApi = <T = unknown>(path: string, opts: Parameters<typeof api>[1] = {}) =>
-  api<T>(path, { ...opts, token: env.adminToken });
+export const adminApi = <T = unknown>(
+  path: string,
+  opts: Parameters<typeof api>[1] = {}
+) => api<T>(path, { ...opts, token: env.adminToken });
 
 /** Session-cookie admin auth. Some routes (decay/dream-cycle/reap-orphans/
  *  observe, in `user` auth mode) gate on a Better-Auth session
@@ -70,7 +89,7 @@ export async function adminCookie(): Promise<string> {
   if (env.adminCookie) return env.adminCookie;
   if (!env.adminEmail || !env.adminPassword) {
     throw new Error(
-      "conformance: cookie-gated route needs NOVAMEM_ADMIN_COOKIE or NOVAMEM_ADMIN_EMAIL+NOVAMEM_ADMIN_PASSWORD",
+      "conformance: cookie-gated route needs NOVAMEM_ADMIN_COOKIE or NOVAMEM_ADMIN_EMAIL+NOVAMEM_ADMIN_PASSWORD"
     );
   }
   cookiePromise ??= (async () => {
@@ -119,9 +138,13 @@ export const cookieHeaderFrom = (r: ApiResult<unknown>): string => {
  *  and must NOT be retried away. */
 const BA_THROTTLE = "Too many requests. Please try again later.";
 const isBaThrottle = (r: ApiResult<unknown>): boolean =>
-  r.status === 429 && (r.body as { message?: string } | null)?.message === BA_THROTTLE;
+  r.status === 429 &&
+  (r.body as { message?: string } | null)?.message === BA_THROTTLE;
 
-export async function signInRaw(email: string, password: string): Promise<ApiResult<unknown>> {
+export async function signInRaw(
+  email: string,
+  password: string
+): Promise<ApiResult<unknown>> {
   let r!: ApiResult<unknown>;
   for (let attempt = 0; attempt < 5; attempt++) {
     r = await api<unknown>("/api/auth/sign-in/email", {
@@ -143,11 +166,14 @@ export async function signIn(email: string, password: string): Promise<string> {
   const r = await signInRaw(email, password);
   if (r.status !== 200) {
     throw new Error(
-      `conformance: sign-in as ${email} failed (${r.status}) ${JSON.stringify(r.body)}`,
+      `conformance: sign-in as ${email} failed (${r.status}) ${JSON.stringify(
+        r.body
+      )}`
     );
   }
   const cookie = cookieHeaderFrom(r);
-  if (!cookie) throw new Error(`conformance: sign-in as ${email} returned no set-cookie`);
+  if (!cookie)
+    throw new Error(`conformance: sign-in as ${email} returned no set-cookie`);
   return cookie;
 }
 
@@ -155,17 +181,21 @@ export async function signIn(email: string, password: string): Promise<string> {
 export const cookieApi = <T = unknown>(
   cookie: string,
   path: string,
-  opts: Parameters<typeof api>[1] = {},
+  opts: Parameters<typeof api>[1] = {}
 ): Promise<ApiResult<T>> =>
   api<T>(path, {
     ...opts,
     token: "",
-    headers: { cookie, ...(env.origin ? { origin: env.origin } : {}), ...opts.headers },
+    headers: {
+      cookie,
+      ...(env.origin ? { origin: env.origin } : {}),
+      ...opts.headers,
+    },
   });
 
 export const adminCookieApi = async <T = unknown>(
   path: string,
-  opts: Parameters<typeof api>[1] = {},
+  opts: Parameters<typeof api>[1] = {}
 ): Promise<ApiResult<T>> =>
   api<T>(path, {
     ...opts,

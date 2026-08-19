@@ -14,6 +14,7 @@ retrieved facts the metric refused to count.
 Emits `{question_id: n_relevant}` counting both, so the two arms are
 scored against the same definition of "relevant".
 """
+
 import argparse
 import json
 import subprocess
@@ -21,9 +22,28 @@ import subprocess
 
 def psql(sql: str) -> list[list[str]]:
     out = subprocess.run(
-        ["kubectl", "-n", "novamem-bench", "exec", "postgres-0", "--",
-         "psql", "-U", "novamem", "-d", "novamem", "-t", "-A", "-F", "|", "-c", sql],
-        capture_output=True, text=True, timeout=180,
+        [
+            "kubectl",
+            "-n",
+            "novamem-bench",
+            "exec",
+            "postgres-0",
+            "--",
+            "psql",
+            "-U",
+            "novamem",
+            "-d",
+            "novamem",
+            "-t",
+            "-A",
+            "-F",
+            "|",
+            "-c",
+            sql,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
     if out.returncode != 0:
         raise RuntimeError(out.stderr[:400])
@@ -46,7 +66,9 @@ def main():
         # Chunk ids whose session is an evidence session. For the remember
         # path id2session is populated the same way, so this branch is
         # identical for both arms.
-        relevant_chunk_ids = {cid for cid, sid in id2session.items() if sid in answer_sids}
+        relevant_chunk_ids = {
+            cid for cid, sid in id2session.items() if sid in answer_sids
+        }
 
         if not relevant_chunk_ids:
             # No id map (older runs): fall back to the recorded count.
@@ -61,8 +83,10 @@ def main():
         )
         n_facts = int(rows[0][0]) if rows else 0
         counts[qid] = len(relevant_chunk_ids) + n_facts
-        print("  %-14s chunks=%3d facts_from_them=%3d  relevant=%3d"
-              % (qid, len(relevant_chunk_ids), n_facts, counts[qid]))
+        print(
+            "  %-14s chunks=%3d facts_from_them=%3d  relevant=%3d"
+            % (qid, len(relevant_chunk_ids), n_facts, counts[qid])
+        )
 
     json.dump(counts, open(args.out, "w"), indent=2)
     print("wrote", args.out)

@@ -18,7 +18,8 @@ import { ErrorBody } from "../src/schemas.js";
  * fails the suite; failures are logged.
  */
 
-const sha256Hex = (s: string): string => createHash("sha256").update(s).digest("hex");
+const sha256Hex = (s: string): string =>
+  createHash("sha256").update(s).digest("hex");
 
 const mintedTokenHashes: string[] = [];
 const createdProjectIds: string[] = [];
@@ -34,16 +35,22 @@ afterAll(async () => {
   }
   for (const hash of mintedTokenHashes) {
     try {
-      const r = await adminCookieApi(`/v1/me/tokens/${hash}`, { method: "DELETE" });
-      if (r.status !== 200) console.warn(`cleanup: delete token ${hash} → ${r.status}`, r.body);
+      const r = await adminCookieApi(`/v1/me/tokens/${hash}`, {
+        method: "DELETE",
+      });
+      if (r.status !== 200)
+        console.warn(`cleanup: delete token ${hash} → ${r.status}`, r.body);
     } catch (e) {
       console.warn(`cleanup: delete token ${hash} failed`, e);
     }
   }
   for (const id of createdProjectIds) {
     try {
-      const r = await adminCookieApi(`/v1/me/projects/${id}`, { method: "DELETE" });
-      if (r.status !== 200) console.warn(`cleanup: delete project ${id} → ${r.status}`, r.body);
+      const r = await adminCookieApi(`/v1/me/projects/${id}`, {
+        method: "DELETE",
+      });
+      if (r.status !== 200)
+        console.warn(`cleanup: delete project ${id} → ${r.status}`, r.body);
     } catch (e) {
       console.warn(`cleanup: delete project ${id} failed`, e);
     }
@@ -57,7 +64,10 @@ describe("auth gates", () => {
   });
 
   it("garbage bearer is 401 with error body", async () => {
-    const r = await api<unknown>("/v1/recent", { body: { limit: 1 }, token: "nm_bogus" });
+    const r = await api<unknown>("/v1/recent", {
+      body: { limit: 1 },
+      token: "nm_bogus",
+    });
     if (env.authMode === "none") return;
     expect(r.status).toBe(401);
     ErrorBody.parse(r.body);
@@ -85,10 +95,11 @@ describe.skipIf(env.authMode !== "user")("rotate-token (user mode)", () => {
   // A THROWAWAY token, minted fresh via the admin cookie, is rotated —
   // never the shared NOVAMEM_TEST_TOKEN every other suite depends on.
   it("mints a throwaway, rotates it, and old dies while new works", async () => {
-    const mint = await adminCookieApi<{ token: string; userId: string; createdAt: string }>(
-      "/v1/me/tokens",
-      { body: { label: `conf-rotate-${ns()}` } },
-    );
+    const mint = await adminCookieApi<{
+      token: string;
+      userId: string;
+      createdAt: string;
+    }>("/v1/me/tokens", { body: { label: `conf-rotate-${ns()}` } });
     expect(mint.status).toBe(201);
     const original = mint.body.token;
     expect(original).toMatch(/^nm_/);
@@ -96,16 +107,21 @@ describe.skipIf(env.authMode !== "user")("rotate-token (user mode)", () => {
 
     // Sanity: the freshly minted token can reach the data plane before
     // rotation.
-    const preCheck = await api("/v1/recent", { body: { limit: 1 }, token: original });
+    const preCheck = await api("/v1/recent", {
+      body: { limit: 1 },
+      token: original,
+    });
     expect(preCheck.status).toBe(200);
 
     // POST /v1/auth/rotate-token — routes/auth.ts: presents the current
     // bearer via Authorization, gets a new plaintext back, 201, old one
     // revoked atomically in the same transaction.
-    const rotate = await api<{ token: string; userId: string; createdAt: string; warning: string }>(
-      "/v1/auth/rotate-token",
-      { method: "POST", token: original },
-    );
+    const rotate = await api<{
+      token: string;
+      userId: string;
+      createdAt: string;
+      warning: string;
+    }>("/v1/auth/rotate-token", { method: "POST", token: original });
     expect(rotate.status).toBe(201);
     expect(rotate.body.token).toMatch(/^nm_/);
     expect(rotate.body.token).not.toBe(original);
@@ -113,11 +129,17 @@ describe.skipIf(env.authMode !== "user")("rotate-token (user mode)", () => {
     const rotated = rotate.body.token;
 
     // Old token is dead: any data-plane call now 401s.
-    const oldDead = await api("/v1/recent", { body: { limit: 1 }, token: original });
+    const oldDead = await api("/v1/recent", {
+      body: { limit: 1 },
+      token: original,
+    });
     expect(oldDead.status).toBe(401);
 
     // New token works.
-    const newWorks = await api("/v1/recent", { body: { limit: 1 }, token: rotated });
+    const newWorks = await api("/v1/recent", {
+      body: { limit: 1 },
+      token: rotated,
+    });
     expect(newWorks.status).toBe(200);
 
     // Track the ROTATED token's hash for cleanup (the original's hash
@@ -128,7 +150,10 @@ describe.skipIf(env.authMode !== "user")("rotate-token (user mode)", () => {
   });
 
   it("rotate-token requires a bearer; unauthenticated is 401", async () => {
-    const r = await api<unknown>("/v1/auth/rotate-token", { method: "POST", token: "" });
+    const r = await api<unknown>("/v1/auth/rotate-token", {
+      method: "POST",
+      token: "",
+    });
     expect(r.status).toBe(401);
   });
 });
@@ -137,15 +162,21 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
   "project-confined + read-only tokens (user mode)",
   () => {
     it("confined token: cross-project write is 403, own-project write succeeds", async () => {
-      const home = await adminCookieApi<{ id: string; name: string }>("/v1/me/projects", {
-        body: { name: `conf-home-${ns()}` },
-      });
+      const home = await adminCookieApi<{ id: string; name: string }>(
+        "/v1/me/projects",
+        {
+          body: { name: `conf-home-${ns()}` },
+        }
+      );
       expect(home.status).toBe(201);
       createdProjectIds.push(home.body.id);
 
-      const away = await adminCookieApi<{ id: string; name: string }>("/v1/me/projects", {
-        body: { name: `conf-away-${ns()}` },
-      });
+      const away = await adminCookieApi<{ id: string; name: string }>(
+        "/v1/me/projects",
+        {
+          body: { name: `conf-away-${ns()}` },
+        }
+      );
       expect(away.status).toBe(201);
       createdProjectIds.push(away.body.id);
 
@@ -160,7 +191,10 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       // 403 "token is confined to its project".
       const crossProject = await api<{ error: string }>("/v1/remember", {
         token: confined,
-        body: { content: `confined-cross-project probe ${ns()}`, project: away.body.id },
+        body: {
+          content: `confined-cross-project probe ${ns()}`,
+          project: away.body.id,
+        },
       });
       expect(crossProject.status).toBe(403);
       ErrorBody.parse(crossProject.body);
@@ -183,7 +217,9 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       // own project (checkProjectAccess rewrites body.project), not a 403.
       const noProject = await api<{ id: string | null }>("/v1/remember", {
         token: confined,
-        body: { content: `confined-default-project probe, namespace ${ns()}, no project set` },
+        body: {
+          content: `confined-default-project probe, namespace ${ns()}, no project set`,
+        },
       });
       expect(noProject.status).toBe(201);
       if (noProject.body.id) forgetIds.push(noProject.body.id);
@@ -267,5 +303,5 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
       expect(write.status).toBe(403);
       expect(write.body.error).toBe("read-only token");
     });
-  },
+  }
 );

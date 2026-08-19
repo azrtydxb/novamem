@@ -69,10 +69,10 @@ Don't run `:main` in production. Pin to a release tag (`v1.1.4`) or short sha (`
 
 ## Threat model snapshot
 
-| Threat | Mitigation |
-|---|---|
-| Bearer token leaked | Revoke from dashboard. Short labels per host help isolate the blast radius. |
-| Cross-user data access | User boundary enforced at every route. Project membership is explicit. |
-| | Cookie session theft | Sessions are HttpOnly + Secure. Rotate `NOVAMEM_COOKIE_SECRET` to mass-invalidate. |
-| Replay attacks | Better Auth sessions are server-resolved per request — no JWT replay window. |
-| Prompt injection via memory entries | Memory content is opaque to novamem. Defence is upstream (in your agent). |
+| Threat                              | Mitigation                                                                   |
+| ----------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Bearer token leaked                 | Revoke from dashboard. Short labels per host help isolate the blast radius.  |
+| Cross-user data access              | User boundary enforced at every route. Project membership is explicit.       |
+|                                     | Cookie session theft                                                         | Sessions are HttpOnly + Secure. Rotate `NOVAMEM_COOKIE_SECRET` to mass-invalidate. |
+| Replay attacks                      | Better Auth sessions are server-resolved per request — no JWT replay window. |
+| Prompt injection via memory entries | Memory content is opaque to novamem. Defence is upstream (in your agent).    |

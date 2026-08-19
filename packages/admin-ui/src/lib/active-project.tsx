@@ -1,4 +1,11 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, Project } from "./api";
 
@@ -17,11 +24,13 @@ const Ctx = createContext<ActiveProjectCtx | null>(null);
 const STORAGE_KEY = "nm-active-project";
 
 export function ActiveProjectProvider({ children }: { children: ReactNode }) {
-  const [activeProjectId, setActiveProjectIdState] = useState<string | null>(() => {
-    if (typeof localStorage === "undefined") return null;
-    const v = localStorage.getItem(STORAGE_KEY);
-    return v && v.length > 0 ? v : null;
-  });
+  const [activeProjectId, setActiveProjectIdState] = useState<string | null>(
+    () => {
+      if (typeof localStorage === "undefined") return null;
+      const v = localStorage.getItem(STORAGE_KEY);
+      return v && v.length > 0 ? v : null;
+    }
+  );
 
   // Same query key as ProjectsPage (`["me", "projects"]`) so a single
   // `invalidateQueries` after create/share/leave/delete refreshes both
@@ -60,7 +69,12 @@ export function ActiveProjectProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider
-      value={{ activeProjectId, activeProjectName, setActiveProjectId, projects }}
+      value={{
+        activeProjectId,
+        activeProjectName,
+        setActiveProjectId,
+        projects,
+      }}
     >
       {children}
     </Ctx.Provider>
@@ -69,7 +83,10 @@ export function ActiveProjectProvider({ children }: { children: ReactNode }) {
 
 export function useActiveProject(): ActiveProjectCtx {
   const v = useContext(Ctx);
-  if (!v) throw new Error("useActiveProject must be used inside ActiveProjectProvider");
+  if (!v)
+    throw new Error(
+      "useActiveProject must be used inside ActiveProjectProvider"
+    );
   return v;
 }
 

@@ -52,7 +52,9 @@ describe("data plane CRUD", () => {
       body: { namespace: NS, k: 10 },
     });
     expect(recent.status).toBe(200);
-    const entries = RecentResponse.parse(recent.body).results.map((e) => MemoryEntry.parse(e));
+    const entries = RecentResponse.parse(recent.body).results.map((e) =>
+      MemoryEntry.parse(e)
+    );
     const updated = entries.find((e) => e.id === id);
     expect(updated?.content).toBe(newContent);
   });
@@ -104,7 +106,9 @@ describe("data plane CRUD", () => {
     await Promise.all(
       createdIds
         .filter((entryId) => entryId !== id)
-        .map((entryId) => api("/v1/forget", { body: { id: entryId } }).catch(() => {})),
+        .map((entryId) =>
+          api("/v1/forget", { body: { id: entryId } }).catch(() => {})
+        )
     );
   });
 });

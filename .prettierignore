@@ -1,0 +1,10 @@
+# Generated files — never hand-formatted.
+# docs/api/openapi.json is written by `go run ./cmd/gen-openapi` and a Go
+# test pins the checked-in bytes against the generator's output.
+docs/api/openapi.json
+# Vite build output synced from packages/admin-ui and embedded in the Go
+# binary (go/scripts/sync-admin-ui.sh).
+go/internal/httpapi/admin-ui/
+# Hand-tuned static marketing pages: prettier's HTML reflow changes
+# rendered whitespace inside inline elements (verified in a browser).
+site/*.html

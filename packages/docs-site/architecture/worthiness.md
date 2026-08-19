@@ -61,7 +61,6 @@ Dedup is per `(user, project, namespace)` — the same content under different n
 
 [`go/internal/engine/engine.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/engine/engine.go) — worthiness rejection, exact dedup on remember, and capture duplicate/supersession handling.
 
-
 ## Semantic duplicate/update (`memory_capture`)
 
 After the worthiness gate and exact hash check, `memory_capture` searches active memories in the same `(user, project, namespace)` scope. If a nearby active memory is semantically close and not contradictory, NovaMem rewrites that entry in place instead of inserting another row. The response is:
@@ -92,7 +91,6 @@ The capture response includes the old ids:
 ```
 
 Superseded and deprecated entries are hidden from normal `memory_search` / `memory_context` results. They remain stored for provenance and can still be inspected by id/admin tooling or hard-deleted with `memory_forget` if the user asks.
-
 
 ## Retention policies by memory type
 

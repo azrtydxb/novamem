@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { api, ns } from "../src/client.js";
-import { MemoryEntry, RecentResponse, RememberResponse } from "../src/schemas.js";
+import {
+  MemoryEntry,
+  RecentResponse,
+  RememberResponse,
+} from "../src/schemas.js";
 
 /**
  * Live oracle for this suite runs real embeddings (bge-m3 @
@@ -53,14 +57,16 @@ const seededIds: string[] = [];
 async function seedCorpus(nsName: string): Promise<string[]> {
   const ids: string[] = [];
   for (const content of corpusFor(nsName)) {
-    const r = await api<unknown>("/v1/remember", { body: { content, namespace: nsName } });
+    const r = await api<unknown>("/v1/remember", {
+      body: { content, namespace: nsName },
+    });
     if (r.status !== 201) {
       throw new Error(`seed failed: HTTP ${r.status} for "${content}"`);
     }
     const parsed = RememberResponse.parse(r.body);
     if (!parsed.id) {
       throw new Error(
-        `seed rejected by worthiness gate (rejected="${parsed.rejected}") for: "${content}"`,
+        `seed rejected by worthiness gate (rejected="${parsed.rejected}") for: "${content}"`
       );
     }
     ids.push(parsed.id);
@@ -75,7 +81,9 @@ async function seedCorpus(nsName: string): Promise<string[]> {
     // crowd a tight `k` window in /v1/recent's recency ordering and can
     // push original seeded ids out of a same-size k before extraction
     // settles.
-    const r = await api<unknown>("/v1/recent", { body: { namespace: nsName, k: 200 } });
+    const r = await api<unknown>("/v1/recent", {
+      body: { namespace: nsName, k: 200 },
+    });
     if (r.status === 200) {
       const parsed = RecentResponse.parse(r.body);
       visible = new Set(parsed.results.map((e) => e.id));
@@ -84,7 +92,11 @@ async function seedCorpus(nsName: string): Promise<string[]> {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   const missing = ids.filter((id) => !visible.has(id));
-  throw new Error(`seed indexing did not converge within 45s; missing ids: ${missing.join(", ")}`);
+  throw new Error(
+    `seed indexing did not converge within 45s; missing ids: ${missing.join(
+      ", "
+    )}`
+  );
 }
 
 beforeAll(async () => {
@@ -93,7 +105,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all(
-    seededIds.map((id) => api("/v1/forget", { body: { id } }).catch(() => {})),
+    seededIds.map((id) => api("/v1/forget", { body: { id } }).catch(() => {}))
   );
 });
 
@@ -103,7 +115,9 @@ describe("hybrid search", () => {
       body: { query: "coffee machine", namespace: NS, k: 4 },
     });
     expect(r.status).toBe(200);
-    const entries = RecentResponse.parse(r.body).results.map((e) => MemoryEntry.parse(e));
+    const entries = RecentResponse.parse(r.body).results.map((e) =>
+      MemoryEntry.parse(e)
+    );
     expect(entries.some((e) => e.content.includes("espresso"))).toBe(true);
   });
 
@@ -112,7 +126,9 @@ describe("hybrid search", () => {
       body: { query: "vector storage backend", namespace: NS, k: 8 },
     });
     expect(r.status).toBe(200);
-    const entries = RecentResponse.parse(r.body).results.map((e) => MemoryEntry.parse(e));
+    const entries = RecentResponse.parse(r.body).results.map((e) =>
+      MemoryEntry.parse(e)
+    );
     const scores = entries.map((e) => e.score ?? 0);
     expect([...scores].sort((a, b) => b - a)).toEqual(scores);
   });
@@ -122,7 +138,9 @@ describe("hybrid search", () => {
       body: { query: "cluster storage", namespace: NS, k: 8 },
     });
     expect(r.status).toBe(200);
-    const entries = RecentResponse.parse(r.body).results.map((e) => MemoryEntry.parse(e));
+    const entries = RecentResponse.parse(r.body).results.map((e) =>
+      MemoryEntry.parse(e)
+    );
     expect(entries.length).toBeGreaterThan(0);
     for (const e of entries) {
       if (e.namespace !== undefined) expect(e.namespace).toBe(NS);
@@ -143,17 +161,25 @@ describe("hybrid search", () => {
       recent: { results: unknown[]; degraded: boolean };
       contextPack: unknown;
       guidance: string;
-    }>("/v1/context", { body: { message: "tell me about cluster storage", namespace: NS } });
+    }>("/v1/context", {
+      body: { message: "tell me about cluster storage", namespace: NS },
+    });
     expect(r.status).toBe(200);
-    const relevantEntries = r.body.relevant.results.map((e) => MemoryEntry.parse(e));
-    expect(relevantEntries.some((e) => e.content.includes("Longhorn") || e.content.includes("vector"))).toBe(
-      true,
+    const relevantEntries = r.body.relevant.results.map((e) =>
+      MemoryEntry.parse(e)
     );
+    expect(
+      relevantEntries.some(
+        (e) => e.content.includes("Longhorn") || e.content.includes("vector")
+      )
+    ).toBe(true);
     expect(typeof r.body.guidance).toBe("string");
   });
 
   it("GET /v1/context-prefix responds 200 with a prefix or 404 when the observer is disabled", async () => {
-    const r = await api<{ prefix: string } | { error: string }>("/v1/context-prefix");
+    const r = await api<{ prefix: string } | { error: string }>(
+      "/v1/context-prefix"
+    );
     expect([200, 404]).toContain(r.status);
     if (r.status === 200) {
       expect(typeof (r.body as { prefix: string }).prefix).toBe("string");

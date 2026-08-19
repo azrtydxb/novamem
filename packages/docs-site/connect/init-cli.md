@@ -26,22 +26,22 @@ That's it for the happy path. Re-runs prefill the server URL + email from the pr
 
 For each AI host detected, init writes (or merges into) the canonical config file:
 
-| Host | File | Transport |
-|---|---|---|
-| Claude Code | `<project>/.mcp.json` + `<project>/CLAUDE.md` + `<project>/commands/` | SSE |
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) · `%APPDATA%\Claude\claude_desktop_config.json` (Windows) · `~/.config/Claude/claude_desktop_config.json` (Linux) | stdio shim |
-| Cursor | `~/.cursor/mcp.json` | SSE |
-| Cline | `<vscode>/User/globalStorage/saoudrizwan.claude-dev/cline_mcp_settings.json` | SSE |
-| Continue | `~/.continue/config.json` (`mcpServers`) | SSE |
-| Kilo Code | `<vscode>/User/globalStorage/.../kilo-code/mcp_settings.json` | SSE |
-| OpenCode | `~/.config/opencode/config.json` | SSE |
-| Codex CLI | `~/.codex/config.toml` | SSE |
-| RooCode | `<vscode>/User/globalStorage/.../roocode/mcp_settings.json` | SSE |
-| Gemini CLI | `~/.gemini/config.json` | SSE |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` | SSE |
-| Factory | `~/.factory/config.json` | SSE |
-| Amazon Q | `~/.aws/amazonq/mcp.json` | SSE |
-| Skill-only hosts (16+) | platform-specific skill bundle | Agent Skills |
+| Host                   | File                                                                                                                                                                                        | Transport    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Claude Code            | `<project>/.mcp.json` + `<project>/CLAUDE.md` + `<project>/commands/`                                                                                                                       | SSE          |
+| Claude Desktop         | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) · `%APPDATA%\Claude\claude_desktop_config.json` (Windows) · `~/.config/Claude/claude_desktop_config.json` (Linux) | stdio shim   |
+| Cursor                 | `~/.cursor/mcp.json`                                                                                                                                                                        | SSE          |
+| Cline                  | `<vscode>/User/globalStorage/saoudrizwan.claude-dev/cline_mcp_settings.json`                                                                                                                | SSE          |
+| Continue               | `~/.continue/config.json` (`mcpServers`)                                                                                                                                                    | SSE          |
+| Kilo Code              | `<vscode>/User/globalStorage/.../kilo-code/mcp_settings.json`                                                                                                                               | SSE          |
+| OpenCode               | `~/.config/opencode/config.json`                                                                                                                                                            | SSE          |
+| Codex CLI              | `~/.codex/config.toml`                                                                                                                                                                      | SSE          |
+| RooCode                | `<vscode>/User/globalStorage/.../roocode/mcp_settings.json`                                                                                                                                 | SSE          |
+| Gemini CLI             | `~/.gemini/config.json`                                                                                                                                                                     | SSE          |
+| Windsurf               | `~/.codeium/windsurf/mcp_config.json`                                                                                                                                                       | SSE          |
+| Factory                | `~/.factory/config.json`                                                                                                                                                                    | SSE          |
+| Amazon Q               | `~/.aws/amazonq/mcp.json`                                                                                                                                                                   | SSE          |
+| Skill-only hosts (16+) | platform-specific skill bundle                                                                                                                                                              | Agent Skills |
 
 ## Flags
 
@@ -49,21 +49,21 @@ For each AI host detected, init writes (or merges into) the canonical config fil
 novamem-init [options]
 ```
 
-| Flag | Description |
-|---|---|
-| `--server <url>` | Pre-set the server URL (skip the first prompt). |
-| `--email <addr>` | Pre-set the email (skip the email prompt). |
-| `--password <pw>` | Pre-set the password. **Use only in scripts**, never in shell history. Prefer the interactive prompt. |
-| `--token-label <s>` | Label for the minted bearer (default: hostname + username). Shown in the dashboard token list. |
-| `--project <ref>` | Pin the bearer to a specific project (id or name). Without this, the token is tenant-wide. |
-| `--shim-version <ver>` | Pin `@azrtydxb/novamem-mcp` to a specific version. Default: latest. |
-| `--skip-shim-check` | Skip the pre-flight that verifies the stdio shim is fetchable + runnable. |
-| `--only <host>` | Wire only the named host (e.g. `claude-code`). Repeatable. |
-| `--dry-run` | Print every change without writing files. |
-| `--non-interactive` | Fail if any input is missing rather than prompting. For CI. |
-| `--reset` | Clear the persisted state file (`$XDG_CONFIG_HOME/novamem/init.json`) before starting. |
-| `--version` | Print the CLI version and exit. |
-| `--help` | Show this list. |
+| Flag                   | Description                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| `--server <url>`       | Pre-set the server URL (skip the first prompt).                                                       |
+| `--email <addr>`       | Pre-set the email (skip the email prompt).                                                            |
+| `--password <pw>`      | Pre-set the password. **Use only in scripts**, never in shell history. Prefer the interactive prompt. |
+| `--token-label <s>`    | Label for the minted bearer (default: hostname + username). Shown in the dashboard token list.        |
+| `--project <ref>`      | Pin the bearer to a specific project (id or name). Without this, the token is tenant-wide.            |
+| `--shim-version <ver>` | Pin `@azrtydxb/novamem-mcp` to a specific version. Default: latest.                                   |
+| `--skip-shim-check`    | Skip the pre-flight that verifies the stdio shim is fetchable + runnable.                             |
+| `--only <host>`        | Wire only the named host (e.g. `claude-code`). Repeatable.                                            |
+| `--dry-run`            | Print every change without writing files.                                                             |
+| `--non-interactive`    | Fail if any input is missing rather than prompting. For CI.                                           |
+| `--reset`              | Clear the persisted state file (`$XDG_CONFIG_HOME/novamem/init.json`) before starting.                |
+| `--version`            | Print the CLI version and exit.                                                                       |
+| `--help`               | Show this list.                                                                                       |
 
 ## What happens on first run
 
@@ -126,6 +126,7 @@ For stdio-only hosts, the equivalent stdio shim entry:
 ## Troubleshooting
 
 **"Server disconnected" on Claude Desktop after init.** The stdio shim couldn't reach the server. Check:
+
 - The `NOVAMEM_BASE_URL` resolves from your machine.
 - The bearer token is still valid (revoked tokens 401).
 - Re-run `novamem-init --skip-shim-check` only after fixing the underlying issue.

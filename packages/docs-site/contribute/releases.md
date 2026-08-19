@@ -56,12 +56,12 @@ The server isn't published to npm. The release artifact is the docker image.
 
 ### Tag conventions
 
-| Tag | What |
-|---|---|
-| `vX.Y.Z` | Server release. Repo-wide. |
-| `@azrtydxb/<pkg>@X.Y.Z` | Per-package npm release. |
-| `:main` | Always-latest main. Don't use in production. |
-| `:sha-<7chars>` | Deterministic. Pin in production. |
+| Tag                     | What                                         |
+| ----------------------- | -------------------------------------------- |
+| `vX.Y.Z`                | Server release. Repo-wide.                   |
+| `@azrtydxb/<pkg>@X.Y.Z` | Per-package npm release.                     |
+| `:main`                 | Always-latest main. Don't use in production. |
+| `:sha-<7chars>`         | Deterministic. Pin in production.            |
 
 ## Branch protection
 

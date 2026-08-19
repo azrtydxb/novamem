@@ -28,7 +28,9 @@ import { dirname, join, resolve } from "node:path";
 
 const [rootPath, serverPath, outPath] = process.argv.slice(2);
 if (!rootPath || !serverPath || !outPath) {
-  console.error("usage: gen-runtime-package.mjs <root-package.json> <server-package.json> <out>");
+  console.error(
+    "usage: gen-runtime-package.mjs <root-package.json> <server-package.json> <out>"
+  );
   process.exit(2);
 }
 
@@ -120,7 +122,8 @@ for (const [key, value] of Object.entries(root.pnpm?.overrides ?? {})) {
   // If the same package appears under several selectors, keep the
   // highest floor so we never weaken a pin.
   const existing = overrides[name];
-  overrides[name] = existing && compareFloors(existing, value) > 0 ? existing : value;
+  overrides[name] =
+    existing && compareFloors(existing, value) > 0 ? existing : value;
 }
 
 delete server.devDependencies;
@@ -148,13 +151,17 @@ server.overrides = overrides;
 writeFileSync(outPath, `${JSON.stringify(server, null, 2)}\n`);
 console.log(
   `[gen-runtime-package] wrote ${outPath}: ` +
-    `${Object.keys(pinned).length} dependencies pinned to lockfile-resolved versions, ` +
-    `${Object.keys(overrides).length} npm overrides`,
+    `${
+      Object.keys(pinned).length
+    } dependencies pinned to lockfile-resolved versions, ` +
+    `${Object.keys(overrides).length} npm overrides`
 );
 if (unresolved.length > 0) {
   console.warn(
     `[gen-runtime-package] WARNING: could not resolve installed versions for ` +
-      `${unresolved.join(", ")} — these fall back to their declared range and may ` +
-      `differ in the image from what was tested.`,
+      `${unresolved.join(
+        ", "
+      )} — these fall back to their declared range and may ` +
+      `differ in the image from what was tested.`
   );
 }

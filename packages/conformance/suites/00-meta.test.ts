@@ -12,7 +12,9 @@ describe("meta endpoints", () => {
 
   it("GET /openapi.json serves a valid OpenAPI doc", async () => {
     const r = await api<{ openapi: string; paths: Record<string, unknown> }>(
-      "/openapi.json", { token: "" });
+      "/openapi.json",
+      { token: "" }
+    );
     expect(r.status).toBe(200);
     expect(r.body.openapi).toMatch(/^3\./);
     expect(Object.keys(r.body.paths).length).toBeGreaterThan(20);
@@ -20,11 +22,16 @@ describe("meta endpoints", () => {
 
   it("every live endpoint is claimed by a suite (coverage gate)", async () => {
     const r = await api<{ paths: Record<string, Record<string, unknown>> }>(
-      "/openapi.json", { token: "" });
+      "/openapi.json",
+      { token: "" }
+    );
     const live = Object.entries(r.body.paths).flatMap(([p, methods]) =>
-      Object.keys(methods).map((m) => `${m.toUpperCase()} ${p}`));
+      Object.keys(methods).map((m) => `${m.toUpperCase()} ${p}`)
+    );
     const claimed = new Set([...Object.keys(COVERAGE), ...Object.keys(EXEMPT)]);
     const unclaimed = live.filter((e) => !claimed.has(e));
-    expect(unclaimed, `unclaimed endpoints:\n${unclaimed.join("\n")}`).toEqual([]);
+    expect(unclaimed, `unclaimed endpoints:\n${unclaimed.join("\n")}`).toEqual(
+      []
+    );
   });
 });

@@ -17,12 +17,18 @@ interface Props {
 /** Page-header strip used at the top of every authenticated screen.
  *  Lives flush against the main pane (no wrapping `Card`) so it can
  *  ride above the grid of cards beneath. */
-export function PageHeader({ kicker, title, subtitle, actions, className }: Props) {
+export function PageHeader({
+  kicker,
+  title,
+  subtitle,
+  actions,
+  className,
+}: Props) {
   return (
     <div
       className={cn(
         "px-7 pt-5 pb-4 border-b border-rule flex items-start gap-4",
-        className,
+        className
       )}
     >
       <div className="flex-1 min-w-0">
@@ -30,9 +36,13 @@ export function PageHeader({ kicker, title, subtitle, actions, className }: Prop
         <h1 className="mt-1 text-[22px] font-semibold text-ink tracking-[-0.02em] leading-tight">
           {title}
         </h1>
-        {subtitle ? <div className="mt-1 text-[13px] text-dim">{subtitle}</div> : null}
+        {subtitle ? (
+          <div className="mt-1 text-[13px] text-dim">{subtitle}</div>
+        ) : null}
       </div>
-      {actions ? <div className="flex items-center gap-2 flex-none">{actions}</div> : null}
+      {actions ? (
+        <div className="flex items-center gap-2 flex-none">{actions}</div>
+      ) : null}
     </div>
   );
 }

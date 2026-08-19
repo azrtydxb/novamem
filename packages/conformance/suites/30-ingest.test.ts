@@ -127,7 +127,9 @@ describe("operator-gated maintenance", () => {
       expect(denied.status).toBe(401);
       ErrorBody.parse(denied.body);
 
-      const allowed = await adminCookieApi<unknown>("/v1/observe", { body: {} });
+      const allowed = await adminCookieApi<unknown>("/v1/observe", {
+        body: {},
+      });
       expect([200, 503]).toContain(allowed.status);
       if (allowed.status === 200) {
         ObserveResponse.parse(allowed.body);
@@ -135,7 +137,7 @@ describe("operator-gated maintenance", () => {
         ErrorBody.parse(allowed.body);
       }
     },
-    60_000,
+    60_000
   );
 
   it.skipIf(!hasAdminCookie)(
@@ -155,7 +157,7 @@ describe("operator-gated maintenance", () => {
     // statement and normally answers in well under a second (verified
     // ad hoc via curl). Generous headroom here rather than a tight bound,
     // matching the /v1/stats precedent in 10-data-plane.test.ts.
-    120_000,
+    120_000
   );
 
   // Observed on the shared bench oracle: a single real run took
@@ -175,11 +177,13 @@ describe("operator-gated maintenance", () => {
       expect(denied.status).toBe(401);
       ErrorBody.parse(denied.body);
 
-      const allowed = await adminCookieApi<unknown>("/v1/dream-cycle", { method: "POST" });
+      const allowed = await adminCookieApi<unknown>("/v1/dream-cycle", {
+        method: "POST",
+      });
       expect(allowed.status).toBe(200);
       DreamCycleResponse.parse(allowed.body);
     },
-    600_000,
+    600_000
   );
 
   it.skipIf(!hasAdminCookie)(
@@ -190,25 +194,24 @@ describe("operator-gated maintenance", () => {
       expect(denied.status).toBe(401);
       ErrorBody.parse(denied.body);
 
-      const allowed = await adminCookieApi<unknown>("/v1/reap-orphans", { method: "POST" });
+      const allowed = await adminCookieApi<unknown>("/v1/reap-orphans", {
+        method: "POST",
+      });
       expect(allowed.status).toBe(200);
       ReapOrphansResponse.parse(allowed.body);
     },
-    60_000,
+    60_000
   );
 
   if (!hasAdminCookie) {
     // Loud skip: no silent green when no admin identity is configured
     // for this oracle run.
-    it.skip(
-      "operator-gated maintenance requires NOVAMEM_ADMIN_COOKIE or NOVAMEM_ADMIN_EMAIL+PASSWORD — skipped",
-      () => {},
-    );
+    it.skip("operator-gated maintenance requires NOVAMEM_ADMIN_COOKIE or NOVAMEM_ADMIN_EMAIL+PASSWORD — skipped", () => {});
   }
 });
 
 afterAll(async () => {
   await Promise.all(
-    createdIds.map((id) => api("/v1/forget", { body: { id } }).catch(() => {})),
+    createdIds.map((id) => api("/v1/forget", { body: { id } }).catch(() => {}))
   );
 });

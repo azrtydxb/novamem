@@ -116,7 +116,7 @@ Enforced in three places:
 
 ### Active project
 
-`user_active_project` (one row per user) holds an optional pointer at the user's current sub-brain. When set, memory_* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly. Cleared by deleting the row (`DELETE /v1/me/active-project`, `project_deactivate` over MCP).
+`user_active_project` (one row per user) holds an optional pointer at the user's current sub-brain. When set, memory\_\* calls without an explicit `project` arg default to it: search/recent/neighbors union user-global with the active project; remember/forget/update target the active project directly. Cleared by deleting the row (`DELETE /v1/me/active-project`, `project_deactivate` over MCP).
 
 ## AuthN / AuthZ
 
@@ -143,33 +143,33 @@ Every memory entry carries:
 
 ### Postgres (warm)
 
-| Table | Owner | Rows |
-|---|---|---|
-| `"user"` | Better Auth | dashboard users (email + password hash in `account`) |
-| `"session"` | Better Auth | active sessions (revocable; 7-day rolling TTL) |
-| `"account"` | Better Auth | per-provider credential rows (email/password by default) |
-| `"verification"` | Better Auth | email verification tokens, when enabled |
-| `"jwks"` | Better Auth | rotating JWT signing keys |
-| `user_tokens` | novamem | sha256 hashes of per-device `nm_…` bearers |
-| `user_active_project` | novamem | per-user "current sub-brain" pointer |
-| `projects` | novamem | sub-brain identity + owner_user_id |
-| `project_members` | novamem | (project, user, role) |
-| `memory_entries` | novamem | content + user_id + optional project_id + provenance |
-| `memory_access` | novamem | hits + lastAccessed (per entry) |
-| `memory_fts` | novamem | tsvector shadow table |
-| `memory_relations` | novamem | co-occurrence edges (bitemporal `valid_from`/`valid_to`); authoritative source for `/v1/neighbors` |
-| `cold_orphans` | novamem | failed cold-deletes; reaper retries |
-| `decay_runs` | novamem | per-loop summary |
-| `admin_audit_log` | novamem | every admin action |
-| `metrics_samples` | novamem | 1-minute persistent throughput buckets (24h history) |
+| Table                 | Owner       | Rows                                                                                               |
+| --------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| `"user"`              | Better Auth | dashboard users (email + password hash in `account`)                                               |
+| `"session"`           | Better Auth | active sessions (revocable; 7-day rolling TTL)                                                     |
+| `"account"`           | Better Auth | per-provider credential rows (email/password by default)                                           |
+| `"verification"`      | Better Auth | email verification tokens, when enabled                                                            |
+| `"jwks"`              | Better Auth | rotating JWT signing keys                                                                          |
+| `user_tokens`         | novamem     | sha256 hashes of per-device `nm_…` bearers                                                         |
+| `user_active_project` | novamem     | per-user "current sub-brain" pointer                                                               |
+| `projects`            | novamem     | sub-brain identity + owner_user_id                                                                 |
+| `project_members`     | novamem     | (project, user, role)                                                                              |
+| `memory_entries`      | novamem     | content + user_id + optional project_id + provenance                                               |
+| `memory_access`       | novamem     | hits + lastAccessed (per entry)                                                                    |
+| `memory_fts`          | novamem     | tsvector shadow table                                                                              |
+| `memory_relations`    | novamem     | co-occurrence edges (bitemporal `valid_from`/`valid_to`); authoritative source for `/v1/neighbors` |
+| `cold_orphans`        | novamem     | failed cold-deletes; reaper retries                                                                |
+| `decay_runs`          | novamem     | per-loop summary                                                                                   |
+| `admin_audit_log`     | novamem     | every admin action                                                                                 |
+| `metrics_samples`     | novamem     | 1-minute persistent throughput buckets (24h history)                                               |
 
 The synthetic id `"public"` exists as the implicit owner for `auth.mode=none|bearer` deployments. Better Auth's tables coexist with novamem's; project / user_token tables don't FK to `"user"` directly because Better Auth manages user deletion on its own table — orphaned rows fail-safe at resolve time.
 
 ### Drizzle vs raw SQL boundary
 
 The warm store internals are fully on drizzle (query-builder for the
-mechanical CRUD, `db.execute(sql\`…\`)` for Postgres-specific bits like
-FTS, `EXTRACT(EPOCH …)`, and the GENERATED `tsv` column). Drizzle owns
+mechanical CRUD, `db.execute(sql\`…\`)`for Postgres-specific bits like
+FTS,`EXTRACT(EPOCH …)`, and the GENERATED `tsv` column). Drizzle owns
 the schema; that's where the migrations live; that's the table-shape
 source of truth.
 
@@ -228,6 +228,7 @@ Light: `--bg: #fafbfc` · `--panel: #ffffff` · `--subtle: #f3f5f8` · `--ink: #
 Dark: `--bg: #0a0d12` · `--panel: #11151c` · `--subtle: #161b24` · `--ink: #e6ebf2` · `--dim: #8a93a3` · `--faint: #5a6373` · `--rule: #1f2530` · `--rule-soft: #171c25`
 
 **Brand tones** (oklch):
+
 - `--accent` (primary action) — light `oklch(58% 0.15 250)` / dark `oklch(70% 0.16 250)`
 - `--warm` (warm-tier signal) — light `oklch(62% 0.16 35)` / dark `oklch(72% 0.17 35)`
 - `--cold` (cold-tier signal) — light `oklch(58% 0.13 220)` / dark `oklch(72% 0.14 220)`
@@ -244,6 +245,7 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 **Radii:** 4 (chips) · 6 (buttons, inputs) · 8 (cards) · 12 (auth modal) · 99 (pills).
 
 **Key patterns:**
+
 - KPI card: label + delta pill + big value + sparkline
 - DataTable: header strip on `subtle` bg + grid rows with soft rules
 - Status pill: `font-weight 600 10px/1 mono`, `uppercase`, `padding 2px 8px`, `border-radius 99px`

@@ -21,22 +21,31 @@ import { env } from "../src/env.js";
  * cap and the timeout being identical. The transport comes back with
  * the client so each test can DELETE its session on the way out.
  */
-async function connect(): Promise<{ client: Client; transport: StreamableHTTPClientTransport }> {
+async function connect(): Promise<{
+  client: Client;
+  transport: StreamableHTTPClientTransport;
+}> {
   const client = new Client({ name: "novamem-conformance", version: "0.0.1" });
-  const transport = new StreamableHTTPClientTransport(new URL(`${env.url}/mcp`), {
-    requestInit: { headers: { authorization: `Bearer ${env.testToken}` } },
-  });
+  const transport = new StreamableHTTPClientTransport(
+    new URL(`${env.url}/mcp`),
+    {
+      requestInit: { headers: { authorization: `Bearer ${env.testToken}` } },
+    }
+  );
   await client.connect(transport);
   return { client, transport };
 }
 
-async function disconnect(client: Client, transport: StreamableHTTPClientTransport) {
+async function disconnect(
+  client: Client,
+  transport: StreamableHTTPClientTransport
+) {
   await transport.terminateSession();
   await client.close();
 }
 
 const toolJson = (r: unknown) =>
-  JSON.parse(((r as { content: Array<{ text: string }> }).content)[0]!.text);
+  JSON.parse((r as { content: Array<{ text: string }> }).content[0]!.text);
 
 const SNAPSHOT = new URL("../reference/tools.snapshot.json", import.meta.url);
 
@@ -49,7 +58,7 @@ describe("MCP streamable transport", () => {
       expect(names.length).toBeGreaterThanOrEqual(21);
       if (!existsSync(SNAPSHOT)) {
         throw new Error(
-          "reference/tools.snapshot.json missing — regenerate with scripts/snapshot-tools.mjs against the oracle",
+          "reference/tools.snapshot.json missing — regenerate with scripts/snapshot-tools.mjs against the oracle"
         );
       }
       const snapshot = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as {
@@ -60,7 +69,9 @@ describe("MCP streamable transport", () => {
       // Schema drift matters as much as name drift: hosts build arg UIs
       // and validation from inputSchema.
       for (const t of tools) {
-        expect(snapshot.schemas[t.name], `schema for ${t.name}`).toEqual(t.inputSchema);
+        expect(snapshot.schemas[t.name], `schema for ${t.name}`).toEqual(
+          t.inputSchema
+        );
       }
     } finally {
       await disconnect(client, transport);
@@ -76,18 +87,21 @@ describe("MCP streamable transport", () => {
         await client.callTool({
           name: "memory_remember",
           arguments: { content: fact, namespace: shelf },
-        }),
+        })
       );
       expect(stored.id).toBeTruthy();
       const found = toolJson(
         await client.callTool({
           name: "memory_search",
           arguments: { query: "mcp conformance marker", namespace: shelf },
-        }),
+        })
       );
       expect(JSON.stringify(found)).toContain(shelf);
       const gone = toolJson(
-        await client.callTool({ name: "memory_forget", arguments: { id: stored.id } }),
+        await client.callTool({
+          name: "memory_forget",
+          arguments: { id: stored.id },
+        })
       );
       expect(gone.deleted).toBe(true);
     } finally {
@@ -98,7 +112,10 @@ describe("MCP streamable transport", () => {
   it("unknown tool name is a tool-level error, not a transport crash", async () => {
     const { client, transport } = await connect();
     try {
-      const r = await client.callTool({ name: "memory_nonexistent", arguments: {} });
+      const r = await client.callTool({
+        name: "memory_nonexistent",
+        arguments: {},
+      });
       expect(r.isError).toBe(true);
     } catch (err) {
       // Some SDK versions surface it as a JSON-RPC error instead —

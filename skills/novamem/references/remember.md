@@ -18,6 +18,7 @@ Superseded/deprecated entries are hidden from normal `memory_context`/`memory_se
 ## memory_remember — raw store a new entry
 
 Inputs:
+
 - `content` (required, string) — the memory text. Self-contained: assume the reader has no conversation context.
 - `namespace` (string, default `"default"`) — logical shelf
 - `source` (string) — origin tag (free text, e.g. agent name)
@@ -61,6 +62,7 @@ Entries are sha256-hashed by trimmed content. If you call `remember` with conten
 When you already know the exact entry id for a changed fact, call `memory_update` instead of `forget` + `remember`. For ordinary agent captures where you do not know the old id, use `memory_capture`; it performs the retrieval/update/supersession step for you. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes.
 
 Inputs:
+
 - `id` (required, string) — entry ULID
 - `content` (string) — omit to skip re-embedding (metadata-only update)
 - `namespace` (string)
@@ -71,6 +73,7 @@ Inputs:
 - `project` (string) — scope check; must match the entry's project (or absence)
 
 Workflow when overriding an old fact:
+
 1. `memory_search` for the old phrasing to find the entry id
 2. `memory_update({ id, content: <new phrasing>, confidence: 1.0 })`
 3. Mention the change in one sentence
@@ -82,9 +85,11 @@ If you are merely saving the new durable outcome of a task, skip the manual sear
 Removes the warm row, FTS row, cold vector, and any graph edges. There is no undo.
 
 Inputs:
+
 - `id` (required, string)
 
 Use when:
+
 - The user explicitly asks to forget something
 - An entry is wrong and not just outdated (use `update` for outdated)
 - You wrote a memory that the user vetoed in the same turn
@@ -101,7 +106,6 @@ The server enforces the project-scope boundary: if the entry belongs to a projec
 - `403 not a member` — you tried to write to a project you can't reach
 - `404 no such entry` from `update` / `forget` — id doesn't exist (or already deleted)
 
-
 ## Typed memory metadata
 
 `memory_capture` and `memory_session_recap` annotate stored entries with:
@@ -114,7 +118,6 @@ These fields are metadata only; they do not create a new table or migration. `me
 ## Session recap ingestion
 
 Use `memory_session_recap` at the end of meaningful work to save concise durable facts without storing the transcript. Prefer the typed arrays: `decisions`, `setupFacts`, `rootCauses`, `preferences`, `projectConventions`, and `safetyConstraints`.
-
 
 ## Sensitivity / privacy levels
 

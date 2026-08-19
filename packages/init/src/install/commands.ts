@@ -56,12 +56,18 @@ export function parseCommandFile(raw: string): ParsedCommand {
     const m = line.match(/^([a-z][\w-]*):\s*(.*)$/i);
     if (m) fm[m[1]!] = m[2]!.trim();
   }
-  const body = lines.slice(close + 1).join("\n").replace(/^\n/, "");
+  const body = lines
+    .slice(close + 1)
+    .join("\n")
+    .replace(/^\n/, "");
   return { frontmatter: fm, body };
 }
 
 /** Render the parsed command in the target host's expected file format. */
-export function renderCommand(cmd: ParsedCommand, format: CommandAdapter["format"]): string {
+export function renderCommand(
+  cmd: ParsedCommand,
+  format: CommandAdapter["format"]
+): string {
   switch (format) {
     case "claude-md":
     case "github-prompt-md": {
@@ -84,7 +90,8 @@ export function renderCommand(cmd: ParsedCommand, format: CommandAdapter["format
       //   argument-hint   → arguments[0].hint  (placeholder shape)
       //   body            → prompt
       const doc: Record<string, unknown> = { prompt: cmd.body.trim() };
-      if (cmd.frontmatter.description) doc.description = cmd.frontmatter.description;
+      if (cmd.frontmatter.description)
+        doc.description = cmd.frontmatter.description;
       return stringifyToml(doc);
     }
   }
@@ -116,7 +123,7 @@ export function destFilename(srcName: string, adapter: CommandAdapter): string {
 export async function installCommands(
   tool: ToolEntry,
   ctx: DetectionContext,
-  opts: { dryRun?: boolean; sourceDir?: string } = {},
+  opts: { dryRun?: boolean; sourceDir?: string } = {}
 ): Promise<CommandInstallResult> {
   if (!tool.commands) {
     return {
@@ -130,7 +137,9 @@ export async function installCommands(
   const adapter = tool.commands;
   const destDir = join(rootFor(tool, ctx), adapter.dir);
 
-  const sourceFiles = (await readdir(sourceDir)).filter((f) => f.endsWith(".md"));
+  const sourceFiles = (await readdir(sourceDir)).filter((f) =>
+    f.endsWith(".md")
+  );
   if (sourceFiles.length === 0) {
     return {
       toolId: tool.id,

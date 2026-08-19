@@ -44,7 +44,9 @@ const PW2 = "conf-ba-throwaway-Pw2";
  *  allow-list denial is `{"error":"not found"}`. Distinguishing them is
  *  the whole point of the allow-list tests. */
 const isAllowlistDenial = (body: unknown): boolean =>
-  typeof body === "object" && body !== null && (body as { error?: string }).error === "not found";
+  typeof body === "object" &&
+  body !== null &&
+  (body as { error?: string }).error === "not found";
 
 interface Throwaway {
   id: string;
@@ -58,13 +60,16 @@ let adminCk = "";
 let subject: Throwaway;
 
 /** Create a throwaway user through the endpoint under test. */
-async function createUser(label: string, role: "user" | "admin" = "user"): Promise<Throwaway> {
+async function createUser(
+  label: string,
+  role: "user" | "admin" = "user"
+): Promise<Throwaway> {
   const email = `conf-ba-${label}-${ns()}@bench.local`.toLowerCase();
-  const r = await cookieApi<{ user: { id: string; email: string; role?: string } }>(
-    adminCk,
-    "/api/auth/admin/create-user",
-    { body: { email, password: PW, name: label, role } },
-  );
+  const r = await cookieApi<{
+    user: { id: string; email: string; role?: string };
+  }>(adminCk, "/api/auth/admin/create-user", {
+    body: { email, password: PW, name: label, role },
+  });
   expect(r.status, `create-user ${label}: ${JSON.stringify(r.body)}`).toBe(200);
   const id = r.body.user.id;
   expect(id).toBeTruthy();
@@ -84,9 +89,14 @@ afterAll(async () => {
     try {
       // DELETE /v1/admin/users/{id} also reaps the user's entries and
       // tokens; admin/remove-user only drops the account row.
-      const r = await adminCookieApi(`/v1/admin/users/${id}`, { method: "DELETE" });
+      const r = await adminCookieApi(`/v1/admin/users/${id}`, {
+        method: "DELETE",
+      });
       if (r.status !== 200 && r.status !== 404) {
-        console.warn(`cleanup: delete throwaway user ${id} → ${r.status}`, r.body);
+        console.warn(
+          `cleanup: delete throwaway user ${id} → ${r.status}`,
+          r.body
+        );
       }
     } catch (e) {
       console.warn(`cleanup: delete throwaway user ${id} failed`, e);
@@ -98,19 +108,15 @@ const gated = describe.skipIf(env.authMode !== "user" || !hasAdminIdentity);
 
 if (env.authMode !== "user" || !hasAdminIdentity) {
   // Loud skip: no silent green when this run has no admin identity.
-  it.skip(
-    "/api/auth/* needs auth mode=user + NOVAMEM_ADMIN_COOKIE or EMAIL+PASSWORD — skipped",
-    () => {},
-  );
+  it.skip("/api/auth/* needs auth mode=user + NOVAMEM_ADMIN_COOKIE or EMAIL+PASSWORD — skipped", () => {});
 }
 
 // ─── Public / unauthenticated surface ──────────────────────────────────
 gated("/api/auth/* — public surface", () => {
   it("GET /api/auth/jwks publishes the session-JWT verification keys", async () => {
-    const r = await api<{ keys: Array<{ kid: string; alg: string; kty: string }> }>(
-      "/api/auth/jwks",
-      { token: "" },
-    );
+    const r = await api<{
+      keys: Array<{ kid: string; alg: string; kty: string }>;
+    }>("/api/auth/jwks", { token: "" });
     expect(r.status).toBe(200);
     expect(Array.isArray(r.body.keys)).toBe(true);
     expect(r.body.keys.length).toBeGreaterThan(0);
@@ -136,7 +142,11 @@ gated("/api/auth/* — session lifecycle", () => {
   it("POST /api/auth/sign-in/email mints a session cookie and returns the user", async () => {
     const raw = await signInRaw(subject.email, subject.password);
     expect(raw.status).toBe(200);
-    const r = raw as { status: number; body: { token: string; user: { id: string; email: string } }; headers: Headers };
+    const r = raw as {
+      status: number;
+      body: { token: string; user: { id: string; email: string } };
+      headers: Headers;
+    };
     expect(r.body.token).toBeTruthy();
     expect(r.body.user.id).toBe(subject.id);
     expect(r.body.user.email).toBe(subject.email);
@@ -145,10 +155,10 @@ gated("/api/auth/* — session lifecycle", () => {
   });
 
   it("GET /api/auth/get-session resolves that cookie to the same user", async () => {
-    const r = await cookieApi<{ session: { userId: string }; user: { id: string; role?: string } }>(
-      ck,
-      "/api/auth/get-session",
-    );
+    const r = await cookieApi<{
+      session: { userId: string };
+      user: { id: string; role?: string };
+    }>(ck, "/api/auth/get-session");
     expect(r.status).toBe(200);
     expect(r.body.session.userId).toBe(subject.id);
     expect(r.body.user.id).toBe(subject.id);
@@ -159,7 +169,9 @@ gated("/api/auth/* — session lifecycle", () => {
     // but Better Auth itself only serves GET unless `deferSessionRefresh`
     // is on. The 405 + code is what proves the passthrough reached BA
     // rather than our own allow-list 404.
-    const r = await cookieApi<{ code: string }>(ck, "/api/auth/get-session", { body: {} });
+    const r = await cookieApi<{ code: string }>(ck, "/api/auth/get-session", {
+      body: {},
+    });
     expect(r.status).toBe(405);
     expect(r.body.code).toBe("METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED");
   });
@@ -168,18 +180,21 @@ gated("/api/auth/* — session lifecycle", () => {
     const r = await cookieApi<{ token: string }>(ck, "/api/auth/token");
     expect(r.status).toBe(200);
     expect(r.body.token.split(".")).toHaveLength(3);
-    const header = JSON.parse(Buffer.from(r.body.token.split(".")[0]!, "base64url").toString());
+    const header = JSON.parse(
+      Buffer.from(r.body.token.split(".")[0]!, "base64url").toString()
+    );
     expect(header.kid).toBeTruthy();
-    const claims = JSON.parse(Buffer.from(r.body.token.split(".")[1]!, "base64url").toString());
+    const claims = JSON.parse(
+      Buffer.from(r.body.token.split(".")[1]!, "base64url").toString()
+    );
     expect(claims.email).toBe(subject.email);
   });
 
   it("GET /api/auth/list-sessions lists the caller's own sessions", async () => {
     const second = await signIn(subject.email, subject.password);
-    const r = await cookieApi<Array<{ id: string; token: string; userId: string }>>(
-      ck,
-      "/api/auth/list-sessions",
-    );
+    const r = await cookieApi<
+      Array<{ id: string; token: string; userId: string }>
+    >(ck, "/api/auth/list-sessions");
     expect(r.status).toBe(200);
     expect(Array.isArray(r.body)).toBe(true);
     expect(r.body.length).toBeGreaterThanOrEqual(2);
@@ -189,35 +204,64 @@ gated("/api/auth/* — session lifecycle", () => {
   });
 
   it("POST /api/auth/revoke-session kills exactly the named session", async () => {
-    const sessions = await cookieApi<Array<{ token: string }>>(ck, "/api/auth/list-sessions");
-    const mine = await cookieApi<{ session: { token: string } }>(ck, "/api/auth/get-session");
-    const victim = sessions.body.find((s) => s.token !== mine.body.session.token);
+    const sessions = await cookieApi<Array<{ token: string }>>(
+      ck,
+      "/api/auth/list-sessions"
+    );
+    const mine = await cookieApi<{ session: { token: string } }>(
+      ck,
+      "/api/auth/get-session"
+    );
+    const victim = sessions.body.find(
+      (s) => s.token !== mine.body.session.token
+    );
     expect(victim, "need a second session to revoke").toBeTruthy();
 
-    const r = await cookieApi<{ status: boolean }>(ck, "/api/auth/revoke-session", {
-      body: { token: victim!.token },
-    });
+    const r = await cookieApi<{ status: boolean }>(
+      ck,
+      "/api/auth/revoke-session",
+      {
+        body: { token: victim!.token },
+      }
+    );
     expect(r.status).toBe(200);
     expect(r.body.status).toBe(true);
 
     // The revoked cookie no longer resolves; ours still does.
-    const dead = await cookieApi<unknown>(secondCookie, "/api/auth/get-session");
+    const dead = await cookieApi<unknown>(
+      secondCookie,
+      "/api/auth/get-session"
+    );
     expect(dead.status).toBe(200);
     expect(dead.body).toBeNull();
-    const alive = await cookieApi<{ user: { id: string } }>(ck, "/api/auth/get-session");
+    const alive = await cookieApi<{ user: { id: string } }>(
+      ck,
+      "/api/auth/get-session"
+    );
     expect(alive.body.user.id).toBe(subject.id);
   });
 
   it("POST /api/auth/change-password rejects the wrong current password, accepts the right one", async () => {
-    const wrong = await cookieApi<{ code: string }>(ck, "/api/auth/change-password", {
-      body: { currentPassword: "definitely-not-the-password", newPassword: PW2 },
-    });
+    const wrong = await cookieApi<{ code: string }>(
+      ck,
+      "/api/auth/change-password",
+      {
+        body: {
+          currentPassword: "definitely-not-the-password",
+          newPassword: PW2,
+        },
+      }
+    );
     expect(wrong.status).toBe(400);
     expect(wrong.body.code).toBe("INVALID_PASSWORD");
 
-    const ok = await cookieApi<{ user: { id: string } }>(ck, "/api/auth/change-password", {
-      body: { currentPassword: subject.password, newPassword: PW2 },
-    });
+    const ok = await cookieApi<{ user: { id: string } }>(
+      ck,
+      "/api/auth/change-password",
+      {
+        body: { currentPassword: subject.password, newPassword: PW2 },
+      }
+    );
     expect(ok.status).toBe(200);
     expect(ok.body.user.id).toBe(subject.id);
     subject.password = PW2;
@@ -227,7 +271,9 @@ gated("/api/auth/* — session lifecycle", () => {
   });
 
   it("POST /api/auth/sign-out clears the session", async () => {
-    const r = await cookieApi<{ success: boolean }>(ck, "/api/auth/sign-out", { body: {} });
+    const r = await cookieApi<{ success: boolean }>(ck, "/api/auth/sign-out", {
+      body: {},
+    });
     expect(r.status).toBe(200);
     expect(r.body.success).toBe(true);
 
@@ -240,10 +286,9 @@ gated("/api/auth/* — session lifecycle", () => {
 // ─── Admin plugin surface ──────────────────────────────────────────────
 gated("/api/auth/admin/* — admin plugin", () => {
   it("GET /api/auth/admin/list-users returns the account list", async () => {
-    const r = await cookieApi<{ users: Array<{ id: string; email: string; role?: string }> }>(
-      adminCk,
-      "/api/auth/admin/list-users?limit=500",
-    );
+    const r = await cookieApi<{
+      users: Array<{ id: string; email: string; role?: string }>;
+    }>(adminCk, "/api/auth/admin/list-users?limit=500");
     expect(r.status).toBe(200);
     expect(Array.isArray(r.body.users)).toBe(true);
     expect(r.body.users.some((u) => u.id === subject.id)).toBe(true);
@@ -254,7 +299,7 @@ gated("/api/auth/admin/* — admin plugin", () => {
     const ck = await signIn(fresh.email, fresh.password);
     const session = await cookieApi<{ user: { id: string; role?: string } }>(
       ck,
-      "/api/auth/get-session",
+      "/api/auth/get-session"
     );
     expect(session.body.user.id).toBe(fresh.id);
     expect(session.body.user.role).toBe("user");
@@ -264,34 +309,47 @@ gated("/api/auth/admin/* — admin plugin", () => {
     const r = await cookieApi<{ id?: string; name?: string }>(
       adminCk,
       "/api/auth/admin/update-user",
-      { body: { userId: subject.id, data: { name: "conformance-renamed" } } },
+      { body: { userId: subject.id, data: { name: "conformance-renamed" } } }
     );
     expect(r.status).toBe(200);
-    const listed = await cookieApi<{ users: Array<{ id: string; name: string }> }>(
-      adminCk,
-      "/api/auth/admin/list-users?limit=500",
+    const listed = await cookieApi<{
+      users: Array<{ id: string; name: string }>;
+    }>(adminCk, "/api/auth/admin/list-users?limit=500");
+    expect(listed.body.users.find((u) => u.id === subject.id)?.name).toBe(
+      "conformance-renamed"
     );
-    expect(listed.body.users.find((u) => u.id === subject.id)?.name).toBe("conformance-renamed");
   });
 
   it("POST /api/auth/admin/set-role promotes and demotes", async () => {
-    const promote = await cookieApi<{ user: { role: string } }>(adminCk, "/api/auth/admin/set-role", {
-      body: { userId: subject.id, role: "admin" },
-    });
+    const promote = await cookieApi<{ user: { role: string } }>(
+      adminCk,
+      "/api/auth/admin/set-role",
+      {
+        body: { userId: subject.id, role: "admin" },
+      }
+    );
     expect(promote.status).toBe(200);
     expect(promote.body.user.role).toBe("admin");
 
-    const demote = await cookieApi<{ user: { role: string } }>(adminCk, "/api/auth/admin/set-role", {
-      body: { userId: subject.id, role: "user" },
-    });
+    const demote = await cookieApi<{ user: { role: string } }>(
+      adminCk,
+      "/api/auth/admin/set-role",
+      {
+        body: { userId: subject.id, role: "user" },
+      }
+    );
     expect(demote.status).toBe(200);
     expect(demote.body.user.role).toBe("user");
   });
 
   it("POST /api/auth/admin/set-user-password replaces a password without the old one", async () => {
-    const r = await cookieApi<unknown>(adminCk, "/api/auth/admin/set-user-password", {
-      body: { userId: subject.id, newPassword: PW },
-    });
+    const r = await cookieApi<unknown>(
+      adminCk,
+      "/api/auth/admin/set-user-password",
+      {
+        body: { userId: subject.id, newPassword: PW },
+      }
+    );
     expect(r.status).toBe(200);
     subject.password = PW;
     // Proof, not just a 200: the new password signs in.
@@ -300,9 +358,13 @@ gated("/api/auth/admin/* — admin plugin", () => {
   });
 
   it("POST /api/auth/admin/ban-user then unban-user gates and restores sign-in", async () => {
-    const ban = await cookieApi<{ user: { banned: boolean } }>(adminCk, "/api/auth/admin/ban-user", {
-      body: { userId: subject.id, banReason: "conformance probe" },
-    });
+    const ban = await cookieApi<{ user: { banned: boolean } }>(
+      adminCk,
+      "/api/auth/admin/ban-user",
+      {
+        body: { userId: subject.id, banReason: "conformance probe" },
+      }
+    );
     expect(ban.status).toBe(200);
     expect(ban.body.user.banned).toBe(true);
 
@@ -313,7 +375,7 @@ gated("/api/auth/admin/* — admin plugin", () => {
     const unban = await cookieApi<{ user: { banned: boolean | null } }>(
       adminCk,
       "/api/auth/admin/unban-user",
-      { body: { userId: subject.id } },
+      { body: { userId: subject.id } }
     );
     expect(unban.status).toBe(200);
     expect(unban.body.user.banned).toBeFalsy();
@@ -326,21 +388,24 @@ gated("/api/auth/admin/* — admin plugin", () => {
     const a = await signIn(subject.email, subject.password);
     await signIn(subject.email, subject.password);
 
-    const listed = await cookieApi<{ sessions: Array<{ token: string; userId: string }> }>(
-      adminCk,
-      "/api/auth/admin/list-user-sessions",
-      { body: { userId: subject.id } },
-    );
+    const listed = await cookieApi<{
+      sessions: Array<{ token: string; userId: string }>;
+    }>(adminCk, "/api/auth/admin/list-user-sessions", {
+      body: { userId: subject.id },
+    });
     expect(listed.status).toBe(200);
     expect(listed.body.sessions.length).toBeGreaterThanOrEqual(2);
     for (const s of listed.body.sessions) expect(s.userId).toBe(subject.id);
 
     // Revoke one by token — that cookie dies, the account keeps others.
-    const mine = await cookieApi<{ session: { token: string } }>(a, "/api/auth/get-session");
+    const mine = await cookieApi<{ session: { token: string } }>(
+      a,
+      "/api/auth/get-session"
+    );
     const one = await cookieApi<{ success?: boolean }>(
       adminCk,
       "/api/auth/admin/revoke-user-session",
-      { body: { sessionToken: mine.body.session.token } },
+      { body: { sessionToken: mine.body.session.token } }
     );
     expect(one.status).toBe(200);
     const dead = await cookieApi<unknown>(a, "/api/auth/get-session");
@@ -349,13 +414,13 @@ gated("/api/auth/admin/* — admin plugin", () => {
     const all = await cookieApi<{ success?: boolean }>(
       adminCk,
       "/api/auth/admin/revoke-user-sessions",
-      { body: { userId: subject.id } },
+      { body: { userId: subject.id } }
     );
     expect(all.status).toBe(200);
     const remaining = await cookieApi<{ sessions: unknown[] }>(
       adminCk,
       "/api/auth/admin/list-user-sessions",
-      { body: { userId: subject.id } },
+      { body: { userId: subject.id } }
     );
     expect(remaining.body.sessions).toHaveLength(0);
   });
@@ -364,7 +429,7 @@ gated("/api/auth/admin/* — admin plugin", () => {
     const imp = await cookieApi<{ user: { id: string } }>(
       adminCk,
       "/api/auth/admin/impersonate-user",
-      { body: { userId: subject.id } },
+      { body: { userId: subject.id } }
     );
     expect(imp.status).toBe(200);
     expect(imp.body.user.id).toBe(subject.id);
@@ -380,21 +445,29 @@ gated("/api/auth/admin/* — admin plugin", () => {
     expect(asTarget.body.user.id).toBe(subject.id);
     expect(asTarget.body.session.impersonatedBy).toBeTruthy();
 
-    const stop = await cookieApi<unknown>(impCk, "/api/auth/admin/stop-impersonating", { body: {} });
+    const stop = await cookieApi<unknown>(
+      impCk,
+      "/api/auth/admin/stop-impersonating",
+      { body: {} }
+    );
     expect(stop.status).toBe(200);
   });
 
   it("POST /api/auth/admin/remove-user deletes the account", async () => {
     const doomed = await createUser("removed");
-    const r = await cookieApi<{ success?: boolean }>(adminCk, "/api/auth/admin/remove-user", {
-      body: { userId: doomed.id },
-    });
+    const r = await cookieApi<{ success?: boolean }>(
+      adminCk,
+      "/api/auth/admin/remove-user",
+      {
+        body: { userId: doomed.id },
+      }
+    );
     expect(r.status).toBe(200);
     createdUserIds.splice(createdUserIds.indexOf(doomed.id), 1);
 
     const listed = await cookieApi<{ users: Array<{ id: string }> }>(
       adminCk,
-      "/api/auth/admin/list-users?limit=500",
+      "/api/auth/admin/list-users?limit=500"
     );
     expect(listed.body.users.some((u) => u.id === doomed.id)).toBe(false);
   });
@@ -418,7 +491,10 @@ gated("/api/auth/* — mounted-but-unconfigured email flows", () => {
 
   it("POST /api/auth/reset-password rejects a bogus token with INVALID_TOKEN", async () => {
     const r = await api<{ code: string }>("/api/auth/reset-password", {
-      body: { newPassword: "irrelevant-but-long-enough", token: "conformance-bogus-token" },
+      body: {
+        newPassword: "irrelevant-but-long-enough",
+        token: "conformance-bogus-token",
+      },
       token: "",
     });
     expect(r.status).toBe(400);
@@ -426,7 +502,9 @@ gated("/api/auth/* — mounted-but-unconfigured email flows", () => {
   });
 
   it("GET /api/auth/verify-email validates its query before anything else", async () => {
-    const r = await api<{ code: string }>("/api/auth/verify-email", { token: "" });
+    const r = await api<{ code: string }>("/api/auth/verify-email", {
+      token: "",
+    });
     expect(r.status).toBe(400);
     expect(r.body.code).toBe("VALIDATION_ERROR");
   });
@@ -464,18 +542,26 @@ gated("/api/auth/* — allow-list and authorization negatives", () => {
         token: "",
       });
       expect(r.status, `${method} /api/auth/not-on-the-allowlist`).toBe(404);
-      expect(isAllowlistDenial(r.body), `${method} body: ${JSON.stringify(r.body)}`).toBe(true);
+      expect(
+        isAllowlistDenial(r.body),
+        `${method} body: ${JSON.stringify(r.body)}`
+      ).toBe(true);
     }
   });
 
   it("a deep unknown path under the admin subtree is 404, not a wildcard passthrough", async () => {
-    const r = await api<unknown>("/api/auth/admin/some-new-endpoint", { body: {}, token: "" });
+    const r = await api<unknown>("/api/auth/admin/some-new-endpoint", {
+      body: {},
+      token: "",
+    });
     expect(r.status).toBe(404);
     expect(isAllowlistDenial(r.body)).toBe(true);
   });
 
   it("an unauthenticated caller is refused on the admin subtree", async () => {
-    const r = await api<unknown>("/api/auth/admin/list-users?limit=1", { token: "" });
+    const r = await api<unknown>("/api/auth/admin/list-users?limit=1", {
+      token: "",
+    });
     // Better Auth answers 401 with an EMPTY body here (no `code`) — which
     // also proves it isn't our allow-list's `{"error":"not found"}`.
     expect(r.status).toBe(401);
@@ -484,13 +570,24 @@ gated("/api/auth/* — allow-list and authorization negatives", () => {
 
   it("a signed-in NON-admin is refused on the admin subtree with the permission code", async () => {
     const ck = await signIn(subject.email, subject.password);
-    const list = await cookieApi<{ code?: string }>(ck, "/api/auth/admin/list-users?limit=1");
+    const list = await cookieApi<{ code?: string }>(
+      ck,
+      "/api/auth/admin/list-users?limit=1"
+    );
     expect(list.status).toBe(403);
     expect(list.body.code).toBe("YOU_ARE_NOT_ALLOWED_TO_LIST_USERS");
 
-    const create = await cookieApi<{ code?: string }>(ck, "/api/auth/admin/create-user", {
-      body: { email: `conf-nonadmin-${ns()}@bench.local`, password: PW, name: "nope" },
-    });
+    const create = await cookieApi<{ code?: string }>(
+      ck,
+      "/api/auth/admin/create-user",
+      {
+        body: {
+          email: `conf-nonadmin-${ns()}@bench.local`,
+          password: PW,
+          name: "nope",
+        },
+      }
+    );
     expect(create.status).toBe(403);
     expect(create.body.code).toBe("YOU_ARE_NOT_ALLOWED_TO_CREATE_USERS");
   });
@@ -499,13 +596,14 @@ gated("/api/auth/* — allow-list and authorization negatives", () => {
     // `guardLastAdmin` fires only when the TARGET is the sole surviving
     // admin. On a target with several admins the same call would really
     // delete one, so skip loudly rather than assert destructively.
-    const listed = await cookieApi<{ users: Array<{ id: string; role?: string }> }>(
-      adminCk,
-      "/api/auth/admin/list-users?limit=500",
-    );
+    const listed = await cookieApi<{
+      users: Array<{ id: string; role?: string }>;
+    }>(adminCk, "/api/auth/admin/list-users?limit=500");
     const admins = listed.body.users.filter((u) => u.role === "admin");
     if (admins.length !== 1) {
-      ctx.skip(`target has ${admins.length} admins — the guard can only be probed with exactly 1`);
+      ctx.skip(
+        `target has ${admins.length} admins — the guard can only be probed with exactly 1`
+      );
       return;
     }
     const soleAdmin = admins[0]!.id;
@@ -513,20 +611,24 @@ gated("/api/auth/* — allow-list and authorization negatives", () => {
     const remove = await cookieApi<{ error: string; code: string }>(
       adminCk,
       "/api/auth/admin/remove-user",
-      { body: { userId: soleAdmin } },
+      { body: { userId: soleAdmin } }
     );
     expect(remove.status).toBe(400);
     expect(remove.body.code).toBe("LAST_ADMIN_PROTECTED");
-    expect(remove.body.error).toBe("cannot delete the last admin — promote another user first");
+    expect(remove.body.error).toBe(
+      "cannot delete the last admin — promote another user first"
+    );
 
     const demote = await cookieApi<{ error: string; code: string }>(
       adminCk,
       "/api/auth/admin/set-role",
-      { body: { userId: soleAdmin, role: "user" } },
+      { body: { userId: soleAdmin, role: "user" } }
     );
     expect(demote.status).toBe(400);
     expect(demote.body.code).toBe("LAST_ADMIN_PROTECTED");
-    expect(demote.body.error).toBe("cannot demote the last admin — promote another user first");
+    expect(demote.body.error).toBe(
+      "cannot demote the last admin — promote another user first"
+    );
 
     // The guard runs BEFORE Better Auth's own authorization, so it must
     // still hold — and still delete nothing — for a caller with no
@@ -539,18 +641,18 @@ gated("/api/auth/* — allow-list and authorization negatives", () => {
     expect(unauth.body.code).toBe("LAST_ADMIN_PROTECTED");
 
     // Proof the guard was a no-op, not a delete-then-complain.
-    const after = await cookieApi<{ users: Array<{ id: string; role?: string }> }>(
-      adminCk,
-      "/api/auth/admin/list-users?limit=500",
+    const after = await cookieApi<{
+      users: Array<{ id: string; role?: string }>;
+    }>(adminCk, "/api/auth/admin/list-users?limit=500");
+    expect(after.body.users.find((u) => u.id === soleAdmin)?.role).toBe(
+      "admin"
     );
-    expect(after.body.users.find((u) => u.id === soleAdmin)?.role).toBe("admin");
   });
 
   it("setting the sole admin's role to admin is NOT blocked (no-op promotion)", async (ctx) => {
-    const listed = await cookieApi<{ users: Array<{ id: string; role?: string }> }>(
-      adminCk,
-      "/api/auth/admin/list-users?limit=500",
-    );
+    const listed = await cookieApi<{
+      users: Array<{ id: string; role?: string }>;
+    }>(adminCk, "/api/auth/admin/list-users?limit=500");
     const admins = listed.body.users.filter((u) => u.role === "admin");
     if (admins.length !== 1) {
       ctx.skip(`target has ${admins.length} admins`);
@@ -558,9 +660,13 @@ gated("/api/auth/* — allow-list and authorization negatives", () => {
     }
     // guardLastAdmin returns early when `role === "admin"` — the admin
     // count cannot drop, so the guard must not fire.
-    const r = await cookieApi<{ user?: { role: string } }>(adminCk, "/api/auth/admin/set-role", {
-      body: { userId: admins[0]!.id, role: "admin" },
-    });
+    const r = await cookieApi<{ user?: { role: string } }>(
+      adminCk,
+      "/api/auth/admin/set-role",
+      {
+        body: { userId: admins[0]!.id, role: "admin" },
+      }
+    );
     expect(r.status).toBe(200);
   });
 });
@@ -589,9 +695,12 @@ gated("/api/auth/sign-in/email — throttle", () => {
       }
       expect(r.status).toBe(200);
     }
-    expect(throttled, "8 back-to-back sign-ins were not throttled").toBeTruthy();
+    expect(
+      throttled,
+      "8 back-to-back sign-ins were not throttled"
+    ).toBeTruthy();
     expect((throttled!.body as { message: string }).message).toBe(
-      "Too many requests. Please try again later.",
+      "Too many requests. Please try again later."
     );
   }, 60_000);
 });

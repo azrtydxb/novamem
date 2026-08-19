@@ -10,8 +10,11 @@ docker compose up -d
 trap 'docker compose down' EXIT
 URL="${NOVAMEM_URL:-http://localhost:7778}"
 for i in $(seq 1 60); do
-  curl -fsS "$URL/ready" >/dev/null 2>&1 && break
-  sleep 2
-  [ "$i" = 60 ] && { echo "server never became ready" >&2; exit 1; }
+	curl -fsS "$URL/ready" >/dev/null 2>&1 && break
+	sleep 2
+	[ "$i" = 60 ] && {
+		echo "server never became ready" >&2
+		exit 1
+	}
 done
 NOVAMEM_URL="$URL" pnpm --filter @azrtydxb/novamem-conformance test

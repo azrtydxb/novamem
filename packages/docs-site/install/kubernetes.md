@@ -1,6 +1,5 @@
 # Kubernetes install
 
-
 For a single host see [Docker Compose](docker.md). For local dev see [Manual](manual.md).
 
 > **The committed manifests are templates.** `secrets.yaml` ships with `CHANGE_ME` placeholders and `ingress.yaml` references `novamem.example.com`. Do **not** `kubectl apply -k deploy/k8s/` as-is — follow [Configure](#configure) first.
@@ -69,17 +68,18 @@ kubectl create secret generic novamem-secrets -n novamem \
 
 The keys consumed by the Deployment (`envFrom: secretRef`) are:
 
-| Key | Notes |
-|-----|-------|
-| `NOVAMEM_COOKIE_SECRET` | Session signing. `openssl rand -hex 32`. Rotate to invalidate all sessions. |
-| `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` | First admin (only consulted when no admin user exists). |
-| `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` | First admin password. Auto-scrubbed from `process.env` after the seed runs. |
-| `POSTGRES_PASSWORD` | Mounted into the Postgres StatefulSet as well. |
-| `NOVAMEM_WARM_URL` | Full Postgres DSN — embeds the password, so it lives in the Secret, not the ConfigMap. |
+| Key                                | Notes                                                                                  |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `NOVAMEM_COOKIE_SECRET`            | Session signing. `openssl rand -hex 32`. Rotate to invalidate all sessions.            |
+| `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL`    | First admin (only consulted when no admin user exists).                                |
+| `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` | First admin password. Auto-scrubbed from `process.env` after the seed runs.            |
+| `POSTGRES_PASSWORD`                | Mounted into the Postgres StatefulSet as well.                                         |
+| `NOVAMEM_WARM_URL`                 | Full Postgres DSN — embeds the password, so it lives in the Secret, not the ConfigMap. |
 
 ### App config
 
 `deploy/k8s/novamem.yaml` (ConfigMap):
+
 - `NOVAMEM_BASE_URL` — set to your TLS-terminated origin (the Ingress hostname). Better Auth's trusted-origin check rejects mismatches.
 - `NOVAMEM_INSECURE_COOKIES` — leave at `"0"` in production. Only flip to `"1"` for a local HTTP-only smoke test.
 

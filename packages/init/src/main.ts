@@ -15,7 +15,12 @@
  */
 
 import { Command, Option } from "commander";
-import { input, password as passwordPrompt, checkbox, confirm } from "@inquirer/prompts";
+import {
+  input,
+  password as passwordPrompt,
+  checkbox,
+  confirm,
+} from "@inquirer/prompts";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 // Note: readFileSync is also imported below for PKG_VERSION; keeping a
@@ -58,20 +63,43 @@ export async function runCli(argv: string[]): Promise<number> {
   program
     .name("novamem-init")
     .description(
-      "Sign in to a novamem server, mint a bearer, and configure every supported AI agent host (Claude Code, Cursor, Codex, Claude Desktop, Kilo Code, OpenCode, RooCode, Continue, Cline, Gemini CLI, GitHub Copilot, Amazon Q, Factory, Windsurf, …)",
+      "Sign in to a novamem server, mint a bearer, and configure every supported AI agent host (Claude Code, Cursor, Codex, Claude Desktop, Kilo Code, OpenCode, RooCode, Continue, Cline, Gemini CLI, GitHub Copilot, Amazon Q, Factory, Windsurf, …)"
     )
     .version(PKG_VERSION)
-    .addOption(new Option("--base-url <url>", "novamem server URL").env("NOVAMEM_BASE_URL"))
+    .addOption(
+      new Option("--base-url <url>", "novamem server URL").env(
+        "NOVAMEM_BASE_URL"
+      )
+    )
     .addOption(new Option("--email <email>", "dashboard email (skip prompt)"))
-    .addOption(new Option("--password <password>", "dashboard password (skip prompt — prefer NOVAMEM_PASSWORD env)").env("NOVAMEM_PASSWORD"))
-    .addOption(new Option("--token <nm>", "use an existing nm_… bearer; skip sign-in").env("NOVAMEM_TOKEN"))
-    .option("--tools <ids>", "comma-separated tool ids (default: detected ones)")
-    .option("--all", "configure every tool in the registry, even undetected ones")
-    .option("--yes, -y", "non-interactive: assume defaults, no confirmation prompt")
+    .addOption(
+      new Option(
+        "--password <password>",
+        "dashboard password (skip prompt — prefer NOVAMEM_PASSWORD env)"
+      ).env("NOVAMEM_PASSWORD")
+    )
+    .addOption(
+      new Option(
+        "--token <nm>",
+        "use an existing nm_… bearer; skip sign-in"
+      ).env("NOVAMEM_TOKEN")
+    )
+    .option(
+      "--tools <ids>",
+      "comma-separated tool ids (default: detected ones)"
+    )
+    .option(
+      "--all",
+      "configure every tool in the registry, even undetected ones"
+    )
+    .option(
+      "--yes, -y",
+      "non-interactive: assume defaults, no confirmation prompt"
+    )
     .option("--dry-run", "preview file paths without writing")
     .option(
       "--skip-shim-check",
-      "skip the npm pre-flight that verifies @azrtydxb/novamem-mcp is fetchable + runnable before writing stdio configs",
+      "skip the npm pre-flight that verifies @azrtydxb/novamem-mcp is fetchable + runnable before writing stdio configs"
     );
   program.parse(argv);
   const opts = program.opts<CliOptions>();
@@ -81,10 +109,16 @@ export async function runCli(argv: string[]): Promise<number> {
     // Tokens are NEVER cached — always re-mint or accept --token.
     const state = loadState();
     const baseUrl = await resolveBaseUrl(opts, state.lastBaseUrl);
-    const { bearer, email } = await resolveBearer(opts, baseUrl, state.lastEmail);
+    const { bearer, email } = await resolveBearer(
+      opts,
+      baseUrl,
+      state.lastEmail
+    );
     const tools = await resolveTools(opts);
     if (tools.length === 0) {
-      console.error("✗ No tools selected. Pass --all or --tools=<id,…> or run interactively.");
+      console.error(
+        "✗ No tools selected. Pass --all or --tools=<id,…> or run interactively."
+      );
       return 1;
     }
     // Pre-flight: if any selected tool uses our stdio shim, verify the
@@ -92,20 +126,28 @@ export async function runCli(argv: string[]): Promise<number> {
     // config that points at it. Avoids the silent "Server disconnected"
     // class of bug where the spawn dies because npm can't resolve a
     // bad workspace:* (or any other) shim publish issue.
-    const needsShim = tools.some((t) => (t.mcp?.transport ?? "sse") === "stdio");
+    const needsShim = tools.some(
+      (t) => (t.mcp?.transport ?? "sse") === "stdio"
+    );
     if (needsShim && !opts.skipShimCheck && !opts.dryRun) {
-      console.log(`→ Pre-flight: verifying @azrtydxb/novamem-mcp@${PKG_VERSION} is installable + runnable…`);
+      console.log(
+        `→ Pre-flight: verifying @azrtydxb/novamem-mcp@${PKG_VERSION} is installable + runnable…`
+      );
       const v = await verifyShim(PKG_VERSION);
       if (!v.ok) {
         console.error(
-          `✗ Pre-flight failed: ${v.reason}\n  Refusing to write a stdio config that would silently fail.\n  Pass --skip-shim-check to override at your own risk.`,
+          `✗ Pre-flight failed: ${v.reason}\n  Refusing to write a stdio config that would silently fail.\n  Pass --skip-shim-check to override at your own risk.`
         );
         return 1;
       }
       console.log(`✓ Shim ready.`);
     }
     if (!opts.yes && !opts.dryRun) {
-      console.log(`\nAbout to configure ${tools.length} tool${tools.length === 1 ? "" : "s"}: ${tools.map((t) => t.name).join(", ")}.`);
+      console.log(
+        `\nAbout to configure ${tools.length} tool${
+          tools.length === 1 ? "" : "s"
+        }: ${tools.map((t) => t.name).join(", ")}.`
+      );
       const ok = await confirm({ message: "Proceed?", default: true });
       if (!ok) {
         console.log("Aborted.");
@@ -130,7 +172,10 @@ export async function runCli(argv: string[]): Promise<number> {
       console.error(`✗ ${e.message}`);
       return 1;
     }
-    if (e instanceof Error && (e as { name?: string }).name === "ExitPromptError") {
+    if (
+      e instanceof Error &&
+      (e as { name?: string }).name === "ExitPromptError"
+    ) {
       console.log("\nAborted.");
       return 130;
     }
@@ -139,7 +184,10 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 }
 
-async function resolveBaseUrl(opts: CliOptions, lastBaseUrl?: string): Promise<string> {
+async function resolveBaseUrl(
+  opts: CliOptions,
+  lastBaseUrl?: string
+): Promise<string> {
   let baseUrl = opts.baseUrl;
   if (!baseUrl) {
     // Prefer the last successful base URL over the local-dev default
@@ -147,7 +195,8 @@ async function resolveBaseUrl(opts: CliOptions, lastBaseUrl?: string): Promise<s
     baseUrl = await input({
       message: "novamem server URL",
       default: lastBaseUrl ?? "http://localhost:7778",
-      validate: (v) => /^https?:\/\//.test(v) || "must start with http:// or https://",
+      validate: (v) =>
+        /^https?:\/\//.test(v) || "must start with http:// or https://",
     });
   }
   await probeHealth(baseUrl);
@@ -158,20 +207,24 @@ async function resolveBaseUrl(opts: CliOptions, lastBaseUrl?: string): Promise<s
 async function resolveBearer(
   opts: CliOptions,
   baseUrl: string,
-  lastEmail?: string,
+  lastEmail?: string
 ): Promise<{ bearer: string; email?: string }> {
   if (opts.token) {
     return { bearer: opts.token };
   }
-  const email = opts.email ?? (await input({
-    message: "dashboard email",
-    default: lastEmail,
-    validate: (v) => v.includes("@") || "must be an email address",
-  }));
-  const pwd = opts.password ?? (await passwordPrompt({
-    message: "dashboard password",
-    mask: "•",
-  }));
+  const email =
+    opts.email ??
+    (await input({
+      message: "dashboard email",
+      default: lastEmail,
+      validate: (v) => v.includes("@") || "must be an email address",
+    }));
+  const pwd =
+    opts.password ??
+    (await passwordPrompt({
+      message: "dashboard password",
+      mask: "•",
+    }));
   console.log(`→ Signing in as ${email}…`);
   const cookie = await signIn({ baseUrl, email, password: pwd });
   console.log("✓ Signed in. Minting a bearer token…");
@@ -183,12 +236,17 @@ async function resolveBearer(
 
 async function resolveTools(opts: CliOptions): Promise<readonly ToolEntry[]> {
   if (opts.tools) {
-    const ids = opts.tools.split(",").map((s) => s.trim()).filter(Boolean);
+    const ids = opts.tools
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     const out: ToolEntry[] = [];
     for (const id of ids) {
       const t = findTool(id);
       if (!t) {
-        throw new Error(`unknown tool id: ${id}. Run with --help to list valid ids.`);
+        throw new Error(
+          `unknown tool id: ${id}. Run with --help to list valid ids.`
+        );
       }
       out.push(t);
     }
@@ -203,14 +261,16 @@ async function resolveTools(opts: CliOptions): Promise<readonly ToolEntry[]> {
     return detected;
   }
   // Interactive multi-select with detected tools pre-checked.
-  const choices = await Promise.all(TOOLS.map(async (tool) => {
-    const installed = await isInstalled(tool, ctx);
-    return {
-      name: `${tool.name}${installed ? " (detected)" : ""}`,
-      value: tool.id,
-      checked: installed,
-    };
-  }));
+  const choices = await Promise.all(
+    TOOLS.map(async (tool) => {
+      const installed = await isInstalled(tool, ctx);
+      return {
+        name: `${tool.name}${installed ? " (detected)" : ""}`,
+        value: tool.id,
+        checked: installed,
+      };
+    })
+  );
   const selected = await checkbox({
     message: "Configure which AI tools?",
     choices,
@@ -220,7 +280,11 @@ async function resolveTools(opts: CliOptions): Promise<readonly ToolEntry[]> {
 }
 
 function printSummary(results: ToolResult[], dryRun: boolean): void {
-  console.log(`\n${dryRun ? "Would configure" : "Configured"} ${results.length} tool${results.length === 1 ? "" : "s"}:\n`);
+  console.log(
+    `\n${dryRun ? "Would configure" : "Configured"} ${results.length} tool${
+      results.length === 1 ? "" : "s"
+    }:\n`
+  );
   for (const r of results) {
     const lines: string[] = [];
     if (r.skill.written || dryRun) {
@@ -232,7 +296,11 @@ function printSummary(results: ToolResult[], dryRun: boolean): void {
       lines.push(`  mcp     · already in sync`);
     }
     if (r.commands.filesWritten.length > 0) {
-      lines.push(`  cmd     → ${r.commands.filesWritten.length} file${r.commands.filesWritten.length === 1 ? "" : "s"} in ${r.tool.commands?.dir}`);
+      lines.push(
+        `  cmd     → ${r.commands.filesWritten.length} file${
+          r.commands.filesWritten.length === 1 ? "" : "s"
+        } in ${r.tool.commands?.dir}`
+      );
     }
     if (lines.length === 0) lines.push("  (no-op)");
     console.log(`${r.tool.name}`);
@@ -256,7 +324,9 @@ function printSummary(results: ToolResult[], dryRun: boolean): void {
 const here = fileURLToPath(import.meta.url);
 let invokedAsCli = false;
 try {
-  invokedAsCli = process.argv[1] ? realpathSync(process.argv[1]) === here : false;
+  invokedAsCli = process.argv[1]
+    ? realpathSync(process.argv[1]) === here
+    : false;
 } catch {
   // If realpath fails (e.g. argv[1] doesn't exist), don't auto-run.
 }

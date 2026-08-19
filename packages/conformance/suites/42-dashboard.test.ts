@@ -52,7 +52,9 @@ beforeAll(async () => {
 describe("admin dashboard", () => {
   // Mode-independent: holds whether or not the SPA is mounted.
   it("a non-allowlisted path under /admin is 401, not 404", async () => {
-    const r = await api<{ error: string }>("/admin/not-an-allowlisted-path", { token: "" });
+    const r = await api<{ error: string }>("/admin/not-an-allowlisted-path", {
+      token: "",
+    });
     expect(r.status).toBe(401);
     expect(ErrorBody.parse(r.body).error).toBe("unauthorized");
   });
@@ -84,8 +86,13 @@ describe("admin dashboard", () => {
       expect(missing.status).toBe(404);
       return;
     }
-    const asset = /\/admin\/assets\/[A-Za-z0-9._-]+/.exec(String(shell.body))?.[0];
-    expect(asset, "index.html should reference at least one /admin/assets/ bundle").toBeTruthy();
+    const asset = /\/admin\/assets\/[A-Za-z0-9._-]+/.exec(
+      String(shell.body)
+    )?.[0];
+    expect(
+      asset,
+      "index.html should reference at least one /admin/assets/ bundle"
+    ).toBeTruthy();
     const r = await api<unknown>(asset!, { token: "" });
     expect(r.status).toBe(200);
     expect(r.headers.get("content-security-policy")).toBe(CSP);
@@ -95,7 +102,9 @@ describe("admin dashboard", () => {
   });
 
   it("a missing file under /admin/assets/ is 404 (allowlisted prefix, absent file)", async () => {
-    const r = await api("/admin/assets/definitely-not-a-real-bundle-xyz.js", { token: "" });
+    const r = await api("/admin/assets/definitely-not-a-real-bundle-xyz.js", {
+      token: "",
+    });
     expect(r.status).toBe(404);
   });
 });

@@ -50,11 +50,11 @@ measured zero contribution in the winning search calibration.
 
 Each layer alone has a failure mode:
 
-| Layer | Strength | Weakness |
-|---|---|---|
-| Warm only | Exact ids, function names, hashes | Misses paraphrases ("I want to eat" vs "I'm hungry") |
-| Cold only | Semantic similarity | Misses literals; a single typo'd identifier can fail to match |
-| Relations only | Adjacent context | No initial seed; needs an entry to walk from |
+| Layer          | Strength                          | Weakness                                                      |
+| -------------- | --------------------------------- | ------------------------------------------------------------- |
+| Warm only      | Exact ids, function names, hashes | Misses paraphrases ("I want to eat" vs "I'm hungry")          |
+| Cold only      | Semantic similarity               | Misses literals; a single typo'd identifier can fail to match |
+| Relations only | Adjacent context                  | No initial seed; needs an entry to walk from                  |
 
 Hybrid search fuses the keyword, vector, graph, recency, and entity signals, normalises (min-max) to a 0..1 scale, then weighted-sums with production defaults `keyword: 0.15, vector: 0.65, graph: 0, recency: 0, entity: 0`. The winning calibration ran graph and entity at 0 (Phase 7 removal); recency contributes via the separate rank prior bounded to [0.7, 1.15], which is why it sits at 0 in the signal weights. Override per call when you have a specific reason — `{keyword:1, vector:0}` for exact-id lookups, `{vector:1}` for pure semantic. Adjacency is served separately by `/v1/neighbors` over `memory_relations`.
 

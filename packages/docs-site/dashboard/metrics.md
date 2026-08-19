@@ -39,12 +39,12 @@ Counts for the calling user (or tenant for admins): warm entries, cold-only entr
 
 ## Admin vs user view
 
-| | User | Admin |
-|---|---|---|
-| Scope | own bearers + own memory | tenant-aggregate |
-| KPIs | queries/remembers attributed to user's tokens | every call across the tenant |
-| Per-token table | user's tokens | every token in the tenant |
-| Store sizes | user's entry counts | tenant totals |
+|                 | User                                          | Admin                        |
+| --------------- | --------------------------------------------- | ---------------------------- |
+| Scope           | own bearers + own memory                      | tenant-aggregate             |
+| KPIs            | queries/remembers attributed to user's tokens | every call across the tenant |
+| Per-token table | user's tokens                                 | every token in the tenant    |
+| Store sizes     | user's entry counts                           | tenant totals                |
 
 ## How it's wired
 

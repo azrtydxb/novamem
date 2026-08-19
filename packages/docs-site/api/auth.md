@@ -25,15 +25,15 @@ For CLI/scripts that cannot carry cookies, the same session token works as `Auth
 
 Admin-only:
 
-| Route | Action |
-|---|---|
-| `GET /api/auth/admin/list-users` | List dashboard users |
-| `POST /api/auth/admin/create-user` | Create with email + password + role |
-| `POST /api/auth/admin/set-role` | Toggle admin/user |
-| `POST /api/auth/admin/set-user-password` | Reset password |
-| `POST /api/auth/admin/ban-user` | Block sign-in |
-| `POST /api/auth/admin/unban-user` | Restore sign-in |
-| `POST /api/auth/admin/remove-user` | Hard delete |
+| Route                                    | Action                              |
+| ---------------------------------------- | ----------------------------------- |
+| `GET /api/auth/admin/list-users`         | List dashboard users                |
+| `POST /api/auth/admin/create-user`       | Create with email + password + role |
+| `POST /api/auth/admin/set-role`          | Toggle admin/user                   |
+| `POST /api/auth/admin/set-user-password` | Reset password                      |
+| `POST /api/auth/admin/ban-user`          | Block sign-in                       |
+| `POST /api/auth/admin/unban-user`        | Restore sign-in                     |
+| `POST /api/auth/admin/remove-user`       | Hard delete                         |
 
 ## User API tokens for MCP / HTTP
 
@@ -78,10 +78,10 @@ The hash is the SHA-256 hex returned by `GET /v1/me/tokens`, not the plaintext b
 
 `NOVAMEM_AUTH_MODE` selects the active path:
 
-| Mode | Description |
-|---|---|
-| `none` | Dev only. Every request is public. No isolation. |
+| Mode     | Description                                                        |
+| -------- | ------------------------------------------------------------------ |
+| `none`   | Dev only. Every request is public. No isolation.                   |
 | `bearer` | Single shared bearer in `NOVAMEM_AUTH_TOKEN`. One-process deploys. |
-| `user` | Default. Dashboard + Better Auth + user API tokens. |
+| `user`   | Default. Dashboard + Better Auth + user API tokens.                |
 
 Most deploys want `user`.

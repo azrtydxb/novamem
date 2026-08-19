@@ -39,7 +39,9 @@ describe("CORS", () => {
     expect(r.headers.get("access-control-allow-methods")).toBeTruthy();
     expect(r.headers.get("access-control-allow-methods")).toContain("POST");
     // Requested headers are echoed verbatim.
-    expect(r.headers.get("access-control-allow-headers")).toBe("authorization,content-type");
+    expect(r.headers.get("access-control-allow-headers")).toBe(
+      "authorization,content-type"
+    );
     // Caching a per-origin decision without Vary would poison shared caches.
     expect(r.headers.get("vary") ?? "").toContain("Origin");
   });
@@ -79,7 +81,10 @@ describe("CORS", () => {
   it("a simple request from a rejected origin succeeds but grants no origin", async () => {
     // Server-side the call is just a request; CORS only governs what the
     // BROWSER is then allowed to read. No allow-origin ⇒ unreadable.
-    const r = await api("/health", { token: "", headers: { origin: REJECTED } });
+    const r = await api("/health", {
+      token: "",
+      headers: { origin: REJECTED },
+    });
     expect(r.status).toBe(200);
     expect(r.headers.get("access-control-allow-origin")).toBeNull();
   });
@@ -130,8 +135,14 @@ describe("rate limiting", () => {
     for (const path of ["/health", "/live", "/ready"]) {
       const r = await api(path, { token: "" });
       expect(r.status).toBe(200);
-      expect(r.headers.get("x-ratelimit-limit"), `${path} must not be counted`).toBeNull();
-      expect(r.headers.get("x-ratelimit-remaining"), `${path} must not be counted`).toBeNull();
+      expect(
+        r.headers.get("x-ratelimit-limit"),
+        `${path} must not be counted`
+      ).toBeNull();
+      expect(
+        r.headers.get("x-ratelimit-remaining"),
+        `${path} must not be counted`
+      ).toBeNull();
     }
   });
 });

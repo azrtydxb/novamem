@@ -77,21 +77,14 @@
         },
         "sensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         },
         "expiresAt": {
           "type": "string",
           "description": "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted."
         }
       },
-      "required": [
-        "content"
-      ]
+      "required": ["content"]
     },
     "memory_context": {
       "type": "object",
@@ -115,12 +108,7 @@
         },
         "maxSensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ],
+          "enum": ["public", "internal", "private", "sensitive"],
           "description": "Maximum sensitivity to return; defaults to private, excluding sensitive."
         },
         "project": {
@@ -148,9 +136,7 @@
           }
         }
       },
-      "required": [
-        "message"
-      ]
+      "required": ["message"]
     },
     "memory_evaluate": {
       "type": "object",
@@ -172,9 +158,7 @@
           "description": "Project id or name (scope check)."
         }
       },
-      "required": [
-        "id"
-      ]
+      "required": ["id"]
     },
     "memory_hygiene": {
       "type": "object",
@@ -209,9 +193,7 @@
           }
         }
       },
-      "required": [
-        "id"
-      ]
+      "required": ["id"]
     },
     "memory_recent": {
       "type": "object",
@@ -245,11 +227,7 @@
         },
         "contentMode": {
           "type": "string",
-          "enum": [
-            "full",
-            "snippet",
-            "ids"
-          ],
+          "enum": ["full", "snippet", "ids"],
           "description": "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\"."
         }
       }
@@ -291,9 +269,7 @@
           "description": "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted."
         }
       },
-      "required": [
-        "content"
-      ]
+      "required": ["content"]
     },
     "memory_search": {
       "type": "object",
@@ -347,17 +323,11 @@
         },
         "contentMode": {
           "type": "string",
-          "enum": [
-            "full",
-            "snippet",
-            "ids"
-          ],
+          "enum": ["full", "snippet", "ids"],
           "description": "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\"."
         }
       },
-      "required": [
-        "query"
-      ]
+      "required": ["query"]
     },
     "memory_session_recap": {
       "type": "object",
@@ -432,12 +402,7 @@
         },
         "sensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         }
       }
     },
@@ -460,20 +425,11 @@
         },
         "maxSensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         },
         "contentMode": {
           "type": "string",
-          "enum": [
-            "full",
-            "snippet",
-            "ids"
-          ],
+          "enum": ["full", "snippet", "ids"],
           "description": "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\"."
         },
         "k": {
@@ -509,12 +465,7 @@
         },
         "sensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         },
         "sourceType": {
           "type": "string"
@@ -531,9 +482,7 @@
           "description": "Project id or name (scope check)."
         }
       },
-      "required": [
-        "id"
-      ]
+      "required": ["id"]
     },
     "project_activate": {
       "type": "object",
@@ -543,9 +492,7 @@
           "description": "Project id or human name."
         }
       },
-      "required": [
-        "project"
-      ]
+      "required": ["project"]
     },
     "project_create": {
       "type": "object",
@@ -555,9 +502,7 @@
           "description": "Project name (1-128 chars)."
         }
       },
-      "required": [
-        "name"
-      ]
+      "required": ["name"]
     },
     "project_deactivate": {
       "type": "object",
@@ -572,9 +517,7 @@
           "description": "Project id or human name."
         }
       },
-      "required": [
-        "project"
-      ]
+      "required": ["project"]
     },
     "project_list": {
       "type": "object",
@@ -593,10 +536,7 @@
           "description": "Exact email address of the user to add."
         }
       },
-      "required": [
-        "project",
-        "username"
-      ]
+      "required": ["project", "username"]
     },
     "project_unshare": {
       "type": "object",
@@ -610,10 +550,7 @@
           "description": "Exact email address of the user to remove."
         }
       },
-      "required": [
-        "project",
-        "username"
-      ]
+      "required": ["project", "username"]
     }
   }
 }

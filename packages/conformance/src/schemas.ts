@@ -63,7 +63,10 @@ export const ForgetResponse = z
 /** GET /v1/stats response (200). */
 export const StatsResponse = z
   .object({
-    byNamespace: z.record(z.string(), z.object({ warm: z.number(), cold: z.number() }).passthrough()),
+    byNamespace: z.record(
+      z.string(),
+      z.object({ warm: z.number(), cold: z.number() }).passthrough()
+    ),
     totalWarm: z.number(),
     totalCold: z.number(),
     lastDecayAt: z.string().nullable(),
@@ -119,8 +122,12 @@ export const EvaluateResponse = z
   .object({
     suite: z.string(),
     passed: z.boolean(),
-    summary: z.object({ total: z.number(), passed: z.number(), failed: z.number() }).passthrough(),
-    cases: z.array(z.object({ name: z.string(), passed: z.boolean() }).passthrough()),
+    summary: z
+      .object({ total: z.number(), passed: z.number(), failed: z.number() })
+      .passthrough(),
+    cases: z.array(
+      z.object({ name: z.string(), passed: z.boolean() }).passthrough()
+    ),
   })
   .passthrough();
 
@@ -157,7 +164,11 @@ export const ReapOrphansResponse = z
  *  logChars}` when the observer is enabled server-side; the route answers
  *  503 `{error}` instead when it's disabled. */
 export const ObserveResponse = z
-  .object({ observed: z.number(), reflected: z.boolean(), logChars: z.number() })
+  .object({
+    observed: z.number(),
+    reflected: z.boolean(),
+    logChars: z.number(),
+  })
   .passthrough();
 
 /** POST /v1/me/projects response (201): `{id, name, ownerUserId, createdAt}`. */
@@ -172,7 +183,11 @@ export const ProjectResponse = z
 
 /** GET /v1/me/active-project response (200): `{active: {id, name?} | null}`. */
 export const ActiveProjectResponse = z
-  .object({ active: z.object({ id: z.string(), name: z.string().optional() }).nullable() })
+  .object({
+    active: z
+      .object({ id: z.string(), name: z.string().optional() })
+      .nullable(),
+  })
   .passthrough();
 
 /** GET /v1/me/today response (200). */
@@ -186,7 +201,7 @@ export const TodayResponse = z
           text: z.string(),
           project: z.string().nullable(),
         })
-        .passthrough(),
+        .passthrough()
     ),
   })
   .passthrough();
@@ -207,7 +222,13 @@ export const MetricsHistoryResponse = z
   .object({
     hours: z.number(),
     samples: z.array(
-      z.object({ sampledAt: z.string(), queries: z.number(), remembers: z.number() }).passthrough(),
+      z
+        .object({
+          sampledAt: z.string(),
+          queries: z.number(),
+          remembers: z.number(),
+        })
+        .passthrough()
     ),
   })
   .passthrough();
@@ -235,8 +256,13 @@ export const MembersResponse = z
   .object({
     members: z.array(
       z
-        .object({ userId: z.string(), username: z.string(), role: z.string(), joinedAt: z.string() })
-        .passthrough(),
+        .object({
+          userId: z.string(),
+          username: z.string(),
+          role: z.string(),
+          joinedAt: z.string(),
+        })
+        .passthrough()
     ),
   })
   .passthrough();
@@ -263,11 +289,17 @@ export const ChangesResponse = z
           seq: z.number(),
           entryId: z.string(),
           projectId: z.string().nullable(),
-          change: z.enum(["created", "updated", "superseded", "deleted", "expired"]),
+          change: z.enum([
+            "created",
+            "updated",
+            "superseded",
+            "deleted",
+            "expired",
+          ]),
           detail: z.record(z.string(), z.unknown()).nullable(),
           at: z.string(),
         })
-        .passthrough(),
+        .passthrough()
     ),
     nextSeq: z.number().nullable(),
   })
@@ -287,7 +319,7 @@ export const ExportResponse = z
           createdAt: z.string(),
           updatedAt: z.string(),
         })
-        .passthrough(),
+        .passthrough()
     ),
     nextAfterId: z.string().nullable(),
   })
@@ -299,7 +331,9 @@ export const ImportResponse = z
   .object({
     imported: z.number(),
     deduplicated: z.number(),
-    failed: z.array(z.object({ index: z.number(), error: z.string() }).passthrough()),
+    failed: z.array(
+      z.object({ index: z.number(), error: z.string() }).passthrough()
+    ),
   })
   .passthrough();
 
@@ -317,7 +351,9 @@ export const AdminUserRow = z
   .passthrough();
 
 /** GET /v1/admin/users response (200). */
-export const AdminUsersResponse = z.object({ users: z.array(AdminUserRow) }).passthrough();
+export const AdminUsersResponse = z
+  .object({ users: z.array(AdminUserRow) })
+  .passthrough();
 
 /** POST /v1/admin/users response (201): `{userId, email, token?}` — `token`
  *  is only present when the request included `tokenLabel`. */
@@ -357,7 +393,9 @@ export const AdminQuotaResponse = z
   .passthrough();
 
 /** POST /v1/admin/tokens/revoke response (200): `{revoked: boolean}`. */
-export const AdminRevokeResponse = z.object({ revoked: z.boolean() }).passthrough();
+export const AdminRevokeResponse = z
+  .object({ revoked: z.boolean() })
+  .passthrough();
 
 /** GET /v1/admin/audit-log entry + response shapes. */
 export const AdminAuditLogEntry = z

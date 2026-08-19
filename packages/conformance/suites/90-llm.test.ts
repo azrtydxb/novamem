@@ -1,7 +1,12 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { adminCookieApi, api, ns } from "../src/client.js";
 import { env, hasAdminIdentity } from "../src/env.js";
-import { MemoryEntry, ObserveResponse, RecentResponse, RememberResponse } from "../src/schemas.js";
+import {
+  MemoryEntry,
+  ObserveResponse,
+  RecentResponse,
+  RememberResponse,
+} from "../src/schemas.js";
 
 /**
  * The three LLM subsystems the parity audit parked as "accepted
@@ -30,14 +35,18 @@ const createdIds = new Set<string>();
 
 afterAll(async () => {
   await Promise.all(
-    [...createdIds].map((id) => api("/v1/forget", { body: { id } }).catch(() => {})),
+    [...createdIds].map((id) =>
+      api("/v1/forget", { body: { id } }).catch(() => {})
+    )
   );
 });
 
 const loud = (why: string) => it.skip(`SKIPPED — ${why}`, () => {});
 
 if (!env.llmSubsystems) {
-  loud("NOVAMEM_LLM_SUBSYSTEMS is not set; extraction/observer/decomposition are unverified");
+  loud(
+    "NOVAMEM_LLM_SUBSYSTEMS is not set; extraction/observer/decomposition are unverified"
+  );
 }
 
 const gated = describe.skipIf(!env.llmSubsystems);
@@ -47,7 +56,7 @@ gated("observer", () => {
     const r = await api<{ prefix: string }>("/v1/context-prefix");
     expect(
       r.status,
-      "observer is disabled on this target but NOVAMEM_LLM_SUBSYSTEMS=1 was declared",
+      "observer is disabled on this target but NOVAMEM_LLM_SUBSYSTEMS=1 was declared"
     ).toBe(200);
     expect(typeof r.body.prefix).toBe("string");
   });
@@ -64,7 +73,7 @@ gated("observer", () => {
       expect(r.status, `observe → ${JSON.stringify(r.body)}`).toBe(200);
       ObserveResponse.parse(r.body);
     },
-    180_000,
+    180_000
   );
 
   if (!hasAdminIdentity) {
@@ -79,7 +88,8 @@ gated("query decomposition", () => {
     // a retrieval-quality feature, and pinning which entries come back
     // would make this a model-version test rather than a contract test.
     const body = {
-      query: "which storage layer does the cluster use and who prefers espresso",
+      query:
+        "which storage layer does the cluster use and who prefers espresso",
       k: 5,
       decompose: true,
     };
@@ -92,10 +102,14 @@ gated("query decomposition", () => {
 
     // decompose:true must not change the response ENVELOPE — clients
     // parse both the same way.
-    const plain = await api<unknown>("/v1/search", { body: { ...body, decompose: false } });
+    const plain = await api<unknown>("/v1/search", {
+      body: { ...body, decompose: false },
+    });
     expect(plain.status).toBe(200);
     RecentResponse.parse(plain.body);
-    expect(Object.keys(r.body as object).sort()).toEqual(Object.keys(plain.body as object).sort());
+    expect(Object.keys(r.body as object).sort()).toEqual(
+      Object.keys(plain.body as object).sort()
+    );
   }, 120_000);
 });
 
@@ -121,23 +135,36 @@ gated("fact extraction", () => {
     });
     expect(chunk.status).toBe(201);
     const chunkId = RememberResponse.parse(chunk.body).id;
-    expect(chunkId, "worthiness gate rejected the extraction probe chunk").toBeTruthy();
+    expect(
+      chunkId,
+      "worthiness gate rejected the extraction probe chunk"
+    ).toBeTruthy();
     createdIds.add(chunkId!);
 
     // Extraction is fire-and-forget off the write path: one LLM call plus
     // one batched embed, then N inserts. Bounded poll — 120s at 3s is far
     // above the observed few seconds, and fails loudly rather than hanging.
-    let derived: Array<{ id: string; content: string; metadata?: Record<string, unknown> }> = [];
+    let derived: Array<{
+      id: string;
+      content: string;
+      metadata?: Record<string, unknown>;
+    }> = [];
     const deadline = Date.now() + 120_000;
     while (Date.now() < deadline) {
-      const recent = await api<unknown>("/v1/recent", { body: { namespace: NS, k: 200 } });
+      const recent = await api<unknown>("/v1/recent", {
+        body: { namespace: NS, k: 200 },
+      });
       if (recent.status === 200) {
-        const all = RecentResponse.parse(recent.body).results.map((e) => MemoryEntry.parse(e));
+        const all = RecentResponse.parse(recent.body).results.map((e) =>
+          MemoryEntry.parse(e)
+        );
         // Everything in this run's private namespace is ours to clean up,
         // including the derived facts we never asked for by id.
         for (const e of all) createdIds.add(e.id);
         derived = all.filter(
-          (e) => (e.metadata as { source_chunk_id?: string } | undefined)?.source_chunk_id === chunkId,
+          (e) =>
+            (e.metadata as { source_chunk_id?: string } | undefined)
+              ?.source_chunk_id === chunkId
         );
         if (derived.length > 0) break;
       }
@@ -146,7 +173,7 @@ gated("fact extraction", () => {
 
     expect(
       derived.length,
-      "no derived facts appeared within 120s — extraction is off on this target",
+      "no derived facts appeared within 120s — extraction is off on this target"
     ).toBeGreaterThan(0);
 
     for (const f of derived) {
@@ -160,7 +187,9 @@ gated("fact extraction", () => {
       // is the extractor's taxonomy (fact / preference / event / …), so
       // the prefix must be derived from the metadata, not hard-coded.
       expect(typeof fact!.type).toBe("string");
-      expect(f.content.startsWith(`[${String(fact!.type)}] `), f.content).toBe(true);
+      expect(f.content.startsWith(`[${String(fact!.type)}] `), f.content).toBe(
+        true
+      );
     }
   }, 180_000);
 });

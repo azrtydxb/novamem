@@ -39,7 +39,7 @@ variables and holds no global state, so one process can hold several clients.
 
 The client insists you can tell **"there is nothing stored about that"** apart
 from **"I could not reach the store"**. Conflating the two is how an agent ends
-up saying *"I have no record of that"* when the truth is that a pod was
+up saying _"I have no record of that"_ when the truth is that a pod was
 restarting.
 
 ```go
@@ -57,7 +57,7 @@ case len(res.Entries) == 0:
 - `novamem.Unavailable(err)` — the store could not be consulted: refused dial,
   DNS failure, timeout, 5xx, 429, or a body that is not the JSON the API
   promises. Also true when the server answers `200 {results: [], degraded:
-  true}`, which is an outage in the costume of an empty result set.
+true}`, which is an outage in the costume of an empty result set.
 - `novamem.Retryable(err)` — worth calling again. Never true for 401/403/400,
   which are configuration problems that no retry fixes.
 - `errors.Is(err, novamem.ErrNotFound)` — the id is not in your scope.
@@ -73,20 +73,20 @@ error message, including when the server echoes it back.
 
 ## Operations
 
-| Method | Route | Notes |
-|---|---|---|
-| `Capture(ctx, CaptureRequest)` | `POST /v1/capture` | Durable write with semantic dedupe, in-place update, and supersession. Check `result.Saved()` — the worthiness gate declining is not an error. |
-| `Search(ctx, SearchRequest)` | `POST /v1/search` | 5-signal hybrid retrieval (keyword + vector + graph + recency + entity). |
-| `Recent(ctx, RecentRequest)` | `POST /v1/recent` | Newest first; `Since` is a `time.Time`, formatted for you. |
-| `Neighbors(ctx, NeighborsRequest)` | `POST /v1/neighbors` | Graph walk from a seed entry id. |
-| `Update(ctx, UpdateRequest)` | `PUT /v1/memories/:id` | Rewrite in place; preserves id, hits and edges. Prefer it to forget+capture. |
-| `Forget(ctx, ForgetRequest)` | `POST /v1/forget` | Never reports success on a failed delete. See below. |
-| `Remember(ctx, CaptureRequest)` | `POST /v1/remember` | Unconditional store — no worthiness gate, no dedupe pass. For content a person explicitly asked to keep. |
-| `Context(ctx, ContextRequest)` | `POST /v1/context` | Relevant + recent entries for one message, in one round trip. |
-| `SessionRecap(ctx, SessionRecapRequest)` | `POST /v1/session-recap` | Batch end-of-session facts by category. |
-| `ContextPrefix(ctx, project)` | `GET /v1/context-prefix` | Cacheable observation-log prefix for prompt-caching agents. `ErrNotFound` = observer disabled. |
-| `Today(ctx, RecentRequest)` | `POST /v1/recent` | Sugar: `Recent` with `Since` = 24h ago. |
-| `Stats(ctx)` / `Health(ctx)` | `GET /v1/stats`, `GET /health` | Entry census; boolean liveness (a served `{ok:false}` is an answer, not an error). |
+| Method                                   | Route                          | Notes                                                                                                                                          |
+| ---------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Capture(ctx, CaptureRequest)`           | `POST /v1/capture`             | Durable write with semantic dedupe, in-place update, and supersession. Check `result.Saved()` — the worthiness gate declining is not an error. |
+| `Search(ctx, SearchRequest)`             | `POST /v1/search`              | 5-signal hybrid retrieval (keyword + vector + graph + recency + entity).                                                                       |
+| `Recent(ctx, RecentRequest)`             | `POST /v1/recent`              | Newest first; `Since` is a `time.Time`, formatted for you.                                                                                     |
+| `Neighbors(ctx, NeighborsRequest)`       | `POST /v1/neighbors`           | Graph walk from a seed entry id.                                                                                                               |
+| `Update(ctx, UpdateRequest)`             | `PUT /v1/memories/:id`         | Rewrite in place; preserves id, hits and edges. Prefer it to forget+capture.                                                                   |
+| `Forget(ctx, ForgetRequest)`             | `POST /v1/forget`              | Never reports success on a failed delete. See below.                                                                                           |
+| `Remember(ctx, CaptureRequest)`          | `POST /v1/remember`            | Unconditional store — no worthiness gate, no dedupe pass. For content a person explicitly asked to keep.                                       |
+| `Context(ctx, ContextRequest)`           | `POST /v1/context`             | Relevant + recent entries for one message, in one round trip.                                                                                  |
+| `SessionRecap(ctx, SessionRecapRequest)` | `POST /v1/session-recap`       | Batch end-of-session facts by category.                                                                                                        |
+| `ContextPrefix(ctx, project)`            | `GET /v1/context-prefix`       | Cacheable observation-log prefix for prompt-caching agents. `ErrNotFound` = observer disabled.                                                 |
+| `Today(ctx, RecentRequest)`              | `POST /v1/recent`              | Sugar: `Recent` with `Since` = 24h ago.                                                                                                        |
+| `Stats(ctx)` / `Health(ctx)`             | `GET /v1/stats`, `GET /health` | Entry census; boolean liveness (a served `{ok:false}` is an answer, not an error).                                                             |
 
 Project and token administration are deliberately not on `Client` — an agent
 process holding a client should not be able to perform them by accident. They

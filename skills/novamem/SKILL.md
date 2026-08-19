@@ -15,7 +15,6 @@ You have a persistent memory system through the `novamem` MCP server. It exposes
 
 The server ships these same rules to compliant clients via the MCP `instructions` field on `initialize`; this skill is the equivalent for clients that don't honour `instructions`.
 
-
 ## Mandatory memory protocol
 
 NovaMem is not an optional lookup tool. Use it by default:
@@ -32,6 +31,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 21 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
 
 **Read / recall** — see [references/search.md](references/search.md):
+
 - `memory_context` — first-pass grounding; relevant + recent context in one call
 - `memory_search` — hybrid relevance (keyword + vector + graph + recency + entity 5-signal fusion)
 - `memory_recent` — newest-first feed, optional `since` cutoff
@@ -43,6 +43,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 - `memory_adoption` — client adoption/refresh diagnostics: current tool surface, instructions hash, feature flags, and reload guidance
 
 **Write / mutate** — see [references/remember.md](references/remember.md):
+
 - `memory_capture` — low-friction durable write path after meaningful work; handles typed metadata, worthiness scoring, semantic duplicate/update, and contradiction supersession
 - `memory_session_recap` — batch ingest curated end-of-session recap items as typed durable memories
 - `memory_remember` — store a new entry (subject to the worthiness gate)
@@ -50,6 +51,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 - `memory_forget` — hard delete across warm + cold + graph
 
 **Project (sub-brain) lifecycle** — see [references/projects.md](references/projects.md):
+
 - `project_list` — projects you're a member of
 - `project_create` — new project, you become owner
 - `project_delete` — owner-only purge
@@ -66,6 +68,7 @@ Search BEFORE any of these:
 - You're starting a task in an unfamiliar area — search before exploring blind
 
 Default weights are tuned for prose. Useful overrides:
+
 - `{ keyword: 1, vector: 0 }` — exact id / symbol / file / hash lookup
 - `{ vector: 1, keyword: 0 }` — semantic-only (concept over literal tokens)
 - `{ graph: 1 }` — neighbour-driven recall ("what's adjacent to X?")
@@ -86,6 +89,7 @@ Use `memory_capture` for things that will still matter next session. Use raw `me
 - Architecture invariants the codebase wouldn't reveal on its own
 
 Don't save:
+
 - Conversational context that ends with the task
 - Facts trivially derivable from the current code
 - Anything the user said is private/secret
@@ -109,7 +113,7 @@ When known, set these on `remember` and `update`:
 
 ## Project scope (sub-brains)
 
-A project is a *sub-brain* — its memories are a separate shelf from your user-global memory.
+A project is a _sub-brain_ — its memories are a separate shelf from your user-global memory.
 
 - When passing `project` to a `memory_*` call, an id (ULID) **or** human name both work
 - Omit `project` to use whatever's currently active (or user-global if none is active)

@@ -24,38 +24,38 @@ Both servers were run locally against the **same** Postgres database —
 `novamem_go` on the `novamem-bench` deployment (kw cluster), reached
 through `kubectl -n novamem-bench port-forward postgres-0 15432:5432`.
 
-| | Go | TypeScript |
-|---|---|---|
-| binary / entrypoint | `go build ./cmd/novamem-server` | `pnpm --filter @novamem/server build` → `node dist/main.js` |
-| port | 18081 (18082 soak, 18091 conformance) | 18090 |
-| `NOVAMEM_AUTH_MODE` | `user` | `user` |
-| `NOVAMEM_HOST` | 127.0.0.1 | 127.0.0.1 |
-| cold tier | pgvector, dim 1024 | pgvector, dim 1024 |
-| embeddings | `bge-m3` @ `http://192.168.10.125/v1` | same |
-| rerank | `bge-reranker-v2-m3` | same |
-| cookie secret | identical on both | identical on both |
-| node / go | — | node v26.7.0 |
-| | go 1.26.3 | |
+|                     | Go                                    | TypeScript                                                  |
+| ------------------- | ------------------------------------- | ----------------------------------------------------------- |
+| binary / entrypoint | `go build ./cmd/novamem-server`       | `pnpm --filter @novamem/server build` → `node dist/main.js` |
+| port                | 18081 (18082 soak, 18091 conformance) | 18090                                                       |
+| `NOVAMEM_AUTH_MODE` | `user`                                | `user`                                                      |
+| `NOVAMEM_HOST`      | 127.0.0.1                             | 127.0.0.1                                                   |
+| cold tier           | pgvector, dim 1024                    | pgvector, dim 1024                                          |
+| embeddings          | `bge-m3` @ `http://192.168.10.125/v1` | same                                                        |
+| rerank              | `bge-reranker-v2-m3`                  | same                                                        |
+| cookie secret       | identical on both                     | identical on both                                           |
+| node / go           | —                                     | node v26.7.0                                                |
+|                     | go 1.26.3                             |                                                             |
 
 The TS server was run **without** `NOVAMEM_EXTRACTION_*`,
 `NOVAMEM_OBSERVER_*` and `NOVAMEM_QUERY_DECOMP_*`, which the bench
 deployment normally sets. Those three subsystems do not exist in Go
 (accepted divergence #14, §7), and leaving them on would have made every
-search comparison a comparison of *feature sets* rather than of the
+search comparison a comparison of _feature sets_ rather than of the
 shared retrieval path. This is stated up front because it is the single
 biggest caveat on the ranking numbers in §3.
 
 ### 1.2 Corpora
 
-* **`parity_*` corpus** — 30 hand-written entries spanning infra, ML,
+- **`parity_*` corpus** — 30 hand-written entries spanning infra, ML,
   engine, preferences, process, testing, MCP, product and general-world
   facts, written through the **Go** server, then re-seeded a second time
   into a single namespace `parity_all` (see §3.1 for why).
-* **`nb-pb1-*` corpus** — 42 synthetic LongMemEval-shaped questions ×
+- **`nb-pb1-*` corpus** — 42 synthetic LongMemEval-shaped questions ×
   3 sessions × 6 turns = **378 chunks**, ingested with
   `bench/bench_retrieval.py ingest` through the Go server. All 378
   reached `embedded_at IS NOT NULL` before any measurement.
-* **`parity_xw` / `parity_sup`** — cross-write fixtures (§4).
+- **`parity_xw` / `parity_sup`** — cross-write fixtures (§4).
 
 ### 1.3 Authentication
 
@@ -95,13 +95,13 @@ All five are also served by the TS server and are marked
 the generated document. **Not** a divergence.
 
 The interesting finding is what the OpenAPI document does not describe at
-all. Diffing the Go routes against the *TS server's actual* route table
+all. Diffing the Go routes against the _TS server's actual_ route table
 (not the spec) surfaces two hidden surfaces the Go server does not serve:
 
-| Surface | TS | Go | Verdict |
-|---|---|---|---|
-| `GET /admin`, `GET /admin/` (Preact SPA) | 200 `text/html` | **404 JSON** | **DEFECT-1** |
-| 22 further `/api/auth/*` Better Auth passthroughs | route exists | **404** | **DEFECT-2** |
+| Surface                                           | TS              | Go           | Verdict      |
+| ------------------------------------------------- | --------------- | ------------ | ------------ |
+| `GET /admin`, `GET /admin/` (Preact SPA)          | 200 `text/html` | **404 JSON** | **DEFECT-1** |
+| 22 further `/api/auth/*` Better Auth passthroughs | route exists    | **404**      | **DEFECT-2** |
 
 Measured:
 
@@ -147,17 +147,17 @@ server:
 
 Three of these are not covered by the spec's accepted non-goals:
 
-* **DEFECT-3 (env rename).** TS reads `NOVAMEM_DECAY_DAYS` for
+- **DEFECT-3 (env rename).** TS reads `NOVAMEM_DECAY_DAYS` for
   `decay.defaultEffectiveDays`; Go reads
   `NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS`. An operator who sets the
   documented variable gets Go's default (7) silently.
-* **DEFECT-4 (no rate limiting).** TS registers `@fastify/rate-limit`
+- **DEFECT-4 (no rate limiting).** TS registers `@fastify/rate-limit`
   (`http.ts:418`, default 600/min, `/health|/live|/ready` allow-listed)
   and emits `x-ratelimit-limit|remaining|reset` on every response. Go has
   **no rate limiter at all** — `grep -ri ratelimit go/internal` returns
   nothing, and a Go response carries 0 `x-ratelimit-*` headers vs 3 on
   TS. `NOVAMEM_RATE_LIMIT_PER_MINUTE` is accepted-and-ignored.
-* **DEFECT-5 (no bootstrap admin).** `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` /
+- **DEFECT-5 (no bootstrap admin).** `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` /
   `_PASSWORD` seed the first admin in `main.ts`. Go ignores both, so a
   fresh Go-only deployment has no way to create its first user. (Go's
   `POST /v1/admin/users` requires an existing admin session.)
@@ -189,7 +189,7 @@ token matches (`Longhorn`, `photosynthesis`). The TS log explains it:
 ```
 
 `packages/server/src/warm-store/index.ts:1636` builds the multi-namespace
-filter as ``sql`f.namespace = ANY(${args.namespaces!})` ``. Drizzle
+filter as `` sql`f.namespace = ANY(${args.namespaces!})`  ``. Drizzle
 expands a JS array into a comma-separated **parameter list**, producing a
 row constructor, and Postgres rejects it:
 
@@ -217,13 +217,13 @@ queries issued with `namespace` set, interleaving the call order per
 query (odd queries TS-first, even queries Go-first) to control for the
 access-count writes each search performs:
 
-| metric | value |
-|---|---|
-| exact top-10 order match | **10 / 10** |
-| top-1 agreement | **10 / 10** |
-| mean Jaccard(top-10) | **1.000** |
-| max abs. score delta | **8.89 × 10⁻¹⁰** |
-| mean abs. score delta | **5.03 × 10⁻¹⁰** |
+| metric                   | value            |
+| ------------------------ | ---------------- |
+| exact top-10 order match | **10 / 10**      |
+| top-1 agreement          | **10 / 10**      |
+| mean Jaccard(top-10)     | **1.000**        |
+| max abs. score delta     | **8.89 × 10⁻¹⁰** |
+| mean abs. score delta    | **5.03 × 10⁻¹⁰** |
 
 That is float64 rounding, not a scoring difference. Determinism was
 verified separately: five interleaved runs of one query
@@ -282,9 +282,9 @@ match structurally.
 Twenty error paths were issued identically to both servers and the
 **status + raw body bytes** compared.
 
-| Path | Before | After fix |
-|---|---|---|
-| identical status **and** body bytes | 10 / 20 | 11 / 20 |
+| Path                                | Before  | After fix |
+| ----------------------------------- | ------- | --------- |
+| identical status **and** body bytes | 10 / 20 | 11 / 20   |
 
 The remaining nine break down as:
 
@@ -317,11 +317,11 @@ semantically meaningful and no client can depend on it.
 match exactly; the human-readable `message` strings do not, because Go
 transcribed Zod v3's wording and `packages/server` now ships Zod v4:
 
-| case | Go | TS |
-|---|---|---|
-| missing string | `Required` | `Invalid input: expected string, received undefined` |
-| wrong type | `Expected string, received number` | `Invalid input: expected string, received number` |
-| too short | `String must contain at least 1 character(s)` | `Too small: expected string to have >=1 characters` |
+| case           | Go                                            | TS                                                   |
+| -------------- | --------------------------------------------- | ---------------------------------------------------- |
+| missing string | `Required`                                    | `Invalid input: expected string, received undefined` |
+| wrong type     | `Expected string, received number`            | `Invalid input: expected string, received number`    |
+| too short      | `String must contain at least 1 character(s)` | `Too small: expected string to have >=1 characters`  |
 
 Deliberately **not** fixed. The conformance suite's own error-shape file
 states messages are contract only "where integrations match on them", and
@@ -339,7 +339,7 @@ and no body: TS rejects at the body parser
 without the header, both servers return 204/404 identically.
 
 **ACCEPTED — empty-body strictness.** TS rejects an empty POST body on
-*every* JSON route, including ones whose schema is `.optional()`
+_every_ JSON route, including ones whose schema is `.optional()`
 (`/v1/recent`, `/v1/hygiene`, `/v1/adoption`): Fastify's parser rejects
 before the schema runs. Go treats an empty body on those routes as `{}`
 and serves the request. Go is more permissive; no client breaks on a
@@ -357,8 +357,8 @@ both — 200 kB is under the 256 kB ceiling), unknown-field tolerance.
 Both servers were driven through a full streamable-HTTP handshake
 (`initialize` → `notifications/initialized` → `tools/list`):
 
-* 21 tools on both, same names (14 `memory_*` + 7 `project_*`).
-* **21/21 tool schemas byte-identical** after key-sorted JSON
+- 21 tools on both, same names (14 `memory_*` + 7 `project_*`).
+- **21/21 tool schemas byte-identical** after key-sorted JSON
   serialisation — descriptions, input schemas, annotations, everything.
 
 ### 3.5 Prometheus surface
@@ -373,36 +373,36 @@ is **identical** between the two servers (`diff` is empty).
 Fixtures written through **each** server into a shared namespace, then
 read back through **both**.
 
-| fixture | Go write | TS write |
-|---|---|---|
-| plain entry | 201 | 201 |
-| TTL entry (`expiresAt`) | 201 | 201 |
-| project-scoped entry | 201 | 201 |
+| fixture                              | Go write              | TS write              |
+| ------------------------------------ | --------------------- | --------------------- |
+| plain entry                          | 201                   | 201                   |
+| TTL entry (`expiresAt`)              | 201                   | 201                   |
+| project-scoped entry                 | 201                   | 201                   |
 | capture pair triggering supersession | 201, `superseded:[…]` | 201, `superseded:[…]` |
 
 Row-level inspection of every fixture in `memory_entries`:
 
-| column / property | Go-written | TS-written |
-|---|---|---|
-| `content_hash` length | 64 | 64 |
-| `memory_fts` rows per entry | 1 | 1 |
-| `memory_vectors` rows per entry | 1 | 1 |
-| `embedded_at` | set | set |
-| `source` / `source_type` | `manual`/`null`, `memory_capture`/`chat` | identical |
-| TTL representation | `metadata.expiresAt` ISO string | identical |
-| `project_id` | set | set |
-| capture metadata keys | `retention{policy,baseEffectiveDays,supersedeAggressively}`, `memoryType`, `worthiness{durable,overall,confidence,userRelevance,reuseLikelihood}`, `sensitivity`, `captureAction`, `lifecycleStatus`, `supersedes`/`supersededBy`/`supersededAt`/`supersededReason` | **identical key set and value shapes** |
+| column / property               | Go-written                                                                                                                                                                                                                                                          | TS-written                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `content_hash` length           | 64                                                                                                                                                                                                                                                                  | 64                                     |
+| `memory_fts` rows per entry     | 1                                                                                                                                                                                                                                                                   | 1                                      |
+| `memory_vectors` rows per entry | 1                                                                                                                                                                                                                                                                   | 1                                      |
+| `embedded_at`                   | set                                                                                                                                                                                                                                                                 | set                                    |
+| `source` / `source_type`        | `manual`/`null`, `memory_capture`/`chat`                                                                                                                                                                                                                            | identical                              |
+| TTL representation              | `metadata.expiresAt` ISO string                                                                                                                                                                                                                                     | identical                              |
+| `project_id`                    | set                                                                                                                                                                                                                                                                 | set                                    |
+| capture metadata keys           | `retention{policy,baseEffectiveDays,supersedeAggressively}`, `memoryType`, `worthiness{durable,overall,confidence,userRelevance,reuseLikelihood}`, `sensitivity`, `captureAction`, `lifecycleStatus`, `supersedes`/`supersededBy`/`supersededAt`/`supersededReason` | **identical key set and value shapes** |
 
 Cross-reads:
 
-* `POST /v1/recent` on `parity_xw` — both servers return the **same 7
+- `POST /v1/recent` on `parity_xw` — both servers return the **same 7
   ids in the same order**, with the same `metadata.expiresAt` presence
   and the same `project` values.
-* Three `POST /v1/search` queries targeting Go-written and TS-written
+- Three `POST /v1/search` queries targeting Go-written and TS-written
   content — **identical id order and identical scores to 4 decimals** on
   both servers, with Go-written and TS-written entries interleaved in the
   ranking exactly the same way.
-* Project-scoped `POST /v1/recent` with `project: "Parity Audit"` —
+- Project-scoped `POST /v1/recent` with `project: "Parity Audit"` —
   both servers return both project entries, one written by each server.
 
 Content-hash dedup is cross-compatible too: re-running the whole
@@ -429,7 +429,7 @@ interleaved** (go rep_n, ts rep_n, go rep_n+1, …) against the shared
 
 > **Caveat, stated up front:** the LongMemEval dataset the brief pointed
 > at (`longmemeval_s_cleaned.json`) is **not present** in this session's
-> scratchpad. The corpus above is a synthetic LongMemEval-*shaped*
+> scratchpad. The corpus above is a synthetic LongMemEval-_shaped_
 > dataset generated for this audit (42 questions × 3 sessions × 6 turns,
 > one planted evidence turn per question). It exercises the same harness
 > code path and the same `/v1/search` body, but it is an easier corpus
@@ -439,14 +439,14 @@ interleaved** (go rep_n, ts rep_n, go rep_n+1, …) against the shared
 
 ### Latency (ms, per-query wall time)
 
-| | Go | TS |
-|---|---|---|
-| replications | 8 | 8 |
-| pooled samples | 336 | 336 |
-| pooled p50 | **70.7** | **66.7** |
-| pooled p95 | **212.8** | **95.0** |
-| pooled mean | 91.2 | 73.8 |
-| per-rep p50, median (range) | 71.0 (67.8 – 199.1) | 67.0 (64.4 – 68.5) |
+|                             | Go                   | TS                  |
+| --------------------------- | -------------------- | ------------------- |
+| replications                | 8                    | 8                   |
+| pooled samples              | 336                  | 336                 |
+| pooled p50                  | **70.7**             | **66.7**            |
+| pooled p95                  | **212.8**            | **95.0**            |
+| pooled mean                 | 91.2                 | 73.8                |
+| per-rep p50, median (range) | 71.0 (67.8 – 199.1)  | 67.0 (64.4 – 68.5)  |
 | per-rep p95, median (range) | 101.1 (86.7 – 460.6) | 89.1 (74.4 – 336.1) |
 
 **No winner is claimed.** Both distributions are dominated by two remote
@@ -461,11 +461,11 @@ not do.
 
 ### Footprint
 
-| | Go | TS |
-|---|---|---|
-| RSS under load | **23.4 MB** | **172.4 MB** |
-| startup to first `/live` 200, 3 runs | **55 / 86 / 58 ms** | **703 / 718 / 722 ms** |
-| shipped artifact | 16.7 MB static binary | 4.0 MB `dist/` + `node_modules` + node runtime |
+|                                      | Go                    | TS                                             |
+| ------------------------------------ | --------------------- | ---------------------------------------------- |
+| RSS under load                       | **23.4 MB**           | **172.4 MB**                                   |
+| startup to first `/live` 200, 3 runs | **55 / 86 / 58 ms**   | **703 / 718 / 722 ms**                         |
+| shipped artifact                     | 16.7 MB static binary | 4.0 MB `dist/` + `node_modules` + node runtime |
 
 RSS was sampled with `ps -o rss=` on both processes immediately after the
 8-replication run. Go is **7.4× smaller resident** and starts **~12×
@@ -490,12 +490,12 @@ under a continuous load loop (5 searches + 1 remember every ~5 s).
 
 ### Memory
 
-| | value |
-|---|---|
-| RSS at start | 23 088 kB |
-| RSS at end | 23 120 kB |
-| growth over 23 min | **+32 kB (+0.1 %)** |
-| min / max / mean | 22 800 / 24 560 / 23 264 kB |
+|                    | value                       |
+| ------------------ | --------------------------- |
+| RSS at start       | 23 088 kB                   |
+| RSS at end         | 23 120 kB                   |
+| growth over 23 min | **+32 kB (+0.1 %)**         |
+| min / max / mean   | 22 800 / 24 560 / 23 264 kB |
 
 Flat. The 24 560 kB peak is a single transient sample; the series has no
 trend. 512 new entries were written into `parity_soak` during the run
@@ -504,10 +504,10 @@ not idling.
 
 ### Errors
 
-| level | count |
-|---|---|
-| INFO | 2 267 |
-| WARN | **5** |
+| level         | count |
+| ------------- | ----- |
+| INFO          | 2 267 |
+| WARN          | **5** |
 | ERROR / panic | **0** |
 
 All five WARNs are the same line, and they are a real finding:
@@ -522,14 +522,14 @@ in the `memory_access` upsert. It is caught and downgraded to a WARN, so
 the visible symptom is silently-lost access statistics rather than a
 failed request — which is exactly why no test found it. Root cause and
 one-line fix in §8 (**DEFECT-10**); note the soak itself ran the
-*pre-fix* binary, so this count is the unfixed baseline.
+_pre-fix_ binary, so this count is the unfixed baseline.
 
 ### Background jobs
 
-| job | runs | inter-run gap (min / median / max) |
-|---|---|---|
-| `decay` (60 s timer) | 24 | 59.9 s / 60.0 s / 60.1 s |
-| graph-enrichment reconcile (30 s timer) | 3 logged | 390 s / 450 s / 510 s |
+| job                                     | runs     | inter-run gap (min / median / max) |
+| --------------------------------------- | -------- | ---------------------------------- |
+| `decay` (60 s timer)                    | 24       | 59.9 s / 60.0 s / 60.1 s           |
+| graph-enrichment reconcile (30 s timer) | 3 logged | 390 s / 450 s / 510 s              |
 
 **No job overlapped.** The decay timer's inter-run gap never deviates
 from its 60 s interval by more than 100 ms across 24 runs — a run that
@@ -549,24 +549,24 @@ is not a TS-parity defect (the TS server exposes no equivalent either).
 
 ## 7. Divergence ledger
 
-| # | Divergence | Class | Fixed | Reasoning |
-|---|---|---|---|---|
-| 1 | `GET /admin[/]` — dashboard not served; no `go:embed` of admin-ui | **DEFECT** | no | Feature work, not a parity patch. Spec §1 lists it as a slice-5 deliverable; it is missing. Gates the verdict. |
-| 2 | 22 of 25 `/api/auth/*` Better Auth passthroughs missing (incl. `change-password`, `admin/create-user`, `admin/set-role`, `admin/remove-user`, `admin/list-users`) | **DEFECT** | no | Feature work. Dashboard Users tab + Change Password are dead against Go. Gates the verdict. |
-| 3 | `NOVAMEM_DECAY_DAYS` renamed to `NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS` | **DEFECT** | no | One-line config fix, but it changes an operator-visible name; belongs in a change with a docs sweep, not silently inside an audit. |
-| 4 | No rate limiting; `NOVAMEM_RATE_LIMIT_PER_MINUTE` ignored; no `x-ratelimit-*` headers | **DEFECT** | no | Security-relevant and non-trivial (needs a limiter + allow-list + 429 shape). Sized as its own change. |
-| 5 | `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` ignored — no first-admin seed | **DEFECT** | no | Blocks a fresh Go-only deployment from ever getting a first user. Needed before Go can stand alone. |
-| 6 | `GET /v1/me/metrics` returned the per-user snapshot for admins instead of the global one; `_hasMyTokens` absent; `graph_edges` always null | **DEFECT** | **yes** | Dashboard Metrics page reads empty. Small, contained fix. |
-| 7 | Malformed / non-object JSON bodies produced a fabricated `"<field> Required"` issue on every JSON endpoint | **DEFECT** | **yes** | Systematic error-contract break, one root cause in `decodeBody`. |
-| 8 | Zod v3 vs v4 message wording (paths and codes match) | **DEFECT (won't fix)** | no | Messages are contract only where clients match on them; every such message already matches. Chasing a dependency's wording in code that exists to delete that dependency is churn. |
-| 9 | No CORS: `OPTIONS` preflight 404s, no `access-control-allow-origin` / `-credentials`, no `vary: Origin` | **DEFECT** | no | Any browser client on a different origin cannot call the Go server. Becomes critical the moment #1 is fixed (a same-origin dashboard hides it). Sized as its own change. |
-| 10 | `BumpHitsMany` deadlocks under concurrent search (`SQLSTATE 40P01`) — `ON CONFLICT DO UPDATE` took row locks in unsorted top-k order | **DEFECT (shared with TS)** | **yes** | Found by the soak (§6), not by conformance. Caught and downgraded to a WARN, so hit counts silently lag rather than the request failing. One-line root-cause fix. `packages/server`'s `bumpHitsMany` has the identical unsorted pattern and the same latent bug. |
-| 11 | TS keyword tier dies on multi-namespace search (`ANY((…))`, SQLSTATE 42809) | **ACCEPTED — Go superior** | n/a | A bug in `packages/server`, which this slice does not touch and the cleanup phase deletes. Compromises the oracle; see §3.1. |
-| 12 | JSON object key ordering differs (`error`/`message`, `degraded`/`results`) | **ACCEPTED** | n/a | Not semantically meaningful. |
-| 13 | Empty POST body: TS 400s on every route, Go serves `.optional()` routes | **ACCEPTED** | n/a | Go is strictly more permissive; matching would reject requests that currently work, for no benefit. |
-| 14 | No fact extraction, no observer, no query decomposition (`NOVAMEM_EXTRACTION_*`, `NOVAMEM_OBSERVER_*`, `NOVAMEM_QUERY_DECOMP_*`) | **ACCEPTED** | n/a | Spec §Non-goals: external-endpoints-only, no in-process LLM subsystems. **Note:** bench's TS deployment currently runs all three; turning Go into the default *changes bench's retrieval behaviour*, which is a product decision, not a parity gap. |
-| 15 | `NOVAMEM_PG_POOL_MAX` ignored | **ACCEPTED** | n/a | Different pool implementation (pgx vs node-postgres); no equivalent knob. |
-| 16 | No `pprof` / goroutine metric | **ACCEPTED (observability gap)** | n/a | Neither server exposes it; not a parity defect. Worth adding when Go becomes primary. |
+| #   | Divergence                                                                                                                                                        | Class                            | Fixed   | Reasoning                                                                                                                                                                                                                                                        |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `GET /admin[/]` — dashboard not served; no `go:embed` of admin-ui                                                                                                 | **DEFECT**                       | no      | Feature work, not a parity patch. Spec §1 lists it as a slice-5 deliverable; it is missing. Gates the verdict.                                                                                                                                                   |
+| 2   | 22 of 25 `/api/auth/*` Better Auth passthroughs missing (incl. `change-password`, `admin/create-user`, `admin/set-role`, `admin/remove-user`, `admin/list-users`) | **DEFECT**                       | no      | Feature work. Dashboard Users tab + Change Password are dead against Go. Gates the verdict.                                                                                                                                                                      |
+| 3   | `NOVAMEM_DECAY_DAYS` renamed to `NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS`                                                                                            | **DEFECT**                       | no      | One-line config fix, but it changes an operator-visible name; belongs in a change with a docs sweep, not silently inside an audit.                                                                                                                               |
+| 4   | No rate limiting; `NOVAMEM_RATE_LIMIT_PER_MINUTE` ignored; no `x-ratelimit-*` headers                                                                             | **DEFECT**                       | no      | Security-relevant and non-trivial (needs a limiter + allow-list + 429 shape). Sized as its own change.                                                                                                                                                           |
+| 5   | `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` ignored — no first-admin seed                                                                                       | **DEFECT**                       | no      | Blocks a fresh Go-only deployment from ever getting a first user. Needed before Go can stand alone.                                                                                                                                                              |
+| 6   | `GET /v1/me/metrics` returned the per-user snapshot for admins instead of the global one; `_hasMyTokens` absent; `graph_edges` always null                        | **DEFECT**                       | **yes** | Dashboard Metrics page reads empty. Small, contained fix.                                                                                                                                                                                                        |
+| 7   | Malformed / non-object JSON bodies produced a fabricated `"<field> Required"` issue on every JSON endpoint                                                        | **DEFECT**                       | **yes** | Systematic error-contract break, one root cause in `decodeBody`.                                                                                                                                                                                                 |
+| 8   | Zod v3 vs v4 message wording (paths and codes match)                                                                                                              | **DEFECT (won't fix)**           | no      | Messages are contract only where clients match on them; every such message already matches. Chasing a dependency's wording in code that exists to delete that dependency is churn.                                                                               |
+| 9   | No CORS: `OPTIONS` preflight 404s, no `access-control-allow-origin` / `-credentials`, no `vary: Origin`                                                           | **DEFECT**                       | no      | Any browser client on a different origin cannot call the Go server. Becomes critical the moment #1 is fixed (a same-origin dashboard hides it). Sized as its own change.                                                                                         |
+| 10  | `BumpHitsMany` deadlocks under concurrent search (`SQLSTATE 40P01`) — `ON CONFLICT DO UPDATE` took row locks in unsorted top-k order                              | **DEFECT (shared with TS)**      | **yes** | Found by the soak (§6), not by conformance. Caught and downgraded to a WARN, so hit counts silently lag rather than the request failing. One-line root-cause fix. `packages/server`'s `bumpHitsMany` has the identical unsorted pattern and the same latent bug. |
+| 11  | TS keyword tier dies on multi-namespace search (`ANY((…))`, SQLSTATE 42809)                                                                                       | **ACCEPTED — Go superior**       | n/a     | A bug in `packages/server`, which this slice does not touch and the cleanup phase deletes. Compromises the oracle; see §3.1.                                                                                                                                     |
+| 12  | JSON object key ordering differs (`error`/`message`, `degraded`/`results`)                                                                                        | **ACCEPTED**                     | n/a     | Not semantically meaningful.                                                                                                                                                                                                                                     |
+| 13  | Empty POST body: TS 400s on every route, Go serves `.optional()` routes                                                                                           | **ACCEPTED**                     | n/a     | Go is strictly more permissive; matching would reject requests that currently work, for no benefit.                                                                                                                                                              |
+| 14  | No fact extraction, no observer, no query decomposition (`NOVAMEM_EXTRACTION_*`, `NOVAMEM_OBSERVER_*`, `NOVAMEM_QUERY_DECOMP_*`)                                  | **ACCEPTED**                     | n/a     | Spec §Non-goals: external-endpoints-only, no in-process LLM subsystems. **Note:** bench's TS deployment currently runs all three; turning Go into the default _changes bench's retrieval behaviour_, which is a product decision, not a parity gap.              |
+| 15  | `NOVAMEM_PG_POOL_MAX` ignored                                                                                                                                     | **ACCEPTED**                     | n/a     | Different pool implementation (pgx vs node-postgres); no equivalent knob.                                                                                                                                                                                        |
+| 16  | No `pprof` / goroutine metric                                                                                                                                     | **ACCEPTED (observability gap)** | n/a     | Neither server exposes it; not a parity defect. Worth adding when Go becomes primary.                                                                                                                                                                            |
 
 ---
 
@@ -611,17 +611,17 @@ exercise it.
 
 **The fix is not exercised by §6's soak.** The soak process was started
 before the fix and ran the pre-fix binary throughout — its deadlock count
-is the *unfixed* baseline. A post-fix soak to confirm the WARNs go to
+is the _unfixed_ baseline. A post-fix soak to confirm the WARNs go to
 zero is outstanding.
 
 **Verification after all three fixes:**
 
-* `go build ./... && go vet ./internal/httpapi/` clean.
-* `go test ./...` — all packages pass.
-* Structural comparison re-run: **20/20 endpoints match**
+- `go build ./... && go vet ./internal/httpapi/` clean.
+- `go test ./...` — all packages pass.
+- Structural comparison re-run: **20/20 endpoints match**
   (was 19/20).
-* Error-shape comparison re-run: malformed-JSON cases now byte-identical.
-* **Conformance suite against the patched Go server: 44 passed,
+- Error-shape comparison re-run: malformed-JSON cases now byte-identical.
+- **Conformance suite against the patched Go server: 44 passed,
   13 skipped, 0 failed** (`NOVAMEM_URL=http://127.0.0.1:18091`,
   `auth.mode=user`, non-admin data-plane token, dashboard disabled).
 
@@ -642,17 +642,17 @@ not yet ready to become bench's default.**
 
 What is proven at parity, with numbers:
 
-* Every route in the OpenAPI contract, with no method mismatches.
-* Hybrid search ranking: 10/10 exact top-10 order, max score delta
+- Every route in the OpenAPI contract, with no method mismatches.
+- Hybrid search ranking: 10/10 exact top-10 order, max score delta
   8.89 × 10⁻¹⁰, identical nDCG@10 (0.8521) and any-hit (100%) across
   8 replications on a 378-chunk corpus.
-* All 20 compared read endpoints structurally identical (after the fix).
-* All 21 MCP tool schemas byte-identical; Prometheus metric set
+- All 20 compared read endpoints structurally identical (after the fix).
+- All 21 MCP tool schemas byte-identical; Prometheus metric set
   identical.
-* Write-path fully cross-compatible: metadata, `content_hash`, FTS rows,
+- Write-path fully cross-compatible: metadata, `content_hash`, FTS rows,
   vectors, TTL, project scoping, supersession — neither server misreads
   the other's rows.
-* Materially better footprint: 23 MB RSS vs 172 MB, 58 ms startup vs
+- Materially better footprint: 23 MB RSS vs 172 MB, 58 ms startup vs
   720 ms.
 
 What blocks the default switch — all five are **surfaces conformance
@@ -709,39 +709,39 @@ first. Concretely:
 Stated plainly, because a parity audit that only reports what it managed
 to test is not one.
 
-* **Session-cookie interoperability, TS direction.** A TS-issued cookie
+- **Session-cookie interoperability, TS direction.** A TS-issued cookie
   is accepted by the Go server (verified: same user resolved). The
   reverse could not be tested — `/api/auth/get-session` on the local TS
-  server 500s for *every* request, including its own cookies, because
+  server 500s for _every_ request, including its own cookies, because
   `novamem_go`'s `jwks` row is encrypted with an unrecoverable Better
   Auth secret. Fixing it means deleting a row in a shared bench database;
   I did not do that without asking. All differential work therefore ran
   on bearer tokens. Cookie interop in the TS direction is **unverified**.
-* **Anything reached through a browser.** The dashboard was tested by
+- **Anything reached through a browser.** The dashboard was tested by
   HTTP status only. Given divergences 1, 2 and 9, the Go server cannot
   currently serve it at all, so there was nothing to open — but that also
   means no rendering, auth-flow or console-error evidence exists.
-* **Goroutine count under soak** — not exposed (§6).
-* **That the `BumpHitsMany` fix works.** The soak ran the pre-fix binary
+- **Goroutine count under soak** — not exposed (§6).
+- **That the `BumpHitsMany` fix works.** The soak ran the pre-fix binary
   (§8). The deadlock's root cause and the ordering invariant are both
   clear, but the WARN count going to zero is unconfirmed.
-* **Real LongMemEval retrieval quality.** The dataset was not available;
-  §5 used a synthetic stand-in. Ranking *equivalence* between the two
+- **Real LongMemEval retrieval quality.** The dataset was not available;
+  §5 used a synthetic stand-in. Ranking _equivalence_ between the two
   servers is well evidenced; absolute retrieval quality on the real
   corpus is not re-measured here.
-* **A trustworthy latency verdict.** §5's numbers are dominated by a
+- **A trustworthy latency verdict.** §5's numbers are dominated by a
   port-forwarded Postgres and a LAN embedding call. Both servers showed
   an unexplained outlier replication.
-* **Behaviour at scale.** The differential corpora were 30 and 378
+- **Behaviour at scale.** The differential corpora were 30 and 378
   entries. Bench's real corpus is larger; index-plan divergences that
   only appear at scale would not have shown up.
-* **Qdrant cold store.** Only pgvector was exercised, per the bench
+- **Qdrant cold store.** Only pgvector was exercised, per the bench
   deployment's configuration.
-* **`bearer` and `none` auth modes.** Everything here ran in
+- **`bearer` and `none` auth modes.** Everything here ran in
   `auth.mode=user`. Conformance covers the other two; this audit added no
   independent evidence.
-* **Live novamem-bench deployment.** All measurements are from local
-  processes against the bench *database*. The Go server running in-cluster
+- **Live novamem-bench deployment.** All measurements are from local
+  processes against the bench _database_. The Go server running in-cluster
   (`novamem-go` deployment) was not redeployed with these fixes — the
   spec's "deployed and exercised live" gate is **not** satisfied by this
   audit.
@@ -771,21 +771,20 @@ and the retrieval-behaviour caveat is resolved — the Go server now runs
 extraction, observer and decomposition exactly as bench's TS
 deployment does.
 
-
 ## 11. Three divergences the conformance coverage found afterwards
 
 The audit above was a reading of both codebases. The conformance suite
 was then extended to cover the surfaces the migration had added —
 dashboard, all 25 `/api/auth/*` routes, CORS, rate limiting, LLM
 subsystems — and immediately found three behaviours no amount of reading
-had caught, because each lives in a *default* rather than in code either
+had caught, because each lives in a _default_ rather than in code either
 server spells out.
 
-| # | Divergence | Class | How it was resolved |
-|---|---|---|---|
-| 17 | A **banned account could still sign in**. `admin/ban-user` set `banned: true` and returned 200, but `POST /api/auth/sign-in/email` then minted a session. TS answers 403 `BANNED_USER`. | Defect (security) | Refused after the password check — a ban must not become a credential oracle — honouring an elapsed `banExpires`. |
-| 18 | **No per-IP sign-in throttle.** Better Auth rate-limits sign-in; Go accepted attempts without bound. | Defect | Fixed window per (IP, path): three attempts per ten seconds, then 429 with an `x-retry-after` header and Better Auth's bare `message` body. |
-| 19 | **`/admin/<non-public>` answered 404 with the dashboard disabled**, where TS answers 401. | Defect | In TS, auth is a global `onRequest` hook, which Fastify runs for its 404 handler too, so the 401 lands before routing reports the path missing. Go routes first, so the `/admin/` prefix is now claimed in both modes and the handler authenticates before reporting 404. |
+| #   | Divergence                                                                                                                                                                              | Class             | How it was resolved                                                                                                                                                                                                                                                       |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 17  | A **banned account could still sign in**. `admin/ban-user` set `banned: true` and returned 200, but `POST /api/auth/sign-in/email` then minted a session. TS answers 403 `BANNED_USER`. | Defect (security) | Refused after the password check — a ban must not become a credential oracle — honouring an elapsed `banExpires`.                                                                                                                                                         |
+| 18  | **No per-IP sign-in throttle.** Better Auth rate-limits sign-in; Go accepted attempts without bound.                                                                                    | Defect            | Fixed window per (IP, path): three attempts per ten seconds, then 429 with an `x-retry-after` header and Better Auth's bare `message` body.                                                                                                                               |
+| 19  | **`/admin/<non-public>` answered 404 with the dashboard disabled**, where TS answers 401.                                                                                               | Defect            | In TS, auth is a global `onRequest` hook, which Fastify runs for its 404 handler too, so the 401 lands before routing reports the path missing. Go routes first, so the `/admin/` prefix is now claimed in both modes and the handler authenticates before reporting 404. |
 
 Each contract was measured against the live TypeScript server before
 being implemented — the ban body and the exact `x-retry-after` value

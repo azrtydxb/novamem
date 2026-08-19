@@ -36,8 +36,13 @@ describe("benchmark adapters", () => {
 
     expect(fixture.kind).toBe("longmemeval");
     expect(fixture.memories).toHaveLength(1);
-    expect(fixture.queries[0]).toMatchObject({ queryId: "q1", expectedAnswer: "ReefMat 1200" });
-    expect(fixture.queries[0]?.relevantMemoryIds).toEqual(["longmemeval-mini:s1"]);
+    expect(fixture.queries[0]).toMatchObject({
+      queryId: "q1",
+      expectedAnswer: "ReefMat 1200",
+    });
+    expect(fixture.queries[0]?.relevantMemoryIds).toEqual([
+      "longmemeval-mini:s1",
+    ]);
     expect(() => benchmarkFixtureSchema.parse(fixture)).not.toThrow();
   });
 
@@ -45,10 +50,19 @@ describe("benchmark adapters", () => {
     const fixture = adaptLoCoMoFixture({
       conversation_id: "dialog-1",
       sessions: [
-        { session_id: "m1", speaker: "Pascal", text: "Audrey prefers gentle bedtime stories." },
+        {
+          session_id: "m1",
+          speaker: "Pascal",
+          text: "Audrey prefers gentle bedtime stories.",
+        },
       ],
       qa: [
-        { id: "q1", question: "What kind of bedtime stories does Audrey prefer?", answer: "gentle", evidence: ["m1"] },
+        {
+          id: "q1",
+          question: "What kind of bedtime stories does Audrey prefer?",
+          answer: "gentle",
+          evidence: ["m1"],
+        },
       ],
     });
 
@@ -61,7 +75,12 @@ describe("benchmark adapters", () => {
   it("adapts BEIR/RAG corpora with qrels into retrieval-only cases", () => {
     const fixture = adaptBeirFixture({
       name: "beir-mini",
-      corpus: { d1: { title: "NovaMem", text: "Hybrid search uses keyword vector graph fusion." } },
+      corpus: {
+        d1: {
+          title: "NovaMem",
+          text: "Hybrid search uses keyword vector graph fusion.",
+        },
+      },
       queries: { q1: "What search fusion does NovaMem use?" },
       qrels: { q1: { d1: 1 } },
     });
@@ -75,8 +94,20 @@ describe("benchmark adapters", () => {
   it("adapts RAG QA corpora with evidence documents", () => {
     const fixture = adaptRagFixture({
       name: "rag-mini",
-      documents: [{ id: "doc-1", text: "NovaMem uses memory_context before substantive work." }],
-      questions: [{ id: "q1", question: "What should run before substantive work?", answer: "memory_context", evidence: ["doc-1"] }],
+      documents: [
+        {
+          id: "doc-1",
+          text: "NovaMem uses memory_context before substantive work.",
+        },
+      ],
+      questions: [
+        {
+          id: "q1",
+          question: "What should run before substantive work?",
+          answer: "memory_context",
+          evidence: ["doc-1"],
+        },
+      ],
     });
 
     expect(fixture.kind).toBe("rag");
@@ -89,16 +120,36 @@ describe("benchmark adapters", () => {
     const longContext = adaptLongContextFixture({
       name: "ruler-mini",
       haystack: ["noise", "Needle: project port is 7778", "more noise"],
-      questions: [{ id: "q1", question: "What is the project port?", answer: "7778", evidence_indexes: [1] }],
+      questions: [
+        {
+          id: "q1",
+          question: "What is the project port?",
+          answer: "7778",
+          evidence_indexes: [1],
+        },
+      ],
     });
     const novamem = adaptNovaMemFixture({
       name: "novamem-specific",
-      memories: [{ id: "old", text: "Timezone is Belgium", supersededBy: "new" }, { id: "new", text: "Timezone is Asia/Dubai" }],
-      queries: [{ id: "q1", text: "What is the timezone?", answer: "Asia/Dubai", relevant: ["new"], forbidden: ["old"] }],
+      memories: [
+        { id: "old", text: "Timezone is Belgium", supersededBy: "new" },
+        { id: "new", text: "Timezone is Asia/Dubai" },
+      ],
+      queries: [
+        {
+          id: "q1",
+          text: "What is the timezone?",
+          answer: "Asia/Dubai",
+          relevant: ["new"],
+          forbidden: ["old"],
+        },
+      ],
     });
 
     expect(longContext.kind).toBe("long-context");
-    expect(longContext.queries[0]?.relevantMemoryIds).toEqual(["ruler-mini:needle:1"]);
+    expect(longContext.queries[0]?.relevantMemoryIds).toEqual([
+      "ruler-mini:needle:1",
+    ]);
     expect(novamem.kind).toBe("novamem-specific");
     expect(novamem.queries[0]?.forbiddenMemoryIds).toEqual(["old"]);
   });

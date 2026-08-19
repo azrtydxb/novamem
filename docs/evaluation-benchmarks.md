@@ -108,6 +108,7 @@ Supported `kind` values:
 There are two metric layers:
 
 1. **Comparable headline report** (`--format comparable`) — use this when comparing NovaMem with Mem0 memory-benchmarks, LongMemEval result dumps, or similar public scorecards. It emits:
+
    - `metadata.benchmark`, `project_name`, `answerer_model`, `judge_model`, `provider`, `top_k`, and `top_k_cutoffs`.
    - `metrics_by_cutoff.top_10/top_20/top_50/top_200.overall.accuracy` as a percentage.
    - `metrics_by_cutoff.*.by_question_type` for LongMemEval categories such as `knowledge-update`, `multi-session`, `single-session-user`, `single-session-assistant`, `single-session-preference`, and `temporal-reasoning`.
@@ -165,7 +166,7 @@ For NovaMem-vs-public LongMemEval comparisons:
   chunk ingestion is the closest shape to Mem0's benchmark runner (no
   harness-layer read-before-write). `/v1/capture` is NovaMem's real
   agent-facing write path — since the Phase 4 unification its extra
-  behaviour is an exact-hash fast path plus a *heuristic*
+  behaviour is an exact-hash fast path plus a _heuristic_
   contradiction/superset guard (the old LLM supersession is gone), and
   the Phase 4 gate measured capture ≥ remember on answer accuracy at
   matched budgets. A capture-corpus run measures the product as

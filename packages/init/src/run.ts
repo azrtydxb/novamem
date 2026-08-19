@@ -11,7 +11,10 @@ import type { ToolEntry } from "./tools.js";
 import type { DetectionContext } from "./detect.js";
 import { installSkill, type SkillInstallResult } from "./install/skill.js";
 import { installMcp, type McpInstallResult } from "./install/mcp.js";
-import { installCommands, type CommandInstallResult } from "./install/commands.js";
+import {
+  installCommands,
+  type CommandInstallResult,
+} from "./install/commands.js";
 
 export interface RunParams {
   baseUrl: string;
@@ -33,11 +36,13 @@ export interface ToolResult {
 
 export async function applyTools(
   tools: readonly ToolEntry[],
-  params: RunParams,
+  params: RunParams
 ): Promise<ToolResult[]> {
   const results: ToolResult[] = [];
   for (const tool of tools) {
-    const skill = await installSkill(tool, params.ctx, { dryRun: params.dryRun });
+    const skill = await installSkill(tool, params.ctx, {
+      dryRun: params.dryRun,
+    });
     const mcp = await installMcp(
       tool,
       params.ctx,
@@ -46,9 +51,11 @@ export async function applyTools(
         bearer: params.bearer,
         shimVersion: params.shimVersion,
       },
-      { dryRun: params.dryRun },
+      { dryRun: params.dryRun }
     );
-    const commands = await installCommands(tool, params.ctx, { dryRun: params.dryRun });
+    const commands = await installCommands(tool, params.ctx, {
+      dryRun: params.dryRun,
+    });
     results.push({ tool, skill, mcp, commands });
   }
   return results;
