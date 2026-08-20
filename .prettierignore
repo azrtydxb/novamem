@@ -8,3 +8,6 @@ go/internal/httpapi/admin-ui/
 # Hand-tuned static marketing pages: prettier's HTML reflow changes
 # rendered whitespace inside inline elements (verified in a browser).
 site/*.html
+# Written by pnpm; prettier and the package manager would fight over it
+# on every install.
+pnpm-lock.yaml

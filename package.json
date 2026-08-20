@@ -21,7 +21,7 @@
     "changeset": "changeset",
     "release:version": "changeset version",
     "release:publish": "pnpm -r build && changeset publish",
-    "conformance": "pnpm --filter @azrtydxb/novamem-conformance conformance"
+    "conformance": "cd conformance && go test -count=1 -v ./..."
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",

@@ -17,4 +17,4 @@ for i in $(seq 1 60); do
 		exit 1
 	}
 done
-NOVAMEM_URL="$URL" pnpm --filter @azrtydxb/novamem-conformance test
+NOVAMEM_URL="$URL" sh -c 'cd conformance && go test -count=1 -v ./...'
