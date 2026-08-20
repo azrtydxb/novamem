@@ -797,3 +797,49 @@ invisible to code review of either side.** Nothing in `http.ts` says
 "a banned user cannot sign in" and nothing in the Go tree said it
 either; the behaviour lived in a Better Auth plugin and in Fastify's
 hook ordering. Only a black-box test that drives the surface can see it.
+
+## Addendum 2 — §10 ledger dispositions (2026-08-20)
+
+Every "could not verify" item in §10 now has an explicit disposition, so
+this document reads as a closed ledger rather than trailing off. The Go
+server has been bench's canonical deployment since 2026-08-14
+(`packages/server` deleted; image built from `go/Dockerfile`), which
+retires every item whose subject was the TS server itself.
+
+- **Session-cookie interop, TS direction** — retired as moot: the TS
+  server no longer exists to issue a cookie. The Go direction was
+  verified at audit time.
+- **Anything reached through a browser** — superseded: the dashboard is
+  embedded via `go:embed` and served by Go; conformance covers the
+  dashboard route and the `/api/auth/*` surface (§11). Rendering-level
+  verification is the admin-ui's own concern, unchanged by the
+  migration.
+- **Goroutine count under soak** — verified since: the Prometheus
+  exposition now appends `go_goroutines` (plus heap and GC series), and
+  `NOVAMEM_PPROF_ADDR` serves `net/http/pprof` on a dedicated listener
+  (2026-08-20). A 10-minute local load run (4 concurrent writers/readers
+  against a pgvector Postgres) sampled a flat goroutine count.
+- **`BumpHitsMany` fix under soak** — still open, now tracked as backlog
+  story `20260820-bumphits-postfix-soak` rather than implied here. The
+  fix's WARN count going to zero remains unconfirmed.
+- **Real LongMemEval retrieval quality** — verified since:
+  [longmemeval-2026-08.md](../benchmarks/longmemeval-2026-08.md) records
+  the full 500-question run (79.4% adopted config).
+- **A trustworthy latency verdict** — retired as moot: with one server
+  there is no differential latency question; absolute performance is the
+  bench harness's ongoing job.
+- **Behaviour at scale** — not moot, partially addressed: the
+  LongMemEval/LoCoMo ingests exercise corpora far beyond the audit's 378
+  chunks. Index-plan behaviour beyond bench-scale corpora remains an
+  accepted, known-unknown risk.
+- **Qdrant cold store** — implemented since the first addendum and the
+  default `NOVAMEM_COLD_PROVIDER`, with unit coverage
+  (`go/internal/coldstore/qdrant_test.go`). A dedicated live soak on
+  Qdrant rides the `bumphits-postfix-soak` story.
+- **`bearer` and `none` auth modes** — verified since: the conformance
+  suite runs mode-gated cases in all three auth modes and is green
+  against the Go server.
+- **Live novamem-bench deployment** — verified since: the "deployed and
+  exercised live" gate was satisfied when Go became bench's default on
+  2026-08-14; conformance and the bench harness have run against that
+  deployment continuously.

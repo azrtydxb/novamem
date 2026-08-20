@@ -202,6 +202,10 @@ describe.skipIf(env.authMode !== "user" || !hasAdminIdentity)(
         if (path.endsWith("/prom")) {
           expect(ct).toMatch(/^text\/plain/);
           expect(typeof cookie.body).toBe("string");
+          // Go runtime metrics are appended after the novamem_* contract
+          // lines (parity-audit item #16: goroutine visibility once Go
+          // became the primary server).
+          expect(cookie.body as string).toContain("# TYPE go_goroutines gauge");
         } else {
           expect(ct).toMatch(/^application\/json/);
           expect(typeof cookie.body).toBe("object");

@@ -133,6 +133,14 @@ type Config struct {
 	ObserverObserveThreshold int    // NOVAMEM_OBSERVER_OBSERVE_THRESHOLD, default 10
 	ObserverReflectThreshold int    // NOVAMEM_OBSERVER_REFLECT_THRESHOLD, default 50
 	ObserverTimeoutMs        int    // NOVAMEM_OBSERVER_TIMEOUT_MS, default 30000
+
+	// PprofAddr enables net/http/pprof on its own listener when set
+	// (NOVAMEM_PPROF_ADDR, e.g. "127.0.0.1:6060"). Deliberately a
+	// separate socket rather than a route on the API server: profiling
+	// stays reachable in every auth mode (a dashboard-gated route is
+	// unreachable under auth.mode=bearer) and never rides an exposed
+	// port by accident. Default off.
+	PprofAddr string
 }
 
 func Load() (Config, error) {
@@ -386,6 +394,7 @@ func Load() (Config, error) {
 	if c.ObserverEnabled && (c.ObserverEndpoint == "" || c.ObserverModel == "") {
 		return c, fmt.Errorf("observer.enabled = true requires endpoint + model (NOVAMEM_OBSERVER_ENDPOINT / NOVAMEM_OBSERVER_MODEL)")
 	}
+	c.PprofAddr = os.Getenv("NOVAMEM_PPROF_ADDR")
 	return c, nil
 }
 
