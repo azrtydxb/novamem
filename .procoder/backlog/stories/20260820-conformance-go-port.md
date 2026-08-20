@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-20
 Epic: conformance-oracle-language
-Sprint: -
+Sprint: 003-the-conformance-oracle-speaks-go
 
 ## Description
 
