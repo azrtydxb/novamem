@@ -17,9 +17,11 @@ a public artifact other people install.
 
 ## Acceptance criteria
 
-- [ ] ADR recorded: keep-as-SDK or deprecate, with the support policy
+- [x] ADR recorded: keep-as-SDK or deprecate, with the support policy
 - [ ] package README and docs-site reflect the decision
 - [ ] if deprecated: npm deprecation notice published on the final version
 
 ## Evidence
+
+- ADR 0002 (deprecate; final version + notice pointing at HTTP API and clients/go) accepted 2026-08-20
 

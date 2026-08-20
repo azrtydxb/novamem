@@ -17,9 +17,10 @@ both the shim and init epics and belongs in an ADR.
 
 ## Acceptance criteria
 
-- [ ] ADR recorded (procoder adr) naming the chosen channel and why
+- [x] ADR recorded (procoder adr) naming the chosen channel and why
 - [ ] init CLI's written host configs match the chosen channel
-- [ ] docs-site connect/* pages match the chosen channel
+- [ ] docs-site connect/\* pages match the chosen channel
 
 ## Evidence
 
+- ADR 0001 (GitHub releases + install script; npm dropped) accepted 2026-08-20 — .procoder/adr/0001-go-tool-distribution-via-github-releases.md

@@ -17,8 +17,10 @@ the admin-ui/docs-site builds require anyway.
 
 ## Acceptance criteria
 
-- [ ] ADR recorded with the independence trade-off addressed explicitly
+- [x] ADR recorded with the independence trade-off addressed explicitly
 - [ ] if port: 103-case parity plan attached as follow-up stories; if stay: the milestone's goal text amended to name conformance as a second accepted exception
 
 ## Evidence
+
+- ADR 0003 (port to Go; independence preserved by module boundary + no shared helpers, enforced by check) accepted 2026-08-20
 
