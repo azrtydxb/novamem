@@ -88,11 +88,11 @@ jobs:
             clients/go/go.sum
       - run: cd go && go build ./... && go vet ./... && go test ./...
       - run: cd clients/go && go build ./... && go vet ./... && go test ./...
-      # clients/go is lint-clean and stays that way. go/ carries known
-      # golangci findings and is tracked as backlog lint debt — gate it
-      # here once that story closes.
+      # Both Go modules are lint-clean and stay that way.
       - run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
         working-directory: clients/go
+      - run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
+        working-directory: go
       # Guard against API-surface drift: docs/api/openapi.json is the
       # committed snapshot of what the server actually serves, and the
       # clients (TS, Go, MCP) are hand-synced against it. The Go server

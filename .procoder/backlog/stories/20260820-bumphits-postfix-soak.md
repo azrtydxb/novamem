@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-20
 Epic: post-migration-gaps
-Sprint: -
+Sprint: 002-server-module-gated-and-soak-proven-the-mcp-stdio-shim
 
 ## Description
 

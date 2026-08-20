@@ -311,7 +311,7 @@ func jsonType(v any) string {
 // errMalformedJSON is the body-parser failure Fastify answers before any
 // schema runs, so it carries no `issues` array. Kept distinct from a
 // schema issue because the two envelopes differ.
-var errMalformedJSON = errors.New("Body is not valid JSON but content-type is set to 'application/json'")
+var errMalformedJSON = errors.New("Body is not valid JSON but content-type is set to 'application/json'") //nolint:staticcheck // ST1005: byte-for-byte Fastify body-parser wording — error-shape contract
 
 // decodeBody unmarshals a JSON object body. optional=true admits an
 // empty body as an empty object (RecentBody.optional()).

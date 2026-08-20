@@ -179,7 +179,7 @@ func Load() (Config, error) {
 	c.CookieSecret = os.Getenv("NOVAMEM_COOKIE_SECRET")
 	if c.AuthMode != "none" && len(c.CookieSecret) < 16 {
 		return c, fmt.Errorf("NOVAMEM_COOKIE_SECRET is required when auth.mode != 'none'. " +
-			"Generate one with `openssl rand -hex 32` and set it in your environment.")
+			"Generate one with `openssl rand -hex 32` and set it in your environment")
 	}
 	c.InsecureCookies = boolEnv("NOVAMEM_INSECURE_COOKIES")
 	c.BaseURL = getenv("NOVAMEM_BASE_URL", fmt.Sprintf("http://%s:%d", c.Host, c.Port))

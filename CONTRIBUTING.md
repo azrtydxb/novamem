@@ -89,7 +89,7 @@ about what state it is starting from. Migrations are the only path.
 `.github/workflows/ci.yml` runs on every push to main and on PRs:
 
 - **test (amd64)** + **test (arm64)** on native runners — typecheck, build, vitest
-- **go** — `go build`, `go vet`, `go test` for the server and the shared client, golangci-lint for the client, plus the OpenAPI drift gate
+- **go** — `go build`, `go vet`, `go test` for the server and the shared client, golangci-lint for both, plus the OpenAPI drift gate
 - **audit** — `pnpm audit --prod --audit-level=high`
 - **package (npm)** — `pnpm pack` artefacts uploaded for the three published packages
 - **docker (amd64)** + **docker (arm64)** — native build + Trivy HIGH/CRITICAL scan, pushed to ghcr.io on main
