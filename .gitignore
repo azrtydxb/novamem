@@ -24,3 +24,4 @@ bench/locomo10.json
 # procoder generated code index
 .procoder/index/
 __pycache__/
+.procoder/state/

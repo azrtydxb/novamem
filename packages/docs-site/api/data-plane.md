@@ -24,7 +24,7 @@ Low-friction first-pass grounding for the current user message. Intended as the 
 
 Returns `{ relevant, recent }` with the same result shape used by search/recent.
 
-## `POST /v1/search`
+## `POST /v1/search` {#post-v1-search}
 
 Hybrid retrieval across 5 signals (keyword + vector + graph + recency + entity). Default weights `{ keyword: 0.15, vector: 0.65, graph: 0.05, recency: 0.10, entity: 0.05 }`; certain calibrations found graph and entity contribute nothing measurable and prefer them at 0.
 

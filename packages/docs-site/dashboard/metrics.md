@@ -59,5 +59,5 @@ Counter increments are pure observation — never affect call behaviour. The 24 
 
 ## See also
 
-- [API → Admin metrics](../api/admin.md#v1-admin-metrics) — the `GET /v1/admin/metrics` endpoint
+- [API → Admin metrics](../api/admin.md#metrics) — the `GET /v1/admin/metrics` endpoint
 - [Hardening](../ops/hardening.md) — turning the dashboard off (`NOVAMEM_ADMIN_DASHBOARD=0`)

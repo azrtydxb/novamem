@@ -122,7 +122,7 @@ Hard delete: removes warm row, FTS shadow, cold vector, and relation edges. Ther
 
 Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` does); recall is non-mutating.
 
-## Graph traversal (`memory_neighbors`)
+## Graph traversal (`memory_neighbors`) {#graph-traversal-memory-neighbors}
 
 Walks the co-occurrence edges in the `memory_relations` table (a recursive CTE in Postgres — undirected, depth 1–3, score = MAX over paths of the product of edge strengths) from a seed entry id and returns the same hit shape as `search`. `depth` defaults to 1; **prefer 1**, larger depths are exponential and noisy.
 

@@ -43,7 +43,7 @@ The two signals are _not_ the same kind of number, so they are not treated the s
 
 Earlier versions ran two additional search-time tiers — a neighbour walk over co-occurrence edges and entity bridging over extracted identifiers. Both were removed in Phase 7 of the Mem0-alignment plan: the winning search calibration ran their weights at 0 (the neighbour walk was derived from vector similarity, so it largely re-found what the vector tier already returned), and the dedicated graph service's single-threaded writes were the ingest bottleneck (measured 179 ms mean per query).
 
-`weights.graph` and `weights.entity` are still accepted on the wire for compatibility, but contribute nothing. Adjacency itself is not gone — co-occurrence edges now live in the `memory_relations` Postgres table and are traversed on demand by [`/v1/neighbors`](../concepts/mental-model.md#graph-traversal-memory_neighbors), which is the right tool when you have a seed entry and want its surroundings.
+`weights.graph` and `weights.entity` are still accepted on the wire for compatibility, but contribute nothing. Adjacency itself is not gone — co-occurrence edges now live in the `memory_relations` Postgres table and are traversed on demand by [`/v1/neighbors`](../concepts/mental-model.md#graph-traversal-memory-neighbors), which is the right tool when you have a seed entry and want its surroundings.
 
 ## Weighted fuse
 
