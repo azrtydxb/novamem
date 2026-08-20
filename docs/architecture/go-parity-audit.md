@@ -843,3 +843,20 @@ retires every item whose subject was the TS server itself.
   exercised live" gate was satisfied when Go became bench's default on
   2026-08-14; conformance and the bench harness have run against that
   deployment continuously.
+
+### 2026-08-20, later — `BumpHitsMany` fix confirmed under soak
+
+The open item above is closed. A local rig was built to force the exact
+race: one namespace of 10 entries whose keyword relevance for two
+queries is perfectly inverted, hammered by 12 concurrent workers with
+the rate limiter off, so every pair of opposing searches upserts the
+same 10 `memory_access` rows in opposite orders.
+
+- **Control (sort removed):** 173 deadlocks in 3 minutes across 511
+  searches — the rig provably triggers the race.
+- **Fixed binary (sorted lock order):** 19,022 searches over 20
+  minutes, 190,450 row bumps on the contested rows, **zero** deadlocks
+  and zero `bumpHitsMany failed` warnings.
+
+Tracked as backlog story `20260820-bumphits-postfix-soak`; the ordering
+invariant in `warmstore/search.go` is what the control build removed.
