@@ -21,11 +21,11 @@ docker compose logs -f novamem  # watch the bootstrap
 
 The compose file is the source of truth for ports + env wiring: [docker-compose.yaml](https://github.com/azrtydxb/novamem/blob/main/docker-compose.yaml).
 
-| Service    | Image                     | Host port |
-| ---------- | ------------------------- | --------- |
-| `novamem`  | built from `./Dockerfile` | **7778**  |
-| `postgres` | `postgres:16-alpine`      | 5432      |
-| `qdrant`   | `qdrant/qdrant:v1.12.4`   | 6333      |
+| Service    | Image                      | Host port |
+| ---------- | -------------------------- | --------- |
+| `novamem`  | built from `go/Dockerfile` | **7778**  |
+| `postgres` | `postgres:16-alpine`       | 5432      |
+| `qdrant`   | `qdrant/qdrant:v1.12.4`    | 6333      |
 
 Volumes (named): `novamem_pg`, `novamem_qdrant`.
 

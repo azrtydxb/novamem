@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-20
 Epic: post-migration-gaps
-Sprint: -
+Sprint: 001-close-the-decision-free-debt-dead-ts-server-scaffolding
 
 ## Description
 

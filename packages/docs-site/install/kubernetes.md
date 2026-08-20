@@ -37,7 +37,7 @@ kubectl -n novamem rollout restart deploy/novamem
 To build locally and bypass the registry (e.g. in an air-gapped lab) — set `image: novamem:dev` and `imagePullPolicy: Never` in `novamem.yaml`, then:
 
 ```bash
-docker build -t novamem:dev .
+docker build -f go/Dockerfile -t novamem:dev .
 docker save novamem:dev | sudo k3s ctr images import -
 ```
 
