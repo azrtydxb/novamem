@@ -4,6 +4,7 @@ Status: open
 Created: 2026-08-20
 Epic: bench-harness-consolidation
 Sprint: -
+Carried: 006-the-model-free-half-of-the-go-bench-harness — reproducing a published benchmark number needs the model endpoints, which are offline; the smoke-gate criterion landed
 
 ## Description
 
@@ -18,9 +19,11 @@ reproducible by whatever survives.
 ## Acceptance criteria
 
 - [x] ADR recorded naming the surviving harness(es) and the fate of packages/benchmarks
-- [ ] the bench:smoke gate (currently `pnpm bench:smoke` → TS fixture runner) has an equivalent in the surviving harness
+- [x] the bench:smoke gate (currently `pnpm bench:smoke` → TS fixture runner) has an equivalent in the surviving harness
 - [ ] a published benchmark number is reproduced with the surviving harness before the TS package is deleted
 
 ## Evidence
 
 - ADR 0004 (one Go harness replaces packages/benchmarks AND bench/ Python; numbers re-validated before deletion) accepted 2026-08-20
+- `pnpm bench:smoke` now runs `go run ./cmd/novamem-bench`, and its report is byte-equal to the TypeScript harness's on the same fixture (see 20260820-port-benchmarks-per-adr for the parity evidence).
+- Still open: reproducing a published benchmark number before the TS package is deleted. That needs the model endpoints, which are offline — carried rather than waived, because the whole point of the criterion is that deletion is irreversible.
