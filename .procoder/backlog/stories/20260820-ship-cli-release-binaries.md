@@ -3,7 +3,7 @@
 Status: done 2026-08-21
 Created: 2026-08-20
 Epic: mcp-shim-to-go
-Sprint: 005-go-cli-tools-are-shippable-artifacts-and-the-last
+Sprint: 005-go-cli-tools-are-shippable-artifacts-and-the-last-operator
 
 ## Description
 
