@@ -50,6 +50,20 @@ func (d *Doc) Set(key string, value any) {
 	d.values[key] = value
 }
 
+// Delete removes a key, keeping the order of everything else.
+func (d *Doc) Delete(key string) {
+	if _, exists := d.values[key]; !exists {
+		return
+	}
+	delete(d.values, key)
+	for i, k := range d.keys {
+		if k == key {
+			d.keys = append(d.keys[:i], d.keys[i+1:]...)
+			break
+		}
+	}
+}
+
 // Child returns the *Doc at key, creating it when absent or when the
 // existing value is not an object (mirroring deepSet's replacement of a
 // non-object on the path).

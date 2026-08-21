@@ -22,13 +22,13 @@ package initcli
 var Tools = []ToolEntry{
 	// ─── Coding agents with full Claude-Code-style support ───────────────
 	{
-		ID:         "claude-code",
-		Name:       "Claude Code",
-		Scope:      ScopeProject,
-		SkillsBase: ".claude",
-		Detect:     []string{".claude", ".mcp.json"},
-		Mcp:        &McpAdapter{Path: ".mcp.json", Format: "json", Transport: "sse"},
-		Commands:   &CommandAdapter{Dir: ".claude/commands", Format: "claude-md"},
+		ID:              "claude-code",
+		Name:            "Claude Code",
+		Scope:           ScopeProject,
+		SkillsBase:      ".claude",
+		Detect:          []string{".claude", ".mcp.json"},
+		Mcp:             &McpAdapter{Path: ".mcp.json", Format: "json", Transport: "sse"},
+		Commands:        &CommandAdapter{Dir: ".claude/commands", Format: "claude-md"},
 		PostInstallHint: "Restart Claude Code to pick up the new MCP server and skill.",
 	},
 	{

@@ -4,6 +4,7 @@ Status: open
 Created: 2026-08-20
 Epic: mcp-shim-to-go
 Sprint: -
+Carried: 004-the-installer-speaks-go-and-ships-as-a-binary — docs half needs a channel that does not exist yet — blocked on 20260820-ship-cli-release-binaries; the ADR and the config half both landed
 
 ## Description
 
@@ -19,7 +20,7 @@ both the shim and init epics and belongs in an ADR.
 
 - [x] ADR recorded (procoder adr) naming the chosen channel and why
 - [ ] init CLI's written host configs match the chosen channel
-- [ ] docs-site connect/\* pages match the chosen channel
+- [ ] docs-site connect/\* pages match the chosen channel (BLOCKED: needs 20260820-ship-cli-release-binaries — documenting a download that does not exist yet would be worse than the status quo)
 
 ## Evidence
 
