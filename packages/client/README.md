@@ -1,5 +1,20 @@
 # @azrtydxb/novamem
 
+**⚠️ Deprecated — this package is no longer maintained.**
+
+novamem's contract is its HTTP API, not a language binding, and every
+internal consumer of this client has moved to Go.
+
+- **Go:** use [`clients/go`](https://github.com/azrtydxb/novamem/tree/main/clients/go),
+  which a test holds to route-for-route parity with the server.
+- **Any other language, including JS/TS:** call the HTTP API directly.
+  The [OpenAPI spec](https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json)
+  is generated from the server's own route table and is first-class.
+
+This is the final release. It keeps working against the servers it works
+against today; it will not gain new endpoints. Reasoning:
+[ADR 0002](https://github.com/azrtydxb/novamem/blob/main/.procoder/adr/0002-deprecate-npm-ts-client.md).
+
 TypeScript client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service with 5-signal hybrid retrieval (keyword + vector + graph + recency + entity), content-hash dedup, sensitivity auto-detection, and async background enrichment.
 
 ```bash
