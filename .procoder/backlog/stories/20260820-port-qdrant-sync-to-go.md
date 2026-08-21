@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-20
 Epic: repo-scripts-to-go
-Sprint: -
+Sprint: 005-go-cli-tools-are-shippable-artifacts-and-the-last
 
 ## Description
 

@@ -1,0 +1,83 @@
+name: Release binaries
+
+# Cross-compiles the Go CLI tools and attaches them to the GitHub
+# release for a vX.Y.Z tag (ADR 0001: these ship as release binaries,
+# not npm packages).
+#
+# The two binaries travel in ONE archive per platform on purpose:
+# novamem-init resolves the shim by looking for `novamem-mcp` beside its
+# own executable, so splitting them would break that path for anyone who
+# just unpacks the archive.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "existing tag to build and attach assets to"
+        required: true
+
+permissions:
+  contents: write # upload release assets
+
+concurrency:
+  group: release-binaries-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  binaries:
+    name: ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go/go.sum
+
+      - name: Resolve tag
+        id: tag
+        run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      # CGO stays off so these are static binaries that run on any glibc
+      # or musl host — the same reason the server image is distroless.
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          stage="novamem_${TAG}_${GOOS}_${GOARCH}"
+          mkdir -p "dist/${stage}"
+          cd go
+          go build -trimpath -ldflags "-s -w -X main.version=${TAG}" \
+            -o "../dist/${stage}/novamem-init" ./cmd/novamem-init
+          go build -trimpath -ldflags "-s -w -X main.version=${TAG}" \
+            -o "../dist/${stage}/novamem-mcp" ./cmd/novamem-mcp
+          cd ..
+          cp scripts/install.sh "dist/${stage}/install.sh"
+          tar -C dist -czf "dist/${stage}.tar.gz" "${stage}"
+          sha256sum "dist/${stage}.tar.gz" | sed "s| dist/| |" > "dist/${stage}.tar.gz.sha256"
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
+          gh release upload "$TAG" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber

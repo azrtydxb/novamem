@@ -63,6 +63,41 @@ The server isn't published to npm. The release artifact is the docker image.
 | `:main`                 | Always-latest main. Don't use in production. |
 | `:sha-<7chars>`         | Deterministic. Pin in production.            |
 
+## CLI binaries (novamem-init, novamem-mcp)
+
+Per [ADR 0001](https://github.com/azrtydxb/novamem/blob/main/.procoder/adr/0001-go-tool-distribution-via-github-releases.md)
+the Go CLI tools ship as release binaries, not npm packages.
+
+### Workflow
+
+`release-binaries.yml` runs on the same `vX.Y.Z` tag that releases the
+server image. For each of `linux/amd64`, `linux/arm64` and
+`darwin/arm64` it cross-compiles both binaries (`CGO_ENABLED=0`, so they
+are static and run on glibc or musl alike), stamps `--version` from the
+tag, and attaches one archive plus its `.sha256` to the GitHub release.
+
+**Both binaries ride in the same archive on purpose.** `novamem-init`
+resolves the MCP shim by looking for `novamem-mcp` beside its own
+executable; splitting them would silently drop that path and fall back
+to whatever is on `$PATH`.
+
+### Installing
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/azrtydxb/novamem/main/scripts/install.sh | sh
+```
+
+The script picks the archive for the running platform, **verifies the
+checksum before unpacking** (a truncated or tampered download fails
+here, not later as a mystery crash inside an AI host), and installs both
+binaries into `~/.local/bin`. Environment overrides:
+`NOVAMEM_VERSION` (default: latest release), `NOVAMEM_BIN_DIR`, and
+`NOVAMEM_BASE_URL` — the last exists so the whole flow can be exercised
+against a locally served archive before anything is published.
+
+macOS on Intel is not a published target; build from source with
+`cd go && go build ./cmd/...`.
+
 ## Branch protection
 
 `main` requires:
