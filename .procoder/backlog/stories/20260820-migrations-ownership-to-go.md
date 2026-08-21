@@ -19,6 +19,6 @@ migrations and drizzle-kit tooling is gone.
 
 ## Evidence
 
-- go/internal/warmstore/migrations/*.sql (8 files) + migrations.go apply logic (2026-08-20)
+- go/internal/warmstore/migrations/\*.sql (8 files) + migrations.go apply logic (2026-08-20)
 - `grep -rn "drizzle-kit" package.json packages/*/package.json` → no matches; remaining "drizzle" hits are prose in prompts/tests
 - go/internal/warmstore/migrations_apply_test.go and migrations_journal_test.go exist and pass in `go test ./...`

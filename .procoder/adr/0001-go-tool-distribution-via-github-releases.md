@@ -27,7 +27,7 @@ runtimes to maintain — the thing the migration exists to end).
 Easier: one artifact kind (binaries) and one release flow for all Go
 tools; no Node needed on machines that only run agents; supply-chain
 surface shrinks to GitHub releases. Harder: every host config the init
-CLI writes, every docs-site connect/* page, and the getting-started flow
+CLI writes, every docs-site connect/\* page, and the getting-started flow
 must switch from `npx …` to a binary path; existing installs keep
 working but new-install docs change; the Changesets/npm release
 machinery (release-preflight.mjs, linked-version config) loses its
