@@ -68,6 +68,10 @@ jobs:
       # see compiled .d.ts files.
       - run: pnpm build
       - run: pnpm typecheck
+      # ESLint over the repo's JavaScript. TypeScript is excluded until
+      # typescript-eslint supports TS 7 (typescript-eslint#10940) — the
+      # config switches it on automatically when it does.
+      - run: pnpm lint
       - run: pnpm test
       # Guard against stale prose drift in docs (issue #73). Cheap regex
       # checks; no extra deps. See scripts/doc-smoke.mjs for invariants.

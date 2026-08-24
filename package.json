@@ -12,7 +12,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "bench:smoke": "cd go && go run ./cmd/novamem-bench --fixture ../packages/benchmarks/fixtures/novamem-recall-smoke.json",
     "docs:api": "pnpm --filter @azrtydxb/novamem-server build && pnpm --filter @azrtydxb/novamem-server docs:api",
@@ -25,8 +25,11 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.19",
+    "eslint": "^10.9.0",
     "typescript": "^7.0.2",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"
   },
   "engines": {

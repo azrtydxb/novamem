@@ -146,10 +146,18 @@ export function parseJudgeJson(text: string): {
   reason: string;
   raw?: string;
 } {
-  const match = /\{[\s\S]*\}/.exec(text);
-  if (match) {
+  // Slice between the first `{` and the last `}` instead of matching
+  // `/\{[\s\S]*\}/`. That pattern backtracks from every candidate start
+  // when the closing brace is missing, which is quadratic on judge output
+  // full of braces (CodeQL js/polynomial-redos). indexOf/lastIndexOf is
+  // linear and selects the same span for well-formed input.
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  const candidate =
+    first !== -1 && last > first ? text.slice(first, last + 1) : null;
+  if (candidate) {
     try {
-      const parsed = JSON.parse(match[0]) as {
+      const parsed = JSON.parse(candidate) as {
         judgment?: unknown;
         score?: unknown;
         reason?: unknown;

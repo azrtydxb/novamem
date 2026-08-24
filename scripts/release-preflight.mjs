@@ -53,7 +53,7 @@ async function checkVersions() {
     return null;
   }
   const pkgsDir = join(ROOT, "packages");
-  let entries = [];
+  let entries;
   try {
     entries = await readdir(pkgsDir, { withFileTypes: true });
   } catch {
@@ -88,18 +88,32 @@ async function checkChangelog(canonical) {
     return;
   }
   const lines = text.split(/\r?\n/);
-  const headingRe = new RegExp(
-    `^##\\s*\\[${canonical.replace(/\./g, "\\.")}\\]`
-  );
+  // Match the version by parsing the heading text rather than by building
+  // a regex out of it. Two reasons: escaping only dots left every other
+  // regex metacharacter live (CodeQL js/incomplete-sanitization), and the
+  // hard-coded brackets stopped matching when CHANGELOG headings moved
+  // from `## [1.1.2] - date` to `## 1.1.2 - date`. Both forms are
+  // accepted so this keeps working whichever style the file uses.
+  const headingVersion = (line) => {
+    if (!line.startsWith("##")) return null;
+    let rest = line.slice(2).trim();
+    if (rest.startsWith("[")) {
+      const close = rest.indexOf("]");
+      if (close === -1) return null;
+      return rest.slice(1, close).trim();
+    }
+    // `1.1.2 - 2026-05-05` / `1.1.2` — the version is the first token.
+    return rest.split(/[\s-]/)[0] ?? null;
+  };
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (headingRe.test(lines[i])) {
+    if (headingVersion(lines[i]) === canonical) {
       start = i;
       break;
     }
   }
   if (start === -1) {
-    fail(`CHANGELOG.md: no \`## [${canonical}]\` section`);
+    fail(`CHANGELOG.md: no \`## ${canonical}\` section`);
     return;
   }
   // Find next ## heading after start.
@@ -112,7 +126,7 @@ async function checkChangelog(canonical) {
   }
   const body = lines.slice(start + 1, end).filter((l) => l.trim().length > 0);
   if (body.length === 0) {
-    fail(`CHANGELOG.md: \`## [${canonical}]\` section is empty`);
+    fail(`CHANGELOG.md: \`## ${canonical}\` section is empty`);
   }
 }
 
