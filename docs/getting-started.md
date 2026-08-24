@@ -18,7 +18,6 @@ echo "NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 12)" >> .env
 docker compose up -d
 ```
 
-
 ```bash
 curl http://localhost:7778/health
 ```

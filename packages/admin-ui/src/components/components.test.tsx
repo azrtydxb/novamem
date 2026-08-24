@@ -16,7 +16,7 @@ describe("<Pill>", () => {
     const { container } = render(
       <Pill tone="accent" dot pulse>
         live
-      </Pill>,
+      </Pill>
     );
     const dot = container.querySelector("span > span");
     expect(dot).not.toBeNull();
@@ -34,7 +34,9 @@ describe("<Sparkline>", () => {
   });
 
   it("plots a polyline through every data point", () => {
-    const { container } = render(<Sparkline data={[0, 5, 10, 5, 0]} color="#0f0" width={100} />);
+    const { container } = render(
+      <Sparkline data={[0, 5, 10, 5, 0]} color="#0f0" width={100} />
+    );
     const poly = container.querySelector("polyline");
     expect(poly).not.toBeNull();
     expect(poly?.getAttribute("stroke")).toBe("#0f0");

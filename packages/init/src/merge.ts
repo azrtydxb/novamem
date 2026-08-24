@@ -15,7 +15,7 @@ import * as TOML from "smol-toml";
 export function deepSet(
   target: Record<string, unknown>,
   path: string[],
-  value: unknown,
+  value: unknown
 ): void {
   if (path.length === 0) return;
   let cur: Record<string, unknown> = target;
@@ -47,7 +47,9 @@ export function deepGet(target: unknown, path: string[]): unknown {
  * Parse JSON tolerantly — returns `{}` for missing/empty/invalid files so
  * the merge step always works against an object root.
  */
-export function parseJsonLoose(raw: string | null | undefined): Record<string, unknown> {
+export function parseJsonLoose(
+  raw: string | null | undefined
+): Record<string, unknown> {
   if (!raw || raw.trim() === "") return {};
   try {
     const parsed = JSON.parse(raw);
@@ -66,7 +68,9 @@ export function stringifyJson(doc: unknown): string {
  * Parse TOML tolerantly — returns `{}` for missing/invalid files. Codex
  * uses TOML, so this is the only TOML target we have right now.
  */
-export function parseTomlLoose(raw: string | null | undefined): Record<string, unknown> {
+export function parseTomlLoose(
+  raw: string | null | undefined
+): Record<string, unknown> {
   if (!raw || raw.trim() === "") return {};
   try {
     const parsed = TOML.parse(raw);
@@ -82,5 +86,10 @@ export function stringifyToml(doc: Record<string, unknown>): string {
 }
 
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.getPrototypeOf(v) === Object.prototype
+  );
 }

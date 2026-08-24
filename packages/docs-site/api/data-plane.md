@@ -24,7 +24,7 @@ Low-friction first-pass grounding for the current user message. Intended as the 
 
 Returns `{ relevant, recent }` with the same result shape used by search/recent.
 
-## `POST /v1/search`
+## `POST /v1/search` {#post-v1-search}
 
 Hybrid retrieval across 5 signals (keyword + vector + graph + recency + entity). Default weights `{ keyword: 0.15, vector: 0.65, graph: 0.05, recency: 0.10, entity: 0.05 }`; certain calibrations found graph and entity contribute nothing measurable and prefer them at 0.
 
@@ -36,7 +36,13 @@ Hybrid retrieval across 5 signals (keyword + vector + graph + recency + entity).
   "includeNamespaces": ["restrict fanout to subset"],
   "project": "id or name",
   "includeProjects": ["active-project union"],
-  "weights": { "keyword": 0.15, "vector": 0.65, "graph": 0.05, "recency": 0.10, "entity": 0.05 },
+  "weights": {
+    "keyword": 0.15,
+    "vector": 0.65,
+    "graph": 0.05,
+    "recency": 0.1,
+    "entity": 0.05
+  },
   "agentName": "filter results to entries authored by this agent",
   "maxSensitivity": "public|internal|private|sensitive"
 }
@@ -102,7 +108,6 @@ Read-only memory hygiene report for curation and debugging. The response include
 ## `POST /v1/evaluate`
 
 Run built-in memory quality checks. The response includes `passed`, `summary`, `cases`, and a compatibility `checks` alias. The core suite verifies that newer facts supersede older facts, context packs group typed memories, junk captures are rejected, hygiene reports are available, and retention policies are wired.
-
 
 ## `POST /v1/adoption`
 
@@ -219,5 +224,5 @@ Every route returns:
 
 ## See also
 
-- [MCP tools](/api/mcp-tools) — same operations exposed over MCP
-- [Hybrid search internals](/architecture/hybrid-search) — what the `weights` knob does
+- [MCP tools](./mcp-tools.md) — same operations exposed over MCP
+- [Hybrid search internals](../architecture/hybrid-search.md) — what the `weights` knob does

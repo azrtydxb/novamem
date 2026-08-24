@@ -135,7 +135,8 @@ Searching counts as access — re-finding important memories keeps them warm.
 const TOOL_DEFINITIONS = [
   {
     name: "memory_context",
-    description: "Mandatory first-pass grounding tool. Call before substantive requests; returns relevant + recent context.",
+    description:
+      "Mandatory first-pass grounding tool. Call before substantive requests; returns relevant + recent context.",
     inputSchema: {
       type: "object",
       properties: {
@@ -143,7 +144,10 @@ const TOOL_DEFINITIONS = [
         k: { type: "number" },
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
-        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        maxSensitivity: {
+          type: "string",
+          enum: ["public", "internal", "private", "sensitive"],
+        },
         project: { type: "string" },
         includeProjects: { type: "array", items: { type: "string" } },
         weights: { type: "object" },
@@ -153,7 +157,8 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: "memory_capture",
-    description: "Low-friction durable write path for decisions, preferences, verified setup facts, and root-cause lessons.",
+    description:
+      "Low-friction durable write path for decisions, preferences, verified setup facts, and root-cause lessons.",
     inputSchema: {
       type: "object",
       properties: {
@@ -166,15 +171,23 @@ const TOOL_DEFINITIONS = [
         force: { type: "boolean" },
         project: { type: "string" },
         metadata: { type: "object" },
-        sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
-        expiresAt: { type: "string", description: "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted." },
+        sensitivity: {
+          type: "string",
+          enum: ["public", "internal", "private", "sensitive"],
+        },
+        expiresAt: {
+          type: "string",
+          description:
+            "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted.",
+        },
       },
       required: ["content"],
     },
   },
   {
     name: "memory_session_recap",
-    description: "Ingest a concise end-of-session recap as durable typed memories.",
+    description:
+      "Ingest a concise end-of-session recap as durable typed memories.",
     inputSchema: {
       type: "object",
       properties: {
@@ -193,7 +206,10 @@ const TOOL_DEFINITIONS = [
         force: { type: "boolean" },
         project: { type: "string" },
         metadata: { type: "object" },
-        sensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        sensitivity: {
+          type: "string",
+          enum: ["public", "internal", "private", "sensitive"],
+        },
       },
     },
   },
@@ -217,7 +233,8 @@ const TOOL_DEFINITIONS = [
 
   {
     name: "memory_adoption",
-    description: "Read-only client adoption report with current tool surface, instructions hash, feature flags, diagnostics, and refresh guidance.",
+    description:
+      "Read-only client adoption report with current tool surface, instructions hash, feature flags, diagnostics, and refresh guidance.",
     inputSchema: {
       type: "object",
       properties: {
@@ -238,8 +255,16 @@ const TOOL_DEFINITIONS = [
         k: { type: "number" },
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
-        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
-        contentMode: { type: "string", enum: ["full", "snippet", "ids"], description: "\"snippet\" truncates content ~240 chars; \"ids\" omits content/metadata (rank first, hydrate later). Default \"full\"." },
+        maxSensitivity: {
+          type: "string",
+          enum: ["public", "internal", "private", "sensitive"],
+        },
+        contentMode: {
+          type: "string",
+          enum: ["full", "snippet", "ids"],
+          description:
+            '"snippet" truncates content ~240 chars; "ids" omits content/metadata (rank first, hydrate later). Default "full".',
+        },
         project: {
           type: "string",
           description: "Project id or name. Omit for user-wide entries.",
@@ -271,7 +296,11 @@ const TOOL_DEFINITIONS = [
         confidence: { type: "number", description: "0..1" },
         force: { type: "boolean" },
         project: { type: "string", description: "Project id or name." },
-        expiresAt: { type: "string", description: "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted." },
+        expiresAt: {
+          type: "string",
+          description:
+            "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted.",
+        },
       },
       required: ["content"],
     },
@@ -284,11 +313,19 @@ const TOOL_DEFINITIONS = [
       properties: {
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
-        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        maxSensitivity: {
+          type: "string",
+          enum: ["public", "internal", "private", "sensitive"],
+        },
         k: { type: "number" },
         project: { type: "string" },
         includeProjects: { type: "array", items: { type: "string" } },
-        contentMode: { type: "string", enum: ["full", "snippet", "ids"], description: "\"snippet\" truncates content ~240 chars; \"ids\" omits content/metadata. Default \"full\"." },
+        contentMode: {
+          type: "string",
+          enum: ["full", "snippet", "ids"],
+          description:
+            '"snippet" truncates content ~240 chars; "ids" omits content/metadata. Default "full".',
+        },
       },
     },
   },
@@ -301,12 +338,20 @@ const TOOL_DEFINITIONS = [
       properties: {
         namespace: { type: "string" },
         includeNamespaces: { type: "array", items: { type: "string" } },
-        maxSensitivity: { type: "string", enum: ["public", "internal", "private", "sensitive"] },
+        maxSensitivity: {
+          type: "string",
+          enum: ["public", "internal", "private", "sensitive"],
+        },
         k: { type: "number" },
         since: { type: "string" },
         project: { type: "string" },
         includeProjects: { type: "array", items: { type: "string" } },
-        contentMode: { type: "string", enum: ["full", "snippet", "ids"], description: "\"snippet\" truncates content ~240 chars; \"ids\" omits content/metadata. Default \"full\"." },
+        contentMode: {
+          type: "string",
+          enum: ["full", "snippet", "ids"],
+          description:
+            '"snippet" truncates content ~240 chars; "ids" omits content/metadata. Default "full".',
+        },
       },
     },
   },
@@ -368,7 +413,8 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: "project_create",
-    description: "Create a new project and become its owner. Returns the project's id.",
+    description:
+      "Create a new project and become its owner. Returns the project's id.",
     inputSchema: {
       type: "object",
       properties: {
@@ -379,10 +425,13 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: "project_delete",
-    description: "Delete a project owned by the caller. Caller must be the owner.",
+    description:
+      "Delete a project owned by the caller. Caller must be the owner.",
     inputSchema: {
       type: "object",
-      properties: { project: { type: "string", description: "Project id or name." } },
+      properties: {
+        project: { type: "string", description: "Project id or name." },
+      },
       required: ["project"],
     },
   },
@@ -392,13 +441,16 @@ const TOOL_DEFINITIONS = [
       "Set the caller's active project. Subsequent memory_* calls without an explicit `project` arg default to this scope.",
     inputSchema: {
       type: "object",
-      properties: { project: { type: "string", description: "Project id or name." } },
+      properties: {
+        project: { type: "string", description: "Project id or name." },
+      },
       required: ["project"],
     },
   },
   {
     name: "project_deactivate",
-    description: "Clear the caller's active project. Reads/writes default to user-global again.",
+    description:
+      "Clear the caller's active project. Reads/writes default to user-global again.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -437,13 +489,49 @@ type ToolAnnotations = {
 };
 
 function annotationsFor(name: string): ToolAnnotations {
-  if (["memory_context", "memory_hygiene", "memory_evaluate", "memory_adoption", "memory_search", "memory_today", "memory_recent", "memory_neighbors", "memory_stats", "project_list"].includes(name)) {
-    return { title: name, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  if (
+    [
+      "memory_context",
+      "memory_hygiene",
+      "memory_evaluate",
+      "memory_adoption",
+      "memory_search",
+      "memory_today",
+      "memory_recent",
+      "memory_neighbors",
+      "memory_stats",
+      "project_list",
+    ].includes(name)
+  ) {
+    return {
+      title: name,
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    };
   }
   if (["memory_forget", "project_delete", "project_unshare"].includes(name)) {
-    return { title: name, readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
+    return {
+      title: name,
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    };
   }
-  return { title: name, readOnlyHint: false, destructiveHint: false, idempotentHint: ["memory_update", "project_activate", "project_deactivate", "project_share"].includes(name), openWorldHint: false };
+  return {
+    title: name,
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: [
+      "memory_update",
+      "project_activate",
+      "project_deactivate",
+      "project_share",
+    ].includes(name),
+    openWorldHint: false,
+  };
 }
 
 const TOOL_DEFINITIONS_WITH_ANNOTATIONS = TOOL_DEFINITIONS.map((t) => ({
@@ -472,13 +560,14 @@ function optBool(v: unknown): boolean | undefined {
 }
 function optStrArray(v: unknown): string[] | undefined {
   if (!Array.isArray(v) || v.length === 0) return undefined;
-  const out = v.filter((x): x is string => typeof x === "string" && x.length > 0);
+  const out = v.filter(
+    (x): x is string => typeof x === "string" && x.length > 0
+  );
   return out.length > 0 ? out : undefined;
 }
 function optProject(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
-
 
 export interface RemoteMcpServerOptions {
   /** Base URL the host configured via NOVAMEM_BASE_URL. */
@@ -489,15 +578,16 @@ export interface RemoteMcpServerOptions {
 
 export function buildRemoteMcpServer(
   client: NovamemClient,
-  opts: RemoteMcpServerOptions = {},
+  opts: RemoteMcpServerOptions = {}
 ): Server {
   const server = new Server(
     { name: "novamem-mcp", version: "0.1.0" },
-    { capabilities: { tools: {} }, instructions: NOVAMEM_INSTRUCTIONS },
+    { capabilities: { tools: {} }, instructions: NOVAMEM_INSTRUCTIONS }
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DEFINITIONS_WITH_ANNOTATIONS as unknown as typeof TOOL_DEFINITIONS,
+    tools:
+      TOOL_DEFINITIONS_WITH_ANNOTATIONS as unknown as typeof TOOL_DEFINITIONS,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -507,11 +597,19 @@ export function buildRemoteMcpServer(
     try {
       switch (req.params.name) {
         case "memory_context": {
-          const w = (args.weights ?? {}) as { keyword?: unknown; vector?: unknown; graph?: unknown };
+          const w = (args.weights ?? {}) as {
+            keyword?: unknown;
+            vector?: unknown;
+            graph?: unknown;
+          };
           const weights =
-            typeof w.keyword === "number" || typeof w.vector === "number" || typeof w.graph === "number"
+            typeof w.keyword === "number" ||
+            typeof w.vector === "number" ||
+            typeof w.graph === "number"
               ? {
-                  ...(typeof w.keyword === "number" ? { keyword: w.keyword } : {}),
+                  ...(typeof w.keyword === "number"
+                    ? { keyword: w.keyword }
+                    : {}),
                   ...(typeof w.vector === "number" ? { vector: w.vector } : {}),
                   ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
                 }
@@ -539,7 +637,10 @@ export function buildRemoteMcpServer(
             confidence: optNum(args.confidence),
             force: optBool(args.force),
             project,
-            metadata: args.metadata && typeof args.metadata === "object" ? args.metadata : undefined,
+            metadata:
+              args.metadata && typeof args.metadata === "object"
+                ? args.metadata
+                : undefined,
             sensitivity: optStr(args.sensitivity),
             expiresAt: optStr(args.expiresAt),
           } as unknown as Parameters<typeof client.capture>[0];
@@ -548,13 +649,41 @@ export function buildRemoteMcpServer(
         }
         case "memory_session_recap": {
           const groups = [
-            { items: optStrArray(args.decisions), namespace: "decisions", memoryType: "decision" },
-            { items: optStrArray(args.setupFacts), namespace: "current-setup", memoryType: "setup_fact" },
-            { items: optStrArray(args.rootCauses), namespace: "root-causes", memoryType: "bug_root_cause" },
-            { items: optStrArray(args.preferences), namespace: "user", memoryType: "user_preference" },
-            { items: optStrArray(args.projectConventions), namespace: "project-conventions", memoryType: "project_convention" },
-            { items: optStrArray(args.safetyConstraints), namespace: "safety", memoryType: "safety_constraint" },
-            { items: optStrArray(args.other), namespace: optStr(args.namespace) ?? "memory", memoryType: "general" },
+            {
+              items: optStrArray(args.decisions),
+              namespace: "decisions",
+              memoryType: "decision",
+            },
+            {
+              items: optStrArray(args.setupFacts),
+              namespace: "current-setup",
+              memoryType: "setup_fact",
+            },
+            {
+              items: optStrArray(args.rootCauses),
+              namespace: "root-causes",
+              memoryType: "bug_root_cause",
+            },
+            {
+              items: optStrArray(args.preferences),
+              namespace: "user",
+              memoryType: "user_preference",
+            },
+            {
+              items: optStrArray(args.projectConventions),
+              namespace: "project-conventions",
+              memoryType: "project_convention",
+            },
+            {
+              items: optStrArray(args.safetyConstraints),
+              namespace: "safety",
+              memoryType: "safety_constraint",
+            },
+            {
+              items: optStrArray(args.other),
+              namespace: optStr(args.namespace) ?? "memory",
+              memoryType: "general",
+            },
           ];
           const results = [];
           for (const group of groups) {
@@ -564,18 +693,35 @@ export function buildRemoteMcpServer(
                 namespace: optStr(args.namespace) ?? group.namespace,
                 source: optStr(args.source) ?? "memory_session_recap",
                 sourceType: optStr(args.sourceType) ?? "summary",
-                capturedFrom: optStr(args.capturedFrom) ?? "memory_session_recap",
+                capturedFrom:
+                  optStr(args.capturedFrom) ?? "memory_session_recap",
                 confidence: optNum(args.confidence),
                 force: optBool(args.force),
                 project,
-                metadata: { ...((args.metadata && typeof args.metadata === "object") ? args.metadata : {}), memoryType: group.memoryType, recap: true },
+                metadata: {
+                  ...(args.metadata && typeof args.metadata === "object"
+                    ? args.metadata
+                    : {}),
+                  memoryType: group.memoryType,
+                  recap: true,
+                },
                 sensitivity: optStr(args.sensitivity),
               } as unknown as Parameters<typeof client.capture>[0];
               const r = await client.capture(body);
               results.push(...((r as { results?: unknown[] }).results ?? [r]));
             }
           }
-          return { content: [{ type: "text", text: JSON.stringify({ saved: results.filter((r: any) => r?.id).length, results }) }] };
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  saved: results.filter((r: any) => r?.id).length,
+                  results,
+                }),
+              },
+            ],
+          };
         }
         case "memory_hygiene": {
           const r = await client.hygiene({ k: optNum(args.k) });
@@ -601,9 +747,13 @@ export function buildRemoteMcpServer(
             graph?: unknown;
           };
           const weights =
-            typeof w.keyword === "number" || typeof w.vector === "number" || typeof w.graph === "number"
+            typeof w.keyword === "number" ||
+            typeof w.vector === "number" ||
+            typeof w.graph === "number"
               ? {
-                  ...(typeof w.keyword === "number" ? { keyword: w.keyword } : {}),
+                  ...(typeof w.keyword === "number"
+                    ? { keyword: w.keyword }
+                    : {}),
                   ...(typeof w.vector === "number" ? { vector: w.vector } : {}),
                   ...(typeof w.graph === "number" ? { graph: w.graph } : {}),
                 }
@@ -645,7 +795,9 @@ export function buildRemoteMcpServer(
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "memory_today": {
-          const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          const since = new Date(
+            Date.now() - 24 * 60 * 60 * 1000
+          ).toISOString();
           const body = {
             namespace: optStr(args.namespace),
             includeNamespaces: optStrArray(args.includeNamespaces),
@@ -693,12 +845,18 @@ export function buildRemoteMcpServer(
           const id = asStr(args.id, "id");
           const body: Record<string, unknown> = {};
           if (typeof args.content === "string") body.content = args.content;
-          if (typeof args.namespace === "string") body.namespace = args.namespace;
-          if (args.metadata && typeof args.metadata === "object") body.metadata = args.metadata;
-          if (typeof args.sourceType === "string") body.sourceType = args.sourceType;
-          if (typeof args.capturedFrom === "string") body.capturedFrom = args.capturedFrom;
-          if (typeof args.confidence === "number") body.confidence = args.confidence;
-          if (typeof args.sensitivity === "string") body.sensitivity = args.sensitivity;
+          if (typeof args.namespace === "string")
+            body.namespace = args.namespace;
+          if (args.metadata && typeof args.metadata === "object")
+            body.metadata = args.metadata;
+          if (typeof args.sourceType === "string")
+            body.sourceType = args.sourceType;
+          if (typeof args.capturedFrom === "string")
+            body.capturedFrom = args.capturedFrom;
+          if (typeof args.confidence === "number")
+            body.confidence = args.confidence;
+          if (typeof args.sensitivity === "string")
+            body.sensitivity = args.sensitivity;
           if (project !== undefined) body.project = project;
           const r = await client.update(id, body);
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
@@ -712,7 +870,9 @@ export function buildRemoteMcpServer(
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "project_create": {
-          const r = await client.createProject({ name: asStr(args.name, "name") });
+          const r = await client.createProject({
+            name: asStr(args.name, "name"),
+          });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "project_delete": {
@@ -720,29 +880,38 @@ export function buildRemoteMcpServer(
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "project_activate": {
-          const r = await client.setActiveProject(asStr(args.project, "project"));
+          const r = await client.setActiveProject(
+            asStr(args.project, "project")
+          );
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "project_deactivate": {
           await client.clearActiveProject();
-          return { content: [{ type: "text", text: JSON.stringify({ active: null }) }] };
+          return {
+            content: [{ type: "text", text: JSON.stringify({ active: null }) }],
+          };
         }
         case "project_share": {
-          const r = await client.addProjectMember(asStr(args.project, "project"), {
-            username: asStr(args.username, "username"),
-          });
+          const r = await client.addProjectMember(
+            asStr(args.project, "project"),
+            {
+              username: asStr(args.username, "username"),
+            }
+          );
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "project_unshare": {
           const r = await client.removeProjectMemberByUsername(
             asStr(args.project, "project"),
-            asStr(args.username, "username"),
+            asStr(args.username, "username")
           );
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         default:
           return {
-            content: [{ type: "text", text: `unknown tool: ${req.params.name}` }],
+            content: [
+              { type: "text", text: `unknown tool: ${req.params.name}` },
+            ],
             isError: true,
           };
       }
@@ -759,7 +928,7 @@ export function buildRemoteMcpServer(
 
 export async function startRemoteMcpStdio(
   client: NovamemClient,
-  opts: RemoteMcpServerOptions = {},
+  opts: RemoteMcpServerOptions = {}
 ): Promise<void> {
   const server = buildRemoteMcpServer(client, opts);
   const transport = new StdioServerTransport();

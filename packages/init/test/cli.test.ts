@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -23,7 +29,7 @@ describe("bin entrypoint", () => {
   // *exactly* this catches stale hardcoded fallbacks (e.g. the prior
   // `PKG_VERSION = "0.1.0"` and the `0.0.0` catch-all in main.ts).
   const expectedVersion: string = JSON.parse(
-    readFileSync(join(here, "..", "package.json"), "utf8"),
+    readFileSync(join(here, "..", "package.json"), "utf8")
   ).version;
 
   it("--version prints the package.json version when invoked directly", () => {

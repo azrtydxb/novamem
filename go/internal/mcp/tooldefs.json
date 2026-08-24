@@ -24,12 +24,7 @@
         },
         "maxSensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ],
+          "enum": ["public", "internal", "private", "sensitive"],
           "description": "Maximum sensitivity to return; defaults to private, excluding sensitive."
         },
         "project": {
@@ -57,9 +52,7 @@
           }
         }
       },
-      "required": [
-        "message"
-      ]
+      "required": ["message"]
     },
     "annotations": {
       "title": "Get memory context",
@@ -105,21 +98,14 @@
         },
         "sensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         },
         "expiresAt": {
           "type": "string",
           "description": "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted."
         }
       },
-      "required": [
-        "content"
-      ]
+      "required": ["content"]
     },
     "annotations": {
       "title": "Capture durable memory",
@@ -205,12 +191,7 @@
         },
         "sensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         }
       }
     },
@@ -345,17 +326,11 @@
         },
         "contentMode": {
           "type": "string",
-          "enum": [
-            "full",
-            "snippet",
-            "ids"
-          ],
+          "enum": ["full", "snippet", "ids"],
           "description": "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\"."
         }
       },
-      "required": [
-        "query"
-      ]
+      "required": ["query"]
     },
     "annotations": {
       "title": "Search memory",
@@ -404,9 +379,7 @@
           "description": "Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted."
         }
       },
-      "required": [
-        "content"
-      ]
+      "required": ["content"]
     },
     "annotations": {
       "title": "Remember a fact",
@@ -433,20 +406,11 @@
         },
         "maxSensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         },
         "contentMode": {
           "type": "string",
-          "enum": [
-            "full",
-            "snippet",
-            "ids"
-          ],
+          "enum": ["full", "snippet", "ids"],
           "description": "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\"."
         },
         "k": {
@@ -506,11 +470,7 @@
         },
         "contentMode": {
           "type": "string",
-          "enum": [
-            "full",
-            "snippet",
-            "ids"
-          ],
+          "enum": ["full", "snippet", "ids"],
           "description": "\"snippet\" truncates content to ~240 chars (truncated: true on cut rows); \"ids\" omits content and metadata (rank first, hydrate later). Default \"full\"."
         }
       }
@@ -549,9 +509,7 @@
           }
         }
       },
-      "required": [
-        "id"
-      ]
+      "required": ["id"]
     },
     "annotations": {
       "title": "Walk graph neighbours",
@@ -574,9 +532,7 @@
           "description": "Project id or name (scope check)."
         }
       },
-      "required": [
-        "id"
-      ]
+      "required": ["id"]
     },
     "annotations": {
       "title": "Forget a memory",
@@ -607,12 +563,7 @@
         },
         "sensitivity": {
           "type": "string",
-          "enum": [
-            "public",
-            "internal",
-            "private",
-            "sensitive"
-          ]
+          "enum": ["public", "internal", "private", "sensitive"]
         },
         "sourceType": {
           "type": "string"
@@ -629,9 +580,7 @@
           "description": "Project id or name (scope check)."
         }
       },
-      "required": [
-        "id"
-      ]
+      "required": ["id"]
     },
     "annotations": {
       "title": "Update a memory in place",
@@ -682,9 +631,7 @@
           "description": "Project name (1-128 chars)."
         }
       },
-      "required": [
-        "name"
-      ]
+      "required": ["name"]
     },
     "annotations": {
       "title": "Create project",
@@ -705,9 +652,7 @@
           "description": "Project id or human name."
         }
       },
-      "required": [
-        "project"
-      ]
+      "required": ["project"]
     },
     "annotations": {
       "title": "Delete project",
@@ -728,9 +673,7 @@
           "description": "Project id or human name."
         }
       },
-      "required": [
-        "project"
-      ]
+      "required": ["project"]
     },
     "annotations": {
       "title": "Activate project",
@@ -771,10 +714,7 @@
           "description": "Exact email address of the user to add."
         }
       },
-      "required": [
-        "project",
-        "username"
-      ]
+      "required": ["project", "username"]
     },
     "annotations": {
       "title": "Share project with a user",
@@ -799,10 +739,7 @@
           "description": "Exact email address of the user to remove."
         }
       },
-      "required": [
-        "project",
-        "username"
-      ]
+      "required": ["project", "username"]
     },
     "annotations": {
       "title": "Unshare project from a user",

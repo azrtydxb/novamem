@@ -80,7 +80,7 @@ func TestDispatchCoversAdvertisedSurface(t *testing.T) {
 	s := &server{}
 	for _, name := range mcp.ToolNames() {
 		func() {
-			defer func() { recover() }() // nil engine/warm may panic — that still proves dispatch coverage
+			defer func() { _ = recover() }() // nil engine/warm may panic — that still proves dispatch coverage
 			_, err := s.callTool(context.Background(), "public", name, map[string]any{})
 			if errors.Is(err, mcp.ErrUnknownTool) {
 				t.Errorf("advertised tool %s is not dispatched", name)

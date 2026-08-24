@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -451,6 +452,22 @@ func (c *Collector) RenderProm(ctx context.Context) string {
 	gaugeF("queries_per_sec_60s", "Rolling 60s queries/sec", rates["queries_per_sec_60s"].(float64))
 	gaugeF("remembers_per_sec_60s", "Rolling 60s remembers/sec", rates["remembers_per_sec_60s"].(float64))
 	gauge("uptime_seconds", "Process uptime (seconds)", intPtr(int(s["uptime_ms"].(int64)/1000)))
+
+	// Go runtime section — appended after the novamem_* contract lines so
+	// existing scrape configs and dashboards are unaffected. Added when Go
+	// became the primary server (parity-audit item #16: no goroutine
+	// visibility under soak).
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	rt := func(kind, name, help, value string) {
+		b = append(b, "# HELP "+name+" "+help+"\n"...)
+		b = append(b, "# TYPE "+name+" "+kind+"\n"...)
+		b = append(b, name+" "+value+"\n"...)
+	}
+	rt("gauge", "go_goroutines", "Number of goroutines that currently exist", strconv.Itoa(runtime.NumGoroutine()))
+	rt("gauge", "go_memstats_heap_alloc_bytes", "Bytes of allocated heap objects", strconv.FormatUint(ms.HeapAlloc, 10))
+	rt("gauge", "go_memstats_heap_sys_bytes", "Bytes of heap memory obtained from the OS", strconv.FormatUint(ms.HeapSys, 10))
+	rt("counter", "go_gc_cycles_total", "Completed GC cycles since process start", strconv.FormatUint(uint64(ms.NumGC), 10))
 	return string(b)
 }
 

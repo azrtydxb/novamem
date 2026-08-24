@@ -1,0 +1,127 @@
+{
+  "fixture": {
+    "name": "novamem-recall-smoke",
+    "kind": "novamem-specific",
+    "version": "1",
+    "queryCount": 4,
+    "memoryCount": 5
+  },
+  "retrieval": {
+    "queryCount": 4,
+    "byK": {
+      "10": {
+        "recall": 1,
+        "precision": 0.1,
+        "mrr": 1,
+        "ndcg": 1
+      },
+      "20": {
+        "recall": 1,
+        "precision": 0.05,
+        "mrr": 1,
+        "ndcg": 1
+      },
+      "50": {
+        "recall": 1,
+        "precision": 0.02,
+        "mrr": 1,
+        "ndcg": 1
+      },
+      "200": {
+        "recall": 1,
+        "precision": 0.005,
+        "mrr": 1,
+        "ndcg": 1
+      }
+    }
+  },
+  "answer": {
+    "exactMatch": 0.75,
+    "tokenF1": 0.75,
+    "answeredCount": 4
+  },
+  "safety": {
+    "forbiddenHitRateAtK": {
+      "10": 0,
+      "20": 0,
+      "50": 0,
+      "200": 0
+    }
+  },
+  "latency": {
+    "averageMs": 1.5767187499999977,
+    "p95Ms": 6.231916999999996,
+    "maxMs": 6.231916999999996
+  },
+  "cases": [
+    {
+      "queryId": "q-reefmat",
+      "category": "long-term-chat-memory",
+      "relevantIds": [
+        "pref-reefmat-current"
+      ],
+      "forbiddenIds": [
+        "pref-reefmat-old"
+      ],
+      "retrievedIds": [
+        "pref-reefmat-current",
+        "needle-timezone",
+        "adoption-rule",
+        "project-port"
+      ],
+      "answer": "ReefMat 1200",
+      "expectedAnswer": "ReefMat 1200",
+      "latencyMs": 6.231916999999996
+    },
+    {
+      "queryId": "q-port",
+      "category": "beir-rag-retrieval",
+      "relevantIds": [
+        "project-port"
+      ],
+      "forbiddenIds": [],
+      "retrievedIds": [
+        "project-port",
+        "adoption-rule",
+        "pref-reefmat-current",
+        "needle-timezone"
+      ],
+      "answer": "port 7778",
+      "expectedAnswer": "port 7778",
+      "latencyMs": 0.035166999999994175
+    },
+    {
+      "queryId": "q-timezone",
+      "category": "needle-retrieval",
+      "relevantIds": [
+        "needle-timezone"
+      ],
+      "forbiddenIds": [],
+      "retrievedIds": [
+        "needle-timezone",
+        "adoption-rule",
+        "pref-reefmat-current",
+        "project-port"
+      ],
+      "answer": "Asia/Dubai",
+      "expectedAnswer": "Asia/Dubai",
+      "latencyMs": 0.025083000000002187
+    },
+    {
+      "queryId": "q-adoption",
+      "category": "agent-adoption",
+      "relevantIds": [
+        "adoption-rule"
+      ],
+      "forbiddenIds": [],
+      "retrievedIds": [
+        "adoption-rule",
+        "project-port",
+        "needle-timezone",
+        "pref-reefmat-current"
+      ],
+      "expectedAnswer": "memory_context and memory_capture",
+      "latencyMs": 0.014707999999998833
+    }
+  ]
+}

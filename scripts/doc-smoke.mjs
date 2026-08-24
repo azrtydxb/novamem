@@ -61,14 +61,24 @@ async function walkFiles(relPath) {
     if (e.name === "node_modules" || e.name === "dist") continue;
     const child = join(relPath, e.name);
     if (e.isDirectory()) out.push(...(await walkFiles(child)));
-    else if (e.isFile() && /\.(md|mdx|markdown|txt)$/i.test(e.name)) out.push(child);
+    else if (e.isFile() && /\.(md|mdx|markdown|txt)$/i.test(e.name))
+      out.push(child);
   }
   return out;
 }
 
 // Walk the whole tree (excluding noise) for the "no leftover trailer" check.
 async function walkAllText(relPath = ".") {
-  const SKIP = new Set([".git", "node_modules", ".claude", "dist", ".turbo", ".next", "coverage", "pnpm-lock.yaml"]);
+  const SKIP = new Set([
+    ".git",
+    "node_modules",
+    ".claude",
+    "dist",
+    ".turbo",
+    ".next",
+    "coverage",
+    "pnpm-lock.yaml",
+  ]);
   const abs = join(ROOT, relPath);
   let st;
   try {
@@ -83,7 +93,12 @@ async function walkAllText(relPath = ".") {
     if (SKIP.has(e.name)) continue;
     const child = relPath === "." ? e.name : join(relPath, e.name);
     if (e.isDirectory()) out.push(...(await walkAllText(child)));
-    else if (e.isFile() && /\.(md|mdx|markdown|txt|yml|yaml|json|ts|tsx|js|mjs|cjs|sh)$/i.test(e.name)) {
+    else if (
+      e.isFile() &&
+      /\.(md|mdx|markdown|txt|yml|yaml|json|ts|tsx|js|mjs|cjs|sh)$/i.test(
+        e.name
+      )
+    ) {
       out.push(child);
     }
   }
@@ -112,7 +127,11 @@ function checkPublicHealthShape(file, lines) {
     // contains a deps-bearing object literal.
     if (/\/health\b/.test(line) && !/\/admin\/health\/deep/.test(line)) {
       if (/\{\s*ok\s*,\s*deps\b/.test(line)) {
-        fail(file, i + 1, "public /health described with `{ ok, deps }` — should be `{ ok }` only");
+        fail(
+          file,
+          i + 1,
+          "public /health described with `{ ok, deps }` — should be `{ ok }` only"
+        );
       }
     }
   }
@@ -130,7 +149,11 @@ function checkDeepHealthPath(file, lines) {
     }
     // `/admin/health/deep` without the `/v1/` prefix is wrong.
     if (/(?<!\/v1)\/admin\/health\/deep\b/.test(line)) {
-      fail(file, i + 1, "deep health endpoint must be `/v1/admin/health/deep` (missing `/v1/` prefix)");
+      fail(
+        file,
+        i + 1,
+        "deep health endpoint must be `/v1/admin/health/deep` (missing `/v1/` prefix)"
+      );
     }
   }
 }
@@ -141,7 +164,8 @@ function checkDeepHealthPath(file, lines) {
 function checkProjectShareWording(file, lines) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (!/project_share|project_unshare|\/projects\/[^\s]*\/share/.test(line)) continue;
+    if (!/project_share|project_unshare|\/projects\/[^\s]*\/share/.test(line))
+      continue;
     // Allow if the surrounding window (±3 lines) explicitly mentions "exact
     // email" / "exact invitee email" — that's the canonical wording, and
     // a literal `username` token in a code-block parameter name is fine
@@ -151,10 +175,18 @@ function checkProjectShareWording(file, lines) {
     const window = lines.slice(lo, hi).join("\n");
     const hasCanonical = /exact (invitee )?email/i.test(window);
     if (/\busername\b/i.test(line) && !hasCanonical) {
-      fail(file, i + 1, "project share/unshare docs reference `username` — should be exact invitee email");
+      fail(
+        file,
+        i + 1,
+        "project share/unshare docs reference `username` — should be exact invitee email"
+      );
     }
     if (/\bdisplay name\b/i.test(line) && !hasCanonical) {
-      fail(file, i + 1, "project share/unshare docs reference `display name` — should be exact invitee email");
+      fail(
+        file,
+        i + 1,
+        "project share/unshare docs reference `display name` — should be exact invitee email"
+      );
     }
   }
 }
@@ -168,7 +200,8 @@ function checkProjectShareWording(file, lines) {
 function checkLifecycleAdminOnly(file, lines) {
   if (file.endsWith(".json")) return;
   const endpoints = ["/v1/decay", "/v1/dream-cycle", "/v1/reap-orphans"];
-  const contradictions = /\b(any user|anyone|public(ly)?|no auth(entication)?|unauthenticated|without auth)\b/i;
+  const contradictions =
+    /\b(any user|anyone|public(ly)?|no auth(entication)?|unauthenticated|without auth)\b/i;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     for (const ep of endpoints) {
@@ -177,21 +210,36 @@ function checkLifecycleAdminOnly(file, lines) {
       const hi = Math.min(lines.length, i + 4);
       const window = lines.slice(lo, hi).join("\n");
       if (contradictions.test(window)) {
-        fail(file, i + 1, `lifecycle endpoint ${ep} described as non-admin (contradicts admin-only policy)`);
+        fail(
+          file,
+          i + 1,
+          `lifecycle endpoint ${ep} described as non-admin (contradicts admin-only policy)`
+        );
       }
     }
   }
 }
 
-
 // 5. Public docs must not advertise retired tenant-admin APIs or stale token routes.
 function checkNoStaleTenantAdminDocs(file, lines) {
   const stale = [
     [/\/v1\/admin\/tenants\b/, "retired tenant admin endpoint documented"],
-    [/\/v1\/admin\/decay\/(run|config)\b/, "retired admin decay endpoint documented"],
-    [/tenant_tokens|resolveTenantToken|Tenant tokens/i, "stale tenant-token model documented"],
-    [/\/v1\/me\/tokens\/<hash>\/revoke|\/v1\/me\/tokens\/\{hash\}\/revoke/, "stale token revoke route documented"],
-    [/\/api-docs\/openapi\.json/, "raw OpenAPI URL is `/openapi.json`, not `/api-docs/openapi.json`"],
+    [
+      /\/v1\/admin\/decay\/(run|config)\b/,
+      "retired admin decay endpoint documented",
+    ],
+    [
+      /tenant_tokens|resolveTenantToken|Tenant tokens/i,
+      "stale tenant-token model documented",
+    ],
+    [
+      /\/v1\/me\/tokens\/<hash>\/revoke|\/v1\/me\/tokens\/\{hash\}\/revoke/,
+      "stale token revoke route documented",
+    ],
+    [
+      /\/api-docs\/openapi\.json/,
+      "raw OpenAPI URL is `/openapi.json`, not `/api-docs/openapi.json`",
+    ],
   ];
   for (let i = 0; i < lines.length; i++) {
     for (const [re, msg] of stale) {
@@ -202,10 +250,20 @@ function checkNoStaleTenantAdminDocs(file, lines) {
 
 // 6. Deployment templates must not make unsafe placeholders look applyable.
 function checkDeployFootguns(file, lines) {
-  if (file === "deploy/k8s/kustomization.yaml" && lines.some((l) => /^\s*-\s*secrets\.yaml\s*$/.test(l))) {
-    fail(file, null, "default kustomization must not apply placeholder secrets.yaml");
+  if (
+    file === "deploy/k8s/kustomization.yaml" &&
+    lines.some((l) => /^\s*-\s*secrets\.yaml\s*$/.test(l))
+  ) {
+    fail(
+      file,
+      null,
+      "default kustomization must not apply placeholder secrets.yaml"
+    );
   }
-  if (file === "deploy/k8s/falkordb.yaml" && lines.some((l) => /image:\s*falkordb\/falkordb:(latest|edge)\b/.test(l))) {
+  if (
+    file === "deploy/k8s/falkordb.yaml" &&
+    lines.some((l) => /image:\s*falkordb\/falkordb:(latest|edge)\b/.test(l))
+  ) {
     fail(file, null, "FalkorDB image must be pinned, not latest/edge");
   }
 }
@@ -272,7 +330,9 @@ async function main() {
     console.error("");
     process.exit(1);
   }
-  console.log(`doc-smoke: OK (scanned ${docFiles.size} doc file(s), ${allFiles.length} tree file(s))`);
+  console.log(
+    `doc-smoke: OK (scanned ${docFiles.size} doc file(s), ${allFiles.length} tree file(s))`
+  );
 }
 
 main().catch((err) => {

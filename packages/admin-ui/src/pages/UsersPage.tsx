@@ -1,6 +1,12 @@
 import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, ShieldCheck, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
+import {
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+  Users as UsersIcon,
+} from "lucide-react";
 import { api } from "../lib/api";
 
 /** Better Auth's "user" row shape (admin/list-users response). */
@@ -13,7 +19,13 @@ interface BAUser {
   banned?: boolean | null;
 }
 import { useAuth } from "../lib/auth-context";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/Card";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
@@ -31,7 +43,7 @@ export function UsersPage() {
       // plenty for a small operator install.
       const r = await api<{ users: BAUser[]; total: number }>(
         "GET",
-        "/api/auth/admin/list-users?limit=100",
+        "/api/auth/admin/list-users?limit=100"
       );
       if (!r.ok || !r.body) throw new Error(r.error ?? `users ${r.status}`);
       return r.body.users;
@@ -63,49 +75,62 @@ export function UsersPage() {
         }
       />
       <div className="p-5 space-y-3">
-      <CreateUserCard onCreated={refresh} />
+        <CreateUserCard onCreated={refresh} />
 
-      <div className="space-y-3">
-        {fetchErr ? (
-          <Card className="p-8 text-center text-sm text-err">
-            <div className="font-medium mb-1">Couldn't load users</div>
-            <div className="text-dim text-xs">
-              {fetchErr.message}
-            </div>
-            <Button size="sm" variant="ghost" onClick={refresh} className="mt-3">
-              <RefreshCw className="h-3.5 w-3.5" /> Try again
-            </Button>
-          </Card>
-        ) : users === null ? (
-          <Card className="p-8 text-center text-sm text-dim">Loading users…</Card>
-        ) : users.length === 0 ? (
-          <Card className="p-12 text-center">
-            <UsersIcon className="h-8 w-8 text-faint mx-auto mb-3" />
-            <div className="text-sm text-ink font-medium">No users yet</div>
-            <div className="text-xs text-dim mt-1">Create your first user above.</div>
-          </Card>
-        ) : (
-          <Card>
-            <div className="overflow-hidden rounded-lg">
-              <table className="w-full text-sm">
-                <thead className="bg-subtle/60">
-                  <tr className="text-dim text-[11px] uppercase tracking-wider">
-                    <th className="text-left font-medium px-4 py-2.5">User</th>
-                    <th className="text-left font-medium px-4 py-2.5">Role</th>
-                    <th className="text-left font-medium px-4 py-2.5">Status</th>
-                    <th className="text-right font-medium px-4 py-2.5"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {users.map((u) => (
-                    <UserRow key={u.id} user={u} onChange={refresh} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-      </div>
+        <div className="space-y-3">
+          {fetchErr ? (
+            <Card className="p-8 text-center text-sm text-err">
+              <div className="font-medium mb-1">Couldn't load users</div>
+              <div className="text-dim text-xs">{fetchErr.message}</div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={refresh}
+                className="mt-3"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Try again
+              </Button>
+            </Card>
+          ) : users === null ? (
+            <Card className="p-8 text-center text-sm text-dim">
+              Loading users…
+            </Card>
+          ) : users.length === 0 ? (
+            <Card className="p-12 text-center">
+              <UsersIcon className="h-8 w-8 text-faint mx-auto mb-3" />
+              <div className="text-sm text-ink font-medium">No users yet</div>
+              <div className="text-xs text-dim mt-1">
+                Create your first user above.
+              </div>
+            </Card>
+          ) : (
+            <Card>
+              <div className="overflow-hidden rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-subtle/60">
+                    <tr className="text-dim text-[11px] uppercase tracking-wider">
+                      <th className="text-left font-medium px-4 py-2.5">
+                        User
+                      </th>
+                      <th className="text-left font-medium px-4 py-2.5">
+                        Role
+                      </th>
+                      <th className="text-left font-medium px-4 py-2.5">
+                        Status
+                      </th>
+                      <th className="text-right font-medium px-4 py-2.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {users.map((u) => (
+                      <UserRow key={u.id} user={u} onChange={refresh} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
     </>
   );
@@ -157,8 +182,9 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle>Create user</CardTitle>
         <CardDescription>
-          Each user signs in with email + password and owns their own memory namespace.
-          Admins manage users only — they don't store memories or use the MCP.
+          Each user signs in with email + password and owns their own memory
+          namespace. Admins manage users only — they don't store memories or use
+          the MCP.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -192,7 +218,12 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
           />
           <div className="flex items-end justify-between gap-3">
             <RoleSelector role={role} onChange={setRole} />
-            <Button type="submit" variant="primary" loading={busy} disabled={!canSubmit}>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={busy}
+              disabled={!canSubmit}
+            >
               <UserPlus className="h-3.5 w-3.5" /> Create
             </Button>
           </div>
@@ -239,16 +270,12 @@ function RoleSelector({
 
 // ─── Row ───────────────────────────────────────────────────────────────
 
-function UserRow({
-  user,
-  onChange,
-}: {
-  user: BAUser;
-  onChange: () => void;
-}) {
+function UserRow({ user, onChange }: { user: BAUser; onChange: () => void }) {
   const { user: me } = useAuth();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmRole, setConfirmRole] = useState<{ to: "admin" | "user" } | null>(null);
+  const [confirmRole, setConfirmRole] = useState<{
+    to: "admin" | "user";
+  } | null>(null);
   const toast = useToast();
 
   const isMe = me?.id === user.id;
@@ -273,7 +300,9 @@ function UserRow({
     setConfirmDelete(false);
     // Better Auth's admin/remove-user. Better Auth POSTs the userId in
     // the body — there's no DELETE-by-id route.
-    const r = await api("POST", "/api/auth/admin/remove-user", { userId: user.id });
+    const r = await api("POST", "/api/auth/admin/remove-user", {
+      userId: user.id,
+    });
     if (r.ok) {
       toast.success(`User "${user.email}" deleted`);
       onChange();
@@ -296,7 +325,9 @@ function UserRow({
               {displayName}
               {isMe && <span className="ml-1.5 text-faint text-xs">(you)</span>}
             </div>
-            <div className="text-xs text-faint">{user.email} · created {fmtRelative(user.createdAt)}</div>
+            <div className="text-xs text-faint">
+              {user.email} · created {fmtRelative(user.createdAt)}
+            </div>
           </div>
         </div>
       </td>
@@ -310,7 +341,11 @@ function UserRow({
         )}
       </td>
       <td className="px-4 py-3 text-dim text-xs">
-        {user.banned ? <Badge tone="danger">banned</Badge> : <span className="text-faint">active</span>}
+        {user.banned ? (
+          <Badge tone="danger">banned</Badge>
+        ) : (
+          <span className="text-faint">active</span>
+        )}
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex gap-1">
@@ -351,7 +386,10 @@ function UserRow({
           size="md"
           footer={
             <>
-              <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmDelete(false)}
+              >
                 Cancel
               </Button>
               <Button variant="danger" onClick={deleteUser}>

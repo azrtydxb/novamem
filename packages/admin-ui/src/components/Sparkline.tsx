@@ -11,7 +11,13 @@ interface Props {
 /** Tiny inline sparkline — used inside KPI cards to show recent trend
  *  next to the headline value. Renders as an SVG polyline; min/max
  *  scales to the data so a flat-line at zero still shows a baseline. */
-export function Sparkline({ data, color, width = 72, height = 22, strokeWidth = 1.5 }: Props) {
+export function Sparkline({
+  data,
+  color,
+  width = 72,
+  height = 22,
+  strokeWidth = 1.5,
+}: Props) {
   if (data.length < 2) {
     return <svg width={width} height={height} aria-hidden="true" />;
   }
@@ -23,12 +29,22 @@ export function Sparkline({ data, color, width = 72, height = 22, strokeWidth = 
       (v, i) =>
         `${(i / (data.length - 1)) * width},${
           height - ((v - min) / range) * (height - 4) - 2
-        }`,
+        }`
     )
     .join(" ");
   return (
-    <svg width={width} height={height} aria-hidden="true" style={{ display: "block" }}>
-      <polyline fill="none" stroke={color} strokeWidth={strokeWidth} points={pts} />
+    <svg
+      width={width}
+      height={height}
+      aria-hidden="true"
+      style={{ display: "block" }}
+    >
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        points={pts}
+      />
     </svg>
   );
 }

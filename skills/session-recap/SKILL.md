@@ -21,17 +21,17 @@ Walk the conversation and pick out items that match these categories. Reject eve
 
 **KEEP** these:
 
-| Type | Example |
-|---|---|
-| **Decisions with reasoning** | "Chose Postgres over SQLite because we need concurrent writes + FTS5 wasn't enough for our query shapes." |
-| **User preferences** | "User prefers terse commit messages with a single-sentence body." "Always ship one bundled PR over many small ones for refactors in this area." |
-| **Hidden constraints** | "Legal flagged session-token storage; auth rewrite is driven by compliance, not tech debt." |
-| **Recurring rules / conventions** | "Never merge over Copilot/Claude review comments without resolving them." |
-| **Bug post-mortems** | Root cause + fix shape, not just "the bug was fixed." |
-| **Architecture invariants** | Things the codebase wouldn't reveal on its own. "Server is in changesets `ignore` list — release flow is manual `vX.Y.Z` tag." |
-| **External resource pointers** | "Pipeline bugs are tracked in Linear project INGEST." "Oncall watches grafana.internal/d/api-latency for request-path changes." |
-| **Project state milestones** | "v1.1.5 released with project-name resolution + dashboard browser-bug fixes." |
-| **Anything the user explicitly said to remember** | Phrases: "remember", "don't forget", "save this", "for next time", "make a note of". |
+| Type                                              | Example                                                                                                                                         |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Decisions with reasoning**                      | "Chose Postgres over SQLite because we need concurrent writes + FTS5 wasn't enough for our query shapes."                                       |
+| **User preferences**                              | "User prefers terse commit messages with a single-sentence body." "Always ship one bundled PR over many small ones for refactors in this area." |
+| **Hidden constraints**                            | "Legal flagged session-token storage; auth rewrite is driven by compliance, not tech debt."                                                     |
+| **Recurring rules / conventions**                 | "Never merge over Copilot/Claude review comments without resolving them."                                                                       |
+| **Bug post-mortems**                              | Root cause + fix shape, not just "the bug was fixed."                                                                                           |
+| **Architecture invariants**                       | Things the codebase wouldn't reveal on its own. "Server is in changesets `ignore` list — release flow is manual `vX.Y.Z` tag."                  |
+| **External resource pointers**                    | "Pipeline bugs are tracked in Linear project INGEST." "Oncall watches grafana.internal/d/api-latency for request-path changes."                 |
+| **Project state milestones**                      | "v1.1.5 released with project-name resolution + dashboard browser-bug fixes."                                                                   |
+| **Anything the user explicitly said to remember** | Phrases: "remember", "don't forget", "save this", "for next time", "make a note of".                                                            |
 
 **REJECT** these:
 
@@ -50,6 +50,7 @@ The novamem worthiness gate also rejects entries under 12 chars and obvious fill
 1. **Survey the conversation.** Re-read every user-and-assistant exchange. Don't skim. Build a mental list of candidate facts in each KEEP category.
 
 2. **Group by namespace.** Pick the right shelf for each candidate. Common patterns:
+
    - `decisions` — ADRs, architecture choices, tooling picks
    - `preferences` — how the user wants things done
    - `incidents` — bug post-mortems, with date prefix
@@ -60,6 +61,7 @@ The novamem worthiness gate also rejects entries under 12 chars and obvious fill
    If the user has been working in a specific project (sub-brain) all session, scope each entry to that project. Otherwise leave them user-global.
 
 3. **Compose each entry as durable knowledge.** Two rules:
+
    - **Self-contained.** A future session won't have this conversation as context — write the entry so it stands alone.
    - **Non-obvious.** If a future-you reading the codebase would know this without the memory, don't store it.
 
@@ -75,12 +77,14 @@ The novamem worthiness gate also rejects entries under 12 chars and obvious fill
    Group by namespace. Number each so the user can drop items by number. Ask: **"Memorize all of these? Or drop / edit any first?"**
 
 5. **Wait for confirmation** before writing. The user may:
+
    - Say `go` / `yes` / `save all` → call `memory_remember` for each
    - Say `drop 3, 7` → skip those, save the rest
    - Edit specific entries → apply edits, then save the rest
    - Say `cancel` → don't call anything
 
 6. **Write each approved entry** via `memory_remember`. Set provenance fields:
+
    - `sourceType: "chat"` (almost always — this is from a conversation)
    - `capturedFrom: "session-recap"` so later searches can see where the memory came from
    - `confidence: 1.0` for things the user said directly; `0.7-0.9` for inferences you drew
@@ -137,7 +141,7 @@ Memorize all of these?
 
 - **User has no active project but the whole session was about one project.** Ask whether they want a project scope before saving. Or activate the project first via `project_activate`, then save without per-call `project` overrides.
 
-- **Bug fix session.** The fix is in git. The memory should be the *post-mortem* — root cause + the lesson — not "I added a missing newline." If you can't extract a generalisable lesson, skip it.
+- **Bug fix session.** The fix is in git. The memory should be the _post-mortem_ — root cause + the lesson — not "I added a missing newline." If you can't extract a generalisable lesson, skip it.
 
 - **Long session with many sub-topics.** Group recap by sub-topic + namespace; don't drown the user in a flat list of 40 candidates. If you're proposing more than ~15 entries, you're probably over-eager — re-filter against the durability bar.
 

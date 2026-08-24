@@ -9,7 +9,7 @@ interface Props extends InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   { className, label, hint, error, id: idProp, ...rest },
-  ref,
+  ref
 ) {
   const auto = useId();
   const id = idProp ?? auto;
@@ -29,7 +29,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
           error ? "border-err" : "border-rule",
           "disabled:opacity-60 disabled:cursor-not-allowed",
-          className,
+          className
         )}
         {...rest}
       />

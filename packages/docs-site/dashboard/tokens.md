@@ -16,14 +16,14 @@ The plaintext token is shown ONCE. Copy it now or revoke + re-mint.
 
 ## What's stored
 
-| Field | Storage |
-|---|---|
-| Plaintext bearer (`nm_…`) | shown once, never persisted |
-| SHA-256 hash | `user_tokens.token_hash` — used for resolution |
-| Label | `user_tokens.label` |
-| Created-by user | `user_tokens.user_id` |
-| `last_used_at` | bumped on every successful resolution |
-| `revoked_at` | set on revoke; resolution then 401s |
+| Field                     | Storage                                        |
+| ------------------------- | ---------------------------------------------- |
+| Plaintext bearer (`nm_…`) | shown once, never persisted                    |
+| SHA-256 hash              | `user_tokens.token_hash` — used for resolution |
+| Label                     | `user_tokens.label`                            |
+| Created-by user           | `user_tokens.user_id`                          |
+| `last_used_at`            | bumped on every successful resolution          |
+| `revoked_at`              | set on revoke; resolution then 401s            |
 
 ## Revoke
 
@@ -59,5 +59,5 @@ The `<hash>` is the SHA-256 hex listed by the GET — never the plaintext.
 
 ## See also
 
-- [novamem-init CLI](/connect/init-cli) — automates mint + host wiring
-- [Security model](/ops/security) — full auth model
+- [novamem-init CLI](../connect/init-cli.md) — automates mint + host wiring
+- [Security model](../ops/security.md) — full auth model

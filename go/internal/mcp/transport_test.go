@@ -269,7 +269,7 @@ func TestSSERoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
 		t.Fatalf("sse open: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
@@ -323,7 +323,7 @@ func TestSSERoundTrip(t *testing.T) {
 	// error body before any processing.
 	r := postMsg("intruder", initBody)
 	b, _ := io.ReadAll(r.Body)
-	r.Body.Close()
+	_ = r.Body.Close()
 	if r.StatusCode != http.StatusForbidden || !bytes.Contains(b, []byte(`"session belongs to another user"`)) {
 		t.Fatalf("sse ownership: %d %s", r.StatusCode, b)
 	}
@@ -331,7 +331,7 @@ func TestSSERoundTrip(t *testing.T) {
 	// initialize → 202 ack; result arrives on the stream.
 	r = postMsg("", initBody)
 	io.Copy(io.Discard, r.Body) //nolint:errcheck
-	r.Body.Close()
+	_ = r.Body.Close()
 	if r.StatusCode != http.StatusAccepted {
 		t.Fatalf("sse post: %d", r.StatusCode)
 	}
@@ -343,7 +343,7 @@ func TestSSERoundTrip(t *testing.T) {
 	// tools/list round-trips with the full surface.
 	r = postMsg("", `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	io.Copy(io.Discard, r.Body) //nolint:errcheck
-	r.Body.Close()
+	_ = r.Body.Close()
 	_, data = readFrame()
 	var listResp struct {
 		Result struct {
@@ -366,7 +366,7 @@ func TestSSERoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ = io.ReadAll(r.Body)
-	r.Body.Close()
+	_ = r.Body.Close()
 	if r.StatusCode != http.StatusNotFound || !bytes.Contains(b, []byte(`"unknown sessionId"`)) {
 		t.Fatalf("sse unknown session: %d %s", r.StatusCode, b)
 	}
@@ -376,7 +376,7 @@ func TestSSERoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ = io.ReadAll(r.Body)
-	r.Body.Close()
+	_ = r.Body.Close()
 	if r.StatusCode != http.StatusBadRequest || !bytes.Contains(b, []byte(`"missing sessionId"`)) {
 		t.Fatalf("sse missing session: %d %s", r.StatusCode, b)
 	}
@@ -393,7 +393,7 @@ func TestSSESessionCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.Body.Close()
+	defer func() { _ = first.Body.Close() }()
 	// Read the endpoint frame so the session is fully open.
 	buf := make([]byte, 64)
 	if _, err := first.Body.Read(buf); err != nil {
@@ -405,7 +405,7 @@ func TestSSESessionCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := io.ReadAll(second.Body)
-	second.Body.Close()
+	_ = second.Body.Close()
 	if second.StatusCode != http.StatusTooManyRequests ||
 		!bytes.Contains(b, []byte("too many concurrent SSE sessions for this user")) {
 		t.Fatalf("sse cap: %d %s", second.StatusCode, b)

@@ -1,4 +1,11 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { api, SessionUser } from "./api";
 
 interface AuthState {
@@ -36,7 +43,11 @@ interface BetterAuthSessionResp {
  *  The session cookie is HttpOnly so the SPA never sees it directly —
  *  the only way to know if a user is signed in is to ask the server. */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({ user: null, loading: true, needsPasswordChange: false });
+  const [state, setState] = useState<AuthState>({
+    user: null,
+    loading: true,
+    needsPasswordChange: false,
+  });
 
   const reload = useCallback(async () => {
     const r = await api<BetterAuthSessionResp>("GET", "/api/auth/get-session");
@@ -60,9 +71,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void reload();
   }, [reload]);
 
-  const login = useCallback((user: SessionUser, pendingPasswordChange = false) => {
-    setState({ user, loading: false, needsPasswordChange: pendingPasswordChange });
-  }, []);
+  const login = useCallback(
+    (user: SessionUser, pendingPasswordChange = false) => {
+      setState({
+        user,
+        loading: false,
+        needsPasswordChange: pendingPasswordChange,
+      });
+    },
+    []
+  );
 
   const logout = useCallback(async () => {
     await api("POST", "/api/auth/sign-out");
@@ -74,7 +92,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ ...state, login, logout, reload, markPasswordChanged }}>
+    <AuthCtx.Provider
+      value={{ ...state, login, logout, reload, markPasswordChanged }}
+    >
       {children}
     </AuthCtx.Provider>
   );

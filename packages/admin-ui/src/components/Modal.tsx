@@ -16,7 +16,15 @@ interface ModalProps {
 
 const SIZE = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-xl" };
 
-export function Modal({ open, onClose, title, description, children, footer, size = "md" }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  size = "md",
+}: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const lastActive = useRef<HTMLElement | null>(null);
   // Latest-onClose ref — the keydown handler reads this, but the effect
@@ -26,7 +34,9 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   // the auto-focus setTimeout, and yank focus out of the textarea on
   // every key press. Pin the deps to `[open]` only.
   const onCloseRef = useRef(onClose);
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // Restore focus to the trigger after close, ESC closes, focus traps in
   // dialog. Auto-focus the first sensible input/textarea on open.
@@ -41,7 +51,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       }
       if (e.key === "Tab" && dialogRef.current) {
         const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
         );
         if (focusables.length === 0) return;
         const first = focusables[0];
@@ -62,7 +72,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
     // wrong for a modal whose primary control is a textbox.
     setTimeout(() => {
       const first = dialogRef.current?.querySelector<HTMLElement>(
-        'input, textarea, [autofocus], button:not([data-close]), [href]',
+        "input, textarea, [autofocus], button:not([data-close]), [href]"
       );
       first?.focus();
     }, 10);
@@ -91,7 +101,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
         ref={dialogRef}
         className={cn(
           "relative w-full rounded-xl border border-rule bg-panel shadow-modal animate-scale-in",
-          SIZE[size],
+          SIZE[size]
         )}
       >
         <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-3">
@@ -122,6 +132,6 @@ export function Modal({ open, onClose, title, description, children, footer, siz
         ) : null}
       </div>
     </div>,
-    document.body,
+    document.body
   );
 }

@@ -6,6 +6,7 @@ retrieval can be judged repeatedly without re-querying the memory system.
 Answerer and judge are both the local qwen3 behind the gpustack gateway.
 Record that when quoting numbers — these are NOT GPT-5/Gemini judged.
 """
+
 import argparse
 import json
 import re
@@ -13,7 +14,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib import request, error
+from urllib import request
 
 _P = threading.Lock()
 
@@ -23,7 +24,9 @@ def log(m):
         print(m, flush=True)
 
 
-def chat(base, key, model, prompt, max_tokens=256, timeout=240, attempts=3, thinking=False):
+def chat(
+    base, key, model, prompt, max_tokens=256, timeout=240, attempts=3, thinking=False
+):
     # qwen3 is a reasoning model: left to its own devices it emits chain of
     # thought into `message.reasoning` and returns `content: null`, burning
     # the whole token budget before it writes an answer. Reading `content`
@@ -32,34 +35,44 @@ def chat(base, key, model, prompt, max_tokens=256, timeout=240, attempts=3, thin
     # thinking off puts the answer back in `content`.
     # With thinking on, the budget has to cover the chain of thought *and*
     # the answer, or content comes back empty for the same reason.
-    payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
-               "temperature": 0,
-               # 2048 was not enough for the longest aggregation questions:
-               # one hit finish_reason=length after 7.6k chars of reasoning
-               # with no answer written.
-               "max_tokens": max(max_tokens, 4096) if thinking else max_tokens,
-               "chat_template_kwargs": {"enable_thinking": bool(thinking)}}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+        # 2048 was not enough for the longest aggregation questions:
+        # one hit finish_reason=length after 7.6k chars of reasoning
+        # with no answer written.
+        "max_tokens": max(max_tokens, 4096) if thinking else max_tokens,
+        "chat_template_kwargs": {"enable_thinking": bool(thinking)},
+    }
     headers = {"content-type": "application/json", "accept": "application/json"}
     if key:
         headers["authorization"] = f"Bearer {key}"
     last = None
     for a in range(1, attempts + 1):
         try:
-            r = request.Request(base.rstrip("/") + "/chat/completions",
-                                data=json.dumps(payload).encode(), headers=headers, method="POST")
+            r = request.Request(
+                base.rstrip("/") + "/chat/completions",
+                data=json.dumps(payload).encode(),
+                headers=headers,
+                method="POST",
+            )
             with request.urlopen(r, timeout=timeout) as resp:
                 out = json.loads(resp.read().decode())
             choice = (out.get("choices") or [{}])[0]
             msg = choice.get("message") or {}
             txt = msg.get("content") or ""
-            txt = re.sub(r"<think>[\s\S]*?</think>", "", txt, flags=re.I).strip()
+            txt = re.sub(
+                r"<think>[\s\S]*?</think>", "", txt, flags=re.IGNORECASE
+            ).strip()
             if txt:
                 return txt
             # Empty content is never a legitimate answer. Surface it rather
             # than letting it be scored as a wrong one.
             raise RuntimeError(
                 f"empty completion (finish_reason={choice.get('finish_reason')}, "
-                f"reasoning_chars={len(msg.get('reasoning') or '')})")
+                f"reasoning_chars={len(msg.get('reasoning') or '')})"
+            )
         except Exception as e:
             last = e
             time.sleep(min(2 ** (a - 1), 8))
@@ -98,7 +111,7 @@ Rules:
   duplicates (the same event may appear as both a fact and a
   conversation excerpt), then count the merged list. Show the list.
 
-Question date: {qdate or ''}
+Question date: {qdate or ""}
 Question: {q}
 
 Memories:
@@ -125,7 +138,11 @@ def parse_judge(t):
             o = json.loads(m.group(0))
             j = str(o.get("judgment", "")).upper()
             s = int(float(o.get("score", 1 if j == "PASS" else 0)) >= 0.5)
-            return {"judgment": "PASS" if s else "FAIL", "score": s, "reason": str(o.get("reason", ""))[:200]}
+            return {
+                "judgment": "PASS" if s else "FAIL",
+                "score": s,
+                "reason": str(o.get("reason", ""))[:200],
+            }
         except Exception:
             pass
     u = (t or "").upper()
@@ -136,14 +153,19 @@ def parse_judge(t):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--arm", required=True, help="path to search-<name>.json")
-    ap.add_argument("--ingest", required=True, help="path to ingest.json (for question/answer text)")
+    ap.add_argument(
+        "--ingest", required=True, help="path to ingest.json (for question/answer text)"
+    )
     ap.add_argument("--llm-base", default="http://192.168.10.125/v1")
     ap.add_argument("--key-file", required=True)
     ap.add_argument("--model", default="qwen3-6-35b-a3b-nvfp4")
     ap.add_argument("--cutoffs", default="10,50")
     ap.add_argument("--max-workers", type=int, default=4)
-    ap.add_argument("--thinking", action="store_true",
-                    help="Let the answerer reason before answering (helps counting/aggregation)")
+    ap.add_argument(
+        "--thinking",
+        action="store_true",
+        help="Let the answerer reason before answering (helps counting/aggregation)",
+    )
     ap.add_argument("--out")
     args = ap.parse_args()
 
@@ -156,18 +178,29 @@ def main():
     # count and starves every other one — which silently halved the
     # context in an earlier run and made a budget-filled config look far
     # worse than it was.
-    cutoffs = ["all"] if args.cutoffs.strip() == "all" else [int(c) for c in args.cutoffs.split(",")]
+    cutoffs = (
+        ["all"]
+        if args.cutoffs.strip() == "all"
+        else [int(c) for c in args.cutoffs.split(",")]
+    )
 
     # The arm only carries verbatim content for the slice the search stage
     # was told to keep (--store-content). Judging past that would silently
     # feed the answerer empty memories and score it as a retrieval failure,
     # so refuse rather than under-report.
-    have = min((sum(1 for t in q.get("top_ranked", []) if t.get("content"))
-                for q in arm["per_question"]), default=0)
+    have = min(
+        (
+            sum(1 for t in q.get("top_ranked", []) if t.get("content"))
+            for q in arm["per_question"]
+        ),
+        default=0,
+    )
     over = [c for c in cutoffs if c != "all" and c > have]
     if over:
-        raise SystemExit(f"cutoffs {over} exceed the {have} results carrying verbatim content; "
-                         f"re-run `bench_retrieval.py search --store-content {max(cutoffs)}`")
+        raise SystemExit(
+            f"cutoffs {over} exceed the {have} results carrying verbatim content; "
+            f"re-run `bench_retrieval.py search --store-content {max(cutoffs)}`"
+        )
 
     def one(q):
         qid = q["question_id"]
@@ -175,13 +208,31 @@ def main():
         res = {"question_id": qid, "question_type": q["question_type"], "cutoffs": {}}
         for k in cutoffs:
             rows = q.get("top_ranked", [])
-            mems = [{"content": t.get("content", "")}
-                    for t in (rows if k == "all" else rows[:k])]
-            ans = chat(args.llm_base, key, args.model, answer_prompt(m["question"], m.get("question_date"), mems), thinking=args.thinking)
-            jr = chat(args.llm_base, key, args.model, judge_prompt(m["question"], m.get("answer", ""), ans), max_tokens=180)
+            mems = [
+                {"content": t.get("content", "")}
+                for t in (rows if k == "all" else rows[:k])
+            ]
+            ans = chat(
+                args.llm_base,
+                key,
+                args.model,
+                answer_prompt(m["question"], m.get("question_date"), mems),
+                thinking=args.thinking,
+            )
+            jr = chat(
+                args.llm_base,
+                key,
+                args.model,
+                judge_prompt(m["question"], m.get("answer", ""), ans),
+                max_tokens=180,
+            )
             j = parse_judge(jr)
-            res["cutoffs"][f"top_{k}"] = {"answer": ans, "judge": j, "score": j["score"],
-                                          "n_memories": len(mems)}
+            res["cutoffs"][f"top_{k}"] = {
+                "answer": ans,
+                "judge": j,
+                "score": j["score"],
+                "n_memories": len(mems),
+            }
             log(f"{qid} top_{k}: {j['judgment']} ({len(mems)} memories)")
         return res
 
@@ -200,18 +251,57 @@ def main():
         key_ = f"top_{k}"
         vals = [o["cutoffs"][key_]["score"] for o in out if key_ in o["cutoffs"]]
         summary[key_] = {
-            "overall": {"total": len(vals), "correct": sum(vals),
-                        "accuracy": (sum(vals) / len(vals) * 100) if vals else 0},
+            "overall": {
+                "total": len(vals),
+                "correct": sum(vals),
+                "accuracy": (sum(vals) / len(vals) * 100) if vals else 0,
+            },
             "by_question_type": {
-                t: {"total": len([o for o in out if o["question_type"] == t and key_ in o["cutoffs"]]),
-                    "correct": sum(o["cutoffs"][key_]["score"] for o in out if o["question_type"] == t and key_ in o["cutoffs"]),
-                    "accuracy": (sum(o["cutoffs"][key_]["score"] for o in out if o["question_type"] == t and key_ in o["cutoffs"]) /
-                                 max(1, len([o for o in out if o["question_type"] == t and key_ in o["cutoffs"]])) * 100)}
-                for t in types},
+                t: {
+                    "total": len(
+                        [
+                            o
+                            for o in out
+                            if o["question_type"] == t and key_ in o["cutoffs"]
+                        ]
+                    ),
+                    "correct": sum(
+                        o["cutoffs"][key_]["score"]
+                        for o in out
+                        if o["question_type"] == t and key_ in o["cutoffs"]
+                    ),
+                    "accuracy": (
+                        sum(
+                            o["cutoffs"][key_]["score"]
+                            for o in out
+                            if o["question_type"] == t and key_ in o["cutoffs"]
+                        )
+                        / max(
+                            1,
+                            len(
+                                [
+                                    o
+                                    for o in out
+                                    if o["question_type"] == t and key_ in o["cutoffs"]
+                                ]
+                            ),
+                        )
+                        * 100
+                    ),
+                }
+                for t in types
+            },
         }
-    report = {"arm": arm["config_name"], "answerer_model": args.model, "answerer_thinking": args.thinking, "judge_model": args.model,
-              "provider": "novamem-live-gpustack-qwen3", "n": len(out),
-              "metrics_by_cutoff": summary, "evaluations": out}
+    report = {
+        "arm": arm["config_name"],
+        "answerer_model": args.model,
+        "answerer_thinking": args.thinking,
+        "judge_model": args.model,
+        "provider": "novamem-live-gpustack-qwen3",
+        "n": len(out),
+        "metrics_by_cutoff": summary,
+        "evaluations": out,
+    }
     p = Path(args.out or (Path(args.arm).parent / f"answers-{arm['config_name']}.json"))
     p.write_text(json.dumps(report, indent=2))
     log(json.dumps(summary, indent=2))

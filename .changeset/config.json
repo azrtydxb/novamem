@@ -3,14 +3,9 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "linked": [
-    ["@azrtydxb/novamem-init", "@azrtydxb/novamem-mcp"]
-  ],
+  "linked": [["@azrtydxb/novamem-init", "@azrtydxb/novamem-mcp"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [
-    "@azrtydxb/novamem-server",
-    "@azrtydxb/novamem-admin-ui"
-  ]
+  "ignore": ["@azrtydxb/novamem-server", "@azrtydxb/novamem-admin-ui"]
 }

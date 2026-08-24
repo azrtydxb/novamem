@@ -192,6 +192,25 @@ func (m *Management) ListProjectMembers(ctx context.Context, id string) ([]Proje
 	return out.Members, err
 }
 
+// RemoveProjectMemberByUsername removes a member by display username: it
+// lists the membership, resolves the username to a user id, and removes
+// that member. Mirrors the TS client's convenience wrapper.
+func (m *Management) RemoveProjectMemberByUsername(ctx context.Context, id, username string) (bool, error) {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(username) == "" {
+		return false, &Error{Op: "remove-member", Message: "id and username are required"}
+	}
+	members, err := m.ListProjectMembers(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	for _, mem := range members {
+		if mem.Username == username {
+			return m.RemoveProjectMember(ctx, id, mem.UserID)
+		}
+	}
+	return false, &Error{Op: "remove-member", Message: "unknown member '" + username + "'"}
+}
+
 // AddProjectMember adds a user to a project by their EXACT EMAIL — the
 // server resolves the target with an exact-email lookup, despite the wire
 // field being named "username" for historical reasons (the display username

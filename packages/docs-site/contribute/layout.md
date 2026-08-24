@@ -82,12 +82,12 @@ This site. VitePress + markdown. Builds into `site/docs/` so the Pages workflow 
 
 ## How to find things
 
-| I want to… | Look in |
-|---|---|
-| Add a new memory operation | `go/internal/engine/` + `go/internal/mcp/tooldefs.json` |
-| Change the dashboard | `packages/admin-ui/src/pages/` |
-| Tweak the install CLI | `packages/init/src/` |
-| Update a doc | `packages/docs-site/<section>/` |
-| Add an env var | `.env.example` + `go/internal/config/config.go` + `packages/docs-site/install/env-reference.md` |
-| Fix a CI failure | `.github/workflows/` |
-| Bump a package version | `pnpm changeset` (npm packages) or manual `chore(release):` PR (server) |
+| I want to…                 | Look in                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| Add a new memory operation | `go/internal/engine/` + `go/internal/mcp/tooldefs.json`                                         |
+| Change the dashboard       | `packages/admin-ui/src/pages/`                                                                  |
+| Tweak the install CLI      | `packages/init/src/`                                                                            |
+| Update a doc               | `packages/docs-site/<section>/`                                                                 |
+| Add an env var             | `.env.example` + `go/internal/config/config.go` + `packages/docs-site/install/env-reference.md` |
+| Fix a CI failure           | `.github/workflows/`                                                                            |
+| Bump a package version     | `pnpm changeset` (npm packages) or manual `chore(release):` PR (server)                         |

@@ -27,17 +27,17 @@ The generator walks the Go server's own route table and schema definitions in `g
 
 The spec groups operations by tag:
 
-| Tag | Routes |
-|---|---|
-| `memory` | `POST /v1/search` · `POST /v1/remember` · `PUT /v1/memories/:id` · `POST /v1/recent` · `POST /v1/neighbors` · `POST /v1/forget` · `GET /v1/stats` |
-| `lifecycle` | `POST /v1/decay` · `POST /v1/dream-cycle` · `POST /v1/reap-orphans` |
-| `auth` | `POST /v1/auth/rotate-token` (`/api/auth/*` is owned by Better Auth, not described here) |
+| Tag            | Routes                                                                                                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory`       | `POST /v1/search` · `POST /v1/remember` · `PUT /v1/memories/:id` · `POST /v1/recent` · `POST /v1/neighbors` · `POST /v1/forget` · `GET /v1/stats`                                                                                     |
+| `lifecycle`    | `POST /v1/decay` · `POST /v1/dream-cycle` · `POST /v1/reap-orphans`                                                                                                                                                                   |
+| `auth`         | `POST /v1/auth/rotate-token` (`/api/auth/*` is owned by Better Auth, not described here)                                                                                                                                              |
 | `self-service` | `/v1/me/*` — gated by the dashboard session (or an `nm_…` bearer). The data-plane `/v1/me/*` mirrors of `/v1/search`/`remember`/etc. were removed; `/v1/me/*` is now metrics, tokens, projects, active-project, onboarding, and today |
-| `projects` | `/v1/me/projects[/:id[/members[/:userId]]]` · `/v1/me/active-project` |
-| `tokens` | `/v1/me/tokens` · `DELETE /v1/me/tokens/:hash` |
-| `metrics` | `/v1/me/metrics` · `/v1/me/metrics/history` |
-| `admin` | `/v1/admin/audit-log` · `/v1/admin/metrics` · `/v1/admin/metrics/prom` · `/v1/admin/health/deep` |
-| `liveness` | `GET /health` (boolean-only) |
+| `projects`     | `/v1/me/projects[/:id[/members[/:userId]]]` · `/v1/me/active-project`                                                                                                                                                                 |
+| `tokens`       | `/v1/me/tokens` · `DELETE /v1/me/tokens/:hash`                                                                                                                                                                                        |
+| `metrics`      | `/v1/me/metrics` · `/v1/me/metrics/history`                                                                                                                                                                                           |
+| `admin`        | `/v1/admin/audit-log` · `/v1/admin/metrics` · `/v1/admin/metrics/prom` · `/v1/admin/health/deep`                                                                                                                                      |
+| `liveness`     | `GET /health` (boolean-only)                                                                                                                                                                                                          |
 
 Most routes require authentication, but several public surfaces bypass the app auth hook in addition to the OpenAPI doc itself: `/health`, `/openapi.json`, `/api-docs` (Swagger UI), the `/admin` SPA shell + assets, `/favicon.ico`, and Better Auth's public endpoints under `/api/auth/*` (sign-in, get-session, etc.). Two security schemes are defined:
 

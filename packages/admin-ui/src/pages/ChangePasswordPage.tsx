@@ -31,11 +31,15 @@ export function ChangePasswordPage({ onDone }: { onDone: () => void }) {
 
     // Better Auth's change-password endpoint. Returns 200 on success and
     // 400 on a wrong current password.
-    const r = await api<{ user: unknown }>("POST", "/api/auth/change-password", {
-      currentPassword,
-      newPassword,
-      revokeOtherSessions: true,
-    });
+    const r = await api<{ user: unknown }>(
+      "POST",
+      "/api/auth/change-password",
+      {
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: true,
+      }
+    );
 
     setBusy(false);
     if (r.ok) {
@@ -56,8 +60,12 @@ export function ChangePasswordPage({ onDone }: { onDone: () => void }) {
             <KeyRound className="h-4 w-4 text-white" />
           </div>
           <div>
-            <div className="text-base font-semibold text-ink">Change password</div>
-            <div className="font-mono text-[10px] text-dim">First-time login</div>
+            <div className="text-base font-semibold text-ink">
+              Change password
+            </div>
+            <div className="font-mono text-[10px] text-dim">
+              First-time login
+            </div>
           </div>
         </div>
 
@@ -102,7 +110,11 @@ export function ChangePasswordPage({ onDone }: { onDone: () => void }) {
             disabled={!currentPassword || !newPassword || !confirmPassword}
             className="w-full !py-2.5 !text-[13px] !font-semibold"
           >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <KeyRound className="h-3.5 w-3.5" />
+            )}
             Change password
           </Button>
         </form>

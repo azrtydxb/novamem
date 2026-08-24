@@ -8,6 +8,7 @@ Key properties:
 - --evaluate-only: answerer/judge from existing per-question retrieval checkpoints, no NovaMem calls
 - one isolated namespace per question inside one disposable project/run
 """
+
 import argparse
 import json
 import os
@@ -40,7 +41,9 @@ def atomic_write_json(path, obj):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{threading.get_ident()}")
-    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     os.replace(tmp, path)
 
 
@@ -79,33 +82,49 @@ def vllm_generate(base_url, model, prompt, max_tokens=256, temperature=0, timeou
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-    out = http_json("POST", base_url.rstrip("/") + "/chat/completions", None, payload, timeout=timeout)
-    text = (((out or {}).get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    out = http_json(
+        "POST",
+        base_url.rstrip("/") + "/chat/completions",
+        None,
+        payload,
+        timeout=timeout,
+    )
+    text = (((out or {}).get("choices") or [{}])[0].get("message") or {}).get(
+        "content"
+    ) or ""
     text = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.I).strip()
-    text = re.sub(r"<mem_thinking>[\s\S]*?</mem_thinking>", "", text, flags=re.I).strip()
+    text = re.sub(
+        r"<mem_thinking>[\s\S]*?</mem_thinking>", "", text, flags=re.I
+    ).strip()
     return text
 
 
 def create_project(base_url, token, name):
-    obj = http_json("POST", base_url.rstrip("/") + "/v1/me/projects", token, {"name": name})
+    obj = http_json(
+        "POST", base_url.rstrip("/") + "/v1/me/projects", token, {"name": name}
+    )
     return str(obj["id"])
 
 
 def delete_project(base_url, token, project):
-    return http_json("DELETE", base_url.rstrip("/") + f"/v1/me/projects/{project}", token)
+    return http_json(
+        "DELETE", base_url.rstrip("/") + f"/v1/me/projects/{project}", token
+    )
 
 
 def chunks_for_session(question_id, session_id, date, turns, turns_per_chunk=2):
     clean = [t for t in turns if (t.get("content") or "").strip()]
     for idx in range(0, len(clean), turns_per_chunk):
-        part = clean[idx:idx + turns_per_chunk]
+        part = clean[idx : idx + turns_per_chunk]
         lines = [
-            f"[LongMemEval question={question_id} session={session_id} chunk={idx//turns_per_chunk}]",
+            f"[LongMemEval question={question_id} session={session_id} chunk={idx // turns_per_chunk}]",
             f"Session: {session_id}",
             f"Date: {date}",
         ]
         for t in part:
-            lines.append(f"{t.get('role','speaker')}: {(t.get('content') or '').strip()}")
+            lines.append(
+                f"{t.get('role', 'speaker')}: {(t.get('content') or '').strip()}"
+            )
         yield "\n".join(lines), idx // turns_per_chunk
 
 
@@ -116,26 +135,38 @@ def remember(base_url, token, project, namespace, content, metadata):
     matching Mem0's `add()` benchmark shape rather than NovaMem's agent-facing
     semantic capture workflow.
     """
-    return http_json("POST", base_url.rstrip("/") + "/v1/remember", token, {
-        "content": content,
-        "namespace": namespace,
-        "project": project,
-        "force": True,
-        "metadata": metadata,
-        "sourceType": "benchmark",
-        "source": "novamem-longmemeval-comparable-runner",
-        "sensitivity": "internal",
-    }, timeout=180)
+    return http_json(
+        "POST",
+        base_url.rstrip("/") + "/v1/remember",
+        token,
+        {
+            "content": content,
+            "namespace": namespace,
+            "project": project,
+            "force": True,
+            "metadata": metadata,
+            "sourceType": "benchmark",
+            "source": "novamem-longmemeval-comparable-runner",
+            "sensitivity": "internal",
+        },
+        timeout=180,
+    )
 
 
 def search(base_url, token, project, namespace, query, k):
-    obj = http_json("POST", base_url.rstrip("/") + "/v1/search", token, {
-        "query": query,
-        "k": k,
-        "namespace": namespace,
-        "project": project,
-        "maxSensitivity": "sensitive",
-    }, timeout=180)
+    obj = http_json(
+        "POST",
+        base_url.rstrip("/") + "/v1/search",
+        token,
+        {
+            "query": query,
+            "k": k,
+            "namespace": namespace,
+            "project": project,
+            "maxSensitivity": "sensitive",
+        },
+        timeout=180,
+    )
     return (obj or {}).get("results") or []
 
 
@@ -163,7 +194,7 @@ Rules:
 - For conflicting facts, prefer the most recent memory.
 - For temporal/counting questions, compute carefully from the dates in the memories.
 
-Question date: {question_date or ''}
+Question date: {question_date or ""}
 Question: {question}
 
 Memories:
@@ -190,12 +221,22 @@ def parse_judge(text):
             obj = json.loads(m.group(0))
             judgment = str(obj.get("judgment", "")).upper()
             score = int(float(obj.get("score", 1 if judgment == "PASS" else 0)) >= 0.5)
-            return {"judgment": "PASS" if score else "FAIL", "score": score, "reason": str(obj.get("reason", "")), "raw": text[:500]}
+            return {
+                "judgment": "PASS" if score else "FAIL",
+                "score": score,
+                "reason": str(obj.get("reason", "")),
+                "raw": text[:500],
+            }
         except Exception:
             pass
     upper = (text or "").upper()
     score = 1 if "PASS" in upper and "FAIL" not in upper else 0
-    return {"judgment": "PASS" if score else "FAIL", "score": score, "reason": "fallback parse", "raw": (text or "")[:500]}
+    return {
+        "judgment": "PASS" if score else "FAIL",
+        "score": score,
+        "reason": "fallback parse",
+        "raw": (text or "")[:500],
+    }
 
 
 def aggregate(evaluations, cutoffs, run_meta):
@@ -203,10 +244,18 @@ def aggregate(evaluations, cutoffs, run_meta):
     qtypes = sorted({e["question_type"] for e in evaluations})
     for k in cutoffs:
         key = f"top_{k}"
-        vals = [e["cutoffs"][key]["score"] for e in evaluations if key in e.get("cutoffs", {})]
+        vals = [
+            e["cutoffs"][key]["score"]
+            for e in evaluations
+            if key in e.get("cutoffs", {})
+        ]
         by_type = {}
         for qt in qtypes:
-            tvals = [e["cutoffs"][key]["score"] for e in evaluations if e["question_type"] == qt and key in e.get("cutoffs", {})]
+            tvals = [
+                e["cutoffs"][key]["score"]
+                for e in evaluations
+                if e["question_type"] == qt and key in e.get("cutoffs", {})
+            ]
             by_type[qt] = {
                 "total": len(tvals),
                 "correct": sum(tvals),
@@ -223,7 +272,13 @@ def aggregate(evaluations, cutoffs, run_meta):
             "by_question_type": by_type,
         }
     return {
-        "metadata": {**run_meta, "top_k": max(cutoffs), "top_k_cutoffs": [f"top_{k}" for k in cutoffs], "total_questions": len(evaluations), "question_types": qtypes},
+        "metadata": {
+            **run_meta,
+            "top_k": max(cutoffs),
+            "top_k_cutoffs": [f"top_{k}" for k in cutoffs],
+            "total_questions": len(evaluations),
+            "question_types": qtypes,
+        },
         "metrics_by_cutoff": by_cutoff,
         "evaluations": sorted(evaluations, key=lambda e: e.get("dataset_index", 0)),
     }
@@ -251,12 +306,24 @@ def build_search_result_rows(retrieved, answer_session_ids):
         sid_match = re.search(r"session=([^\s\]]+)", content)
         sid = sid_match.group(1) if sid_match else None
         rid = str(r.get("id"))
-        rows.append({"id": rid, "rank": idx, "session_id": sid, "score": r.get("score"), "relevant": sid in answer_session_ids})
-        memories.append({"id": rid, "rank": idx, "content": content, "score": r.get("score")})
+        rows.append(
+            {
+                "id": rid,
+                "rank": idx,
+                "session_id": sid,
+                "score": r.get("score"),
+                "relevant": sid in answer_session_ids,
+            }
+        )
+        memories.append(
+            {"id": rid, "rank": idx, "content": content, "score": r.get("score")}
+        )
     return rows, memories
 
 
-def process_question(item, dataset_index, ordinal, args, token, project, run_id, cutoffs, out_dir):
+def process_question(
+    item, dataset_index, ordinal, args, token, project, run_id, cutoffs, out_dir
+):
     qid = str(item["question_id"])
     qpath = question_checkpoint_path(out_dir, qid)
     cp = load_json(qpath, default={}) or {}
@@ -269,53 +336,78 @@ def process_question(item, dataset_index, ordinal, args, token, project, run_id,
         return cp.get("evaluation")
 
     if args.evaluate_only and not cp.get("retrieved_memories"):
-        raise RuntimeError(f"{qid}: evaluate-only requires checkpointed retrieved_memories in {qpath}")
+        raise RuntimeError(
+            f"{qid}: evaluate-only requires checkpointed retrieved_memories in {qpath}"
+        )
 
     if not args.evaluate_only and not cp.get("ingested"):
-        log(f"[{ordinal}] {qid} {item.get('question_type')} ingest sessions={len(item.get('haystack_sessions') or [])}")
+        log(
+            f"[{ordinal}] {qid} {item.get('question_type')} ingest sessions={len(item.get('haystack_sessions') or [])}"
+        )
         stored_chunks = 0
-        for sid, date, sess in zip(item.get("haystack_session_ids") or [], item.get("haystack_dates") or [], item.get("haystack_sessions") or []):
+        for sid, date, sess in zip(
+            item.get("haystack_session_ids") or [],
+            item.get("haystack_dates") or [],
+            item.get("haystack_sessions") or [],
+        ):
             for content, chunk_idx in chunks_for_session(qid, sid, date, sess):
-                remember(args.base_url, token, project, ns, content, {
-                    "benchmark": "longmemeval",
-                    "question_id": qid,
-                    "question_type": item.get("question_type"),
-                    "session_id": sid,
-                    "chunk": chunk_idx,
-                    "session_date": date,
-                })
+                remember(
+                    args.base_url,
+                    token,
+                    project,
+                    ns,
+                    content,
+                    {
+                        "benchmark": "longmemeval",
+                        "question_id": qid,
+                        "question_type": item.get("question_type"),
+                        "session_id": sid,
+                        "chunk": chunk_idx,
+                        "session_date": date,
+                    },
+                )
                 stored_chunks += 1
-        cp.update({
-            "question_id": qid,
-            "dataset_index": dataset_index,
-            "question_type": item.get("question_type"),
-            "namespace": ns,
-            "stored_chunks": stored_chunks,
-            "ingested": True,
-            "status": "ingested",
-            "updated_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        })
+        cp.update(
+            {
+                "question_id": qid,
+                "dataset_index": dataset_index,
+                "question_type": item.get("question_type"),
+                "namespace": ns,
+                "stored_chunks": stored_chunks,
+                "ingested": True,
+                "status": "ingested",
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+        )
         atomic_write_json(qpath, cp)
 
     if not args.evaluate_only and not cp.get("retrieved_memories"):
         log(f"[{ordinal}] {qid} search top_{max(cutoffs)}")
-        retrieved = search(args.base_url, token, project, ns, item["question"], max(cutoffs))
-        search_results, retrieved_memories = build_search_result_rows(retrieved, answer_session_ids)
-        cp.update({
-            "question_id": qid,
-            "dataset_index": dataset_index,
-            "question_type": item.get("question_type"),
-            "namespace": ns,
-            "retrieval": {"search_results": search_results},
-            "retrieved_memories": retrieved_memories,
-            "retrieved_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-            "status": "predicted",
-            "updated_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        })
+        retrieved = search(
+            args.base_url, token, project, ns, item["question"], max(cutoffs)
+        )
+        search_results, retrieved_memories = build_search_result_rows(
+            retrieved, answer_session_ids
+        )
+        cp.update(
+            {
+                "question_id": qid,
+                "dataset_index": dataset_index,
+                "question_type": item.get("question_type"),
+                "namespace": ns,
+                "retrieval": {"search_results": search_results},
+                "retrieved_memories": retrieved_memories,
+                "retrieved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "status": "predicted",
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+        )
         atomic_write_json(qpath, cp)
 
     if args.predict_only:
-        log(f"[{ordinal}] {qid} predicted retrieved={len(cp.get('retrieved_memories') or [])}")
+        log(
+            f"[{ordinal}] {qid} predicted retrieved={len(cp.get('retrieved_memories') or [])}"
+        )
         return None
 
     cutoff_results = dict((cp.get("evaluation") or {}).get("cutoffs") or {})
@@ -325,15 +417,34 @@ def process_question(item, dataset_index, ordinal, args, token, project, run_id,
         if key in cutoff_results and not args.rejudge:
             continue
         top = retrieved_memories[:k]
-        ans = vllm_generate(args.vllm_base_url, args.model, answer_prompt(item["question"], item.get("question_date"), top), max_tokens=256, temperature=0)
-        judge_raw = vllm_generate(args.vllm_base_url, args.model, judge_prompt(item["question"], item.get("answer", ""), ans), max_tokens=180, temperature=0)
+        ans = vllm_generate(
+            args.vllm_base_url,
+            args.model,
+            answer_prompt(item["question"], item.get("question_date"), top),
+            max_tokens=256,
+            temperature=0,
+        )
+        judge_raw = vllm_generate(
+            args.vllm_base_url,
+            args.model,
+            judge_prompt(item["question"], item.get("answer", ""), ans),
+            max_tokens=180,
+            temperature=0,
+        )
         judge = parse_judge(judge_raw)
-        cutoff_results[key] = {"generated_answer": ans, "judge": judge, "score": judge["score"], "retrieved_count": len(top)}
-        log(f"[{ordinal}] {qid} {key}: {judge['judgment']} | {ans[:100].replace(chr(10), ' ')}")
+        cutoff_results[key] = {
+            "generated_answer": ans,
+            "judge": judge,
+            "score": judge["score"],
+            "retrieved_count": len(top),
+        }
+        log(
+            f"[{ordinal}] {qid} {key}: {judge['judgment']} | {ans[:100].replace(chr(10), ' ')}"
+        )
         cp_eval = {**(cp.get("evaluation") or {}), "cutoffs": cutoff_results}
         cp["evaluation"] = cp_eval
         cp["status"] = "evaluating"
-        cp["updated_at"] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        cp["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         atomic_write_json(qpath, cp)
 
     ev = {
@@ -351,7 +462,7 @@ def process_question(item, dataset_index, ordinal, args, token, project, run_id,
     }
     cp["evaluation"] = ev
     cp["status"] = "evaluated"
-    cp["evaluated_at"] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    cp["evaluated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     cp["updated_at"] = cp["evaluated_at"]
     atomic_write_json(qpath, cp)
     return ev
@@ -413,10 +524,27 @@ def main():
     ap.add_argument("--offset", type=int, default=0)
     ap.add_argument("--cleanup", action="store_true")
     ap.add_argument("--run-id", default=None)
-    ap.add_argument("--max-workers", type=int, default=1, help="Parallel questions to process (Mem0 default is 10; start with 5 for NovaMem/vLLM).")
-    ap.add_argument("--predict-only", action="store_true", help="Only ingest and search; skip answerer/judge.")
-    ap.add_argument("--evaluate-only", action="store_true", help="Only answer/judge from checkpointed retrieval; no NovaMem calls.")
-    ap.add_argument("--rejudge", action="store_true", help="Re-run answerer/judge even when checkpointed cutoff results exist.")
+    ap.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        help="Parallel questions to process (Mem0 default is 10; start with 5 for NovaMem/vLLM).",
+    )
+    ap.add_argument(
+        "--predict-only",
+        action="store_true",
+        help="Only ingest and search; skip answerer/judge.",
+    )
+    ap.add_argument(
+        "--evaluate-only",
+        action="store_true",
+        help="Only answer/judge from checkpointed retrieval; no NovaMem calls.",
+    )
+    ap.add_argument(
+        "--rejudge",
+        action="store_true",
+        help="Re-run answerer/judge even when checkpointed cutoff results exist.",
+    )
     args = ap.parse_args()
 
     if args.predict_only and args.evaluate_only:
@@ -428,35 +556,50 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "questions").mkdir(parents=True, exist_ok=True)
     state_path = out_dir / "state.json"
-    cutoffs = sorted({int(x.strip()) for x in args.cutoffs.split(',') if x.strip()})
+    cutoffs = sorted({int(x.strip()) for x in args.cutoffs.split(",") if x.strip()})
     token = Path(args.token_file).read_text().strip()
-    run_id = args.run_id or f"novamem-lme-{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    run_id = (
+        args.run_id
+        or f"novamem-lme-{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    )
 
     state = load_json(state_path, default=None)
     if state:
         project = state.get("project")
         run_id = state["run_id"]
     else:
-        project = None if args.evaluate_only else create_project(args.base_url, token, run_id)
+        project = (
+            None if args.evaluate_only else create_project(args.base_url, token, run_id)
+        )
         state = {
             "run_id": run_id,
             "project": project,
-            "created_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "cleanup": args.cleanup,
-            "mode": "predict-only" if args.predict_only else "evaluate-only" if args.evaluate_only else "answerer",
+            "mode": "predict-only"
+            if args.predict_only
+            else "evaluate-only"
+            if args.evaluate_only
+            else "answerer",
             "max_workers": args.max_workers,
             "question_checkpoints_dir": str(out_dir / "questions"),
         }
         atomic_write_json(state_path, state)
     if args.evaluate_only and not project:
-        log("evaluate-only: no project in state; NovaMem calls are disabled as requested")
+        log(
+            "evaluate-only: no project in state; NovaMem calls are disabled as requested"
+        )
 
     run_meta = {
         "benchmark": "longmemeval",
         "project_name": "NovaMem live",
         "run_id": run_id,
-        "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        "mode": "predict-only" if args.predict_only else "evaluate-only" if args.evaluate_only else "answerer",
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "mode": "predict-only"
+        if args.predict_only
+        else "evaluate-only"
+        if args.evaluate_only
+        else "answerer",
         "answerer_model": None if args.predict_only else args.model,
         "judge_model": None if args.predict_only else args.model,
         "provider": "novamem-live-local-vllm",
@@ -467,8 +610,12 @@ def main():
         "checkpointing": "per-question-json",
     }
 
-    log(f"run_id={run_id} project={project} out_dir={out_dir} max_workers={args.max_workers} mode={run_meta['mode']}")
-    log(f"opening dataset={args.dataset} offset={args.offset} limit={args.limit or 'all'} cutoffs={cutoffs}")
+    log(
+        f"run_id={run_id} project={project} out_dir={out_dir} max_workers={args.max_workers} mode={run_meta['mode']}"
+    )
+    log(
+        f"opening dataset={args.dataset} offset={args.offset} limit={args.limit or 'all'} cutoffs={cutoffs}"
+    )
 
     items = list(iter_dataset_items(args.dataset, args.offset, args.limit))
     started = time.time()
@@ -478,7 +625,20 @@ def main():
     with ThreadPoolExecutor(max_workers=args.max_workers) as pool:
         futures = []
         for dataset_index, ordinal, item in items:
-            futures.append(pool.submit(process_question, item, dataset_index, ordinal, args, token, project, run_id, cutoffs, out_dir))
+            futures.append(
+                pool.submit(
+                    process_question,
+                    item,
+                    dataset_index,
+                    ordinal,
+                    args,
+                    token,
+                    project,
+                    run_id,
+                    cutoffs,
+                    out_dir,
+                )
+            )
         for fut in as_completed(futures):
             try:
                 ev = fut.result()
@@ -486,14 +646,16 @@ def main():
                     evaluations = collect_evaluations(out_dir)
                     report = write_outputs(out_dir, evaluations, cutoffs, run_meta)
                     elapsed = time.time() - started
-                    log(f"completed_evaluations={len(evaluations)} elapsed_min={elapsed/60:.1f} report={out_dir / 'comparable_report.json'}")
+                    log(
+                        f"completed_evaluations={len(evaluations)} elapsed_min={elapsed / 60:.1f} report={out_dir / 'comparable_report.json'}"
+                    )
             except Exception as exc:
                 failures.append(str(exc))
                 log(f"ERROR: {exc}")
 
     evaluations = collect_evaluations(out_dir)
     report = write_outputs(out_dir, evaluations, cutoffs, run_meta)
-    state["updated_at"] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     state["failures"] = failures
     state["completed_evaluations"] = len(evaluations)
     if args.predict_only:
@@ -506,17 +668,22 @@ def main():
     elif args.cleanup and not args.predict_only and not args.evaluate_only and project:
         log(f"cleanup project={project}")
         delete_project(args.base_url, token, project)
-        state["cleaned_up_at"] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        state["cleaned_up_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         atomic_write_json(state_path, state)
 
-    print(json.dumps({
-        "report": str(out_dir / "comparable_report.json"),
-        "state": str(state_path),
-        "questions_dir": str(out_dir / "questions"),
-        "evaluations": len(evaluations),
-        "failures": failures,
-        "metrics_by_cutoff": report["metrics_by_cutoff"],
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "report": str(out_dir / "comparable_report.json"),
+                "state": str(state_path),
+                "questions_dir": str(out_dir / "questions"),
+                "evaluations": len(evaluations),
+                "failures": failures,
+                "metrics_by_cutoff": report["metrics_by_cutoff"],
+            },
+            indent=2,
+        )
+    )
     if failures:
         raise SystemExit(1)
 

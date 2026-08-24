@@ -1,0 +1,18 @@
+# Generated files — never hand-formatted.
+# docs/api/openapi.json is written by `go run ./cmd/gen-openapi` and a Go
+# test pins the checked-in bytes against the generator's output.
+docs/api/openapi.json
+# Vite build output synced from packages/admin-ui and embedded in the Go
+# binary (go/scripts/sync-admin-ui.sh).
+go/internal/httpapi/admin-ui/
+# Hand-tuned static marketing pages: prettier's HTML reflow changes
+# rendered whitespace inside inline elements (verified in a browser).
+site/*.html
+# Written by pnpm; prettier and the package manager would fight over it
+# on every install.
+pnpm-lock.yaml
+# Captured oracles: these are byte-for-byte what a retired implementation
+# produced, kept as evidence for the port that replaced it. Reformatting
+# them would mean the fixture is no longer literally what was observed.
+go/internal/bench/testdata/*.golden.json
+go/internal/initcli/testdata/golden.json

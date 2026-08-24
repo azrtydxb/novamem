@@ -54,15 +54,15 @@ paths.
 
 After install, from any session:
 
-| Command       | Does                                                                  |
-| ------------- | --------------------------------------------------------------------- |
-| `/remember …` | Store a memory entry (decision, preference, constraint, fact).        |
-| `/recall …`   | 5-signal hybrid retrieval (keyword + vector + graph + recency + entity, graph/entity weights at 0 in production calibration). Returns top 10.             |
-| `/today`      | Activity feed for the last 24h.                                       |
-| `/recent`     | Newest entries in a namespace.                                        |
-| `/forget id`  | Hard delete across warm + cold + graph.                               |
-| `/neighbors`  | Graph-neighbour traversal from a seed entry id.                       |
-| `/projects`   | List sub-brain projects you can access.                               |
+| Command       | Does                                                                                                                                          |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/remember …` | Store a memory entry (decision, preference, constraint, fact).                                                                                |
+| `/recall …`   | 5-signal hybrid retrieval (keyword + vector + graph + recency + entity, graph/entity weights at 0 in production calibration). Returns top 10. |
+| `/today`      | Activity feed for the last 24h.                                                                                                               |
+| `/recent`     | Newest entries in a namespace.                                                                                                                |
+| `/forget id`  | Hard delete across warm + cold + graph.                                                                                                       |
+| `/neighbors`  | Graph-neighbour traversal from a seed entry id.                                                                                               |
+| `/projects`   | List sub-brain projects you can access.                                                                                                       |
 
 The rules file (`CLAUDE.md` fragment) tells the agent:
 

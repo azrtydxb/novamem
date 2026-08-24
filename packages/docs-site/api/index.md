@@ -22,12 +22,12 @@ Machine-readable: [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/
 
 ## Routes by purpose
 
-| Section | Routes | Auth |
-|---|---|---|
-| **[Authentication](/api/auth)** | `/api/auth/*`, `POST /v1/me/tokens` | mixed |
-| **[Data plane](/api/data-plane)** | `/v1/search`, `/v1/remember`, `/v1/capture`, `/v1/recent`, `/v1/neighbors`, `/v1/forget`, `PUT /v1/memories/{id}` | user API token |
-| **[Admin & users](/api/admin)** | `/v1/admin/*`, `/api/auth/admin/*` | session admin |
-| **[MCP tools](/api/mcp-tools)** | `/mcp/sse`, `/mcp/messages` | tenant bearer |
+| Section                           | Routes                                                                                                            | Auth           |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------- |
+| **[Authentication](./auth.md)**   | `/api/auth/*`, `POST /v1/me/tokens`                                                                               | mixed          |
+| **[Data plane](./data-plane.md)** | `/v1/search`, `/v1/remember`, `/v1/capture`, `/v1/recent`, `/v1/neighbors`, `/v1/forget`, `PUT /v1/memories/{id}` | user API token |
+| **[Admin & users](./admin.md)**   | `/v1/admin/*`, `/api/auth/admin/*`                                                                                | session admin  |
+| **[MCP tools](./mcp-tools.md)**   | `/mcp/sse`, `/mcp/messages`                                                                                       | tenant bearer  |
 
 ## Per-user (cookie-auth) variants
 
