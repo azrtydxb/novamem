@@ -25,14 +25,14 @@
     "dev": "tsx src/main.ts"
   },
   "dependencies": {
-    "@inquirer/prompts": "^8.5.2",
+    "@inquirer/prompts": "^8.7.0",
     "commander": "^15.0.0",
     "smol-toml": "^1.8.0"
   },
   "devDependencies": {
     "@types/node": "^20.19",
     "tsx": "^4.23.12",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20.19"
