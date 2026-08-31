@@ -12,7 +12,7 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "undici": "^7.16.0",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "zod": "^3.24.0"
   }
 }
