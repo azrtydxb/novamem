@@ -228,3 +228,38 @@ func (e *Engine) ReconcilePendingFacts(ctx context.Context, batchSize int) (Reco
 	out.Pending = pending
 	return out, nil
 }
+
+// deleteDerivedFacts removes the fact rows distilled from a source
+// entry, warm and cold. Reports false when a cold vector survived, so
+// the caller can surface the same partial-delete signal it already uses
+// for the source's own vector.
+//
+// Best-effort by design: the source row is already gone or already
+// rewritten by the time this runs, and failing the whole call because a
+// derived vector lingered would turn a successful edit into an error.
+func (e *Engine) deleteDerivedFacts(ctx context.Context, userID, sourceID string, projectID *string) bool {
+	derived, err := e.warm.DeleteDerivedFacts(ctx, userID, sourceID, projectID)
+	if err != nil {
+		e.log.Warn("derived facts survived their source", "sourceId", sourceID, "err", err)
+		return false
+	}
+	ok := true
+	for _, d := range derived {
+		if e.cold == nil {
+			continue
+		}
+		if err := e.cold.Delete(ctx, userID, d.Namespace, d.ID, d.ProjectID); err != nil {
+			ok = false
+			e.log.Warn("derived fact's cold vector survived; queued for reaper",
+				"factId", d.ID, "sourceId", sourceID, "err", err)
+			if parkErr := e.warm.RecordColdOrphan(ctx, d.ID, userID, d.Namespace, d.ProjectID, err.Error()); parkErr != nil {
+				e.log.Warn("could not park orphaned derived vector", "factId", d.ID, "err", parkErr)
+			}
+		}
+	}
+	if len(derived) > 0 {
+		e.log.Info("removed derived facts with their source",
+			"sourceId", sourceID, "count", len(derived))
+	}
+	return ok
+}
