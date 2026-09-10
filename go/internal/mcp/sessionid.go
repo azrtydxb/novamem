@@ -41,6 +41,13 @@ const (
 	sessionIDTagLen     = 16
 )
 
+// A well-formed id has exactly one length. Checking it before decoding
+// keeps an attacker-supplied header (bounded only by MaxHeaderBytes)
+// from being base64-decoded into a large allocation just to be thrown
+// away.
+var sessionIDLen = sessionIDEnc.EncodedLen(sessionIDPayloadLen) + 1 +
+	sessionIDEnc.EncodedLen(sessionIDTagLen)
+
 // Strict() rejects non-canonical encodings. Without it the trailing
 // unused bits of the last base64 character are ignored, so several
 // distinct id strings decode to the same bytes and all verify — an id
@@ -86,7 +93,7 @@ func mintSessionID(key []byte, userID string, now time.Time) string {
 // adopting a session a replica has never seen, so it fails closed: no
 // key, wrong shape, wrong user, tampered payload, or too old → false.
 func verifySessionID(key []byte, userID, id string, now time.Time) bool {
-	if key == nil {
+	if key == nil || len(id) != sessionIDLen {
 		return false
 	}
 	rawPayload, rawTag, found := strings.Cut(id, ".")

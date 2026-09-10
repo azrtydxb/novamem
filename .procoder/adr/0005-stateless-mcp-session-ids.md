@@ -87,6 +87,11 @@ Required before accepting this, because session ids become caller-assertable.
   replica that serves the DELETE; the signed id stays adoptable elsewhere
   until it ages out. This is cosmetic rather than a privilege issue, for
   the same reason: access requires the bearer.
+- **Malformed input is rejected on length alone**, before any base64
+  decoding, so an `Mcp-Session-Id` header (bounded only by
+  `MaxHeaderBytes`) cannot be decoded into a large allocation just to be
+  thrown away. Verified by an allocation assertion, not just by the
+  rejection.
 - **Per-user cap is per-replica.** A client legitimately holding one
   adopted session per replica consumes one slot on each, so the effective
   ceiling is `cap × replicas`. The cap guards one process's map against
@@ -106,4 +111,7 @@ Required before accepting this, because session ids become caller-assertable.
 - `NOVAMEM_COOKIE_SECRET` gains a second consumer. Rotating it
   invalidates live MCP session ids (clients re-`initialize`) in addition
   to session cookies.
-- Session ids grow from a 36-char UUID to ~65 chars.
+- Session ids grow from a 36-char UUID to 55 chars.
+- The per-user cap is now enforced atomically (count and insert under one
+  lock) on all three session-creating paths, including SSE. Previously
+  concurrent requests could each observe `count < max` and all insert.

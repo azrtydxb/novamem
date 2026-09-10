@@ -3,6 +3,7 @@ package mcp
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -191,5 +192,89 @@ func TestAdoptionRespectsPerUserCap(t *testing.T) {
 	if rec := post(t, h, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
 		map[string]string{"Mcp-Session-Id": id}); rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("third adopt: got %d, want 429", rec.Code)
+	}
+}
+
+// An oversized or wrong-length Mcp-Session-Id must be rejected on its
+// length alone, before any base64 decoding allocates for it.
+func TestSessionIDRejectsOversizedWithoutDecoding(t *testing.T) {
+	key := deriveSessionKey(testCookieSecret)
+	now := time.Now()
+	valid := mintSessionID(key, "user-a", now)
+
+	huge := strings.Repeat("A", 1<<20) + "." + strings.Repeat("B", 1<<20)
+	for name, bad := range map[string]string{
+		"1MB of base64":  huge,
+		"one char short": valid[:len(valid)-1],
+		"one char long":  valid + "A",
+	} {
+		if verifySessionID(key, "user-a", bad, now) {
+			t.Errorf("%s verified", name)
+		}
+	}
+	if len(valid) != sessionIDLen {
+		t.Errorf("minted id is %d chars, but sessionIDLen says %d", len(valid), sessionIDLen)
+	}
+
+	// Rejection alone would also hold without the length pre-check —
+	// the decode would just fail later. What the pre-check buys is not
+	// decoding a caller-supplied 1MB header at all, so assert that: no
+	// allocation means no decode happened.
+	if allocs := testing.AllocsPerRun(20, func() {
+		verifySessionID(key, "user-a", huge, now)
+	}); allocs != 0 {
+		t.Errorf("verifying a 1MB id allocated %v times — it is being decoded before its length is checked", allocs)
+	}
+}
+
+// The cap must hold when concurrent requests race, which it cannot if
+// the count and the insert are separate calls.
+func TestPerUserCapHoldsUnderConcurrency(t *testing.T) {
+	key := deriveSessionKey(testCookieSecret)
+	const cap = 3
+	pod := testServer(t, Options{CookieSecret: testCookieSecret, MaxSessionsPerUser: cap})
+	h := streamableHandler(pod, "user-a")
+
+	ids := make([]string, 24)
+	for i := range ids {
+		ids[i] = mintSessionID(key, "user-a", time.Now())
+	}
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			post(t, h, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+				map[string]string{"Mcp-Session-Id": id})
+		}(id)
+	}
+	wg.Wait()
+	if got := pod.streamable.countForUser("user-a"); got > cap {
+		t.Fatalf("registry holds %d sessions for the user, cap is %d", got, cap)
+	}
+}
+
+// Two requests adopting the same id at once must converge on one
+// session rather than overwrite each other or double-count.
+func TestConcurrentAdoptionOfOneIDCreatesOneSession(t *testing.T) {
+	key := deriveSessionKey(testCookieSecret)
+	pod := testServer(t, Options{CookieSecret: testCookieSecret})
+	h := streamableHandler(pod, "user-a")
+	id := mintSessionID(key, "user-a", time.Now())
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rec := post(t, h, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+				map[string]string{"Mcp-Session-Id": id}); rec.Code != http.StatusOK {
+				t.Errorf("got %d, want 200", rec.Code)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := pod.streamable.countForUser("user-a"); got != 1 {
+		t.Fatalf("got %d sessions, want exactly 1", got)
 	}
 }
