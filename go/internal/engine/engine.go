@@ -1035,10 +1035,12 @@ func (e *Engine) Update(ctx context.Context, userID, id string, req UpdateReques
 		// The same reasoning as the stale vector below, one level up:
 		// facts distilled from the OLD wording still assert the old
 		// claim, and they outrank their own corrected source in search —
-		// so a correction silently fails to take. Drop them and re-derive
-		// from the new text. Re-arm the pending marker first so the
-		// reconciler retries if the extractor is down; leaving an entry
-		// with no facts is recoverable, leaving it with wrong ones is not.
+		// so a correction silently fails to take. Drop them, then
+		// re-derive from the new text — in that order, so the new
+		// extraction cannot race the delete and lose the facts it just
+		// wrote. The pending marker is re-armed before scheduling, so
+		// the reconciler retries if the extractor is down: an entry with
+		// no facts is recoverable, one with wrong facts is not.
 		e.deleteDerivedFacts(ctx, userID, id, entry.ProjectID)
 		if e.extractor != nil {
 			pendingAt := e.now()

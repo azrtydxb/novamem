@@ -70,6 +70,33 @@ func TestDeleteDerivedFactsRemovesOnlyThatSourcesFacts(t *testing.T) {
 			t.Errorf("%s was deleted but should have survived", id)
 		}
 	}
+	// The shadow tables must go too. memory_fts is the one that bites:
+	// keyword search reads it, so an orphan keeps returning an id whose
+	// entry no longer exists.
+	for _, tbl := range []struct{ name, col string }{
+		{"memory_fts", "entry_id"},
+		{"memory_access", "entry_id"},
+	} {
+		var n int
+		if err := a.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM `+tbl.name+` WHERE `+tbl.col+` = ANY($1::text[])`,
+			[]string{"D1" + user, "D2" + user}).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("%s still holds %d row(s) for the deleted derived entries", tbl.name, n)
+		}
+	}
+	// And the surviving derived row keeps its shadow rows.
+	var kept int
+	if err := a.Pool.QueryRow(ctx,
+		`SELECT count(*) FROM memory_fts WHERE entry_id = $1`, "D3"+user).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept == 0 {
+		t.Error("another source's derived row lost its memory_fts entry")
+	}
+
 	// Idempotent: a second call finds nothing left.
 	again, err := a.DeleteDerivedFacts(ctx, user, src, nil)
 	if err != nil {
