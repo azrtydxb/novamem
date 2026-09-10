@@ -5,16 +5,21 @@ package initcli
 // a build script; a single static binary has no dist to ship, so they
 // are embedded instead.
 //
-// assets/ is a COPY of the repo's skills/novamem/ and
-// integrations/claude-code/commands/. Copies drift, so assets_test.go
-// fails when they diverge from those sources — the same tripwire this
-// repo already uses for docs/api/openapi.json and the embedded admin UI.
+// assets/ is a COPY of integrations/claude-code/commands/. Copies
+// drift, so assets_test.go fails when it diverges from that source —
+// the same tripwire this repo already uses for docs/api/openapi.json
+// and the embedded admin UI.
+//
+// The skill is NOT copied here. It lives once, in agentskill, which
+// also renders the MCP `instructions` payload from it.
 
 import (
 	"embed"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/azrtydxb/novamem/go/internal/agentskill"
 )
 
 //go:embed all:assets
@@ -22,7 +27,7 @@ var assetsFS embed.FS
 
 // AssetSkillFS and AssetCommandsFS expose the embedded trees rooted at
 // the directory each installer expects.
-func AssetSkillFS() (fs.FS, error)    { return fs.Sub(assetsFS, "assets/skill") }
+func AssetSkillFS() (fs.FS, error)    { return agentskill.FS() }
 func AssetCommandsFS() (fs.FS, error) { return fs.Sub(assetsFS, "assets/commands") }
 
 // MaterializeAssets writes the embedded trees into dir as
@@ -33,6 +38,13 @@ func MaterializeAssets(dir string) (skillDir, commandsDir string, err error) {
 	skillDir = filepath.Join(dir, "skill")
 	commandsDir = filepath.Join(dir, "commands")
 	if err := writeTree(assetsFS, "assets", dir); err != nil {
+		return "", "", err
+	}
+	skillSrc, err := agentskill.FS()
+	if err != nil {
+		return "", "", err
+	}
+	if err := writeTree(skillSrc, ".", skillDir); err != nil {
 		return "", "", err
 	}
 	return skillDir, commandsDir, nil

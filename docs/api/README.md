@@ -4,12 +4,13 @@ The HTTP API is fully described by an **OpenAPI 3.0 spec**. The live spec is gen
 
 - [`openapi.json`](openapi.json) — committed, regenerated from the **Go** server's route table
 
-## Live Swagger UI
+## Live spec
 
-Any running novamem server serves the spec under `/api-docs` (Swagger UI with "Try it out" enabled) and the raw JSON at `/openapi.json`:
+Any running novamem server serves the spec as raw JSON at `/openapi.json`:
 
-- Local: <http://localhost:7778/api-docs>
 - Raw spec: <http://localhost:7778/openapi.json>
+
+There is no bundled HTML API browser. The retired TypeScript server rendered one via `@fastify/swagger-ui`; the Go server serves only the document, so point your own viewer at the URL above.
 
 The dashboard sidebar links straight to it.
 
@@ -39,7 +40,7 @@ The spec groups operations by tag:
 | `admin`        | `/v1/admin/audit-log` · `/v1/admin/metrics` · `/v1/admin/metrics/prom` · `/v1/admin/health/deep`                                                                                                                                      |
 | `liveness`     | `GET /health` (boolean-only)                                                                                                                                                                                                          |
 
-Most routes require authentication, but several public surfaces bypass the app auth hook in addition to the OpenAPI doc itself: `/health`, `/openapi.json`, `/api-docs` (Swagger UI), the `/admin` SPA shell + assets, `/favicon.ico`, and Better Auth's public endpoints under `/api/auth/*` (sign-in, get-session, etc.). Two security schemes are defined:
+Most routes require authentication, but several public surfaces bypass the app auth hook in addition to the OpenAPI doc itself: `/health`, `/openapi.json`, the `/admin` SPA shell + assets, `/favicon.ico`, and Better Auth's public endpoints under `/api/auth/*` (sign-in, get-session, etc.). Two security schemes are defined:
 
 - `BearerToken` — `Authorization: Bearer nm_…` (user bearer; carries every right the owning user has)
 - `SessionCookie` — Better Auth's HttpOnly cookie (dashboard sessions; also accepted as `Authorization: Bearer <session>`)
@@ -59,7 +60,7 @@ npx @openapitools/openapi-generator-cli generate \
 npx orval --input docs/api/openapi.json --output ./client/api.ts
 ```
 
-For TypeScript, the [`@azrtydxb/novamem`](../../packages/client) package is already a hand-written client with public types — usually preferable to a generated one.
+For Go, [`clients/go`](../../clients/go) is a hand-written client with public types — usually preferable to a generated one. The TypeScript client is deprecated and no longer ships from this repo (see [ADR 0002](../../.procoder/adr/0002-deprecate-npm-ts-client.md)).
 
 ## MCP vs HTTP
 
@@ -77,5 +78,5 @@ Reach for MCP when:
 ## See also
 
 - [Skill bundle](../../skills/novamem/SKILL.md) — same surface as the MCP tools, packaged for Agent Skills clients
-- [TypeScript client](../../packages/client/README.md) — `NovamemClient` with method signatures matching the HTTP API
+- [Go client](../../clients/go) — method signatures matching the HTTP API
 - [Architecture](../architecture.md) — what each route does internally
