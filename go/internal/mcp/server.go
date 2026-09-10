@@ -35,6 +35,11 @@ type Options struct {
 	MaxSessionsPerUser int
 	IdleTimeout        time.Duration
 	ReapInterval       time.Duration
+
+	// CookieSecret is the key root for signed streamable session ids
+	// (ADR 0005). Empty — auth_mode=none — leaves ids unsigned, which
+	// confines each session to the replica that minted it.
+	CookieSecret string
 }
 
 // Server hosts both transports over shared JSON-RPC handling. One
@@ -46,6 +51,7 @@ type Server struct {
 	allowedOrigins []string
 	call           CallFunc
 	maxPerUser     int
+	sessionKey     []byte
 
 	streamable *registry
 	sse        *registry
@@ -53,6 +59,8 @@ type Server struct {
 	stopOnce   sync.Once
 }
 
+// NewServer builds a Server and starts its idle-session reaper; the
+// caller owns Close.
 func NewServer(opts Options) *Server {
 	if opts.MaxSessionsPerUser == 0 {
 		opts.MaxSessionsPerUser = defaultMaxSessionsPerUser
@@ -69,9 +77,16 @@ func NewServer(opts Options) *Server {
 		allowedOrigins: opts.AllowedOrigins,
 		call:           opts.Call,
 		maxPerUser:     opts.MaxSessionsPerUser,
+		sessionKey:     deriveSessionKey(opts.CookieSecret),
 		streamable:     newRegistry(opts.IdleTimeout),
 		sse:            newRegistry(opts.IdleTimeout),
 		stop:           make(chan struct{}),
+	}
+	if s.sessionKey == nil && s.log != nil {
+		// Say it once at startup rather than letting operators discover
+		// it as clients failing with 404 after a scale-out.
+		s.log.Warn("mcp: no cookie secret configured — streamable session ids " +
+			"are process-local, so replicas > 1 requires per-client load-balancer affinity")
 	}
 	go s.reapLoop(opts.ReapInterval)
 	return s
@@ -133,13 +148,6 @@ func newRegistry(idleTimeout time.Duration) *registry {
 	return &registry{sessions: map[string]*session{}, idleTimeout: idleTimeout}
 }
 
-func (r *registry) add(sess *session) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	sess.lastActivity = time.Now()
-	r.sessions[sess.id] = sess
-}
-
 func (r *registry) get(id string) *session {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -162,6 +170,35 @@ func (r *registry) remove(id string) {
 	if sess != nil {
 		sess.close()
 	}
+}
+
+// addOrGet inserts sess unless the user is already at max, doing the
+// count and the insert under one lock: as separate calls, concurrent
+// requests for the same user can all observe count < max and each add,
+// so the cap is not actually enforced. If the id is already present
+// (two requests adopting the same session at once) the existing session
+// is returned and nothing is counted or overwritten.
+//
+// Returns false only when the cap is reached.
+func (r *registry) addOrGet(sess *session, max int) (*session, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existing := r.sessions[sess.id]; existing != nil {
+		existing.lastActivity = time.Now()
+		return existing, true
+	}
+	n := 0
+	for _, s := range r.sessions {
+		if s.userID == sess.userID {
+			n++
+		}
+	}
+	if n >= max {
+		return nil, false
+	}
+	sess.lastActivity = time.Now()
+	r.sessions[sess.id] = sess
+	return sess, true
 }
 
 func (r *registry) countForUser(userID string) int {

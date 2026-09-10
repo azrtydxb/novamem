@@ -151,14 +151,15 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 			s.missingSession(w)
 			return
 		}
-		if s.streamable.countForUser(userID) >= s.maxPerUser {
+		sess, ok := s.streamable.addOrGet(&session{
+			id:     mintSessionID(s.sessionKey, userID, time.Now()),
+			userID: userID, done: make(chan struct{})}, s.maxPerUser)
+		if !ok {
 			s.log.Warn("mcp-streamable: per-user session cap exceeded", "userId", userID, "cap", s.maxPerUser)
 			writeJSON(w, http.StatusTooManyRequests, map[string]any{
 				"error": "too many concurrent MCP sessions for this user"})
 			return
 		}
-		sess := &session{id: newSessionID(), userID: userID, done: make(chan struct{})}
-		s.streamable.add(sess)
 		s.log.Info("mcp-streamable: session opened", "sessionId", sess.id, "userId", userID)
 		resp := s.handleMessage(r.Context(), sess, body)
 		w.Header().Set("Mcp-Session-Id", sess.id)
@@ -168,8 +169,26 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 
 	sess := s.streamable.get(sessionID)
 	if sess == nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown sessionId"})
-		return
+		// A session this replica never minted may still be one this
+		// deployment issued to this caller — that is what the signature
+		// proves (ADR 0005). Adopting it is what lets any replica serve
+		// any request; an id that does not verify for the caller gets
+		// the same 404 as before, so it can never displace anyone.
+		if !verifySessionID(s.sessionKey, userID, sessionID, time.Now()) {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown sessionId"})
+			return
+		}
+		adopted, ok := s.streamable.addOrGet(
+			&session{id: sessionID, userID: userID, done: make(chan struct{})}, s.maxPerUser)
+		if !ok {
+			s.log.Warn("mcp-streamable: per-user session cap exceeded on adopt",
+				"userId", userID, "cap", s.maxPerUser)
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{
+				"error": "too many concurrent MCP sessions for this user"})
+			return
+		}
+		sess = adopted
+		s.log.Info("mcp-streamable: session adopted", "sessionId", sessionID, "userId", userID)
 	}
 	if sess.userID != userID {
 		s.log.Warn("mcp-streamable: rejected request from non-owner",
@@ -222,19 +241,18 @@ func (s *Server) ServeSSE(w http.ResponseWriter, r *http.Request, userID string)
 	if !s.applyGuards(w, r) {
 		return
 	}
-	if s.sse.countForUser(userID) >= s.maxPerUser {
+	sess, ok := s.sse.addOrGet(&session{
+		id:     newSessionID(),
+		userID: userID,
+		out:    make(chan []byte, 64),
+		done:   make(chan struct{}),
+	}, s.maxPerUser)
+	if !ok {
 		s.log.Warn("mcp-sse: per-user session cap exceeded", "userId", userID, "cap", s.maxPerUser)
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
 			"error": "too many concurrent SSE sessions for this user"})
 		return
 	}
-	sess := &session{
-		id:     newSessionID(),
-		userID: userID,
-		out:    make(chan []byte, 64),
-		done:   make(chan struct{}),
-	}
-	s.sse.add(sess)
 	s.log.Info("mcp-sse: session opened", "sessionId", sess.id, "userId", userID)
 
 	sseHeaders(w)

@@ -26,6 +26,9 @@ func (s *server) registerMCP(mux *routeMux) *mcp.Server {
 		Instructions:   novamemInstructions,
 		AllowedOrigins: s.corsOrigins,
 		Call:           s.callTool,
+		// Key root for signed session ids, so any replica can serve a
+		// session any other replica minted (ADR 0005).
+		CookieSecret: s.cookieSecret,
 	})
 	streamable := s.withAuth(func(w http.ResponseWriter, r *http.Request) {
 		srv.ServeStreamable(w, r, s.userID(r))

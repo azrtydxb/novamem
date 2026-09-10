@@ -59,3 +59,46 @@ Options:
 **Decision (2026-09-10, owner):** delete client + mcp + init now; keep
 `packages/benchmarks` until the Go harness reproduces a published
 number (ADR 0004 still stands, and the models are reachable again).
+
+## How far to take the MCP session-affinity fix?
+
+Connecting Claude Code to the kw deployment exposed a scaling defect:
+`go/internal/mcp/transport.go` keeps MCP sessions in an in-process map,
+so with `replicas: 3` an `initialize` lands on one pod and follow-up
+POSTs are round-robined to pods that never saw it — measured 4/9 then
+8/20 reused-session calls succeeding, and Claude Code reporting
+`HTTP 404: unknown sessionId`.
+
+The cluster is fixed and Claude is connected: a dedicated `novamem-mcp`
+Service for the `/mcp` paths plus its own ingress annotated
+`upstream-hash-by: "$http_authorization"` pins each bearer to one pod
+(20/20). The separate Service is load-bearing — sharing the main Service
+collapses both ingresses onto one nginx upstream and the annotation is
+silently ignored.
+
+What is unresolved is how much of this becomes durable repo/infra state.
+`deploy/k8s/novamem.yaml` ships `replicas: 1`, so the shipped default is
+safe, but nothing warns an operator that scaling out silently breaks
+every MCP client, and the Service + ingress exist only as live cluster
+objects and scratchpad YAML — a rebuild of the out-of-tree overlay drops
+them. Backlog story:
+`.procoder/backlog/stories/20260910-mcp-sessions-block-horizontal-scaling.md`.
+
+Options:
+
+- **Document + persist.** PR the manifest warning at `replicas:`, the
+  affinity recipe under `docs/`, and the backlog story; fold the Service
+  and ingress into the kw overlay so they survive a rebuild. Leaves the
+  session model as-is (single-pod by contract, affinity to scale out).
+- **Persist the infra only.** Fold Service + ingress into the overlay,
+  commit the story, skip the repo-facing docs for now.
+- **Fix the session model properly.** Make sessions shared or let a pod
+  adopt an unknown-but-well-formed session id bound to the authenticated
+  caller, removing the need for affinity. Needs a security review first,
+  since session ids would become caller-assertable.
+- **Leave it.** Cluster works, story is filed; revisit when something
+  actually needs to scale out.
+
+**Decision (2026-09-10, owner):** fix the session model properly — remove
+the need for ingress affinity rather than documenting it. Security review
+first, since session ids would become caller-assertable.
