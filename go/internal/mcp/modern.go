@@ -27,8 +27,11 @@ const (
 	metaServerInfo      = "io.modelcontextprotocol/serverInfo"
 
 	// Error codes from the range the spec reserves for itself
-	// (-32020..-32099). -32000..-32019 stays implementation-defined,
-	// which is what the legacy guard bodies use.
+	// (-32020..-32099); -32000..-32019 stays implementation-defined.
+	// Both eras answer an unsupported version with -32022, because that
+	// code is what tells a dual-era client to retry rather than
+	// downgrade. The remaining guard bodies — Origin, missing session —
+	// stay on the implementation-defined -32000.
 	codeHeaderMismatch             = -32020
 	codeUnsupportedProtocolVersion = -32022
 
@@ -82,7 +85,11 @@ func classifyEra(headerVersion string, body []byte) (*rpcRequest, modernParams, 
 	var req rpcRequest
 	var p modernParams
 	if json.Unmarshal(body, &req) != nil {
-		return nil, p, false // malformed: let the legacy path emit -32700
+		// Malformed: hand it to the legacy path, which reports it in its
+		// own terms (a parse error mid-session, a missing-session guard
+		// otherwise). Either way an unparseable body cannot select an
+		// era, so it must not be treated as modern.
+		return nil, p, false
 	}
 	if len(req.Params) > 0 {
 		_ = json.Unmarshal(req.Params, &p)
