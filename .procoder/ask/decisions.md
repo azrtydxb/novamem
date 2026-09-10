@@ -102,3 +102,68 @@ Options:
 **Decision (2026-09-10, owner):** fix the session model properly — remove
 the need for ingress affinity rather than documenting it. Security review
 first, since session ids would become caller-assertable.
+
+## Do we move to MCP 2026-07-28, and how do we fix the 2025-03-26 batching gap?
+
+Audited 2026-09-10 against the published spec. The current revision is
+**2026-07-28**; we advertise `2024-11-05 … 2025-11-25`, i.e. the spec's
+**Legacy era** (servers with an `initialize` handshake). 2026-07-28
+removed that model wholesale: no `initialize`, no protocol-level
+sessions or `Mcp-Session-Id`, no GET stream, no `Last-Event-ID`
+resumability, no `ping`; `server/discover` becomes a MUST; every request
+carries version/clientInfo/capabilities in `_meta`; results carry
+`resultType`; `tools/list` carries `ttlMs` + `cacheScope`; new required
+`Mcp-Method`/`Mcp-Name` headers with header↔body validation; new error
+codes `-32020` HeaderMismatch and `-32022` UnsupportedProtocolVersion.
+
+Measured, current state:
+
+- Dual-era clients work against us — the spec's compatibility matrix
+  says so, and Claude Code connects and calls tools today. Our `400` +
+  `-32000` for an unknown version is _not_ a recognized modern error,
+  which is exactly the signal that makes a dual-era client fall back to
+  `initialize`. `-32000` is grandfathered as implementation-defined
+  under the new error-code policy.
+- A **modern-only** client fails against us. None is in play today.
+- **Confirmed MUST violation:** 2025-03-26 requires receiving JSON-RPC
+  batches; we answer an array body with `-32700 Parse error`. Scope is
+  that one advertised version (batching was removed in 2025-06-18;
+  2024-11-05 never required it). Inherited from `mcp-spec-guards.ts`.
+- Our `/mcp/sse` + `/mcp/messages` pair is the 2024-11-05 HTTP+SSE
+  transport, now formally Deprecated (earliest removal three months
+  after SEP-2596 is Final).
+- Minor: no `X-Accel-Buffering: no` on SSE responses (a new SHOULD).
+  Streaming is verified working through the plain ingress regardless.
+- Already conformant, including under the new revision: 403 on invalid
+  Origin, deterministic `tools/list` order, tool failures as `isError`
+  content rather than protocol errors.
+
+ADR 0005's signed session ids are aligned with the direction of travel —
+2026-07-28 removes sessions entirely, making them unnecessary rather
+than wrong.
+
+Options for the revision:
+
+- **Dual-era.** Add a modern surface (`server/discover`, `_meta`
+  negotiation, `resultType`, cache fields, header validation, new error
+  codes) alongside the existing legacy handshake, and keep serving both
+  from the same endpoint as the spec permits. Largest effort; nothing
+  currently working breaks.
+- **Stay legacy, fix the gaps.** Keep the handshake, fix batching and
+  the SSE buffering header. Correct against everything we advertise, but
+  a modern-only client cannot use novamem.
+- **Modern-only.** Implement 2026-07-28 and drop the legacy handshake.
+  Smallest end state, breaks every client that has not moved — Claude
+  Code included, until it does.
+- **Nothing yet.** Revisit when a client we care about goes modern-only.
+
+Options for the batching MUST (independent, small):
+
+- Implement batch receive so `2025-03-26` is honestly supported.
+- Drop `2025-03-26` from `SupportedProtocolVersions` and advertise only
+  what we implement.
+
+**Decision (2026-09-10, owner):** go **dual-era** — add the modern
+2026-07-28 surface alongside the legacy handshake on the same endpoint —
+and **drop 2025-03-26** from the advertised list rather than implementing
+batch receipt for a dead-end code path. Implemented in ADR 0006.

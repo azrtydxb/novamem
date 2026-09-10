@@ -135,16 +135,36 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 	if !s.applyGuards(w, r) {
 		return
 	}
+
+	// Dual-era routing (ADR 0006). The body is read once here and handed
+	// to whichever era claims it; GET and DELETE are legacy-only and
+	// carry none.
+	var body []byte
+	if r.Method == http.MethodPost {
+		var ok bool
+		if body, ok = readBody(w, r); !ok {
+			return
+		}
+		if req, p, modern := classifyEra(r.Header.Get("Mcp-Protocol-Version"), body); modern {
+			s.serveModern(w, r, userID, req, p)
+			return
+		}
+	}
+	s.serveLegacyStreamable(w, r, userID, body)
+}
+
+// serveLegacyStreamable is the initialize-handshake era: a session is
+// minted by `initialize`, carried in Mcp-Session-Id, and torn down by
+// DELETE. body is the already-read POST body, nil for GET/DELETE.
+func (s *Server) serveLegacyStreamable(w http.ResponseWriter, r *http.Request,
+	userID string, body []byte) {
+
 	sessionID := r.Header.Get("Mcp-Session-Id")
 
 	if sessionID == "" {
 		// Only POST initialize may omit the session header.
 		if r.Method != http.MethodPost {
 			s.missingSession(w)
-			return
-		}
-		body, ok := readBody(w, r)
-		if !ok {
 			return
 		}
 		if !isInitializeRequest(body) {
@@ -200,10 +220,6 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 
 	switch r.Method {
 	case http.MethodPost:
-		body, ok := readBody(w, r)
-		if !ok {
-			return
-		}
 		resp := s.handleMessage(r.Context(), sess, body)
 		if resp == nil {
 			// Notification: acknowledged, nothing to return.

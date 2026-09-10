@@ -18,6 +18,13 @@ import (
 type CallFunc func(ctx context.Context, userID, name string, args map[string]any) (any, error)
 
 // Defaults mirroring routes/mcp-streamable.ts + mcp-sse.ts.
+// serverInfo, reported by both eras: the legacy initialize result and
+// the modern _meta serverInfo key.
+const (
+	serverName    = "novamem"
+	serverVersion = "0.1.0"
+)
+
 const (
 	defaultMaxSessionsPerUser = 10
 	defaultIdleTimeout        = 30 * time.Minute
@@ -316,17 +323,19 @@ func (s *Server) handleMessage(ctx context.Context, sess *session, raw []byte) *
 		}
 		_ = json.Unmarshal(req.Params, &p)
 		version := p.ProtocolVersion
-		if !supportedProtocolVersion(version) {
-			// Spec: an unsupported requested version is answered with the
-			// server's latest supported version, not an error.
-			version = SupportedProtocolVersions[len(SupportedProtocolVersions)-1]
+		if !supportedProtocolVersion(version) || isModernVersion(version) {
+			// Spec: an unsupported requested version is answered with a
+			// version the server does support, not an error. It must be a
+			// legacy one — this is the handshake path, and a modern
+			// revision has no handshake for the client to continue.
+			version = latestLegacyVersion()
 		}
 		return okResponse(req.ID, map[string]any{
 			"protocolVersion": version,
 			// listChanged: false — the tool list is static for the process
 			// lifetime, exactly like mcp.ts declares.
 			"capabilities": map[string]any{"tools": map[string]any{"listChanged": false}},
-			"serverInfo":   map[string]any{"name": "novamem", "version": "0.1.0"},
+			"serverInfo":   map[string]any{"name": serverName, "version": serverVersion},
 			"instructions": s.instructions,
 		})
 	case "ping":
