@@ -167,3 +167,37 @@ Options for the batching MUST (independent, small):
 2026-07-28 surface alongside the legacy handshake on the same endpoint —
 and **drop 2025-03-26** from the advertised list rather than implementing
 batch receipt for a dead-end code path. Implemented in ADR 0006.
+
+## What to do about the per-replica rate limiter?
+
+Found 2026-09-10 while running the conformance suite against the kw
+deployment. `go/internal/httpapi/ratelimit.go` keeps counters in an
+in-process `map[string]rateEntry`, so each replica enforces the
+configured budget independently. Measured on 3 replicas, one request per
+connection: `remaining = 593, 592, 593, 593, 592, 591` — three counters.
+Effective allowance is roughly 3× the configured one.
+
+Rate limiting is a protection, so this weakens a security control rather
+than only making a header inconsistent. It is the same class as the MCP
+session map (ADR 0005) and the pod-local SSE transport.
+
+`TestRateLimiting` does **not** reliably catch it: in a full conformance
+run Go's `http.Client` reuses one keepalive connection, which nginx pins
+to a single upstream, so it passes; run in isolation it fails 6/6. A
+test that only passes because of connection reuse is not testing the
+property it claims, so any fix has to address the test too.
+
+Options:
+
+- **Shared counter** (Postgres, or Redis if we want to add it). Correct
+  under any replica count; costs a round trip per limited request.
+- **Divide the budget by the replica count.** No new dependency and no
+  per-request cost, but approximate, and wrong under uneven balancing or
+  during a rollout when replica count changes.
+- **Document it as a single-replica-only guarantee** and note it in
+  `deploy/k8s/novamem.yaml` next to the existing caveats. Honest and
+  free; leaves the protection weakened for anyone who scales out.
+- **Accept as-is.** The budget is generous and this is a dev deployment.
+
+Independent of the choice, `TestRateLimiting` should be made
+connection-reuse-independent so the property is actually covered.
