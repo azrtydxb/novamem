@@ -32,7 +32,7 @@
   "devDependencies": {
     "@types/node": "^20.19",
     "tsx": "^4.23.13",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20.19"
