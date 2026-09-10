@@ -2,25 +2,25 @@
 
 All notable changes to novamem are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## Unreleased
 
-## [1.1.2] - 2026-05-05
+## 1.1.2 - 2026-05-05
 
 ### Fixed
 
 - **`@azrtydxb/novamem-init` configured Claude Desktop with an invalid MCP entry.** The installer wrote `{"type": "sse", "url": …, "headers": …}` to `claude_desktop_config.json`, which Claude Desktop rejects on launch with "not valid MCP server configurations and were skipped: novamem" — its loader only accepts stdio entries (`command`/`args`). Fix: switch the `claude-desktop` adapter from `transport: "sse"` to `transport: "stdio"`, so the bundled `@azrtydxb/novamem-mcp` shim runs locally and bridges to the server. New regression test in `packages/init/test/tools.test.ts`.
 - **`docs/connect/claude-desktop.md`** rewritten to match — stdio is the documented path; the SSE example is gone.
 
-## [1.1.1] - 2026-05-05
+## 1.1.1 - 2026-05-05
 
 ### Fixed
 
-- **`npx @azrtydxb/novamem-init` exited silently with no output.** The entrypoint guard in `dist/main.js` compared `import.meta.url === \`file://${process.argv[1]}\`` — which never matched when invoked via the symlink npm puts in `node_modules/.bin/`. `runCli` never ran, exit 0, no output. Fix: resolve `process.argv[1]` via `realpathSync` before comparing. Last manual mono-version bump — Changesets is being introduced for per-package versions next.
+- **`npx @azrtydxb/novamem-init` exited silently with no output.** The entrypoint guard in `dist/main.js` compared `import.meta.url === \`file://${process.argv[1]}\``— which never matched when invoked via the symlink npm puts in`node_modules/.bin/`. `runCli`never ran, exit 0, no output. Fix: resolve`process.argv[1]`via`realpathSync` before comparing. Last manual mono-version bump — Changesets is being introduced for per-package versions next.
 - **`PKG_VERSION` was hardcoded `"0.1.0"`** in the init CLI; `--version` now reads from the bundled `package.json`.
 - **ProjectsPage "Add a member" form** said "by username" / placeholder "carol"; server requires exact email per #62. Now labeled "by email" / "carol@example.com" with `type="email"`. Internal state renamed `username` → `email` to match.
 - **`packages/init` test gap.** Added `test/cli.test.ts` regression that runs the CLI through a symlink and asserts `--version` matches `package.json` exactly. The earlier 56 tests imported `runCli` directly and never exercised the bin entrypoint path.
 
-## [1.1.0] - 2026-05-05
+## 1.1.0 - 2026-05-05
 
 Issue cleanup release. 18 GH issues from the post-v1.0.0 audit triaged and closed across docs, server hardening, deploy improvements, observability, and test coverage. Two architectural issues (#68, #69 — single source of truth for the API contract) deferred to a future release.
 
@@ -48,7 +48,7 @@ Issue cleanup release. 18 GH issues from the post-v1.0.0 audit triaged and close
 - **MCP SSE session ownership** — `POST /mcp/messages?sessionId=…` now verifies `session.userId === req.userId`; cross-user POSTs return 403. (#57)
 - **`revokeMyToken` return type** in the TS SDK was `{ revoked: boolean }` but the server returns `{ deleted: true }`. Aligned. (#66)
 
-## [1.0.0] - 2026-05-05
+## 1.0.0 - 2026-05-05
 
 End-to-end production deploy on a real k3s cluster surfaced and fixed four real bugs; full-codebase review closed 14 quality + 7 security issues; CI gates and dependabot auto-merge wired so future bumps land safely without manual review.
 
@@ -90,7 +90,7 @@ End-to-end production deploy on a real k3s cluster surfaced and fixed four real 
 - **Stale `P0/P1/P2` review markers** — 25 review-tracker comments scrubbed across the codebase (mechanical sweep).
 - **`Co-Authored-By: Claude` trailers** — git history rewrite stripped the trailer from all 61 commits on `main`. The `v0.1.0` tag still resolves to the original SHA so npm Sigstore provenance attestations remain valid.
 
-## [0.1.0] - 2026-05-04
+## 0.1.0 - 2026-05-04
 
 First public npm release. Three packages on the `@azrtydxb` scope:
 
@@ -111,10 +111,10 @@ Each ships with [Sigstore provenance](https://docs.npmjs.com/generating-provenan
 - **Exact-duplicate fast-path** — `memory_entries.content_hash` (sha256 of trimmed content) lets `remember` short-circuit identical writes within the same `(user, project)` and return the existing id with `deduplicated: true`.
 - **Dream cycle** — daily compaction + manual `POST /v1/dream-cycle`. Two phases: dedup-merge at cosine ≥ 0.97 + token Jaccard ≥ 0.5 (sums hit counts, redirects edges, deletes the duplicate); edge promotion when two entries share ≥3 graph neighbours (`relation: co_inferred`).
 - **Provenance fields** on every entry — `source_type` (open vocab), `captured_from` (free text), `confidence` (0..1, default 1.0), `content_hash`. Plumbed through `RememberRequest`, `UpdateMemoryRequest`, the MCP tool inputs, and the search response.
-- **Active project pointer** — `user_active_project` table holds a per-user "current sub-brain". When set, memory_* calls without an explicit `project` arg default to it. Exposed as `GET/PUT/DELETE /v1/me/active-project` and the `project_activate` / `project_deactivate` MCP tools.
+- **Active project pointer** — `user_active_project` table holds a per-user "current sub-brain". When set, memory\_\* calls without an explicit `project` arg default to it. Exposed as `GET/PUT/DELETE /v1/me/active-project` and the `project_activate` / `project_deactivate` MCP tools.
 - **Project lifecycle MCP tools** — `project_delete`, `project_share`, `project_unshare` round out the existing `project_list` / `project_create`.
 - **`includeProjects[]` and `includeNamespaces[]`** on search/recent/neighbors — union user-global with the listed projects / cross-namespace recall, respectively. Both capped at 16 to bound fanout.
-- **Project lookup by id OR human name** in every memory-* and project-* request body. Sharper 404 vs 403 errors: 404 "no such project" when the id/name resolves to nothing; 403 only when the project exists and the caller isn't a member.
+- **Project lookup by id OR human name** in every memory-_ and project-_ request body. Sharper 404 vs 403 errors: 404 "no such project" when the id/name resolves to nothing; 403 only when the project exists and the caller isn't a member.
 - **24h persistent throughput chart** — `metrics_samples` table holds 1-minute buckets, written by a per-minute flush from the in-memory MetricsCollector. New `GET /v1/me/metrics/history?hours=24` powers a second chart on the user Metrics page.
 - **Last-admin guard** — Better Auth passthrough refuses `remove-user` and `set-role(role=user)` against the only remaining admin (returns `400 LAST_ADMIN_PROTECTED`).
 - **MCP `instructions` field** — server ships behaviour rules to compliant MCP clients on `initialize`. Single source of truth instead of per-agent `CLAUDE.md` fragments.

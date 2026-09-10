@@ -58,8 +58,14 @@ import { bench } from "./test-bench";
 describe("engine.search", () => {
   it("fuses keyword + vector signals", async () => {
     const b = bench();
-    const a = await b.engine.remember("public", { content: "Pascal likes coffee", force: true });
-    const r = await b.engine.search("public", { query: "coffee preference", k: 5 });
+    const a = await b.engine.remember("public", {
+      content: "Pascal likes coffee",
+      force: true,
+    });
+    const r = await b.engine.search("public", {
+      query: "coffee preference",
+      k: 5,
+    });
     expect(r.results[0].id).toBe(a.id);
   });
 });
@@ -75,7 +81,11 @@ import { describe, expect, it } from "vitest";
 describe("POST /v1/search", () => {
   it("rejects requests without a token", async () => {
     const { app } = await makeApp();
-    const r = await app.inject({ method: "POST", url: "/v1/search", payload: {} });
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/search",
+      payload: {},
+    });
     expect(r.statusCode).toBe(401);
   });
 });
@@ -90,7 +100,9 @@ For tests that need actual TCP (SSE concurrency caps, keepalive frames):
 ```ts
 const port = await listen();
 const ctrl = new AbortController();
-const res = await fetch(`http://127.0.0.1:${port}/mcp/sse`, { signal: ctrl.signal });
+const res = await fetch(`http://127.0.0.1:${port}/mcp/sse`, {
+  signal: ctrl.signal,
+});
 // drain reader → assert frames → ctrl.abort() in afterAll
 ```
 

@@ -6,7 +6,10 @@ export interface LocalVllmClientOptions {
 }
 
 export interface LocalVllmClient {
-  generate(prompt: string, opts?: { system?: string; maxTokens?: number; temperature?: number }): Promise<string>;
+  generate(
+    prompt: string,
+    opts?: { system?: string; maxTokens?: number; temperature?: number }
+  ): Promise<string>;
 }
 
 function stripThinking(text: string): string {
@@ -16,21 +19,31 @@ function stripThinking(text: string): string {
     .trim();
 }
 
-export function createLocalVllmClient(opts: LocalVllmClientOptions): LocalVllmClient {
+export function createLocalVllmClient(
+  opts: LocalVllmClientOptions
+): LocalVllmClient {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const baseUrl = opts.baseUrl.replace(/\/$/, "");
   return {
     async generate(prompt, genOpts = {}) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 180_000);
+      const timeout = setTimeout(
+        () => controller.abort(),
+        opts.timeoutMs ?? 180_000
+      );
       try {
         const messages = [
-          ...(genOpts.system ? [{ role: "system", content: genOpts.system }] : []),
+          ...(genOpts.system
+            ? [{ role: "system", content: genOpts.system }]
+            : []),
           { role: "user", content: prompt },
         ];
         const response = await fetchImpl(`${baseUrl}/chat/completions`, {
           method: "POST",
-          headers: { accept: "application/json", "content-type": "application/json" },
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+          },
           body: JSON.stringify({
             model: opts.model,
             messages,
@@ -40,8 +53,13 @@ export function createLocalVllmClient(opts: LocalVllmClientOptions): LocalVllmCl
           signal: controller.signal,
         });
         const text = await response.text();
-        if (!response.ok) throw new Error(`local vLLM HTTP ${response.status}: ${text.slice(0, 500)}`);
-        const parsed = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
+        if (!response.ok)
+          throw new Error(
+            `local vLLM HTTP ${response.status}: ${text.slice(0, 500)}`
+          );
+        const parsed = JSON.parse(text) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
         return stripThinking(parsed.choices?.[0]?.message?.content ?? "");
       } finally {
         clearTimeout(timeout);

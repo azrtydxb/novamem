@@ -4,9 +4,6 @@
 # Security-sensitive files require explicit review (currently the same
 # owner; expand as the team grows).
 SECURITY.md                              @azrtydxb
-packages/server/src/auth.ts              @azrtydxb
-packages/server/src/http.ts              @azrtydxb
-packages/server/src/warm-store/          @azrtydxb
 .github/                                 @azrtydxb
 Dockerfile                               @azrtydxb
 docker-compose.yaml                      @azrtydxb

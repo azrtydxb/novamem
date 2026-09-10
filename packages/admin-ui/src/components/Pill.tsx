@@ -41,7 +41,14 @@ const DOT_TONE: Record<PillTone, string> = {
 /** Mono uppercase status pill — see SECURITY.md `.pill` recipe in
  *  index.css. The `dot` variant adds a tiny coloured circle on the
  *  left for live/health indicators. */
-export function Pill({ tone = "neutral", dot, pulse, className, children, ...rest }: Props) {
+export function Pill({
+  tone = "neutral",
+  dot,
+  pulse,
+  className,
+  children,
+  ...rest
+}: Props) {
   return (
     <span className={cn("pill", TONE[tone], className)} {...rest}>
       {dot ? (
@@ -49,7 +56,7 @@ export function Pill({ tone = "neutral", dot, pulse, className, children, ...res
           className={cn(
             "inline-block h-1.5 w-1.5 rounded-full mr-1.5",
             DOT_TONE[tone],
-            pulse ? "animate-pulse-soft" : null,
+            pulse ? "animate-pulse-soft" : null
           )}
         />
       ) : null}

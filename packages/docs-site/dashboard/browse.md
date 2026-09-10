@@ -46,5 +46,5 @@ Switching the active project doesn't move any data; it just widens the scope of 
 
 ## See also
 
-- [Mental model](/concepts/mental-model) — the user / project / namespace hierarchy
-- [Hybrid search internals](/architecture/hybrid-search)
+- [Mental model](../concepts/mental-model.md) — the user / project / namespace hierarchy
+- [Hybrid search internals](../architecture/hybrid-search.md)

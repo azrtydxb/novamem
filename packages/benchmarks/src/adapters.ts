@@ -1,28 +1,62 @@
-import type { BenchmarkFixture, BenchmarkMemory, BenchmarkQuery } from "./types.js";
+import type {
+  BenchmarkFixture,
+  BenchmarkMemory,
+  BenchmarkQuery,
+} from "./types.js";
 
-function asText(turns: Array<{ role?: string; speaker?: string; content?: string; text?: string }>): string {
-  return turns.map((t) => `${t.role ?? t.speaker ?? "speaker"}: ${t.content ?? t.text ?? ""}`).join("\n");
+function asText(
+  turns: Array<{
+    role?: string;
+    speaker?: string;
+    content?: string;
+    text?: string;
+  }>
+): string {
+  return turns
+    .map(
+      (t) => `${t.role ?? t.speaker ?? "speaker"}: ${t.content ?? t.text ?? ""}`
+    )
+    .join("\n");
 }
 
 export function adaptLongMemEvalFixture(input: {
   dataset: string;
-  conversations: Array<{ session_id: string; date?: string; turns: Array<{ role: string; content: string }> }>;
-  questions: Array<{ question_id: string; question: string; answer?: string; evidence_session_ids: string[]; category?: string }>;
+  conversations: Array<{
+    session_id: string;
+    date?: string;
+    turns: Array<{ role: string; content: string }>;
+  }>;
+  questions: Array<{
+    question_id: string;
+    question: string;
+    answer?: string;
+    evidence_session_ids: string[];
+    category?: string;
+  }>;
 }): BenchmarkFixture {
-  const memories = input.conversations.map((session): BenchmarkMemory => ({
-    id: `${input.dataset}:${session.session_id}`,
-    text: asText(session.turns),
-    timestamp: session.date,
-    sessionId: session.session_id,
-    metadata: { sourceFormat: "LongMemEval", turnCount: session.turns.length },
-  }));
-  const queries = input.questions.map((q): BenchmarkQuery => ({
-    queryId: q.question_id,
-    text: q.question,
-    expectedAnswer: q.answer,
-    relevantMemoryIds: q.evidence_session_ids.map((id) => `${input.dataset}:${id}`),
-    category: q.category ?? "long-term-chat-memory",
-  }));
+  const memories = input.conversations.map(
+    (session): BenchmarkMemory => ({
+      id: `${input.dataset}:${session.session_id}`,
+      text: asText(session.turns),
+      timestamp: session.date,
+      sessionId: session.session_id,
+      metadata: {
+        sourceFormat: "LongMemEval",
+        turnCount: session.turns.length,
+      },
+    })
+  );
+  const queries = input.questions.map(
+    (q): BenchmarkQuery => ({
+      queryId: q.question_id,
+      text: q.question,
+      expectedAnswer: q.answer,
+      relevantMemoryIds: q.evidence_session_ids.map(
+        (id) => `${input.dataset}:${id}`
+      ),
+      category: q.category ?? "long-term-chat-memory",
+    })
+  );
   return {
     name: input.dataset,
     kind: "longmemeval",
@@ -35,8 +69,19 @@ export function adaptLongMemEvalFixture(input: {
 
 export function adaptLoCoMoFixture(input: {
   conversation_id: string;
-  sessions: Array<{ session_id: string; speaker?: string; text: string; timestamp?: string }>;
-  qa: Array<{ id: string; question: string; answer?: string; evidence: string[]; category?: string }>;
+  sessions: Array<{
+    session_id: string;
+    speaker?: string;
+    text: string;
+    timestamp?: string;
+  }>;
+  qa: Array<{
+    id: string;
+    question: string;
+    answer?: string;
+    evidence: string[];
+    category?: string;
+  }>;
 }): BenchmarkFixture {
   return {
     name: input.conversation_id,
@@ -54,7 +99,9 @@ export function adaptLoCoMoFixture(input: {
       queryId: q.id,
       text: q.question,
       expectedAnswer: q.answer,
-      relevantMemoryIds: q.evidence.map((id) => `${input.conversation_id}:${id}`),
+      relevantMemoryIds: q.evidence.map(
+        (id) => `${input.conversation_id}:${id}`
+      ),
       category: q.category ?? "conversational-memory",
     })),
   };
@@ -71,11 +118,17 @@ export function adaptBeirFixture(input: {
     kind: "beir",
     version: "adapter-v1",
     source: { name: "BEIR", url: "https://github.com/beir-cellar/beir" },
-    memories: Object.entries(input.corpus).map(([id, doc]) => ({ id, text: [doc.title, doc.text].filter(Boolean).join("\n"), metadata: { sourceFormat: "BEIR" } })),
+    memories: Object.entries(input.corpus).map(([id, doc]) => ({
+      id,
+      text: [doc.title, doc.text].filter(Boolean).join("\n"),
+      metadata: { sourceFormat: "BEIR" },
+    })),
     queries: Object.entries(input.queries).map(([id, text]) => ({
       queryId: id,
       text,
-      relevantMemoryIds: Object.entries(input.qrels[id] ?? {}).filter(([, score]) => score > 0).map(([docId]) => docId),
+      relevantMemoryIds: Object.entries(input.qrels[id] ?? {})
+        .filter(([, score]) => score > 0)
+        .map(([docId]) => docId),
       category: "retrieval",
     })),
   };
@@ -83,8 +136,19 @@ export function adaptBeirFixture(input: {
 
 export function adaptRagFixture(input: {
   name: string;
-  documents: Array<{ id: string; text: string; title?: string; metadata?: Record<string, unknown> }>;
-  questions: Array<{ id: string; question: string; answer?: string; evidence: string[]; category?: string }>;
+  documents: Array<{
+    id: string;
+    text: string;
+    title?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  questions: Array<{
+    id: string;
+    question: string;
+    answer?: string;
+    evidence: string[];
+    category?: string;
+  }>;
 }): BenchmarkFixture {
   return {
     name: input.name,
@@ -109,19 +173,33 @@ export function adaptRagFixture(input: {
 export function adaptLongContextFixture(input: {
   name: string;
   haystack: string[];
-  questions: Array<{ id: string; question: string; answer?: string; evidence_indexes: number[] }>;
+  questions: Array<{
+    id: string;
+    question: string;
+    answer?: string;
+    evidence_indexes: number[];
+  }>;
 }): BenchmarkFixture {
   return {
     name: input.name,
     kind: "long-context",
     version: "adapter-v1",
-    source: { name: "RULER/NIAH-style", url: "https://github.com/NVIDIA/RULER" },
-    memories: input.haystack.map((text, i) => ({ id: `${input.name}:needle:${i}`, text, metadata: { sourceFormat: "long-context", index: i } })),
+    source: {
+      name: "RULER/NIAH-style",
+      url: "https://github.com/NVIDIA/RULER",
+    },
+    memories: input.haystack.map((text, i) => ({
+      id: `${input.name}:needle:${i}`,
+      text,
+      metadata: { sourceFormat: "long-context", index: i },
+    })),
     queries: input.questions.map((q) => ({
       queryId: q.id,
       text: q.question,
       expectedAnswer: q.answer,
-      relevantMemoryIds: q.evidence_indexes.map((i) => `${input.name}:needle:${i}`),
+      relevantMemoryIds: q.evidence_indexes.map(
+        (i) => `${input.name}:needle:${i}`
+      ),
       category: "needle-retrieval",
     })),
   };
@@ -129,15 +207,33 @@ export function adaptLongContextFixture(input: {
 
 export function adaptNovaMemFixture(input: {
   name: string;
-  memories: Array<{ id: string; text: string; supersededBy?: string; metadata?: Record<string, unknown> }>;
-  queries: Array<{ id: string; text: string; answer?: string; relevant: string[]; forbidden?: string[]; category?: string }>;
+  memories: Array<{
+    id: string;
+    text: string;
+    supersededBy?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  queries: Array<{
+    id: string;
+    text: string;
+    answer?: string;
+    relevant: string[];
+    forbidden?: string[];
+    category?: string;
+  }>;
 }): BenchmarkFixture {
   return {
     name: input.name,
     kind: "novamem-specific",
     version: "adapter-v1",
-    description: "NovaMem-specific coverage for supersession, project/sensitivity/adoption behaviours, and graph recall.",
-    memories: input.memories.map((m) => ({ id: m.id, text: m.text, supersededBy: m.supersededBy, metadata: { sourceFormat: "NovaMem", ...(m.metadata ?? {}) } })),
+    description:
+      "NovaMem-specific coverage for supersession, project/sensitivity/adoption behaviours, and graph recall.",
+    memories: input.memories.map((m) => ({
+      id: m.id,
+      text: m.text,
+      supersededBy: m.supersededBy,
+      metadata: { sourceFormat: "NovaMem", ...(m.metadata ?? {}) },
+    })),
     queries: input.queries.map((q) => ({
       queryId: q.id,
       text: q.text,

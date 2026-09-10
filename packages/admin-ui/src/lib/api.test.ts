@@ -16,7 +16,7 @@ describe("api()", () => {
       new Response(JSON.stringify({ ok: true, n: 7 }), {
         status: 200,
         headers: { "content-type": "application/json" },
-      }),
+      })
     );
     const r = await api<{ ok: boolean; n: number }>("GET", "/v1/me/metrics");
     expect(r.ok).toBe(true);
@@ -26,10 +26,16 @@ describe("api()", () => {
 
   it("throws ApiError on non-2xx with structured {error, code}", async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: "metadata too large", code: "METADATA_OVERSIZE" }), {
-        status: 413,
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          error: "metadata too large",
+          code: "METADATA_OVERSIZE",
+        }),
+        {
+          status: 413,
+          headers: { "content-type": "application/json" },
+        }
+      )
     );
     await expect(api("POST", "/v1/remember", {})).rejects.toMatchObject({
       name: "ApiError",

@@ -24,13 +24,19 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
     queryKey: ["onboarding"],
     queryFn: async () => {
       const r = await api<OnboardingState>("GET", "/v1/me/onboarding");
-      if (!r.ok || !r.body) throw new Error(r.error ?? `onboarding ${r.status}`);
+      if (!r.ok || !r.body)
+        throw new Error(r.error ?? `onboarding ${r.status}`);
       return r.body;
     },
   });
 
   const steps: Step[] = [
-    { n: 1, label: "Bootstrap admin", hint: "Seeded from env", done: data?.bootstrapDone ?? true },
+    {
+      n: 1,
+      label: "Bootstrap admin",
+      hint: "Seeded from env",
+      done: data?.bootstrapDone ?? true,
+    },
     {
       n: 2,
       label: "Account ready",
@@ -97,7 +103,9 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
                   {s.done ? "✓" : s.n}
                 </div>
                 <div>
-                  <div className="text-[15px] font-semibold text-ink">{s.label}</div>
+                  <div className="text-[15px] font-semibold text-ink">
+                    {s.label}
+                  </div>
                   <div className="text-[12px] text-dim mt-0.5">{s.hint}</div>
                 </div>
                 {active ? (
@@ -108,7 +116,9 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
                     Continue →
                   </button>
                 ) : s.done ? null : (
-                  <span className="font-mono text-[11px] text-faint">queued</span>
+                  <span className="font-mono text-[11px] text-faint">
+                    queued
+                  </span>
                 )}
               </div>
             );
@@ -122,7 +132,10 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
             ["Graph", "falkor · neighbours", "var(--color-graph)"],
           ].map(([t, d, color]) => (
             <Card key={t} className="p-4">
-              <div className="h-2 w-2 rounded-full" style={{ background: color }} />
+              <div
+                className="h-2 w-2 rounded-full"
+                style={{ background: color }}
+              />
               <div className="mt-2.5 text-sm font-semibold text-ink">{t}</div>
               <div className="mt-1 font-mono text-[11px] text-dim">{d}</div>
             </Card>

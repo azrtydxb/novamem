@@ -14,7 +14,13 @@ import {
 } from "lucide-react";
 import { api, Project, ProjectMember } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/Card";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
@@ -52,25 +58,27 @@ export function ProjectsPage() {
         }
       />
       <div className="p-5 space-y-3">
-      <CreateProjectCard onCreated={refresh} />
+        <CreateProjectCard onCreated={refresh} />
 
-      {projects === null ? (
-        <Card className="p-8 text-center text-sm text-dim">Loading projects…</Card>
-      ) : projects.length === 0 ? (
-        <Card className="p-12 text-center">
-          <FolderKanban className="h-8 w-8 text-faint mx-auto mb-3" />
-          <div className="text-sm text-ink font-medium">No projects yet</div>
-          <div className="text-xs text-dim mt-1">
-            Create your first project above to start a fresh sub-brain.
+        {projects === null ? (
+          <Card className="p-8 text-center text-sm text-dim">
+            Loading projects…
+          </Card>
+        ) : projects.length === 0 ? (
+          <Card className="p-12 text-center">
+            <FolderKanban className="h-8 w-8 text-faint mx-auto mb-3" />
+            <div className="text-sm text-ink font-medium">No projects yet</div>
+            <div className="text-xs text-dim mt-1">
+              Create your first project above to start a fresh sub-brain.
+            </div>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {projects.map((p) => (
+              <ProjectRow key={p.id} project={p} onChange={refresh} />
+            ))}
           </div>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {projects.map((p) => (
-            <ProjectRow key={p.id} project={p} onChange={refresh} />
-          ))}
-        </div>
-      )}
+        )}
       </div>
     </>
   );
@@ -86,7 +94,9 @@ function CreateProjectCard({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await api<{ id: string }>("POST", "/v1/me/projects", { name: name.trim() });
+    const r = await api<{ id: string }>("POST", "/v1/me/projects", {
+      name: name.trim(),
+    });
     setBusy(false);
     if (r.ok) {
       toast.success(`Project "${name}" created`);
@@ -108,7 +118,10 @@ function CreateProjectCard({ onCreated }: { onCreated: () => void }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+        <form
+          onSubmit={submit}
+          className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end"
+        >
           <Input
             name="project_name"
             label="Project name"
@@ -131,13 +144,21 @@ function CreateProjectCard({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-function ProjectRow({ project, onChange }: { project: Project; onChange: () => void }) {
+function ProjectRow({
+  project,
+  onChange,
+}: {
+  project: Project;
+  onChange: () => void;
+}) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<ProjectMember[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState<ProjectMember | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<ProjectMember | null>(
+    null
+  );
   const [deleteTyped, setDeleteTyped] = useState("");
   const toast = useToast();
 
@@ -146,7 +167,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
   const loadMembers = useCallback(async () => {
     const r = await api<{ members: ProjectMember[] }>(
       "GET",
-      `/v1/me/projects/${encodeURIComponent(project.id)}/members`,
+      `/v1/me/projects/${encodeURIComponent(project.id)}/members`
     );
     if (r.body) setMembers(r.body.members);
   }, [project.id]);
@@ -160,12 +181,12 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
     setDeleteTyped("");
     const r = await api<{ entriesRemoved: number }>(
       "DELETE",
-      `/v1/me/projects/${encodeURIComponent(project.id)}`,
+      `/v1/me/projects/${encodeURIComponent(project.id)}`
     );
     if (r.ok) {
       toast.success(
         `Project "${project.name}" deleted`,
-        `purged ${r.body?.entriesRemoved ?? 0} entries`,
+        `purged ${r.body?.entriesRemoved ?? 0} entries`
       );
       onChange();
     } else {
@@ -178,7 +199,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
     if (!user) return;
     const r = await api(
       "DELETE",
-      `/v1/me/projects/${encodeURIComponent(project.id)}/members/${user.id}`,
+      `/v1/me/projects/${encodeURIComponent(project.id)}/members/${user.id}`
     );
     if (r.ok) {
       toast.success(`Left "${project.name}"`);
@@ -192,7 +213,7 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
     setConfirmRemove(null);
     const r = await api(
       "DELETE",
-      `/v1/me/projects/${encodeURIComponent(project.id)}/members/${m.userId}`,
+      `/v1/me/projects/${encodeURIComponent(project.id)}/members/${m.userId}`
     );
     if (r.ok) {
       toast.success(`${m.username} removed`);
@@ -208,8 +229,15 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
         className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-hover/40"
         onClick={() => setOpen(!open)}
       >
-        <button className="text-faint hover:text-ink" aria-label={open ? "collapse" : "expand"}>
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <button
+          className="text-faint hover:text-ink"
+          aria-label={open ? "collapse" : "expand"}
+        >
+          {open ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
         </button>
         <FolderKanban className="h-4 w-4 text-accent" />
         <div className="flex-1 min-w-0">
@@ -223,17 +251,32 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
               <Badge tone="neutral">member</Badge>
             )}
           </div>
-          <div className="text-xs text-dim mt-0.5 truncate font-mono" title={project.id}>
-            {project.id.slice(0, 10)}… · created {fmtRelative(project.createdAt)}
+          <div
+            className="text-xs text-dim mt-0.5 truncate font-mono"
+            title={project.id}
+          >
+            {project.id.slice(0, 10)}… · created{" "}
+            {fmtRelative(project.createdAt)}
           </div>
         </div>
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="flex items-center gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
           {isOwner ? (
-            <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => setConfirmDelete(true)}
+            >
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </Button>
           ) : (
-            <Button size="sm" variant="ghost" onClick={() => setConfirmLeave(true)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmLeave(true)}
+            >
               <LogOut className="h-3.5 w-3.5" /> Leave
             </Button>
           )}
@@ -242,7 +285,9 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
 
       {open && (
         <div className="border-t border-rule p-5 space-y-4">
-          {isOwner && <AddMemberForm projectId={project.id} onAdded={loadMembers} />}
+          {isOwner && (
+            <AddMemberForm projectId={project.id} onAdded={loadMembers} />
+          )}
           <MemberTable
             members={members}
             isOwner={isOwner}
@@ -271,7 +316,11 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
             <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={deleteProject} disabled={deleteTyped !== project.name}>
+            <Button
+              variant="danger"
+              onClick={deleteProject}
+              disabled={deleteTyped !== project.name}
+            >
               <Trash2 className="h-3.5 w-3.5" /> Delete project
             </Button>
           </>
@@ -315,7 +364,10 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
             <Button variant="secondary" onClick={() => setConfirmRemove(null)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={() => confirmRemove && removeMember(confirmRemove)}>
+            <Button
+              variant="danger"
+              onClick={() => confirmRemove && removeMember(confirmRemove)}
+            >
               Remove
             </Button>
           </>
@@ -325,7 +377,13 @@ function ProjectRow({ project, onChange }: { project: Project; onChange: () => v
   );
 }
 
-function AddMemberForm({ projectId, onAdded }: { projectId: string; onAdded: () => void }) {
+function AddMemberForm({
+  projectId,
+  onAdded,
+}: {
+  projectId: string;
+  onAdded: () => void;
+}) {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -341,7 +399,7 @@ function AddMemberForm({ projectId, onAdded }: { projectId: string; onAdded: () 
     const r = await api(
       "POST",
       `/v1/me/projects/${encodeURIComponent(projectId)}/members`,
-      { username: email.trim() },
+      { username: email.trim() }
     );
     setBusy(false);
     if (r.ok) {
@@ -354,7 +412,10 @@ function AddMemberForm({ projectId, onAdded }: { projectId: string; onAdded: () 
   };
 
   return (
-    <form onSubmit={submit} className="grid grid-cols-[1fr_auto] gap-3 items-end">
+    <form
+      onSubmit={submit}
+      className="grid grid-cols-[1fr_auto] gap-3 items-end"
+    >
       <Input
         name="add_member_email"
         type="email"
@@ -363,7 +424,12 @@ function AddMemberForm({ projectId, onAdded }: { projectId: string; onAdded: () 
         value={email}
         onChange={(e) => setEmail(e.target.value)}
       />
-      <Button type="submit" variant="primary" loading={busy} disabled={!email.trim()}>
+      <Button
+        type="submit"
+        variant="primary"
+        loading={busy}
+        disabled={!email.trim()}
+      >
         <UserPlus className="h-3.5 w-3.5" /> Add
       </Button>
     </form>
@@ -381,7 +447,8 @@ function MemberTable({
   ownerUserId: string;
   onRemove: (m: ProjectMember) => void;
 }) {
-  if (members === null) return <div className="text-sm text-dim">Loading members…</div>;
+  if (members === null)
+    return <div className="text-sm text-dim">Loading members…</div>;
   if (members.length === 0)
     return (
       <div className="text-sm text-dim flex items-center gap-2">

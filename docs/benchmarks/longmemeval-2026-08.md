@@ -6,21 +6,21 @@ the full LongMemEval_s benchmark, with every model named.
 
 ## Result
 
-| arm | accuracy | note |
-|---|---|---|
+| arm                                                                                                                | accuracy            | note                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------- |
 | **NovaMem adopted config** (capture write path → hybrid vector search → cross-encoder rerank → 6,000-token budget) | **79.4%** (397/500) | one question's eval call failed transiently and is counted as wrong; over the 499 judged it is 79.6% |
-| NovaMem without rerank (same corpus, same budget) | 58.4% (292/500) | the second-pass reranker is worth **+21.2pp** at n=500 |
+| NovaMem without rerank (same corpus, same budget)                                                                  | 58.4% (292/500)     | the second-pass reranker is worth **+21.2pp** at n=500                                               |
 
 ### By question type (adopted config)
 
-| type | accuracy | vs no-rerank |
-|---|---|---|
-| single-session-assistant | 94.6% (53/56) | +3.5pp |
-| single-session-user | 92.9% (65/70) | +12.9pp |
-| knowledge-update | 85.9% (67/78) | +18.0pp |
-| temporal-reasoning | 79.5% (105/132) | +28.4pp |
-| multi-session | 69.9% (93/133) | +29.3pp |
-| single-session-preference | 46.7% (14/30) | +13.4pp |
+| type                      | accuracy        | vs no-rerank |
+| ------------------------- | --------------- | ------------ |
+| single-session-assistant  | 94.6% (53/56)   | +3.5pp       |
+| single-session-user       | 92.9% (65/70)   | +12.9pp      |
+| knowledge-update          | 85.9% (67/78)   | +18.0pp      |
+| temporal-reasoning        | 79.5% (105/132) | +28.4pp      |
+| multi-session             | 69.9% (93/133)  | +29.3pp      |
+| single-session-preference | 46.7% (14/30)   | +13.4pp      |
 
 The reranker's gains concentrate exactly where fused vector scores are
 weakest: multi-session aggregation (+29pp) and temporal reasoning

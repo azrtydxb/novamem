@@ -27,7 +27,10 @@ export function rootFor(tool: ToolEntry, ctx: DetectionContext): string {
 }
 
 /** Returns true if any of `tool.detect[]` exists under the tool's scope root. */
-export async function isInstalled(tool: ToolEntry, ctx: DetectionContext): Promise<boolean> {
+export async function isInstalled(
+  tool: ToolEntry,
+  ctx: DetectionContext
+): Promise<boolean> {
   const root = rootFor(tool, ctx);
   for (const probe of tool.detect) {
     if (await exists(join(root, probe))) return true;
@@ -36,7 +39,9 @@ export async function isInstalled(tool: ToolEntry, ctx: DetectionContext): Promi
 }
 
 /** Detects every tool in the registry and returns those that look installed. */
-export async function detectAll(ctx: DetectionContext = defaultContext()): Promise<ToolEntry[]> {
+export async function detectAll(
+  ctx: DetectionContext = defaultContext()
+): Promise<ToolEntry[]> {
   const out: ToolEntry[] = [];
   for (const tool of TOOLS) {
     if (await isInstalled(tool, ctx)) out.push(tool);

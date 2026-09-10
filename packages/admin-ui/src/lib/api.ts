@@ -38,12 +38,13 @@ export class ApiError extends Error {
 export async function api<T = unknown>(
   method: "GET" | "POST" | "DELETE",
   path: string,
-  body?: unknown,
+  body?: unknown
 ): Promise<ApiResult<T>> {
   const headers: Record<string, string> = {};
   // Only declare content-type when there's a body — Fastify's JSON parser
   // 400s on `content-type: application/json` with empty payload.
-  if (body !== undefined && body !== null) headers["content-type"] = "application/json";
+  if (body !== undefined && body !== null)
+    headers["content-type"] = "application/json";
   let res: Response;
   try {
     res = await fetch(path, {
@@ -204,7 +205,11 @@ export interface UserMetricsSnapshot {
 export interface TokenMetricsRow {
   tokenHash: string;
   label: string | null;
-  counters: { queries_total: number; remembers_total: number; forgets_total: number };
+  counters: {
+    queries_total: number;
+    remembers_total: number;
+    forgets_total: number;
+  };
   rates: { queries_per_sec_60s: number; remembers_per_sec_60s: number };
 }
 

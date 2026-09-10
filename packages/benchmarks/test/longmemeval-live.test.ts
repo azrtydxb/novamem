@@ -10,11 +10,15 @@ import { createLocalVllmClient } from "../src/local-vllm.js";
 
 describe("LongMemEval live runner helpers", () => {
   it("accepts top_200 once NovaMem search is configured for benchmark comparability", () => {
-    expect(normalizeLongMemEvalCutoffs([10, 20, 50, 200])).toEqual([10, 20, 50, 200]);
+    expect(normalizeLongMemEvalCutoffs([10, 20, 50, 200])).toEqual([
+      10, 20, 50, 200,
+    ]);
   });
 
   it("still rejects cutoffs above the configured NovaMem search limit", () => {
-    expect(() => normalizeLongMemEvalCutoffs([10, 20, 50, 200], 100)).toThrow(/top_200.*k <= 100/);
+    expect(() => normalizeLongMemEvalCutoffs([10, 20, 50, 200], 100)).toThrow(
+      /top_200.*k <= 100/
+    );
   });
 
   it("chunks sessions into small user/assistant pairs for direct remember ingestion", () => {
@@ -23,7 +27,10 @@ describe("LongMemEval live runner helpers", () => {
       sessionId: "s1",
       date: "2023/05/30 (Tue) 17:27",
       turns: [
-        { role: "user", content: "I graduated with a degree in Business Administration." },
+        {
+          role: "user",
+          content: "I graduated with a degree in Business Administration.",
+        },
         { role: "assistant", content: "Congratulations." },
         { role: "user", content: "Please recommend task apps." },
       ],
@@ -41,7 +48,10 @@ describe("LongMemEval live runner helpers", () => {
       question: "What degree did I graduate with?",
       questionDate: "2023/05/30 (Tue) 23:40",
       memories: [
-        { memory: `${longPrefix} user: I graduated with a degree in Business Administration.`, score: 0.4 },
+        {
+          memory: `${longPrefix} user: I graduated with a degree in Business Administration.`,
+          score: 0.4,
+        },
       ],
       maxCharsEach: 8000,
       maxTotalChars: 20000,
@@ -51,8 +61,14 @@ describe("LongMemEval live runner helpers", () => {
   });
 
   it("parses strict and fenced judge JSON", () => {
-    expect(parseJudgeJson('{"judgment":"PASS","score":1,"reason":"ok"}').score).toBe(1);
-    expect(parseJudgeJson('```json\n{"judgment":"FAIL","score":0,"reason":"no"}\n```').score).toBe(0);
+    expect(
+      parseJudgeJson('{"judgment":"PASS","score":1,"reason":"ok"}').score
+    ).toBe(1);
+    expect(
+      parseJudgeJson(
+        '```json\n{"judgment":"FAIL","score":0,"reason":"no"}\n```'
+      ).score
+    ).toBe(0);
   });
 });
 
@@ -62,7 +78,10 @@ describe("local vLLM client", () => {
       const body = JSON.parse(String(init.body));
       expect(body.model).toBe("qwen3.6-35b");
       expect(body.messages[0].content).toBe("hello");
-      return new Response(JSON.stringify({ choices: [{ message: { content: "world" } }] }), { status: 200 });
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: "world" } }] }),
+        { status: 200 }
+      );
     });
 
     const client = createLocalVllmClient({
@@ -74,7 +93,7 @@ describe("local vLLM client", () => {
     await expect(client.generate("hello")).resolves.toBe("world");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://192.168.10.246:8888/v1/chat/completions",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({ method: "POST" })
     );
   });
 });

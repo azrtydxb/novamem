@@ -10,7 +10,8 @@ export function fmtNumber(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "—";
   if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(1) + "k";
-  if (Math.abs(n) < 10 && !Number.isInteger(n)) return n.toFixed(2).replace(/\.?0+$/, "");
+  if (Math.abs(n) < 10 && !Number.isInteger(n))
+    return n.toFixed(2).replace(/\.?0+$/, "");
   return Math.round(n).toLocaleString();
 }
 
@@ -32,7 +33,10 @@ export function fmtTimestamp(iso: string | null | undefined): string {
 }
 
 /** Time-since helper. */
-export function fmtRelative(iso: string | null | undefined, now = Date.now()): string {
+export function fmtRelative(
+  iso: string | null | undefined,
+  now = Date.now()
+): string {
   if (!iso) return "—";
   const ms = now - new Date(iso).getTime();
   if (Number.isNaN(ms)) return iso;

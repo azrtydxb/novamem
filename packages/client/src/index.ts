@@ -184,12 +184,26 @@ export interface AdoptionRequest {
 
 export interface AdoptionResponse {
   server: { name: string; adoptionSchema: number };
-  mcp: { toolCount: number; tools: string[]; instructionsHash: string; instructionsPreview: string; listChanged: boolean };
+  mcp: {
+    toolCount: number;
+    tools: string[];
+    instructionsHash: string;
+    instructionsPreview: string;
+    listChanged: boolean;
+  };
   requiredTools: string[];
   features: Record<string, boolean>;
-  refresh: Record<string, { commands: string[]; requiresNewSession: boolean; note: string }>;
+  refresh: Record<
+    string,
+    { commands: string[]; requiresNewSession: boolean; note: string }
+  >;
   requestedClient: string;
-  diagnostics: Array<{ check: string; ok: boolean; action: string; [key: string]: unknown }>;
+  diagnostics: Array<{
+    check: string;
+    ok: boolean;
+    action: string;
+    [key: string]: unknown;
+  }>;
 }
 
 export interface HygieneResponse {
@@ -276,7 +290,7 @@ export class NovamemClient {
 
   private async request<T>(
     path: string,
-    init: { method?: string; body?: unknown } = {},
+    init: { method?: string; body?: unknown } = {}
   ): Promise<T> {
     const method = init.method ?? "GET";
     const hasBody = init.body !== undefined;
@@ -316,53 +330,91 @@ export class NovamemClient {
    * incomplete.
    */
   async search(req: SearchRequest): Promise<SearchResponse> {
-    return this.request<SearchResponse>("/v1/search", { method: "POST", body: req });
+    return this.request<SearchResponse>("/v1/search", {
+      method: "POST",
+      body: req,
+    });
   }
 
   async context(req: ContextRequest): Promise<ContextResponse> {
-    return this.request<ContextResponse>("/v1/context", { method: "POST", body: req });
+    return this.request<ContextResponse>("/v1/context", {
+      method: "POST",
+      body: req,
+    });
   }
 
   async hygiene(req: { k?: number } = {}): Promise<HygieneResponse> {
-    return this.request<HygieneResponse>("/v1/hygiene", { method: "POST", body: req });
+    return this.request<HygieneResponse>("/v1/hygiene", {
+      method: "POST",
+      body: req,
+    });
   }
 
   async evaluate(req: { suite?: string } = {}): Promise<EvaluateResponse> {
-    return this.request<EvaluateResponse>("/v1/evaluate", { method: "POST", body: req });
+    return this.request<EvaluateResponse>("/v1/evaluate", {
+      method: "POST",
+      body: req,
+    });
   }
 
   async adoption(req: AdoptionRequest = {}): Promise<AdoptionResponse> {
-    return this.request<AdoptionResponse>("/v1/adoption", { method: "POST", body: req });
+    return this.request<AdoptionResponse>("/v1/adoption", {
+      method: "POST",
+      body: req,
+    });
   }
 
   async capture(req: RememberRequest): Promise<CaptureResponse> {
-    return this.request<CaptureResponse>("/v1/capture", { method: "POST", body: req });
+    return this.request<CaptureResponse>("/v1/capture", {
+      method: "POST",
+      body: req,
+    });
   }
 
   async sessionRecap(req: SessionRecapRequest): Promise<SessionRecapResponse> {
-    return this.request<SessionRecapResponse>("/v1/session-recap", { method: "POST", body: req });
+    return this.request<SessionRecapResponse>("/v1/session-recap", {
+      method: "POST",
+      body: req,
+    });
   }
 
   async remember(req: RememberRequest): Promise<RememberResponse> {
-    return this.request<RememberResponse>("/v1/remember", { method: "POST", body: req });
+    return this.request<RememberResponse>("/v1/remember", {
+      method: "POST",
+      body: req,
+    });
   }
 
-  async today(opts: { namespace?: string; includeNamespaces?: string[]; maxSensitivity?: SensitivityLevel; k?: number; project?: string | null; includeProjects?: string[] } = {}): Promise<SearchResponse> {
+  async today(
+    opts: {
+      namespace?: string;
+      includeNamespaces?: string[];
+      maxSensitivity?: SensitivityLevel;
+      k?: number;
+      project?: string | null;
+      includeProjects?: string[];
+    } = {}
+  ): Promise<SearchResponse> {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     return this.recent({ ...opts, since });
   }
 
-  async recent(opts: {
-    namespace?: string;
-    includeNamespaces?: string[];
-    maxSensitivity?: SensitivityLevel;
-    k?: number;
-    since?: string;
-    project?: string | null;
-    includeProjects?: string[];
-    contentMode?: "full" | "snippet" | "ids";
-  } = {}): Promise<SearchResponse> {
-    return this.request<SearchResponse>("/v1/recent", { method: "POST", body: opts });
+  async recent(
+    opts: {
+      namespace?: string;
+      includeNamespaces?: string[];
+      maxSensitivity?: SensitivityLevel;
+      k?: number;
+      since?: string;
+      project?: string | null;
+      includeProjects?: string[];
+      contentMode?: "full" | "snippet" | "ids";
+    } = {}
+  ): Promise<SearchResponse> {
+    return this.request<SearchResponse>("/v1/recent", {
+      method: "POST",
+      body: opts,
+    });
   }
 
   async neighbors(opts: {
@@ -372,14 +424,20 @@ export class NovamemClient {
     project?: string | null;
     includeProjects?: string[];
   }): Promise<SearchResponse> {
-    return this.request<SearchResponse>("/v1/neighbors", { method: "POST", body: opts });
+    return this.request<SearchResponse>("/v1/neighbors", {
+      method: "POST",
+      body: opts,
+    });
   }
 
   async update(id: string, req: UpdateRequest): Promise<{ updated: boolean }> {
-    return this.request<{ updated: boolean }>(`/v1/memories/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      body: req,
-    });
+    return this.request<{ updated: boolean }>(
+      `/v1/memories/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: req,
+      }
+    );
   }
 
   /**
@@ -391,12 +449,15 @@ export class NovamemClient {
    */
   async forget(
     id: string,
-    opts: { project?: string | null } = {},
+    opts: { project?: string | null } = {}
   ): Promise<{ deleted: boolean; coldDeleteOk: boolean }> {
-    return this.request<{ deleted: boolean; coldDeleteOk: boolean }>("/v1/forget", {
-      method: "POST",
-      body: { id, ...opts },
-    });
+    return this.request<{ deleted: boolean; coldDeleteOk: boolean }>(
+      "/v1/forget",
+      {
+        method: "POST",
+        body: { id, ...opts },
+      }
+    );
   }
 
   async stats(): Promise<StatsResponse> {
@@ -407,11 +468,16 @@ export class NovamemClient {
     return this.request<HealthResponse>("/health");
   }
 
-  async decay(opts: { effectiveDays?: number } = {}): Promise<{ demoted: number; promoted: number; expired: number }> {
-    return this.request<{ demoted: number; promoted: number; expired: number }>("/v1/decay", {
-      method: "POST",
-      body: opts,
-    });
+  async decay(
+    opts: { effectiveDays?: number } = {}
+  ): Promise<{ demoted: number; promoted: number; expired: number }> {
+    return this.request<{ demoted: number; promoted: number; expired: number }>(
+      "/v1/decay",
+      {
+        method: "POST",
+        body: opts,
+      }
+    );
   }
 
   // (Sign-in / sign-out / me are owned by Better Auth at /api/auth/*.
@@ -427,7 +493,10 @@ export class NovamemClient {
 
   /** Create a new project. The id is server-assigned (ULID). */
   async createProject(args: { name: string }): Promise<Project> {
-    return this.request<Project>("/v1/me/projects", { method: "POST", body: args });
+    return this.request<Project>("/v1/me/projects", {
+      method: "POST",
+      body: args,
+    });
   }
 
   async deleteProject(id: string): Promise<{
@@ -436,18 +505,20 @@ export class NovamemClient {
     coldCollectionsDropped: string[];
     graphCleared: boolean;
   }> {
-    return this.request(`/v1/me/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+    return this.request(`/v1/me/projects/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   }
 
   async listProjectMembers(id: string): Promise<{ members: ProjectMember[] }> {
     return this.request<{ members: ProjectMember[] }>(
-      `/v1/me/projects/${encodeURIComponent(id)}/members`,
+      `/v1/me/projects/${encodeURIComponent(id)}/members`
     );
   }
 
   async addProjectMember(
     id: string,
-    args: { username: string; role?: "owner" | "member" },
+    args: { username: string; role?: "owner" | "member" }
   ): Promise<{ added: boolean; userId: string; username: string }> {
     return this.request(`/v1/me/projects/${encodeURIComponent(id)}/members`, {
       method: "POST",
@@ -455,10 +526,15 @@ export class NovamemClient {
     });
   }
 
-  async removeProjectMember(id: string, userId: string): Promise<{ removed: boolean }> {
+  async removeProjectMember(
+    id: string,
+    userId: string
+  ): Promise<{ removed: boolean }> {
     return this.request(
-      `/v1/me/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
-      { method: "DELETE" },
+      `/v1/me/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(
+        userId
+      )}`,
+      { method: "DELETE" }
     );
   }
 
@@ -468,7 +544,7 @@ export class NovamemClient {
    *  members listing rather than exposing a separate user-lookup API. */
   async removeProjectMemberByUsername(
     project: string,
-    username: string,
+    username: string
   ): Promise<{ removed: boolean }> {
     const { members } = await this.listProjectMembers(project);
     const target = members.find((m) => m.username === username);
@@ -478,9 +554,11 @@ export class NovamemClient {
 
   // ─── Active project ────────────────────────────────────────────────────
 
-  async getActiveProject(): Promise<{ active: { id: string; name: string } | null }> {
+  async getActiveProject(): Promise<{
+    active: { id: string; name: string } | null;
+  }> {
     return this.request<{ active: { id: string; name: string } | null }>(
-      "/v1/me/active-project",
+      "/v1/me/active-project"
     );
   }
 
@@ -498,7 +576,9 @@ export class NovamemClient {
   /** Page the caller's memory changelog. Pass the previous page's
    *  `nextSeq` back as `afterSeq` to resume without missing events.
    *  Best-effort log (see server docs) — certainty requires a full diff. */
-  async changes(opts: { since?: string; afterSeq?: number; limit?: number } = {}): Promise<{
+  async changes(
+    opts: { since?: string; afterSeq?: number; limit?: number } = {}
+  ): Promise<{
     changes: Array<{
       seq: number;
       entryId: string;
@@ -527,8 +607,16 @@ export class NovamemClient {
 
   /** Page an export of every entry the caller owns. Pass nextAfterId
    *  back as afterId until it returns an empty page. */
-  async exportEntries(opts: { afterId?: string; limit?: number } = {}): Promise<{
-    entries: Array<Record<string, unknown> & { id: string; content: string; namespace: string }>;
+  async exportEntries(
+    opts: { afterId?: string; limit?: number } = {}
+  ): Promise<{
+    entries: Array<
+      Record<string, unknown> & {
+        id: string;
+        content: string;
+        namespace: string;
+      }
+    >;
     nextAfterId: string | null;
   }> {
     const qs = new URLSearchParams();
@@ -541,17 +629,23 @@ export class NovamemClient {
   /** Import a page of entries (typically from exportEntries; ≤200 per
    *  call). Ids are not preserved; content-hash dedup makes re-imports
    *  idempotent. */
-  async importEntries(entries: Array<{
-    content: string;
-    namespace?: string;
-    source?: string;
-    agentName?: string | null;
-    project?: string | null;
-    metadata?: Record<string, unknown>;
-    sourceType?: string;
-    capturedFrom?: string;
-    confidence?: number;
-  }>): Promise<{ imported: number; deduplicated: number; failed: Array<{ index: number; error: string }> }> {
+  async importEntries(
+    entries: Array<{
+      content: string;
+      namespace?: string;
+      source?: string;
+      agentName?: string | null;
+      project?: string | null;
+      metadata?: Record<string, unknown>;
+      sourceType?: string;
+      capturedFrom?: string;
+      confidence?: number;
+    }>
+  ): Promise<{
+    imported: number;
+    deduplicated: number;
+    failed: Array<{ index: number; error: string }>;
+  }> {
     return this.request("/v1/me/import", { method: "POST", body: { entries } });
   }
 
@@ -567,9 +661,12 @@ export class NovamemClient {
       scope?: "full" | "read_only";
       project?: string;
       expiresInDays?: number;
-    } = {},
+    } = {}
   ): Promise<MintTokenResponse> {
-    return this.request<MintTokenResponse>("/v1/me/tokens", { method: "POST", body: opts });
+    return this.request<MintTokenResponse>("/v1/me/tokens", {
+      method: "POST",
+      body: opts,
+    });
   }
 
   async listTokens(): Promise<{

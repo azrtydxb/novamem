@@ -10,22 +10,36 @@ Default is SHORT mode: 2 conversations, 50 sampled questions — roughly a
 Categories (dataset labels): 1 multi-hop, 2 temporal, 3 open-domain,
 4 single-hop, 5 adversarial/unanswerable.
 """
-import argparse, collections, json, pathlib, random, re, sys, time
+
+import argparse
+import collections
+import json
+import pathlib
+import random
+import sys
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from answer_eval import chat, answer_prompt, judge_prompt, parse_judge
+from answer_eval import answer_prompt, chat, judge_prompt, parse_judge
 
-DATASET_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json"
+DATASET_URL = (
+    "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json"
+)
 
 
 def http(base, token, path, body, timeout=60, attempts=4):
     last = None
     for a in range(attempts):
-        req = urllib.request.Request(base + path, data=json.dumps(body).encode(),
-                                     headers={"Authorization": f"Bearer {token}",
-                                              "content-type": "application/json"})
+        req = urllib.request.Request(
+            base + path,
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "content-type": "application/json",
+            },
+        )
         try:
             return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
         except urllib.error.HTTPError as e:
@@ -36,7 +50,7 @@ def http(base, token, path, body, timeout=60, attempts=4):
             last = e
         except Exception as e:
             last = e
-        time.sleep(min(2 ** a, 8))
+        time.sleep(min(2**a, 8))
     raise last
 
 
@@ -49,10 +63,12 @@ def pair_chunks(conv, run_id, ci):
         date = conv.get(f"session_{si}_date_time", "")
         turns = conv[f"session_{si}"]
         for i in range(0, len(turns), 2):
-            block = turns[i:i + 2]
+            block = turns[i : i + 2]
             text = "\n".join(f"{t['speaker']}: {t['text']}" for t in block)
-            out.append(f"[LoCoMo run={run_id} conv={ci} session={si} chunk={i//2}]\n"
-                       f"Date: {date}\n{text}")
+            out.append(
+                f"[LoCoMo run={run_id} conv={ci} session={si} chunk={i // 2}]\n"
+                f"Date: {date}\n{text}"
+            )
         si += 1
     return out
 
@@ -66,12 +82,19 @@ def main():
     ap.add_argument("--model", default="qwen3-6-35b-a3b-nvfp4")
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--convs", type=int, default=2)
-    ap.add_argument("--questions", type=int, default=50,
-                    help="questions sampled across the ingested convs; 0 = all")
+    ap.add_argument(
+        "--questions",
+        type=int,
+        default=50,
+        help="questions sampled across the ingested convs; 0 = all",
+    )
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--max-workers", type=int, default=6)
     ap.add_argument("--thinking", action="store_true")
-    ap.add_argument("--search-config", default='{"weights":{"keyword":0,"vector":1,"graph":0,"recency":0,"entity":0},"maxTokens":6000,"k":20,"rerank":true}')
+    ap.add_argument(
+        "--search-config",
+        default='{"weights":{"keyword":0,"vector":1,"graph":0,"recency":0,"entity":0},"maxTokens":6000,"k":20,"rerank":true}',
+    )
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -90,10 +113,22 @@ def main():
         chunks = pair_chunks(conv["conversation"], args.run_id, ci)
         n_chunks += len(chunks)
         with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
-            list(ex.map(lambda c: http(args.base_url, token, "/v1/capture",
-                                       {"content": c, "namespace": ns, "force": True}), chunks))
+            list(
+                ex.map(
+                    lambda c: http(
+                        args.base_url,
+                        token,
+                        "/v1/capture",
+                        {"content": c, "namespace": ns, "force": True},
+                    ),
+                    chunks,
+                )
+            )
     t_ingest = time.time() - t0
-    print(f"ingested {n_chunks} chunks from {len(data)} convs in {t_ingest:.0f}s", flush=True)
+    print(
+        f"ingested {n_chunks} chunks from {len(data)} convs in {t_ingest:.0f}s",
+        flush=True,
+    )
 
     # ── drain wait (facts queue) ────────────────────────────────────────
     t1 = time.time()
@@ -129,12 +164,31 @@ def main():
         body = {"query": q["question"], "namespace": q["ns"], **cfg}
         r = http(args.base_url, token, "/v1/search", body, timeout=120)
         mems = [{"content": x["content"]} for x in r.get("results", [])]
-        ans = chat(args.llm_base, key, args.model,
-                   answer_prompt(q["question"], None, mems),
-                   max_tokens=4096, timeout=600, thinking=args.thinking)
-        truth = str(q.get("answer") or ("not mentioned in the conversation" if str(q.get("category")) == "5" else ""))
-        jr = chat(args.llm_base, key, args.model, judge_prompt(q["question"], truth, ans),
-                  max_tokens=2000, timeout=600)
+        ans = chat(
+            args.llm_base,
+            key,
+            args.model,
+            answer_prompt(q["question"], None, mems),
+            max_tokens=4096,
+            timeout=600,
+            thinking=args.thinking,
+        )
+        truth = str(
+            q.get("answer")
+            or (
+                "not mentioned in the conversation"
+                if str(q.get("category")) == "5"
+                else ""
+            )
+        )
+        jr = chat(
+            args.llm_base,
+            key,
+            args.model,
+            judge_prompt(q["question"], truth, ans),
+            max_tokens=2000,
+            timeout=600,
+        )
         return q, parse_judge(jr)["score"]
 
     t2 = time.time()
@@ -157,13 +211,24 @@ def main():
     tot = sum(v[1] for v in per_cat.values())
     cor = sum(v[0] for v in per_cat.values())
     out = {
-        "run_id": args.run_id, "convs": len(data), "chunks": n_chunks,
-        "n_questions": tot, "failures": failures,
+        "run_id": args.run_id,
+        "convs": len(data),
+        "chunks": n_chunks,
+        "n_questions": tot,
+        "failures": failures,
         "overall": (100.0 * cor / tot) if tot else 0.0,
-        "by_category": {k: {"acc": 100.0 * v[0] / v[1], "n": v[1]} for k, v in sorted(per_cat.items())},
-        "timing_s": {"ingest": round(t_ingest), "drain": round(t_drain),
-                     "eval": round(t_eval), "total": round(time.time() - t0)},
-        "model": args.model, "search_config": cfg,
+        "by_category": {
+            k: {"acc": 100.0 * v[0] / v[1], "n": v[1]}
+            for k, v in sorted(per_cat.items())
+        },
+        "timing_s": {
+            "ingest": round(t_ingest),
+            "drain": round(t_drain),
+            "eval": round(t_eval),
+            "total": round(time.time() - t0),
+        },
+        "model": args.model,
+        "search_config": cfg,
     }
     pathlib.Path(args.out).write_text(json.dumps(out, indent=1))
     print(json.dumps(out, indent=1))

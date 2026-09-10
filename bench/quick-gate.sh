@@ -28,24 +28,52 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-LABEL="${1:?usage: quick-gate.sh <label> [--config json] [--reps N] [--reingest]}"; shift
-CONFIG_OVERRIDE="{}"; REPS=2; REINGEST=0
-TOKEN_FILE="${NOVAMEM_BENCH_TOKEN_FILE:-}"; KEY_FILE="${FASTLLM_KEY_FILE:-}"
+LABEL="${1:?usage: quick-gate.sh <label> [--config json] [--reps N] [--reingest]}"
+shift
+CONFIG_OVERRIDE="{}"
+REPS=2
+REINGEST=0
+TOKEN_FILE="${NOVAMEM_BENCH_TOKEN_FILE:-}"
+KEY_FILE="${FASTLLM_KEY_FILE:-}"
 while [ $# -gt 0 ]; do
-  case "$1" in
-    --config) CONFIG_OVERRIDE="$2"; shift 2;;
-    --reps) REPS="$2"; shift 2;;
-    --reingest) REINGEST=1; shift;;
-    --token-file) TOKEN_FILE="$2"; shift 2;;
-    --key-file) KEY_FILE="$2"; shift 2;;
-    *) echo "unknown arg $1" >&2; exit 2;;
-  esac
+	case "$1" in
+	--config)
+		CONFIG_OVERRIDE="$2"
+		shift 2
+		;;
+	--reps)
+		REPS="$2"
+		shift 2
+		;;
+	--reingest)
+		REINGEST=1
+		shift
+		;;
+	--token-file)
+		TOKEN_FILE="$2"
+		shift 2
+		;;
+	--key-file)
+		KEY_FILE="$2"
+		shift 2
+		;;
+	*)
+		echo "unknown arg $1" >&2
+		exit 2
+		;;
+	esac
 done
 BASE="${NOVAMEM_BENCH_URL:-http://192.168.10.121:7778}"
 LLM="${FASTLLM_BASE:-http://192.168.10.125/v1}"
 MODEL="${FASTLLM_MODEL:-qwen3-6-35b-a3b-nvfp4}"
-[ -n "$TOKEN_FILE" ] || { echo "need NOVAMEM_BENCH_TOKEN_FILE or --token-file" >&2; exit 2; }
-[ -n "$KEY_FILE" ] || { echo "need FASTLLM_KEY_FILE or --key-file" >&2; exit 2; }
+[ -n "$TOKEN_FILE" ] || {
+	echo "need NOVAMEM_BENCH_TOKEN_FILE or --token-file" >&2
+	exit 2
+}
+[ -n "$KEY_FILE" ] || {
+	echo "need FASTLLM_KEY_FILE or --key-file" >&2
+	exit 2
+}
 
 PY="${PYTHON:-python3}"
 OUT="quick-runs/$LABEL"
@@ -53,17 +81,19 @@ mkdir -p "$OUT"
 
 REF=ref50
 if [ "$REINGEST" = "1" ]; then
-  REF="qg$(date -u +%m%d%H%M)"
-  $PY bench_retrieval.py ingest --dataset longmemeval_s_cleaned.json --out-dir "$OUT" \
-    --token-file "$TOKEN_FILE" --run-id "$REF" --limit 50 --max-workers 8 --write-path capture
-  echo "waiting for fact drain..."
-  while :; do
-    n=$(curl -s -m 20 "$BASE/v1/stats" -H "Authorization: Bearer $(cat "$TOKEN_FILE")" | $PY -c "import json,sys;print(json.load(sys.stdin).get('pendingFacts') or 0)" 2>/dev/null || echo 1)
-    [ "$n" = "0" ] && break; echo "  pending=$n"; sleep 60
-  done
+	REF="qg$(date -u +%m%d%H%M)"
+	$PY bench_retrieval.py ingest --dataset longmemeval_s_cleaned.json --out-dir "$OUT" \
+		--token-file "$TOKEN_FILE" --run-id "$REF" --limit 50 --max-workers 8 --write-path capture
+	echo "waiting for fact drain..."
+	while :; do
+		n=$(curl -s -m 20 "$BASE/v1/stats" -H "Authorization: Bearer $(cat "$TOKEN_FILE")" | $PY -c "import json,sys;print(json.load(sys.stdin).get('pendingFacts') or 0)" 2>/dev/null || echo 1)
+		[ "$n" = "0" ] && break
+		echo "  pending=$n"
+		sleep 60
+	done
 else
-  # Build the 50-question reference view over the standing p6 corpus once.
-  $PY - "$OUT" <<'EOF'
+	# Build the 50-question reference view over the standing p6 corpus once.
+	$PY - "$OUT" <<'EOF'
 import json, pathlib, sys
 out = pathlib.Path(sys.argv[1])
 ref = pathlib.Path("ref50-ingest.json")
@@ -88,13 +118,13 @@ best.update(json.loads('$CONFIG_OVERRIDE'))
 print(json.dumps(best))")
 $PY relevant_counts.py --ingest "$OUT/ingest.json" --out "$OUT/relevant.json"
 $PY bench_retrieval.py search --out-dir "$OUT" --token-file "$TOKEN_FILE" \
-  --max-workers 2 --cutoffs 10,20 --name "$LABEL" \
-  --relevant-counts "$OUT/relevant.json" --store-content 20 --config "$CFG"
+	--max-workers 2 --cutoffs 10,20 --name "$LABEL" \
+	--relevant-counts "$OUT/relevant.json" --store-content 20 --config "$CFG"
 
 for rep in $(seq 1 "$REPS"); do
-  $PY answer_eval.py --arm "$OUT/search-$LABEL.json" --ingest "$OUT/ingest.json" \
-    --key-file "$KEY_FILE" --llm-base "$LLM" --model "$MODEL" \
-    --cutoffs all --max-workers 6 --thinking --out "$OUT/answers-rep$rep.json"
+	$PY answer_eval.py --arm "$OUT/search-$LABEL.json" --ingest "$OUT/ingest.json" \
+		--key-file "$KEY_FILE" --llm-base "$LLM" --model "$MODEL" \
+		--cutoffs all --max-workers 6 --thinking --out "$OUT/answers-rep$rep.json"
 done
 
 $PY verdict.py --label "$LABEL" --out-dir "$OUT" --baselines baselines.json

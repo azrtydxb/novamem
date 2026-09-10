@@ -8,16 +8,32 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 
 // Lazy-load the heavy pages so the SignIn route doesn't pay for
 // recharts (~40% of the bundle) before the user is even logged in.
-const HealthPage = lazy(() => import("./pages/HealthPage").then((m) => ({ default: m.HealthPage })));
-const MetricsPage = lazy(() => import("./pages/MetricsPage").then((m) => ({ default: m.MetricsPage })));
-const UsersPage = lazy(() => import("./pages/UsersPage").then((m) => ({ default: m.UsersPage })));
-const MyTokensPage = lazy(() => import("./pages/MyTokensPage").then((m) => ({ default: m.MyTokensPage })));
-const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
-const BrowsePage = lazy(() => import("./pages/BrowsePage").then((m) => ({ default: m.BrowsePage })));
-const TodayPage = lazy(() => import("./pages/TodayPage").then((m) => ({ default: m.TodayPage })));
-const GraphPage = lazy(() => import("./pages/GraphPage").then((m) => ({ default: m.GraphPage })));
+const HealthPage = lazy(() =>
+  import("./pages/HealthPage").then((m) => ({ default: m.HealthPage }))
+);
+const MetricsPage = lazy(() =>
+  import("./pages/MetricsPage").then((m) => ({ default: m.MetricsPage }))
+);
+const UsersPage = lazy(() =>
+  import("./pages/UsersPage").then((m) => ({ default: m.UsersPage }))
+);
+const MyTokensPage = lazy(() =>
+  import("./pages/MyTokensPage").then((m) => ({ default: m.MyTokensPage }))
+);
+const ProjectsPage = lazy(() =>
+  import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage }))
+);
+const BrowsePage = lazy(() =>
+  import("./pages/BrowsePage").then((m) => ({ default: m.BrowsePage }))
+);
+const TodayPage = lazy(() =>
+  import("./pages/TodayPage").then((m) => ({ default: m.TodayPage }))
+);
+const GraphPage = lazy(() =>
+  import("./pages/GraphPage").then((m) => ({ default: m.GraphPage }))
+);
 const OnboardingPage = lazy(() =>
-  import("./pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })),
+  import("./pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage }))
 );
 
 export function App() {
@@ -44,7 +60,15 @@ function Authed() {
   useEffect(() => {
     if (!user) return;
     if (!isAdmin && (tab === "users" || tab === "health")) setTab("metrics");
-    if (isAdmin && (tab === "projects" || tab === "tokens" || tab === "browse" || tab === "today" || tab === "graph")) setTab("metrics");
+    if (
+      isAdmin &&
+      (tab === "projects" ||
+        tab === "tokens" ||
+        tab === "browse" ||
+        tab === "today" ||
+        tab === "graph")
+    )
+      setTab("metrics");
   }, [user, isAdmin, tab]);
 
   if (loading) {
@@ -73,7 +97,10 @@ function Authed() {
         {!isAdmin && tab === "today" && <TodayPage />}
         {!isAdmin && tab === "graph" && <GraphPage />}
         {tab === "onboarding" && (
-          <OnboardingPage onSkip={() => setTab("metrics")} onContinue={() => setTab("tokens")} />
+          <OnboardingPage
+            onSkip={() => setTab("metrics")}
+            onContinue={() => setTab("tokens")}
+          />
         )}
       </Suspense>
     </AppShell>

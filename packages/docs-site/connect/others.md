@@ -58,11 +58,11 @@ Same current NovaMem MCP tool surface (`memory_*` + `project_*`).
 
 If your client supports the [Agent Skills](https://agentskills.io) format — Goose, OpenCode, OpenHands, Junie, Roo Code, Factory, and a growing list — you can drop the bundled skill into the client's skills directory **alongside** or **instead of** the MCP server.
 
-The skill teaches the agent *when* to call the tools and *how* to phrase saves; MCP exposes the tools themselves. With both, the skill loads at startup (\~100 tokens for `name` + `description`), expands on demand, and the agent calls `memory_*` / `project_*` over MCP.
+The skill teaches the agent _when_ to call the tools and _how_ to phrase saves; MCP exposes the tools themselves. With both, the skill loads at startup (\~100 tokens for `name` + `description`), expands on demand, and the agent calls `memory_*` / `project_*` over MCP.
 
 ### Layout
 
-The bundle lives at [`skills/novamem/`](../../skills/novamem) and follows the agentskills.io spec:
+The bundle lives at [`skills/novamem/`](https://github.com/azrtydxb/novamem/tree/main/skills/novamem) and follows the agentskills.io spec:
 
 ```
 skills/novamem/
@@ -106,6 +106,6 @@ For a host without dedicated docs:
 2. Try the SSE config first — that works for any modern MCP host.
 3. Fall back to the stdio shim if SSE isn't supported.
 4. Optionally drop the Skills bundle in the client's skills directory for richer behaviour rules.
-5. If your client speaks neither MCP nor Skills, use the [HTTP API](../api/README.md) directly — the OpenAPI spec covers every operation.
+5. If your client speaks neither MCP nor Skills, use the [HTTP API](../api/index.md) directly — the OpenAPI spec covers every operation.
 
 If you wire up a new client, a PR adding it to this directory is welcome.

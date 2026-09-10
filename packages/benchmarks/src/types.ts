@@ -1,4 +1,10 @@
-export type BenchmarkKind = "longmemeval" | "locomo" | "beir" | "rag" | "long-context" | "novamem-specific";
+export type BenchmarkKind =
+  | "longmemeval"
+  | "locomo"
+  | "beir"
+  | "rag"
+  | "long-context"
+  | "novamem-specific";
 
 export interface BenchmarkMemory {
   id: string;
@@ -45,7 +51,7 @@ export interface RetrievedMemory {
 export type Retriever = (
   query: BenchmarkQuery,
   fixture: BenchmarkFixture,
-  opts: { k: number },
+  opts: { k: number }
 ) => Promise<RetrievedMemory[]> | RetrievedMemory[];
 
 export interface RetrievalCase {
@@ -78,7 +84,13 @@ export interface BenchmarkCaseReport {
 }
 
 export interface BenchmarkReport {
-  fixture: { name: string; kind: BenchmarkKind; version: string; queryCount: number; memoryCount: number };
+  fixture: {
+    name: string;
+    kind: BenchmarkKind;
+    version: string;
+    queryCount: number;
+    memoryCount: number;
+  };
   retrieval: RetrievalReport;
   answer: { exactMatch: number; tokenF1: number; answeredCount: number };
   safety: { forbiddenHitRateAtK: Record<number, number> };

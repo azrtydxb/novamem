@@ -33,9 +33,9 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write       # for the "Version Packages" PR that the action opens
-  pull-requests: write  # same
-  id-token: write       # for npm Trusted Publishers + Sigstore provenance
+  contents: write # for the "Version Packages" PR that the action opens
+  pull-requests: write # same
+  id-token: write # for npm Trusted Publishers + Sigstore provenance
 
 concurrency:
   group: release-${{ github.ref }}

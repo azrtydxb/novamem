@@ -104,7 +104,7 @@ docker run --rm -p 7778:7778 \
 For cross-arch (build on mac arm64 → run on amd64 cluster):
 
 ```bash
-docker buildx build --platform linux/amd64 -t novamem:dev --load .
+docker buildx build --platform linux/amd64 -f go/Dockerfile -t novamem:dev --load .
 ```
 
 ## Useful commands
@@ -128,6 +128,6 @@ pnpm --filter @azrtydxb/novamem-server migrate
 
 ## See also
 
-- [Project layout](/contribute/layout) — what lives where
-- [Testing](/contribute/testing) — vitest patterns, fakes, integration tests
-- [Filing bugs](/contribute/bugs)
+- [Project layout](./layout.md) — what lives where
+- [Testing](./testing.md) — vitest patterns, fakes, integration tests
+- [Filing bugs](./bugs.md)

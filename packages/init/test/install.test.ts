@@ -6,7 +6,11 @@ import { TOOLS, findTool } from "../src/tools.js";
 import type { ToolEntry } from "../src/tools.js";
 import type { DetectionContext } from "../src/detect.js";
 import { installSkill } from "../src/install/skill.js";
-import { installMcp, buildMcpEntry, findWorkspaceDep } from "../src/install/mcp.js";
+import {
+  installMcp,
+  buildMcpEntry,
+  findWorkspaceDep,
+} from "../src/install/mcp.js";
 import {
   installCommands,
   parseCommandFile,
@@ -27,8 +31,16 @@ beforeEach(async () => {
 async function makeFakeSkillSource(): Promise<string> {
   const dir = join(tmpRoot, "src-skill");
   await mkdir(join(dir, "references"), { recursive: true });
-  await writeFile(join(dir, "SKILL.md"), "---\nname: novamem\ndescription: x\n---\n", "utf8");
-  await writeFile(join(dir, "references", "search.md"), "# search ref\n", "utf8");
+  await writeFile(
+    join(dir, "SKILL.md"),
+    "---\nname: novamem\ndescription: x\n---\n",
+    "utf8"
+  );
+  await writeFile(
+    join(dir, "references", "search.md"),
+    "# search ref\n",
+    "utf8"
+  );
   return dir;
 }
 
@@ -38,12 +50,12 @@ async function makeFakeCommandSource(): Promise<string> {
   await writeFile(
     join(dir, "remember.md"),
     "---\ndescription: Save a memory\nargument-hint: <content>\nallowed-tools: mcp__novamem__memory_remember\n---\n\nBody for remember.\n$ARGUMENTS",
-    "utf8",
+    "utf8"
   );
   await writeFile(
     join(dir, "recall.md"),
     "---\ndescription: Recall memories\n---\n\nBody for recall.",
-    "utf8",
+    "utf8"
   );
   return dir;
 }
@@ -54,9 +66,15 @@ describe("installSkill", () => {
     const tool = findTool("claude-code")!;
     const r = await installSkill(tool, ctx, { sourceDir: source });
     expect(r.written).toBe(true);
-    expect(r.destination).toBe(join(ctx.projectRoot, ".claude", "skills", "novamem"));
-    expect(await readFile(join(r.destination, "SKILL.md"), "utf8")).toContain("name: novamem");
-    expect(await readFile(join(r.destination, "references", "search.md"), "utf8")).toContain("# search ref");
+    expect(r.destination).toBe(
+      join(ctx.projectRoot, ".claude", "skills", "novamem")
+    );
+    expect(await readFile(join(r.destination, "SKILL.md"), "utf8")).toContain(
+      "name: novamem"
+    );
+    expect(
+      await readFile(join(r.destination, "references", "search.md"), "utf8")
+    ).toContain("# search ref");
   });
   it("uses home for user-scoped tools", async () => {
     const source = await makeFakeSkillSource();
@@ -67,22 +85,36 @@ describe("installSkill", () => {
   it("dry-run does not write files", async () => {
     const source = await makeFakeSkillSource();
     const tool = findTool("claude-code")!;
-    const r = await installSkill(tool, ctx, { sourceDir: source, dryRun: true });
+    const r = await installSkill(tool, ctx, {
+      sourceDir: source,
+      dryRun: true,
+    });
     expect(r.written).toBe(false);
-    await expect(readFile(join(r.destination, "SKILL.md"), "utf8")).rejects.toThrow();
+    await expect(
+      readFile(join(r.destination, "SKILL.md"), "utf8")
+    ).rejects.toThrow();
   });
 });
 
 describe("installMcp", () => {
   it("writes a fresh JSON config when none exists", async () => {
     const tool = findTool("claude-code")!;
-    const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    const r = await installMcp(tool, ctx, {
+      baseUrl: "http://x:7778",
+      bearer: "nm_t",
+    });
     expect(r.changed).toBe(true);
-    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<string, unknown>;
-    const entry = (written.mcpServers as Record<string, unknown>).novamem as Record<string, unknown>;
+    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const entry = (written.mcpServers as Record<string, unknown>)
+      .novamem as Record<string, unknown>;
     expect(entry.type).toBe("sse");
     expect(entry.url).toBe("http://x:7778/mcp/sse");
-    expect((entry.headers as Record<string, string>).Authorization).toBe("Bearer nm_t");
+    expect((entry.headers as Record<string, string>).Authorization).toBe(
+      "Bearer nm_t"
+    );
   });
   it("merges into an existing config without clobbering siblings", async () => {
     const tool = findTool("claude-code")!;
@@ -90,20 +122,32 @@ describe("installMcp", () => {
     await mkdir(join(ctx.projectRoot), { recursive: true });
     await writeFile(
       path,
-      JSON.stringify({ mcpServers: { existing: { type: "sse", url: "u" } }, otherTopLevel: 1 }),
-      "utf8",
+      JSON.stringify({
+        mcpServers: { existing: { type: "sse", url: "u" } },
+        otherTopLevel: 1,
+      }),
+      "utf8"
     );
     await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
-    const written = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    const written = JSON.parse(await readFile(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
     const servers = written.mcpServers as Record<string, unknown>;
     expect(Object.keys(servers).sort()).toEqual(["existing", "novamem"]);
     expect(written.otherTopLevel).toBe(1);
   });
   it("is idempotent when the entry already matches", async () => {
     const tool = findTool("claude-code")!;
-    const a = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    const a = await installMcp(tool, ctx, {
+      baseUrl: "http://x:7778",
+      bearer: "nm_t",
+    });
     expect(a.changed).toBe(true);
-    const b = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    const b = await installMcp(tool, ctx, {
+      baseUrl: "http://x:7778",
+      bearer: "nm_t",
+    });
     expect(b.changed).toBe(false);
   });
   it("writes TOML for Codex with mcp_servers root key + stdio shim", async () => {
@@ -112,7 +156,10 @@ describe("installMcp", () => {
     // so it works regardless of host transport. The base URL + token
     // are forwarded via env vars on the spawned shim process.
     const tool = findTool("codex")!;
-    const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    const r = await installMcp(tool, ctx, {
+      baseUrl: "http://x:7778",
+      bearer: "nm_t",
+    });
     expect(r.changed).toBe(true);
     expect(r.configPath.endsWith("config.toml")).toBe(true);
     const raw = await readFile(r.configPath, "utf8");
@@ -127,9 +174,15 @@ describe("installMcp", () => {
     // schema is also unique: top-level `mcp` (not `mcpServers`), entries
     // shaped `{type: "local", command, args, environment}`.
     const tool = findTool("opencode")!;
-    const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    const r = await installMcp(tool, ctx, {
+      baseUrl: "http://x:7778",
+      bearer: "nm_t",
+    });
     expect(r.changed).toBe(true);
-    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<string, unknown>;
+    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
     const root = written.mcp as Record<string, unknown> | undefined;
     expect(root).toBeDefined();
     const entry = root!.novamem as Record<string, unknown>;
@@ -143,10 +196,17 @@ describe("installMcp", () => {
   });
   it("writes Gemini settings.json via stdio shim", async () => {
     const tool = findTool("gemini")!;
-    const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    const r = await installMcp(tool, ctx, {
+      baseUrl: "http://x:7778",
+      bearer: "nm_t",
+    });
     expect(r.changed).toBe(true);
-    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<string, unknown>;
-    const entry = (written.mcpServers as Record<string, unknown>).novamem as Record<string, unknown>;
+    const written = JSON.parse(await readFile(r.configPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const entry = (written.mcpServers as Record<string, unknown>)
+      .novamem as Record<string, unknown>;
     expect(entry.command).toBe("npx");
     expect(entry.env).toMatchObject({
       NOVAMEM_BASE_URL: "http://x:7778",
@@ -156,7 +216,10 @@ describe("installMcp", () => {
   });
   it("skips tools with no MCP adapter", async () => {
     const tool = findTool("trae")!;
-    const r = await installMcp(tool, ctx, { baseUrl: "http://x:7778", bearer: "nm_t" });
+    const r = await installMcp(tool, ctx, {
+      baseUrl: "http://x:7778",
+      bearer: "nm_t",
+    });
     expect(r.skipped).toBe(true);
     expect(r.changed).toBe(false);
   });
@@ -166,7 +229,7 @@ describe("installMcp", () => {
       tool,
       ctx,
       { baseUrl: "http://x:7778", bearer: "nm_t" },
-      { dryRun: true },
+      { dryRun: true }
     );
     expect(r.skipped).toBe(true);
     expect(r.changed).toBe(true); // would have changed
@@ -176,26 +239,35 @@ describe("installMcp", () => {
 
 describe("buildMcpEntry", () => {
   it("produces the SSE shape by default", () => {
-    const e = buildMcpEntry({ path: "x", format: "json" }, { baseUrl: "http://h:7778", bearer: "tok" }) as Record<string, unknown>;
+    const e = buildMcpEntry(
+      { path: "x", format: "json" },
+      { baseUrl: "http://h:7778", bearer: "tok" }
+    ) as Record<string, unknown>;
     expect(e.type).toBe("sse");
     expect(e.url).toBe("http://h:7778/mcp/sse");
   });
   it("produces the stdio shape when transport is 'stdio'", () => {
-    const e = buildMcpEntry({ path: "x", format: "json", transport: "stdio" }, { baseUrl: "http://h:7778", bearer: "tok" }) as Record<string, unknown>;
+    const e = buildMcpEntry(
+      { path: "x", format: "json", transport: "stdio" },
+      { baseUrl: "http://h:7778", bearer: "tok" }
+    ) as Record<string, unknown>;
     expect(e.command).toBe("npx");
-    expect(e.env).toMatchObject({ NOVAMEM_BASE_URL: "http://h:7778", NOVAMEM_TOKEN: "tok" });
+    expect(e.env).toMatchObject({
+      NOVAMEM_BASE_URL: "http://h:7778",
+      NOVAMEM_TOKEN: "tok",
+    });
   });
   it("pins the shim version in args when shimVersion is provided", () => {
     const e = buildMcpEntry(
       { path: "x", format: "json", transport: "stdio" },
-      { baseUrl: "http://h:7778", bearer: "tok", shimVersion: "1.1.4" },
+      { baseUrl: "http://h:7778", bearer: "tok", shimVersion: "1.1.4" }
     ) as { args: string[] };
     expect(e.args).toEqual(["-y", "@azrtydxb/novamem-mcp@1.1.4"]);
   });
   it("falls back to the floating spec when shimVersion is not provided", () => {
     const e = buildMcpEntry(
       { path: "x", format: "json", transport: "stdio" },
-      { baseUrl: "http://h:7778", bearer: "tok" },
+      { baseUrl: "http://h:7778", bearer: "tok" }
     ) as { args: string[] };
     expect(e.args).toEqual(["-y", "@azrtydxb/novamem-mcp"]);
   });
@@ -203,7 +275,9 @@ describe("buildMcpEntry", () => {
 
 describe("findWorkspaceDep", () => {
   it("returns the first workspace: entry it finds", () => {
-    expect(findWorkspaceDep({ "@a/b": "1.0.0", "@a/c": "workspace:*" })).toEqual({
+    expect(
+      findWorkspaceDep({ "@a/b": "1.0.0", "@a/c": "workspace:*" })
+    ).toEqual({
       name: "@a/c",
       value: "workspace:*",
     });
@@ -230,7 +304,9 @@ describe("findWorkspaceDep", () => {
 
 describe("parseCommandFile", () => {
   it("parses YAML frontmatter and body", () => {
-    const r = parseCommandFile("---\ndescription: foo\nargument-hint: bar\n---\n\nBody here\n");
+    const r = parseCommandFile(
+      "---\ndescription: foo\nargument-hint: bar\n---\n\nBody here\n"
+    );
     expect(r.frontmatter.description).toBe("foo");
     expect(r.frontmatter["argument-hint"]).toBe("bar");
     expect(r.body).toBe("Body here\n");
@@ -244,17 +320,26 @@ describe("parseCommandFile", () => {
 
 describe("renderCommand", () => {
   it("re-emits Claude-style markdown with frontmatter for claude-md", () => {
-    const out = renderCommand({ frontmatter: { description: "foo" }, body: "B" }, "claude-md");
+    const out = renderCommand(
+      { frontmatter: { description: "foo" }, body: "B" },
+      "claude-md"
+    );
     expect(out.startsWith("---\n")).toBe(true);
     expect(out).toContain("description: foo");
     expect(out).toContain("\n\nB");
   });
   it("strips frontmatter for continue-prompt and prepends description", () => {
-    const out = renderCommand({ frontmatter: { description: "foo" }, body: "B" }, "continue-prompt");
+    const out = renderCommand(
+      { frontmatter: { description: "foo" }, body: "B" },
+      "continue-prompt"
+    );
     expect(out).toBe("foo\n\nB");
   });
   it("emits TOML for gemini-toml", () => {
-    const out = renderCommand({ frontmatter: { description: "foo" }, body: "B" }, "gemini-toml");
+    const out = renderCommand(
+      { frontmatter: { description: "foo" }, body: "B" },
+      "gemini-toml"
+    );
     expect(out).toContain("description = ");
     expect(out).toContain("prompt = ");
   });
@@ -262,21 +347,33 @@ describe("renderCommand", () => {
 
 describe("destFilename", () => {
   it("uses .md for claude-md", () => {
-    expect(destFilename("remember.md", { dir: "x", format: "claude-md" })).toBe("remember.md");
+    expect(destFilename("remember.md", { dir: "x", format: "claude-md" })).toBe(
+      "remember.md"
+    );
   });
   it("uses .prompt for continue-prompt", () => {
-    expect(destFilename("remember.md", { dir: "x", format: "continue-prompt" })).toBe("remember.prompt");
+    expect(
+      destFilename("remember.md", { dir: "x", format: "continue-prompt" })
+    ).toBe("remember.prompt");
   });
   it("uses .prompt.md for github-prompt-md", () => {
-    expect(destFilename("remember.md", { dir: "x", format: "github-prompt-md" })).toBe("remember.prompt.md");
+    expect(
+      destFilename("remember.md", { dir: "x", format: "github-prompt-md" })
+    ).toBe("remember.prompt.md");
   });
   it("uses .toml for gemini-toml", () => {
-    expect(destFilename("remember.md", { dir: "x", format: "gemini-toml" })).toBe("remember.toml");
+    expect(
+      destFilename("remember.md", { dir: "x", format: "gemini-toml" })
+    ).toBe("remember.toml");
   });
   it("applies the prefix when configured", () => {
-    expect(destFilename("recall.md", { dir: "x", format: "claude-md", prefix: "memory-" })).toBe(
-      "memory-recall.md",
-    );
+    expect(
+      destFilename("recall.md", {
+        dir: "x",
+        format: "claude-md",
+        prefix: "memory-",
+      })
+    ).toBe("memory-recall.md");
   });
 });
 
@@ -288,7 +385,10 @@ describe("installCommands", () => {
     expect(r.skipped).toBe(false);
     expect(r.filesWritten.length).toBe(2);
     expect(r.filesWritten[0]!.endsWith(".md")).toBe(true);
-    const remember = await readFile(join(ctx.projectRoot, ".claude", "commands", "remember.md"), "utf8");
+    const remember = await readFile(
+      join(ctx.projectRoot, ".claude", "commands", "remember.md"),
+      "utf8"
+    );
     expect(remember).toContain("description: Save a memory");
     expect(remember).toContain("$ARGUMENTS");
   });
@@ -308,7 +408,9 @@ describe("installCommands", () => {
     const source = await makeFakeCommandSource();
     const tool = findTool("codex")!;
     const r = await installCommands(tool, ctx, { sourceDir: source });
-    expect(r.filesWritten.every((f) => /memory-(remember|recall)\.md$/.test(f))).toBe(true);
+    expect(
+      r.filesWritten.every((f) => /memory-(remember|recall)\.md$/.test(f))
+    ).toBe(true);
   });
   it("skips tools with no command adapter", async () => {
     const source = await makeFakeCommandSource();

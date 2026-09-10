@@ -47,12 +47,12 @@ Project page → expand a project → **Add member** → username. The member ca
 
 Within a project there are two roles:
 
-| | Owner | Member |
-|---|---|---|
-| Read project memory | ✓ | ✓ |
-| Write project memory | ✓ | ✓ |
-| Add / remove other members | ✓ | ✗ |
-| Delete the project | ✓ | ✗ (can leave only) |
+|                            | Owner | Member             |
+| -------------------------- | ----- | ------------------ |
+| Read project memory        | ✓     | ✓                  |
+| Write project memory       | ✓     | ✓                  |
+| Add / remove other members | ✓     | ✗                  |
+| Delete the project         | ✓     | ✗ (can leave only) |
 
 The owner is the user who created the project. Ownership doesn't transfer; if the owner leaves, the project goes with them via the **Delete project** action (which cascades all entries + cold collections + graph nodes).
 
@@ -67,5 +67,5 @@ Tags are easy to forget; projects are explicit. The visibility boundary is the s
 
 ## See also
 
-- [Mental model](/concepts/mental-model) — projects vs namespaces
-- [Multi-tenancy architecture](/architecture/multi-tenancy) — how projects scale across tenants
+- [Mental model](../concepts/mental-model.md) — projects vs namespaces
+- [Multi-tenancy architecture](../architecture/multi-tenancy.md) — how projects scale across tenants

@@ -1,5 +1,13 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Check, ChevronDown, ExternalLink, FolderKanban, LogOut, Moon, Sun } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ExternalLink,
+  FolderKanban,
+  LogOut,
+  Moon,
+  Sun,
+} from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../lib/auth-context";
 import { useActiveProject } from "../lib/active-project";
@@ -47,11 +55,11 @@ interface Props {
 /** Theme hook — reads `<html class>` (set in main.tsx pre-mount), and
  *  writes back to localStorage so the choice persists. */
 function useTheme(): ["dark" | "light", () => void] {
-  const [theme, setTheme] = useState<"dark" | "light">(
-    () =>
-      typeof document !== "undefined" && document.documentElement.classList.contains("light")
-        ? "light"
-        : "dark",
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("light")
+      ? "light"
+      : "dark"
   );
   useEffect(() => {
     document.documentElement.classList.toggle("light", theme === "light");
@@ -79,7 +87,13 @@ export function AppShell({ active, onChange, children }: Props) {
         {/* Brand block — synapse logo + name + role caption. */}
         <div className="px-4 py-4 border-b border-rule-soft flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-lg bg-accent flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 32 32" aria-hidden="true" fill="none">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 32 32"
+              aria-hidden="true"
+              fill="none"
+            >
               <g stroke="white" strokeWidth="1.8" strokeLinecap="round">
                 <line x1="7" y1="24" x2="7" y2="8" />
                 <line x1="7" y1="8" x2="25" y2="24" />
@@ -94,7 +108,9 @@ export function AppShell({ active, onChange, children }: Props) {
             </svg>
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-semibold text-ink tracking-tight">NovaMem</div>
+            <div className="text-sm font-semibold text-ink tracking-tight">
+              NovaMem
+            </div>
             <div className="font-mono text-[10px] text-dim">
               {isAdmin ? "admin" : user?.username ?? "user"}
             </div>
@@ -122,13 +138,13 @@ export function AppShell({ active, onChange, children }: Props) {
                     "w-full flex items-center gap-2.5 px-2.5 h-9 rounded-md text-[13px] transition-colors",
                     isActive
                       ? "bg-subtle text-ink font-medium"
-                      : "text-dim hover:bg-subtle/60 hover:text-ink",
+                      : "text-dim hover:bg-subtle/60 hover:text-ink"
                   )}
                 >
                   <span
                     className={cn(
                       "w-3.5 font-mono text-xs",
-                      isActive ? "text-accent" : "text-faint",
+                      isActive ? "text-accent" : "text-faint"
                     )}
                   >
                     {item.glyph}
@@ -155,14 +171,20 @@ export function AppShell({ active, onChange, children }: Props) {
           <button
             onClick={toggleTheme}
             className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-md text-[13px] text-dim hover:bg-subtle/60 hover:text-ink transition-colors"
-            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            aria-label={
+              theme === "dark"
+                ? "Switch to light theme"
+                : "Switch to dark theme"
+            }
           >
             {theme === "dark" ? (
               <Sun className="h-3.5 w-3.5 text-faint" />
             ) : (
               <Moon className="h-3.5 w-3.5 text-faint" />
             )}
-            <span className="flex-1 text-left">{theme === "dark" ? "Light theme" : "Dark theme"}</span>
+            <span className="flex-1 text-left">
+              {theme === "dark" ? "Light theme" : "Dark theme"}
+            </span>
           </button>
         </div>
 
@@ -174,7 +196,9 @@ export function AppShell({ active, onChange, children }: Props) {
                 {user.username.charAt(0)}
               </div>
               <div className="flex-1 min-w-0 leading-tight">
-                <div className="text-xs font-medium text-ink truncate">{user.username}</div>
+                <div className="text-xs font-medium text-ink truncate">
+                  {user.username}
+                </div>
                 <div className="font-mono text-[10px] text-dim truncate">
                   {isAdmin ? "admin" : "user"}
                 </div>
@@ -182,7 +206,9 @@ export function AppShell({ active, onChange, children }: Props) {
             </div>
           ) : null}
           <button
-            onClick={() => { void logout(); }}
+            onClick={() => {
+              void logout();
+            }}
             className="w-full flex items-center gap-2.5 px-2.5 h-8 rounded-md text-[12px] text-dim hover:bg-subtle/60 hover:text-ink transition-colors"
           >
             <LogOut className="h-3.5 w-3.5 text-faint" />
@@ -191,7 +217,11 @@ export function AppShell({ active, onChange, children }: Props) {
         </div>
       </aside>
 
-      <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto scroll-thin">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex-1 overflow-auto scroll-thin"
+      >
         {children}
       </main>
     </div>
@@ -202,7 +232,8 @@ export function AppShell({ active, onChange, children }: Props) {
  *  localStorage via the ActiveProjectContext. Renders nothing when the
  *  user has no projects yet — the empty switcher would just be noise. */
 function ActiveProjectSwitcher() {
-  const { activeProjectId, activeProjectName, setActiveProjectId, projects } = useActiveProject();
+  const { activeProjectId, activeProjectName, setActiveProjectId, projects } =
+    useActiveProject();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -217,7 +248,9 @@ function ActiveProjectSwitcher() {
 
   if (projects.length === 0) return null;
 
-  const label = activeProjectId ? activeProjectName ?? "Project" : "Global memory";
+  const label = activeProjectId
+    ? activeProjectName ?? "Project"
+    : "Global memory";
 
   return (
     <div className="relative px-2.5 pt-2.5" data-project-switcher>
@@ -233,11 +266,16 @@ function ActiveProjectSwitcher() {
       {open && (
         <div className="absolute z-30 left-2.5 right-2.5 mt-1 bg-panel border border-rule rounded-md shadow-lg overflow-hidden">
           <button
-            onClick={() => { setActiveProjectId(null); setOpen(false); }}
+            onClick={() => {
+              setActiveProjectId(null);
+              setOpen(false);
+            }}
             className="w-full flex items-center gap-2 px-2.5 h-9 text-[12px] text-ink hover:bg-subtle/60"
           >
             <span className="w-3.5 flex justify-center">
-              {activeProjectId === null ? <Check className="h-3 w-3 text-accent" /> : null}
+              {activeProjectId === null ? (
+                <Check className="h-3 w-3 text-accent" />
+              ) : null}
             </span>
             <span className="flex-1 text-left">Global memory only</span>
           </button>
@@ -245,15 +283,22 @@ function ActiveProjectSwitcher() {
           {projects.map((p) => (
             <button
               key={p.id}
-              onClick={() => { setActiveProjectId(p.id); setOpen(false); }}
+              onClick={() => {
+                setActiveProjectId(p.id);
+                setOpen(false);
+              }}
               className="w-full flex items-center gap-2 px-2.5 h-9 text-[12px] text-ink hover:bg-subtle/60"
               title={p.id}
             >
               <span className="w-3.5 flex justify-center">
-                {p.id === activeProjectId ? <Check className="h-3 w-3 text-accent" /> : null}
+                {p.id === activeProjectId ? (
+                  <Check className="h-3 w-3 text-accent" />
+                ) : null}
               </span>
               <span className="flex-1 text-left truncate">{p.name}</span>
-              <span className="font-mono text-[9px] text-faint uppercase">{p.role}</span>
+              <span className="font-mono text-[9px] text-faint uppercase">
+                {p.role}
+              </span>
             </button>
           ))}
         </div>

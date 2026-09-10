@@ -62,10 +62,10 @@ If you're running novamem with real data:
 
 ## Threat model summary
 
-| Adversary | What they can / cannot do |
-|---|---|
-| Anonymous internet user | Hit `/health`, `/api-docs`, `/openapi.json`, `/admin` HTML shell. Cannot read or write any memory. |
-| Holder of a `nm_…` bearer | Read/write everything the owning user can reach — user-global entries plus every project that user is a member of. Cannot mint other bearers, cannot reach `/v1/admin/*` (unless the owning user is admin). Can rotate the bearer via `/v1/auth/rotate-token`. |
-| Logged-in user (role `user`) | Manage their own bearers + projects, view their own metrics. Can share a project with another user (adds them as a member). Cannot reach `/v1/admin/*` or `/api/auth/admin/*`. |
-| Logged-in user (role `admin`) | Manage all users via Better Auth's admin endpoints, view system metrics, run decay / dream-cycle. Admins do **not** automatically inherit other users' memory access — they manage identity, not data. The last admin cannot be removed or demoted. |
-| Compromised database | Sees Better Auth's password hashes (scrypt) in `account.password`, token hashes (sha256) in `user_tokens`. Plaintext bearers and passwords are not stored. Re-issued tokens can be invalidated by deleting the relevant rows. |
+| Adversary                     | What they can / cannot do                                                                                                                                                                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anonymous internet user       | Hit `/health`, `/api-docs`, `/openapi.json`, `/admin` HTML shell. Cannot read or write any memory.                                                                                                                                                             |
+| Holder of a `nm_…` bearer     | Read/write everything the owning user can reach — user-global entries plus every project that user is a member of. Cannot mint other bearers, cannot reach `/v1/admin/*` (unless the owning user is admin). Can rotate the bearer via `/v1/auth/rotate-token`. |
+| Logged-in user (role `user`)  | Manage their own bearers + projects, view their own metrics. Can share a project with another user (adds them as a member). Cannot reach `/v1/admin/*` or `/api/auth/admin/*`.                                                                                 |
+| Logged-in user (role `admin`) | Manage all users via Better Auth's admin endpoints, view system metrics, run decay / dream-cycle. Admins do **not** automatically inherit other users' memory access — they manage identity, not data. The last admin cannot be removed or demoted.            |
+| Compromised database          | Sees Better Auth's password hashes (scrypt) in `account.password`, token hashes (sha256) in `user_tokens`. Plaintext bearers and passwords are not stored. Re-issued tokens can be invalidated by deleting the relevant rows.                                  |

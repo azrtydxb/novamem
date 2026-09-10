@@ -1,6 +1,5 @@
 # Kubernetes install
 
-
 For a single host see [Docker Compose](docker.md). For local dev see [Manual](manual.md).
 
 > **The committed manifests are templates.** `secrets.yaml` ships with `CHANGE_ME` placeholders and `ingress.yaml` references `novamem.example.com`. Do **not** `kubectl apply -k deploy/k8s/` as-is — follow [Configure](#configure) first.
@@ -38,7 +37,7 @@ kubectl -n novamem rollout restart deploy/novamem
 To build locally and bypass the registry (e.g. in an air-gapped lab) — set `image: novamem:dev` and `imagePullPolicy: Never` in `novamem.yaml`, then:
 
 ```bash
-docker build -t novamem:dev .
+docker build -f go/Dockerfile -t novamem:dev .
 docker save novamem:dev | sudo k3s ctr images import -
 ```
 
@@ -69,17 +68,18 @@ kubectl create secret generic novamem-secrets -n novamem \
 
 The keys consumed by the Deployment (`envFrom: secretRef`) are:
 
-| Key | Notes |
-|-----|-------|
-| `NOVAMEM_COOKIE_SECRET` | Session signing. `openssl rand -hex 32`. Rotate to invalidate all sessions. |
-| `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` | First admin (only consulted when no admin user exists). |
-| `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` | First admin password. Auto-scrubbed from `process.env` after the seed runs. |
-| `POSTGRES_PASSWORD` | Mounted into the Postgres StatefulSet as well. |
-| `NOVAMEM_WARM_URL` | Full Postgres DSN — embeds the password, so it lives in the Secret, not the ConfigMap. |
+| Key                                | Notes                                                                                  |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `NOVAMEM_COOKIE_SECRET`            | Session signing. `openssl rand -hex 32`. Rotate to invalidate all sessions.            |
+| `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL`    | First admin (only consulted when no admin user exists).                                |
+| `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` | First admin password. Auto-scrubbed from `process.env` after the seed runs.            |
+| `POSTGRES_PASSWORD`                | Mounted into the Postgres StatefulSet as well.                                         |
+| `NOVAMEM_WARM_URL`                 | Full Postgres DSN — embeds the password, so it lives in the Secret, not the ConfigMap. |
 
 ### App config
 
 `deploy/k8s/novamem.yaml` (ConfigMap):
+
 - `NOVAMEM_BASE_URL` — set to your TLS-terminated origin (the Ingress hostname). Better Auth's trusted-origin check rejects mismatches.
 - `NOVAMEM_INSECURE_COOKIES` — leave at `"0"` in production. Only flip to `"1"` for a local HTTP-only smoke test.
 
@@ -172,7 +172,6 @@ kubectl -n novamem describe pod -l app=novamem
 - cert-manager Certificate stuck `Pending` → check the `Order` / `Challenge` resources. Most often DNS for the host doesn't yet resolve to the Ingress IP.
 - Slow first search → local embedder is downloading the model. Subsequent calls are fast; the model lives in the pod's ephemeral volume so it re-downloads on every restart unless you mount a PVC for it.
 
-
 ## Running with pgvector instead of Qdrant
 
 Set `NOVAMEM_COLD_PROVIDER: "pgvector"` and **remove `NOVAMEM_COLD_URL`
@@ -185,7 +184,7 @@ The Postgres pod needs: a pgvector-enabled image
 (`pgvector/pgvector:pg16` is drop-in for `postgres:16`), and a
 memory-backed `/dev/shm` (see the example in `postgres.yaml`) sized
 well below the container memory limit. For migrating an existing
-Qdrant deployment, `scripts/sync-qdrant-to-pgvector.mjs`
+Qdrant deployment, `go run ./cmd/sync-qdrant-to-pgvector`
 copies vectors without re-embedding.
 
 **Postgres sizing for pgvector.** Measured with pgbench (persistent

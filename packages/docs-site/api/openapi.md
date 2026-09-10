@@ -18,10 +18,10 @@ Try requests with a real bearer token. The "Authorize" button accepts both `nm_â
 
 ## Machine-readable
 
-| Source | URL |
-|---|---|
-| Live (any deployment) | `/openapi.json` |
-| Static (this repo) | [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json) |
+| Source                | URL                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| Live (any deployment) | `/openapi.json`                                                                                |
+| Static (this repo)    | [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json) |
 
 ## Generate clients
 

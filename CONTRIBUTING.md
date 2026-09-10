@@ -68,11 +68,11 @@ Each release ships a self-contained migration; the application code in each rele
 
 ### Useful commands
 
-| Command | What it does |
-|---|---|
+| Command                                  | What it does                                                                                                      |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `cd go && go test ./internal/warmstore/` | Checks journal order, that every entry resolves to an embedded file, and that no applied migration's hash changed |
-| `cd go && go run ./cmd/gen-openapi` | Regenerates `docs/api/openapi.json` from the server's own route table (CI fails on drift) |
-| `go/scripts/sync-admin-ui.sh` | Copies a fresh `packages/admin-ui/dist` into the binary's embedded assets |
+| `cd go && go run ./cmd/gen-openapi`      | Regenerates `docs/api/openapi.json` from the server's own route table (CI fails on drift)                         |
+| `go/scripts/sync-admin-ui.sh`            | Copies a fresh `packages/admin-ui/dist` into the binary's embedded assets                                         |
 
 Never apply schema changes to a production-grade database by hand or with an
 ad-hoc tool: that skips the journal and makes every later migration ambiguous
@@ -82,14 +82,14 @@ about what state it is starting from. Migrations are the only path.
 
 - `pnpm test` from the repo root runs every package's vitest suite.
 - `cd go && go test ./...` runs the server's own suite. The httpapi tests use an in-memory fake store — they don't hit Postgres.
-- The contract that matters is `packages/conformance`: a black-box suite run against a live server (`pnpm conformance` with `NOVAMEM_URL` et al.). It is the oracle — behaviour is what it says it is, not what a unit test asserts.
+- The contract that matters is the `conformance/` Go module: a black-box suite run against a live server (`pnpm conformance`, or `cd conformance && go test ./...`, with `NOVAMEM_URL` et al.). It is the oracle — behaviour is what it says it is, not what a unit test asserts. It imports nothing from `go/` and speaks only HTTP; `boundary_test.go` fails the build if that ever changes (ADR 0003). Without `NOVAMEM_URL` every case skips, so it is safe to run anywhere.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to main and on PRs:
 
 - **test (amd64)** + **test (arm64)** on native runners — typecheck, build, vitest
-- **go** — `go build`, `go vet`, `go test` for the server and the shared client, plus the OpenAPI drift gate
+- **go** — `go build`, `go vet`, `go test` for the server, the shared client, and the conformance oracle, golangci-lint for server + client, plus the OpenAPI drift gate
 - **audit** — `pnpm audit --prod --audit-level=high`
 - **package (npm)** — `pnpm pack` artefacts uploaded for the three published packages
 - **docker (amd64)** + **docker (arm64)** — native build + Trivy HIGH/CRITICAL scan, pushed to ghcr.io on main

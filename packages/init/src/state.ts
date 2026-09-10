@@ -38,7 +38,8 @@ export function loadState(): InitState {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const obj = parsed as Record<string, unknown>;
       const out: InitState = {};
-      if (typeof obj.lastBaseUrl === "string") out.lastBaseUrl = obj.lastBaseUrl;
+      if (typeof obj.lastBaseUrl === "string")
+        out.lastBaseUrl = obj.lastBaseUrl;
       if (typeof obj.lastEmail === "string") out.lastEmail = obj.lastEmail;
       return out;
     }

@@ -42,6 +42,6 @@ NovaMem-owned project, token, lifecycle, and admin routes write `admin_audit_log
 
 ## See also
 
-- [Sign in & roles](/dashboard/auth-roles)
-- [Projects](/dashboard/projects)
-- [Hardening](/ops/hardening)
+- [Sign in & roles](../dashboard/auth-roles.md)
+- [Projects](../dashboard/projects.md)
+- [Hardening](../ops/hardening.md)

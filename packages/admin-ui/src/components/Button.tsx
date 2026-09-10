@@ -27,8 +27,16 @@ const SIZE: Record<Size, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
-  { className, variant = "secondary", size = "md", loading, disabled, children, ...rest },
-  ref,
+  {
+    className,
+    variant = "secondary",
+    size = "md",
+    loading,
+    disabled,
+    children,
+    ...rest
+  },
+  ref
 ) {
   return (
     <button
@@ -40,7 +48,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
         "disabled:cursor-not-allowed disabled:opacity-60",
         VARIANT[variant],
         SIZE[size],
-        className,
+        className
       )}
       {...rest}
     >

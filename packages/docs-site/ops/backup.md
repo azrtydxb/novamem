@@ -8,10 +8,10 @@ novamem's source of truth is **Postgres** — including the `memory_relations` c
 
 ## What to back up
 
-| Store | Importance | Recovery |
-|---|---|---|
-| **Postgres** | Critical | Required for any restore. Holds memory_entries, memory_relations, users, sessions, tokens, projects, audit log. |
-| **Qdrant** | Optional | Re-index from warm-tier entries via `/v1/admin/reindex` (planned). Until then, snapshot and restore. |
+| Store        | Importance | Recovery                                                                                                        |
+| ------------ | ---------- | --------------------------------------------------------------------------------------------------------------- |
+| **Postgres** | Critical   | Required for any restore. Holds memory_entries, memory_relations, users, sessions, tokens, projects, audit log. |
+| **Qdrant**   | Optional   | Re-index from warm-tier entries via `/v1/admin/reindex` (planned). Until then, snapshot and restore.            |
 
 In practice, back up both. Postgres restoration without Qdrant works (search degrades to keyword-only with `degraded: true`) but you want both for full fidelity.
 
@@ -69,12 +69,12 @@ Nothing extra to do: the co-occurrence edges live in the `memory_relations` Post
 
 ## Disaster scenarios
 
-| Scenario | Recovery procedure |
-|---|---|
-| Postgres lost (no backup) | Total memory loss — entries and relations alike. Don't run without a backup strategy. |
-| Postgres corrupt | Restore latest dump → restart novamem → cold-tier still has older vectors but new writes are coherent. |
-| Qdrant lost | Restart with empty Qdrant → `/v1/admin/reindex` (planned) re-embeds every warm entry from `content`. Slow but lossless. |
-| Whole cluster lost | Restore Postgres dump → Qdrant snapshots → start novamem. Verify with `GET /health`. |
+| Scenario                  | Recovery procedure                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Postgres lost (no backup) | Total memory loss — entries and relations alike. Don't run without a backup strategy.                                   |
+| Postgres corrupt          | Restore latest dump → restart novamem → cold-tier still has older vectors but new writes are coherent.                  |
+| Qdrant lost               | Restart with empty Qdrant → `/v1/admin/reindex` (planned) re-embeds every warm entry from `content`. Slow but lossless. |
+| Whole cluster lost        | Restore Postgres dump → Qdrant snapshots → start novamem. Verify with `GET /health`.                                    |
 
 ## Operational tip
 

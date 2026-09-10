@@ -169,7 +169,7 @@ func (s *pgStore) ensureReadyLocked(ctx context.Context) error {
 		return fmt.Errorf(
 			"%s has primary key (%s) from an older build; this version requires (entry_id, scope, namespace). "+
 				"Rebuild the table: DROP TABLE %s, restart to recreate, then re-run "+
-				"scripts/sync-qdrant-to-pgvector.mjs (or re-embed).",
+				"go run ./cmd/sync-qdrant-to-pgvector (or re-embed)",
 			table, strings.Join(strings.Split(*pkCols, ","), ", "), table)
 	}
 	// Partitioned parents can't carry an HNSW index; each partition gets

@@ -26,7 +26,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const openapiPath = resolve(here, "../../../docs/api/openapi.json");
 const openapi = JSON.parse(readFileSync(openapiPath, "utf8")) as {
   paths: Record<string, Record<string, any>>;
-  components?: { schemas?: Record<string, { properties?: Record<string, unknown>; required?: string[] }> };
+  components?: {
+    schemas?: Record<
+      string,
+      { properties?: Record<string, unknown>; required?: string[] }
+    >;
+  };
 };
 
 interface CapturedCall {
@@ -46,13 +51,24 @@ function makeClient(responseBody: unknown = {}, status = 200) {
     const headers: Record<string, string> = {};
     if (init?.headers) {
       const h = new Headers(init.headers as HeadersInit);
-      h.forEach((v, k) => { headers[k.toLowerCase()] = v; });
+      h.forEach((v, k) => {
+        headers[k.toLowerCase()] = v;
+      });
     }
     let body: unknown = undefined;
     if (init?.body && typeof init.body === "string") {
-      try { body = JSON.parse(init.body); } catch { body = init.body; }
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
     }
-    calls.push({ url, method: (init?.method ?? "GET").toUpperCase(), headers, body });
+    calls.push({
+      url,
+      method: (init?.method ?? "GET").toUpperCase(),
+      headers,
+      body,
+    });
     return new Response(JSON.stringify(responseBody), {
       status,
       headers: { "content-type": "application/json" },
@@ -84,7 +100,10 @@ describe("client contract: wire path + method match openapi.json", () => {
   });
 
   it("health() response shape is { ok } only — no deps (#50)", () => {
-    const schema = openapi.paths["/health"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema;
+    const schema =
+      openapi.paths["/health"]?.get?.responses?.["200"]?.content?.[
+        "application/json"
+      ]?.schema;
     expect(schema).toBeDefined();
     expect(Object.keys(schema.properties ?? {})).toEqual(["ok"]);
     expect(schema.required).toEqual(["ok"]);
@@ -136,31 +155,55 @@ describe("client contract: wire path + method match openapi.json", () => {
     expect(specHas("/v1/neighbors", "post")).toBe(true);
   });
 
-
-
   it("update() — PUT /v1/memories/:id", async () => {
     const { client, calls } = makeClient({ ok: true });
-    await client.update("01HABC", { content: "rewritten", namespace: "decisions" });
+    await client.update("01HABC", {
+      content: "rewritten",
+      namespace: "decisions",
+    });
     expect(calls[0].method).toBe("PUT");
     expect(calls[0].url).toBe("https://novamem.test/v1/memories/01HABC");
-    expect(calls[0].body).toEqual({ content: "rewritten", namespace: "decisions" });
+    expect(calls[0].body).toEqual({
+      content: "rewritten",
+      namespace: "decisions",
+    });
     expect(specHas("/v1/memories/{id}", "put")).toBe(true);
   });
 
   it("recent/today/neighbors pass through current cross-scope and sensitivity fields", async () => {
     const { client, calls } = makeClient({ results: [], degraded: false });
-    await client.recent({ includeNamespaces: ["user", "decisions"], includeProjects: ["p1"], maxSensitivity: "sensitive" });
-    await client.today({ includeNamespaces: ["setup"], includeProjects: ["p2"], maxSensitivity: "internal" });
+    await client.recent({
+      includeNamespaces: ["user", "decisions"],
+      includeProjects: ["p1"],
+      maxSensitivity: "sensitive",
+    });
+    await client.today({
+      includeNamespaces: ["setup"],
+      includeProjects: ["p2"],
+      maxSensitivity: "internal",
+    });
     await client.neighbors({ id: "01HABC", includeProjects: ["p3"] });
-    expect(calls[0].body).toEqual({ includeNamespaces: ["user", "decisions"], includeProjects: ["p1"], maxSensitivity: "sensitive" });
-    expect(calls[1].body).toMatchObject({ includeNamespaces: ["setup"], includeProjects: ["p2"], maxSensitivity: "internal" });
+    expect(calls[0].body).toEqual({
+      includeNamespaces: ["user", "decisions"],
+      includeProjects: ["p1"],
+      maxSensitivity: "sensitive",
+    });
+    expect(calls[1].body).toMatchObject({
+      includeNamespaces: ["setup"],
+      includeProjects: ["p2"],
+      maxSensitivity: "internal",
+    });
     expect(calls[1].body).toHaveProperty("since");
     expect(calls[2].body).toEqual({ id: "01HABC", includeProjects: ["p3"] });
   });
 
   it("stats() — GET /v1/stats", async () => {
     const { client, calls } = makeClient({
-      byNamespace: {}, totalWarm: 0, totalCold: 0, lastDecayAt: null, uptimeMs: 1,
+      byNamespace: {},
+      totalWarm: 0,
+      totalCold: 0,
+      lastDecayAt: null,
+      uptimeMs: 1,
     });
     await client.stats();
     expect(calls[0].method).toBe("GET");

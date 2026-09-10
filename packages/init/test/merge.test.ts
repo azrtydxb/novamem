@@ -57,7 +57,9 @@ describe("parseTomlLoose / stringifyToml", () => {
     expect(parseTomlLoose("not = valid = toml")).toEqual({});
   });
   it("round-trips a nested object", () => {
-    const o: Record<string, unknown> = { mcp_servers: { novamem: { url: "http://x", transport: "sse" } } };
+    const o: Record<string, unknown> = {
+      mcp_servers: { novamem: { url: "http://x", transport: "sse" } },
+    };
     const round = parseTomlLoose(stringifyToml(o));
     expect(round).toEqual(o);
   });

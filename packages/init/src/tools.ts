@@ -80,7 +80,8 @@ export const TOOLS: readonly ToolEntry[] = [
     detect: [".claude", ".mcp.json"],
     mcp: { path: ".mcp.json", format: "json", transport: "sse" },
     commands: { dir: ".claude/commands", format: "claude-md" },
-    postInstallHint: "Restart Claude Code to pick up the new MCP server and skill.",
+    postInstallHint:
+      "Restart Claude Code to pick up the new MCP server and skill.",
   },
   {
     id: "claude-desktop",
@@ -103,7 +104,8 @@ export const TOOLS: readonly ToolEntry[] = [
       // server with the bearer in env.
       transport: "stdio",
     },
-    postInstallHint: "Quit Claude Desktop fully (Cmd-Q on macOS) and reopen — it doesn't hot-reload MCP config.",
+    postInstallHint:
+      "Quit Claude Desktop fully (Cmd-Q on macOS) and reopen — it doesn't hot-reload MCP config.",
   },
   {
     id: "cursor",
@@ -113,7 +115,8 @@ export const TOOLS: readonly ToolEntry[] = [
     detect: [".cursor", ".cursor/mcp.json"],
     mcp: { path: ".cursor/mcp.json", format: "json", transport: "sse" },
     commands: { dir: ".cursor/commands", format: "claude-md" },
-    postInstallHint: "Open Cursor → Settings → MCP and toggle 'novamem' on if it isn't already.",
+    postInstallHint:
+      "Open Cursor → Settings → MCP and toggle 'novamem' on if it isn't already.",
   },
   {
     id: "kilocode",
@@ -247,7 +250,11 @@ export const TOOLS: readonly ToolEntry[] = [
     scope: "project",
     skillsBase: ".amazonq",
     detect: [".amazonq"],
-    commands: { dir: ".amazonq/prompts", format: "claude-md", prefix: "memory-" },
+    commands: {
+      dir: ".amazonq/prompts",
+      format: "claude-md",
+      prefix: "memory-",
+    },
   },
 
   // ─── Skill-only hosts (all 30 from OpenSpec's inventory) ─────────────
@@ -255,22 +262,118 @@ export const TOOLS: readonly ToolEntry[] = [
   // (yet) have verified MCP or slash-command formats for them, so they
   // just get the skill bundle. They can still call the MCP server if the
   // user wires it manually, or via one of the other hosts already doing so.
-  { id: "antigravity", name: "Antigravity", scope: "project", skillsBase: ".agent", detect: [".agent"] },
-  { id: "auggie", name: "Auggie / Augment CLI", scope: "project", skillsBase: ".augment", detect: [".augment"] },
-  { id: "bob", name: "Bob Shell", scope: "project", skillsBase: ".bob", detect: [".bob"] },
-  { id: "codebuddy", name: "CodeBuddy Code", scope: "project", skillsBase: ".codebuddy", detect: [".codebuddy"] },
-  { id: "costrict", name: "CoStrict", scope: "project", skillsBase: ".cospec", detect: [".cospec"] },
-  { id: "crush", name: "Crush", scope: "project", skillsBase: ".crush", detect: [".crush"] },
-  { id: "forgecode", name: "ForgeCode", scope: "project", skillsBase: ".forge", detect: [".forge"] },
-  { id: "iflow", name: "iFlow", scope: "project", skillsBase: ".iflow", detect: [".iflow"] },
-  { id: "junie", name: "Junie", scope: "project", skillsBase: ".junie", detect: [".junie"] },
-  { id: "kimi", name: "Kimi CLI", scope: "project", skillsBase: ".kimi", detect: [".kimi"] },
-  { id: "kiro", name: "Kiro", scope: "project", skillsBase: ".kiro", detect: [".kiro"] },
-  { id: "lingma", name: "Lingma", scope: "project", skillsBase: ".lingma", detect: [".lingma"] },
-  { id: "pi", name: "Pi", scope: "project", skillsBase: ".pi", detect: [".pi"] },
-  { id: "qoder", name: "Qoder", scope: "project", skillsBase: ".qoder", detect: [".qoder"] },
-  { id: "qwen", name: "Qwen Code", scope: "project", skillsBase: ".qwen", detect: [".qwen"] },
-  { id: "trae", name: "Trae", scope: "project", skillsBase: ".trae", detect: [".trae"] },
+  {
+    id: "antigravity",
+    name: "Antigravity",
+    scope: "project",
+    skillsBase: ".agent",
+    detect: [".agent"],
+  },
+  {
+    id: "auggie",
+    name: "Auggie / Augment CLI",
+    scope: "project",
+    skillsBase: ".augment",
+    detect: [".augment"],
+  },
+  {
+    id: "bob",
+    name: "Bob Shell",
+    scope: "project",
+    skillsBase: ".bob",
+    detect: [".bob"],
+  },
+  {
+    id: "codebuddy",
+    name: "CodeBuddy Code",
+    scope: "project",
+    skillsBase: ".codebuddy",
+    detect: [".codebuddy"],
+  },
+  {
+    id: "costrict",
+    name: "CoStrict",
+    scope: "project",
+    skillsBase: ".cospec",
+    detect: [".cospec"],
+  },
+  {
+    id: "crush",
+    name: "Crush",
+    scope: "project",
+    skillsBase: ".crush",
+    detect: [".crush"],
+  },
+  {
+    id: "forgecode",
+    name: "ForgeCode",
+    scope: "project",
+    skillsBase: ".forge",
+    detect: [".forge"],
+  },
+  {
+    id: "iflow",
+    name: "iFlow",
+    scope: "project",
+    skillsBase: ".iflow",
+    detect: [".iflow"],
+  },
+  {
+    id: "junie",
+    name: "Junie",
+    scope: "project",
+    skillsBase: ".junie",
+    detect: [".junie"],
+  },
+  {
+    id: "kimi",
+    name: "Kimi CLI",
+    scope: "project",
+    skillsBase: ".kimi",
+    detect: [".kimi"],
+  },
+  {
+    id: "kiro",
+    name: "Kiro",
+    scope: "project",
+    skillsBase: ".kiro",
+    detect: [".kiro"],
+  },
+  {
+    id: "lingma",
+    name: "Lingma",
+    scope: "project",
+    skillsBase: ".lingma",
+    detect: [".lingma"],
+  },
+  {
+    id: "pi",
+    name: "Pi",
+    scope: "project",
+    skillsBase: ".pi",
+    detect: [".pi"],
+  },
+  {
+    id: "qoder",
+    name: "Qoder",
+    scope: "project",
+    skillsBase: ".qoder",
+    detect: [".qoder"],
+  },
+  {
+    id: "qwen",
+    name: "Qwen Code",
+    scope: "project",
+    skillsBase: ".qwen",
+    detect: [".qwen"],
+  },
+  {
+    id: "trae",
+    name: "Trae",
+    scope: "project",
+    skillsBase: ".trae",
+    detect: [".trae"],
+  },
 ];
 
 export function findTool(id: string): ToolEntry | undefined {

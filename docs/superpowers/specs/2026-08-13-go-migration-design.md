@@ -154,7 +154,6 @@ reflector, and query decomposition — IS ported, because those already
 call external endpoints in both servers. (An earlier audit misfiled
 them as out of scope; they are in.)
 
-
 External OpenAI-compatible endpoints only — embeddings, reranker, and
 fact-extractor/dream LLM calls. No in-process ONNX (cgo would compromise
 static builds and cross-compilation). Config keeps the same env vars.
@@ -172,8 +171,8 @@ portion green against the Go server on novamem-bench:
    drizzle migration-version startup check.
 2. **Warm store + data plane CRUD** — `remember`, `recent`, `forget`,
    projects, TTL, quotas, changelog; `none` and `bearer` auth modes.
-   *(Go server becomes genuinely usable for single-user bearer setups
-   here.)*
+   _(Go server becomes genuinely usable for single-user bearer setups
+   here.)_
 3. **Cold store + search** — pgvector first, Qdrant second; embeddings
    client; hybrid search + rerank (`search`, `neighbors`); differential
    ranking tests.

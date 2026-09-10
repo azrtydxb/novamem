@@ -8,7 +8,11 @@
  */
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { NovamemClient, type CaptureResponse, type SessionRecapResponse } from "../src/index.js";
+import {
+  NovamemClient,
+  type CaptureResponse,
+  type SessionRecapResponse,
+} from "../src/index.js";
 
 function makeClient(responseBody: unknown, status = 200) {
   const fetchMock = vi.fn(
@@ -16,7 +20,7 @@ function makeClient(responseBody: unknown, status = 200) {
       new Response(JSON.stringify(responseBody), {
         status,
         headers: { "content-type": "application/json" },
-      }),
+      })
   );
   const client = new NovamemClient({
     baseUrl: "https://novamem.test",
@@ -51,7 +55,9 @@ describe("capture() returns the engine's result, not a recap envelope", () => {
   it("carries `embedded` so a caller can tell stored-and-searchable from stored-only", async () => {
     const { client } = makeClient({ id: "01HXYZ", embedded: false });
 
-    const out = await client.capture({ content: "written during an embedder outage" });
+    const out = await client.capture({
+      content: "written during an embedder outage",
+    });
 
     // Stored and durable, but not yet findable by semantic search.
     expect(out.id).toBe("01HXYZ");
@@ -59,7 +65,10 @@ describe("capture() returns the engine's result, not a recap envelope", () => {
   });
 
   it("models a gate rejection as id:null + reason rather than a thrown error", async () => {
-    const { client } = makeClient({ id: null, rejected: "too short — not durable knowledge" });
+    const { client } = makeClient({
+      id: null,
+      rejected: "too short — not durable knowledge",
+    });
 
     const out = await client.capture({ content: "ok" });
 
@@ -68,7 +77,10 @@ describe("capture() returns the engine's result, not a recap envelope", () => {
   });
 
   it("keeps the {saved, results} envelope on sessionRecap, where it belongs", async () => {
-    const { client } = makeClient({ saved: 1, results: [{ id: "01HXYZ", embedded: true }] });
+    const { client } = makeClient({
+      saved: 1,
+      results: [{ id: "01HXYZ", embedded: true }],
+    });
 
     const out = await client.sessionRecap({ decisions: ["we chose drizzle"] });
 
@@ -89,7 +101,10 @@ describe("forget() surfaces coldDeleteOk", () => {
 
     expect(out.deleted).toBe(true);
     expect(out.coldDeleteOk).toBe(false);
-    expectTypeOf(out).toEqualTypeOf<{ deleted: boolean; coldDeleteOk: boolean }>();
+    expectTypeOf(out).toEqualTypeOf<{
+      deleted: boolean;
+      coldDeleteOk: boolean;
+    }>();
   });
 
   it("reports a fully-completed delete", async () => {
@@ -104,8 +119,12 @@ describe("forget() surfaces coldDeleteOk", () => {
 describe("search() distinguishes degraded-with-results from could-not-look", () => {
   it("throws on the server's 503 rather than returning an empty result set", async () => {
     const { client } = makeClient(
-      { results: [], degraded: true, error: "search degraded: a backing tier was unavailable" },
-      503,
+      {
+        results: [],
+        degraded: true,
+        error: "search degraded: a backing tier was unavailable",
+      },
+      503
     );
 
     // Must not resolve to `{results: []}` — that would restate "I could not
@@ -115,7 +134,18 @@ describe("search() distinguishes degraded-with-results from could-not-look", () 
 
   it("resolves a 200 that is degraded but carries real results", async () => {
     const { client } = makeClient({
-      results: [{ id: "01HXYZ", score: 1, content: "c", tier: "warm", namespace: "default", project: null, source: "manual", metadata: {} }],
+      results: [
+        {
+          id: "01HXYZ",
+          score: 1,
+          content: "c",
+          tier: "warm",
+          namespace: "default",
+          project: null,
+          source: "manual",
+          metadata: {},
+        },
+      ],
       degraded: true,
     });
 

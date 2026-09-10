@@ -4,7 +4,9 @@ import { Card, CardContent } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
 import { fmtRelative } from "../lib/utils";
 
-interface TodayResp { events: ActivityEvent[] }
+interface TodayResp {
+  events: ActivityEvent[];
+}
 
 const KIND_DOT: Record<ActivityEvent["kind"], string> = {
   remember: "bg-graph",
@@ -49,8 +51,12 @@ export function TodayPage() {
             </CardContent>
           ) : events.length === 0 ? (
             <CardContent className="text-center py-12">
-              <div className="font-mono text-[11px] text-faint mb-1">no_activity</div>
-              <div className="text-base font-medium text-ink mb-1">Nothing yet today</div>
+              <div className="font-mono text-[11px] text-faint mb-1">
+                no_activity
+              </div>
+              <div className="text-base font-medium text-ink mb-1">
+                Nothing yet today
+              </div>
               <div className="text-sm text-dim">
                 Remembers, token mints, and project joins will show up here.
               </div>
@@ -72,7 +78,9 @@ export function TodayPage() {
                       {KIND_LABEL[e.kind]}
                     </span>
                     {e.project ? (
-                      <span className="font-mono text-[10px] text-faint">{e.project}</span>
+                      <span className="font-mono text-[10px] text-faint">
+                        {e.project}
+                      </span>
                     ) : null}
                   </div>
                   <div className="mt-1 text-[13px] text-ink">{e.text}</div>

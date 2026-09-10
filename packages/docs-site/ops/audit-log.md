@@ -13,14 +13,14 @@ curl "https://novamem.example.com/v1/admin/audit-log?limit=100" \
 
 ## What gets logged
 
-| Action | Captured |
-|---|---|
+| Action                                         | Captured                                       |
+| ---------------------------------------------- | ---------------------------------------------- |
 | User created / role changed / banned / deleted | `actor_user_id`, `target_user_id`, action verb |
-| Password reset (admin → user) | actor + target; never the password |
-| Tenant created / deleted | actor + tenant id |
-| Tenant token minted / revoked | actor + token hash + label |
-| Project created / shared / unshared / deleted | owner / actor + project id + member id |
-| Decay config changed | actor + new effectiveDays |
+| Password reset (admin → user)                  | actor + target; never the password             |
+| Tenant created / deleted                       | actor + tenant id                              |
+| Tenant token minted / revoked                  | actor + token hash + label                     |
+| Project created / shared / unshared / deleted  | owner / actor + project id + member id         |
+| Decay config changed                           | actor + new effectiveDays                      |
 
 Read access logs (search / remember / etc) are not in the audit log — they're in the metrics counters. The audit log is for **administrative authority**, not data access.
 

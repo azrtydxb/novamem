@@ -1,6 +1,5 @@
 # Docker Compose install
 
-
 ## Prerequisites
 
 - Docker Engine 24+ with the Compose plugin (`docker compose version`)
@@ -22,11 +21,11 @@ docker compose logs -f novamem  # watch the bootstrap
 
 The compose file is the source of truth for ports + env wiring: [docker-compose.yaml](../../docker-compose.yaml).
 
-| Service | Image | Host port |
-|---|---|---|
-| `novamem` | built from `./Dockerfile` | **7778** |
-| `postgres` | `postgres:16-alpine` | 5432 |
-| `qdrant` | `qdrant/qdrant:v1.12.4` | 6333 |
+| Service    | Image                      | Host port |
+| ---------- | -------------------------- | --------- |
+| `novamem`  | built from `go/Dockerfile` | **7778**  |
+| `postgres` | `postgres:16-alpine`       | 5432      |
+| `qdrant`   | `qdrant/qdrant:v1.12.4`    | 6333      |
 
 Volumes (named): `novamem_pg`, `novamem_qdrant`.
 
@@ -40,14 +39,14 @@ Sign in at <http://localhost:7778/admin> with the email + password you set, then
 
 Override env via `.env` (compose reads it automatically) or by editing the `environment:` block in `docker-compose.yaml`. The full reference is [.env.example](../../.env.example). The fields you'll touch most for compose:
 
-| Var | Compose default | Notes |
-|---|---|---|
-| `NOVAMEM_AUTH_MODE` | `user` | Only `user` enforces per-user isolation |
-| `NOVAMEM_BASE_URL` | _(unset; uses `http://localhost:7778`)_ | **Must** match the URL the browser hits — set explicitly when running on a non-localhost host |
-| `NOVAMEM_COOKIE_SECRET` | _(none)_ | Required in production |
-| `NOVAMEM_INSECURE_COOKIES` | `1` | Default for compose so cookies work over plain `http://localhost`; **set to `0` in production** |
-| `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL` | `admin@example.com` | First admin email (only used on first start) |
-| `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` | _(none)_ | Min 8 chars; required for first-run seeding |
+| Var                                | Compose default                         | Notes                                                                                           |
+| ---------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `NOVAMEM_AUTH_MODE`                | `user`                                  | Only `user` enforces per-user isolation                                                         |
+| `NOVAMEM_BASE_URL`                 | _(unset; uses `http://localhost:7778`)_ | **Must** match the URL the browser hits — set explicitly when running on a non-localhost host   |
+| `NOVAMEM_COOKIE_SECRET`            | _(none)_                                | Required in production                                                                          |
+| `NOVAMEM_INSECURE_COOKIES`         | `1`                                     | Default for compose so cookies work over plain `http://localhost`; **set to `0` in production** |
+| `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL`    | `admin@example.com`                     | First admin email (only used on first start)                                                    |
+| `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD` | _(none)_                                | Min 8 chars; required for first-run seeding                                                     |
 
 ## Persistence
 
@@ -99,7 +98,8 @@ Neither is appropriate for a real deployment.
 
 The repo ships a `docker-compose.prod.yaml` override that:
 
-  the datastores stay on the internal compose network only.
+the datastores stay on the internal compose network only.
+
 - Removes the host port publish for the `novamem` app (port 7778) — the
   expectation is that a TLS-terminating reverse proxy on the same docker
   network forwards traffic to it.

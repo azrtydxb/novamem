@@ -1,6 +1,5 @@
 # Manual install
 
-
 For most deployments [Docker Compose](docker.md) is simpler. For multi-node use [Kubernetes](kubernetes.md).
 
 ## Prerequisites
@@ -67,16 +66,16 @@ When `NOVAMEM_AUTH_MODE=user` and no admin user exists, novamem seeds one from `
 
 Full env reference: [.env.example](../../.env.example). The fields you'll touch most:
 
-| Var | Default | Notes |
-|---|---|---|
-| `NOVAMEM_PORT` | `7778` | HTTP + MCP-SSE listen port |
-| `NOVAMEM_BASE_URL` | `http://localhost:7778` | Public origin; **must** match the browser's `Origin` header for Better Auth's trusted-origin check |
-| `NOVAMEM_AUTH_MODE` | `user` | `user` / `bearer` / `none`; only `user` enforces per-user isolation |
-| `NOVAMEM_COOKIE_SECRET` | _(none)_ | 32+ hex chars; **must** be set in production |
-| `NOVAMEM_INSECURE_COOKIES` | `0` | `1` to allow non-Secure cookies (plain-HTTP dev only) |
-| `NOVAMEM_EMBEDDINGS_PROVIDER` | `local-transformers` | Or `openai-compatible` with `_ENDPOINT` + `_MODEL` + `_API_KEY` |
-| `NOVAMEM_DECAY_INTERVAL_MS` | `21600000` (6h) | Decay loop + dream cycle cadence |
-| `NOVAMEM_PG_POOL_MAX` | `20` | Per-process Postgres pool size |
+| Var                           | Default                 | Notes                                                                                              |
+| ----------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
+| `NOVAMEM_PORT`                | `7778`                  | HTTP + MCP-SSE listen port                                                                         |
+| `NOVAMEM_BASE_URL`            | `http://localhost:7778` | Public origin; **must** match the browser's `Origin` header for Better Auth's trusted-origin check |
+| `NOVAMEM_AUTH_MODE`           | `user`                  | `user` / `bearer` / `none`; only `user` enforces per-user isolation                                |
+| `NOVAMEM_COOKIE_SECRET`       | _(none)_                | 32+ hex chars; **must** be set in production                                                       |
+| `NOVAMEM_INSECURE_COOKIES`    | `0`                     | `1` to allow non-Secure cookies (plain-HTTP dev only)                                              |
+| `NOVAMEM_EMBEDDINGS_PROVIDER` | `local-transformers`    | Or `openai-compatible` with `_ENDPOINT` + `_MODEL` + `_API_KEY`                                    |
+| `NOVAMEM_DECAY_INTERVAL_MS`   | `21600000` (6h)         | Decay loop + dream cycle cadence                                                                   |
+| `NOVAMEM_PG_POOL_MAX`         | `20`                    | Per-process Postgres pool size                                                                     |
 
 ## Verify
 

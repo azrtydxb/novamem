@@ -8,7 +8,7 @@ If your tool isn't an MCP host, you can still talk to novamem over plain JSON HT
 
 ## Authenticate
 
-Mint a tenant token from the dashboard (or via [`POST /v1/me/tokens`](/api/auth)) and send it as a bearer:
+Mint a tenant token from the dashboard (or via [`POST /v1/me/tokens`](../api/auth.md)) and send it as a bearer:
 
 ```bash
 curl -H "Authorization: Bearer nm_..." \
@@ -61,20 +61,29 @@ curl -X POST https://novamem.example.com/v1/neighbors \
   -d '{ "id": "01KQW8EKAJYNTVSGA283SF2ZGQ", "depth": 2, "k": 10 }'
 ```
 
-## SDK
+## SDKs
 
-A typed TypeScript client lives at [`@azrtydxb/novamem`](https://www.npmjs.com/package/@azrtydxb/novamem):
+**Go** — [`clients/go`](https://github.com/azrtydxb/novamem/tree/main/clients/go)
+is the maintained client. A test holds it to route-for-route parity with
+the server's OpenAPI document, so a new endpoint cannot land without a
+deliberate decision about the client.
 
-```ts
-import { NovaMemClient } from "@azrtydxb/novamem";
+```go
+import novamem "github.com/azrtydxb/novamem/clients/go"
 
-const nm = new NovaMemClient({
-  baseUrl: "https://novamem.example.com",
-  token: process.env.NOVAMEM_TOKEN,
-});
-
-await nm.remember({ content: "...", namespace: "decisions" });
-const r = await nm.search({ query: "why did we pick Postgres" });
+c, err := novamem.New(novamem.Config{
+    BaseURL: "https://novamem.example.com",
+    Token:   os.Getenv("NOVAMEM_TOKEN"),
+})
+saved, err := c.Remember(ctx, novamem.CaptureRequest{
+    Content:   "...",
+    Namespace: "decisions",
+})
+hits, err := c.Search(ctx, novamem.SearchRequest{Query: "why did we pick Postgres"})
 ```
 
-See [API → Data plane](/api/data-plane) for the full route list.
+**TypeScript** — the `@azrtydxb/novamem` npm package is **deprecated** and
+receives no new endpoints. Call the HTTP API directly, as the curl
+examples above do; the OpenAPI document describes every route.
+
+See [API → Data plane](../api/data-plane.md) for the full route list.

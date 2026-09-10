@@ -18,7 +18,10 @@ export async function readFileMaybe(path: string): Promise<string | null> {
 }
 
 /** Write a file utf-8, creating parent dirs as needed. */
-export async function writeFileEnsureDir(path: string, content: string): Promise<void> {
+export async function writeFileEnsureDir(
+  path: string,
+  content: string
+): Promise<void> {
   await fs.mkdir(dirname(path), { recursive: true });
   await fs.writeFile(path, content, "utf8");
 }

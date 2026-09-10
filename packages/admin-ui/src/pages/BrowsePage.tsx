@@ -10,8 +10,13 @@ import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { useToast } from "../components/Toast";
 
-interface RecentResp { results: SearchResult[] }
-interface SearchResp { results: SearchResult[]; degraded: boolean }
+interface RecentResp {
+  results: SearchResult[];
+}
+interface SearchResp {
+  results: SearchResult[];
+  degraded: boolean;
+}
 
 /** Browse memories — combines `/v1/recent` (default view, last
  *  20 entries by created-time) with `/v1/search` (when the user
@@ -58,7 +63,9 @@ export function BrowsePage() {
     enabled: isSearching,
   });
 
-  const results = isSearching ? searchResp?.results ?? [] : recent?.results ?? [];
+  const results = isSearching
+    ? searchResp?.results ?? []
+    : recent?.results ?? [];
   const loading = isSearching ? searchLoading : recentLoading;
   const tierCounts = useMemo(() => {
     let warm = 0;
@@ -86,7 +93,9 @@ export function BrowsePage() {
     onSuccess: () => {
       toast.success(
         "Memory stored",
-        activeProjectName ? `Added to "${activeProjectName}".` : "Added to your memory.",
+        activeProjectName
+          ? `Added to "${activeProjectName}".`
+          : "Added to your memory."
       );
       setComposing(false);
       setNewContent("");
@@ -124,7 +133,9 @@ export function BrowsePage() {
           {/* Result summary strip */}
           <div className="flex items-center gap-3.5 px-[18px] py-2.5 border-b border-rule-soft font-mono text-[11px] text-dim">
             <span>
-              {loading ? "loading…" : `${results.length} hit${results.length === 1 ? "" : "s"}`}
+              {loading
+                ? "loading…"
+                : `${results.length} hit${results.length === 1 ? "" : "s"}`}
               {isSearching && searchResp?.degraded ? (
                 <span className="ml-2 text-warn">· graph degraded</span>
               ) : null}
@@ -137,7 +148,9 @@ export function BrowsePage() {
 
           {/* Result rows */}
           {loading && results.length === 0 ? (
-            <div className="px-[18px] py-12 text-center text-dim text-sm">Loading memories…</div>
+            <div className="px-[18px] py-12 text-center text-dim text-sm">
+              Loading memories…
+            </div>
           ) : results.length === 0 ? (
             <EmptyState
               isSearching={isSearching}
@@ -218,7 +231,11 @@ function ResultRow({ r, last }: { r: SearchResult; last: boolean }) {
       </div>
       <div className="text-right">
         <div className="text-base font-semibold tabular-nums text-ink">
-          {((r.signals?.keyword ?? 0) + (r.signals?.vector ?? 0) + (r.signals?.graph ?? 0)).toFixed(2)}
+          {(
+            (r.signals?.keyword ?? 0) +
+            (r.signals?.vector ?? 0) +
+            (r.signals?.graph ?? 0)
+          ).toFixed(2)}
         </div>
         <div className="font-mono text-[9px] text-faint">signals</div>
       </div>

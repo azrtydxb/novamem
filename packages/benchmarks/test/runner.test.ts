@@ -10,8 +10,16 @@ describe("benchmark runner", () => {
         kind: "novamem-specific",
         version: "1",
         memories: [
-          { id: "m1", text: "Pascal's reef tank uses ReefMat 1200 fleece.", metadata: { memoryType: "setup_fact" } },
-          { id: "m2", text: "Pascal's reef tank uses filter socks.", supersededBy: "m1" },
+          {
+            id: "m1",
+            text: "Pascal's reef tank uses ReefMat 1200 fleece.",
+            metadata: { memoryType: "setup_fact" },
+          },
+          {
+            id: "m2",
+            text: "Pascal's reef tank uses filter socks.",
+            supersededBy: "m1",
+          },
         ],
         queries: [
           {
@@ -25,7 +33,7 @@ describe("benchmark runner", () => {
         ],
       },
       lexicalRetriever,
-      { kValues: [1, 5] },
+      { kValues: [1, 5] }
     );
 
     expect(report.fixture.name).toBe("smoke");

@@ -41,3 +41,22 @@ Useful attributes include namespace, query/content size, requested `k`, graph fa
 ## Jaeger
 
 Jaeger all-in-one can receive OTLP/HTTP on port `4318` and serve the UI on `16686`. In Kubernetes, expose the UI with a private/internal LoadBalancer only.
+
+## Runtime metrics and profiling
+
+`GET /v1/admin/metrics/prom` appends a Go runtime section after the
+`novamem_*` series: `go_goroutines`, `go_memstats_heap_alloc_bytes`,
+`go_memstats_heap_sys_bytes`, and `go_gc_cycles_total`. Alert on a
+monotonically climbing `go_goroutines` — a flat count under load is the
+healthy signal.
+
+For deeper investigation set `NOVAMEM_PPROF_ADDR` (for example
+`127.0.0.1:6060`) and the server starts `net/http/pprof` on that
+dedicated listener — bind it to localhost or a cluster-internal address;
+it is deliberately not part of the API surface. Then:
+
+```bash
+go tool pprof http://127.0.0.1:6060/debug/pprof/heap
+go tool pprof http://127.0.0.1:6060/debug/pprof/profile?seconds=30
+curl -s http://127.0.0.1:6060/debug/pprof/goroutine?debug=1 | head
+```

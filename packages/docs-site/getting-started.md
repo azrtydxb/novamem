@@ -44,7 +44,7 @@ In the dashboard, switch to **API Tokens** and click **New token**. Copy the pla
 npx @azrtydxb/novamem-init
 ```
 
-It asks for the server URL, your dashboard email + password, mints a fresh bearer, detects every AI tool you have installed, and writes the right MCP config + skill bundle + slash commands per host. See [`@azrtydxb/novamem-init`](../packages/init/README.md) for the full flag reference.
+It asks for the server URL, your dashboard email + password, mints a fresh bearer, detects every AI tool you have installed, and writes the right MCP config + skill bundle + slash commands per host. See [`@azrtydxb/novamem-init`](./connect/init-cli.md) for the full flag reference.
 
 **Manual** — pick your host:
 
@@ -52,7 +52,7 @@ It asks for the server URL, your dashboard email + password, mints a fresh beare
 - [Claude Desktop](connect/claude-desktop.md)
 - [Cursor](connect/cursor.md)
 - [Kilo Code](connect/kilo-code.md)
-- [Others + Skills add-on](connect/others-and-skills.md)
+- [Others + Skills add-on](./connect/others.md)
 
 Each guide has the exact JSON block. The short version, for any host that speaks remote MCP:
 
@@ -82,7 +82,7 @@ It should call `memory_search` and surface the answer.
 
 ## What next
 
-- [Usage](usage.md) — search weights, projects (sub-brains), the worthiness gate, decay
-- [Architecture](architecture.md) — what's actually happening under the hood
-- [API](api/README.md) — full OpenAPI surface for non-MCP clients
-- [SECURITY.md](../SECURITY.md) — production hardening checklist before exposing the service beyond localhost
+- [Usage](./concepts/mental-model.md) — search weights, projects (sub-brains), the worthiness gate, decay
+- [Architecture](./architecture/system.md) — what's actually happening under the hood
+- [API](./api/index.md) — full OpenAPI surface for non-MCP clients
+- [the hardening guide](./ops/hardening.md) — production hardening checklist before exposing the service beyond localhost

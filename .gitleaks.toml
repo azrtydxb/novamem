@@ -1,0 +1,18 @@
+# Repo gitleaks config — extends the default rules; never weakens them.
+[extend]
+useDefault = true
+
+# Reviewed non-secrets. Path-based (not fingerprints) because procoder
+# invokes gitleaks with an absolute source path, which makes fingerprint
+# entries in .gitleaksignore machine-specific.
+[allowlist]
+description = "reviewed non-secrets"
+paths = [
+  # gitignored local operator credential — never committed
+  '''\.admin-token\.local$''',
+  # untracked Claude Code agent worktrees (copies of docs placeholders)
+  '''\.claude/worktrees/''',
+  # public LoCoMo benchmark dataset downloaded by bench/locomo.py;
+  # the JWTs are conversation content from the dataset itself
+  '''bench/locomo10\.json$''',
+]

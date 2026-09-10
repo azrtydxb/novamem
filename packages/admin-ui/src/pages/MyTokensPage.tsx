@@ -1,9 +1,22 @@
 import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, KeyRound, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import {
+  Copy,
+  KeyRound,
+  Plus,
+  RefreshCw,
+  Smartphone,
+  Trash2,
+} from "lucide-react";
 import { api, UserToken } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/Card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/Card";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
@@ -54,7 +67,9 @@ export function MyTokensPage() {
         title={
           <div className="flex items-center gap-2">
             <span>API tokens</span>
-            {user?.username ? <Badge tone="accent">{user.username}</Badge> : null}
+            {user?.username ? (
+              <Badge tone="accent">{user.username}</Badge>
+            ) : null}
           </div>
         }
         subtitle="One token per device or agent. The plaintext is shown only at creation — store it then; the server keeps just a sha256 hash."
@@ -73,7 +88,9 @@ export function MyTokensPage() {
         />
 
         {tokens === null ? (
-          <Card className="p-8 text-center text-sm text-dim">Loading tokens…</Card>
+          <Card className="p-8 text-center text-sm text-dim">
+            Loading tokens…
+          </Card>
         ) : tokens.length === 0 ? (
           <Card className="p-12 text-center">
             <KeyRound className="h-8 w-8 text-faint mx-auto mb-3" />
@@ -88,10 +105,16 @@ export function MyTokensPage() {
               <table className="w-full text-sm">
                 <thead className="bg-subtle/60">
                   <tr className="text-dim text-[11px] uppercase tracking-wider">
-                    <th className="text-left font-medium px-4 py-2.5">Device</th>
+                    <th className="text-left font-medium px-4 py-2.5">
+                      Device
+                    </th>
                     <th className="text-left font-medium px-4 py-2.5">Hash</th>
-                    <th className="text-left font-medium px-4 py-2.5">Created</th>
-                    <th className="text-left font-medium px-4 py-2.5">Last used</th>
+                    <th className="text-left font-medium px-4 py-2.5">
+                      Created
+                    </th>
+                    <th className="text-left font-medium px-4 py-2.5">
+                      Last used
+                    </th>
                     <th className="text-right font-medium px-4 py-2.5"></th>
                   </tr>
                 </thead>
@@ -102,11 +125,16 @@ export function MyTokensPage() {
                         <div className="flex items-center gap-2">
                           <Smartphone className="h-3.5 w-3.5 text-faint" />
                           <span className="text-ink">
-                            {t.label || <span className="text-faint">unlabeled</span>}
+                            {t.label || (
+                              <span className="text-faint">unlabeled</span>
+                            )}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-dim" title={t.tokenHash}>
+                      <td
+                        className="px-4 py-3 font-mono text-xs text-dim"
+                        title={t.tokenHash}
+                      >
                         {shortHash(t.tokenHash)}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-dim">
@@ -120,7 +148,11 @@ export function MyTokensPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(t)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setConfirmDelete(t)}
+                        >
                           <Trash2 className="h-3.5 w-3.5" /> Delete
                         </Button>
                       </td>
@@ -141,8 +173,8 @@ export function MyTokensPage() {
           description={
             <>
               This is the only time you'll see the plaintext.{" "}
-              <span className="text-warn font-medium">Copy it now</span> and store it on your
-              device — the server keeps only a sha256 hash.
+              <span className="text-warn font-medium">Copy it now</span> and
+              store it on your device — the server keeps only a sha256 hash.
             </>
           }
           footer={
@@ -154,7 +186,10 @@ export function MyTokensPage() {
           {createdPlaintext ? (
             <div className="space-y-3">
               <div className="text-xs text-dim">
-                Label: <span className="text-ink font-medium">{createdPlaintext.label}</span>
+                Label:{" "}
+                <span className="text-ink font-medium">
+                  {createdPlaintext.label}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-3 py-2 rounded-md bg-bg text-ink font-mono text-xs break-all border border-rule">
@@ -174,17 +209,24 @@ export function MyTokensPage() {
           description={
             confirmDelete ? (
               <>
-                <span className="text-ink font-medium">{confirmDelete.label || "(unlabeled)"}</span>{" "}
-                <code className="font-mono text-xs">{shortHash(confirmDelete.tokenHash)}</code>{" "}
-                will stop working immediately. The device using it will receive 401s. This is
-                irreversible.
+                <span className="text-ink font-medium">
+                  {confirmDelete.label || "(unlabeled)"}
+                </span>{" "}
+                <code className="font-mono text-xs">
+                  {shortHash(confirmDelete.tokenHash)}
+                </code>{" "}
+                will stop working immediately. The device using it will receive
+                401s. This is irreversible.
               </>
             ) : null
           }
           size="sm"
           footer={
             <>
-              <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmDelete(null)}
+              >
                 Cancel
               </Button>
               <Button
@@ -214,7 +256,9 @@ function CreateCard({
     e.preventDefault();
     setBusy(true);
     const finalLabel = label.trim() || "device";
-    const r = await api<{ token: string }>("POST", "/v1/me/tokens", { label: finalLabel });
+    const r = await api<{ token: string }>("POST", "/v1/me/tokens", {
+      label: finalLabel,
+    });
     setBusy(false);
     if (r.ok && r.body?.token) {
       onCreated(r.body.token, finalLabel);
@@ -229,8 +273,8 @@ function CreateCard({
       <CardHeader>
         <CardTitle>Create token</CardTitle>
         <CardDescription>
-          A token belongs to one device or agent. Anything authenticated with it can read and
-          write your memory.
+          A token belongs to one device or agent. Anything authenticated with it
+          can read and write your memory.
         </CardDescription>
       </CardHeader>
       <CardContent>

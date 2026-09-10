@@ -9,23 +9,24 @@ title: novamem · documentation
 This is the long-form documentation. For the marketing landing page see [novamem.github.io/novamem](https://azrtydxb.github.io/novamem/). For source see [github.com/azrtydxb/novamem](https://github.com/azrtydxb/novamem).
 
 ::: tip Where to start
-- New to novamem? → [Getting started](/getting-started)
-- Standing up a server? → [Docker Compose](/install/docker-compose) or [Kubernetes](/install/kubernetes)
-- Connecting your AI host? → [novamem-init CLI](/connect/init-cli)
-- Understanding the model? → [Mental model](/concepts/mental-model)
-:::
+
+- New to novamem? → [Getting started](./getting-started.md)
+- Standing up a server? → [Docker Compose](./install/docker-compose.md) or [Kubernetes](./install/kubernetes.md)
+- Connecting your AI host? → [novamem-init CLI](./connect/init-cli.md)
+- Understanding the model? → [Mental model](./concepts/mental-model.md)
+  :::
 
 ## What's here
 
-| Section | Goes deep on |
-|---|---|
-| **Install** | Docker Compose env reference, Kubernetes manifest walkthrough, manual Postgres + Qdrant setup |
+| Section            | Goes deep on                                                                                                                                             |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Install**        | Docker Compose env reference, Kubernetes manifest walkthrough, manual Postgres + Qdrant setup                                                            |
 | **Connect agents** | The `npx @azrtydxb/novamem-init` CLI in detail; per-host (Claude Code, Desktop, ChatGPT, Cursor, Cline, Continue, Kilo, others); custom HTTP integration |
-| **Dashboard** | Sign-in & roles, every page tour, projects + sharing, tenant + user admin, API tokens |
-| **Architecture** | System shape, tiered storage, hybrid search internals, worthiness gate + dedup, decay maths + dream cycle, multi-tenancy |
-| **API reference** | Auth flows, the data plane, admin & users, MCP tools, OpenAPI spec |
-| **Operations** | Security model, hardening checklist, audit log, backup/restore, upgrades |
-| **Contribute** | Local dev setup, project layout, testing, release flow, filing bugs |
+| **Dashboard**      | Sign-in & roles, every page tour, projects + sharing, tenant + user admin, API tokens                                                                    |
+| **Architecture**   | System shape, tiered storage, hybrid search internals, worthiness gate + dedup, decay maths + dream cycle, multi-tenancy                                 |
+| **API reference**  | Auth flows, the data plane, admin & users, MCP tools, OpenAPI spec                                                                                       |
+| **Operations**     | Security model, hardening checklist, audit log, backup/restore, upgrades                                                                                 |
+| **Contribute**     | Local dev setup, project layout, testing, release flow, filing bugs                                                                                      |
 
 ## Three minutes overview
 

@@ -17,3 +17,11 @@ data/
 .kilocode/
 bench/ref50-ingest.json
 bench/quick-runs/
+
+# downloaded benchmark dataset (fetched by bench/locomo.py)
+bench/locomo10.json
+
+# procoder generated code index
+.procoder/index/
+__pycache__/
+.procoder/state/

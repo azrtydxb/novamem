@@ -8,7 +8,7 @@ Routes gated to the dashboard admin role. The current production model is user/p
 
 ## User management
 
-Better Auth admin plugin. See [Authentication → admin endpoints](/api/auth#admin-endpoints-better-auth-admin-plugin).
+Better Auth admin plugin. See [Authentication → admin endpoints](./auth.md#admin-endpoints-better-auth-admin-plugin).
 
 ## Metrics
 
@@ -65,5 +65,5 @@ Returns recent NovaMem audit entries for project, membership, token, and admin a
 
 ## See also
 
-- [Audit log doc](/ops/audit-log)
-- [Hardening](/ops/hardening)
+- [Audit log doc](../ops/audit-log.md)
+- [Hardening](../ops/hardening.md)

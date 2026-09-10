@@ -9,7 +9,10 @@ export function normalizeAnswer(input: string): string {
     .replace(/\s+/g, " ");
 }
 
-export function tokenF1(predicted: string | undefined, expected: string | undefined): number {
+export function tokenF1(
+  predicted: string | undefined,
+  expected: string | undefined
+): number {
   if (!predicted || !expected) return 0;
   const p = normalizeAnswer(predicted).split(" ").filter(Boolean);
   const e = normalizeAnswer(expected).split(" ").filter(Boolean);
@@ -31,7 +34,10 @@ export function tokenF1(predicted: string | undefined, expected: string | undefi
 }
 
 function dcg(binaryRelevance: number[]): number {
-  return binaryRelevance.reduce((sum, rel, i) => sum + rel / Math.log2(i + 2), 0);
+  return binaryRelevance.reduce(
+    (sum, rel, i) => sum + rel / Math.log2(i + 2),
+    0
+  );
 }
 
 function evaluateAtK(cases: RetrievalCase[], k: number) {
@@ -68,13 +74,19 @@ function evaluateAtK(cases: RetrievalCase[], k: number) {
   };
 }
 
-export function evaluateRetrieval(cases: RetrievalCase[], kValues: number[] = [1, 3, 5, 10]): RetrievalReport {
+export function evaluateRetrieval(
+  cases: RetrievalCase[],
+  kValues: number[] = [1, 3, 5, 10]
+): RetrievalReport {
   const byK: RetrievalReport["byK"] = {};
   for (const k of kValues) byK[k] = evaluateAtK(cases, k);
   return { queryCount: cases.length, byK };
 }
 
-export function exactMatch(predicted: string | undefined, expected: string | undefined): number {
+export function exactMatch(
+  predicted: string | undefined,
+  expected: string | undefined
+): number {
   if (!predicted || !expected) return 0;
   return normalizeAnswer(predicted) === normalizeAnswer(expected) ? 1 : 0;
 }

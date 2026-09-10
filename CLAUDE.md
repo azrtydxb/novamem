@@ -13,6 +13,7 @@ comment is resolved (either by the reviewer auto-resolving, or by an
 explicit reply explaining why the suggestion is being declined).
 
 This applies to:
+
 - GitHub Copilot review comments (the `copilot[bot]` reviewer)
 - Claude review comments (`/ultrareview` output, `claude[bot]` reviewer,
   or any agent-posted PR comment)

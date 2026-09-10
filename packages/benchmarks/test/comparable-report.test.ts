@@ -6,7 +6,13 @@ import type { BenchmarkReport } from "../src/types.js";
 describe("comparable memory benchmark report", () => {
   it("emits LongMemEval/Mem0-compatible metrics_by_cutoff with overall and per-question-type accuracy", () => {
     const report: BenchmarkReport = {
-      fixture: { name: "longmemeval-smoke", kind: "longmemeval", version: "1", queryCount: 3, memoryCount: 6 },
+      fixture: {
+        name: "longmemeval-smoke",
+        kind: "longmemeval",
+        version: "1",
+        queryCount: 3,
+        memoryCount: 6,
+      },
       retrieval: {
         queryCount: 3,
         byK: {
@@ -83,13 +89,19 @@ describe("comparable memory benchmark report", () => {
       avg_score: 33.33333333333333,
     });
     expect(comparable.metrics_by_cutoff.top_50.overall.correct).toBe(1);
-    expect(comparable.metrics_by_cutoff.top_10.by_question_type["knowledge-update"]).toEqual({
+    expect(
+      comparable.metrics_by_cutoff.top_10.by_question_type["knowledge-update"]
+    ).toEqual({
       total: 2,
       correct: 0,
       accuracy: 0,
       avg_score: 0,
     });
-    expect(comparable.metrics_by_cutoff.top_10.by_question_type["single-session-user"].accuracy).toBe(100);
+    expect(
+      comparable.metrics_by_cutoff.top_10.by_question_type[
+        "single-session-user"
+      ].accuracy
+    ).toBe(100);
     expect(comparable.evaluations).toHaveLength(3);
     expect(comparable.evaluations[0]).toMatchObject({
       question_id: "q1",

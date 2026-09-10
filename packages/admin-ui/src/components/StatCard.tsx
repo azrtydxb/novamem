@@ -4,7 +4,14 @@ import { Card } from "./Card";
 import { Sparkline } from "./Sparkline";
 import { cn } from "../lib/utils";
 
-export type StatTone = "default" | "accent" | "warm" | "cold" | "graph" | "err" | "warn";
+export type StatTone =
+  | "default"
+  | "accent"
+  | "warm"
+  | "cold"
+  | "graph"
+  | "err"
+  | "warn";
 
 interface Props {
   label: string;
@@ -67,7 +74,7 @@ export function StatCard({
           <span
             className={cn(
               "font-mono text-[10px] px-1.5 py-0.5 rounded",
-              delta >= 0 ? "bg-graph-soft text-graph" : "bg-warm-soft text-warm",
+              delta >= 0 ? "bg-graph-soft text-graph" : "bg-warm-soft text-warm"
             )}
           >
             {delta >= 0 ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}%
@@ -78,7 +85,7 @@ export function StatCard({
         <div
           className={cn(
             "text-[26px] leading-none font-semibold tabular-nums tracking-[-0.02em]",
-            TONE_TEXT[tone],
+            TONE_TEXT[tone]
           )}
         >
           {value}
@@ -90,7 +97,9 @@ export function StatCard({
       {trail ? (
         <div className="mt-2">{trail}</div>
       ) : sublabel ? (
-        <div className="mt-1.5 text-[11px] text-faint tabular-nums">{sublabel}</div>
+        <div className="mt-1.5 text-[11px] text-faint tabular-nums">
+          {sublabel}
+        </div>
       ) : null}
     </Card>
   );

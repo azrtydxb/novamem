@@ -6,7 +6,9 @@ import { Card, CardContent } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
 import { Pill } from "../components/Pill";
 
-interface RecentResp { results: RecentEntry[] }
+interface RecentResp {
+  results: RecentEntry[];
+}
 interface NeighborsResp {
   seed: string;
   results: Array<{
@@ -49,7 +51,9 @@ export function GraphPage() {
   const includeProjects = activeProjectId ? [activeProjectId] : undefined;
   // Reset the seed when the user switches active project — the previous
   // seed may not be visible in the new scope.
-  useEffect(() => { setSeed(null); }, [activeProjectId]);
+  useEffect(() => {
+    setSeed(null);
+  }, [activeProjectId]);
 
   const { data: recent } = useQuery({
     queryKey: ["graph-recent", activeProjectId ?? "global"],
@@ -112,7 +116,11 @@ export function GraphPage() {
         y: 0.5 + Math.sin(angle) * 0.34,
       };
     });
-    const edges: Edge[] = ns.map((n) => ({ from: seed, to: n.id, weight: n.score }));
+    const edges: Edge[] = ns.map((n) => ({
+      from: seed,
+      to: n.id,
+      weight: n.score,
+    }));
     return { nodes: [center, ...outer], edges };
   }, [seed, recent, neighborsResp]);
 
@@ -127,17 +135,28 @@ export function GraphPage() {
         <Card>
           <CardContent className="!p-0">
             {isFetching && nodes.length === 0 ? (
-              <div className="text-center text-dim text-sm py-16">Loading graph…</div>
+              <div className="text-center text-dim text-sm py-16">
+                Loading graph…
+              </div>
             ) : nodes.length === 0 ? (
               <div className="text-center py-16">
-                <div className="font-mono text-[11px] text-faint mb-1">empty_graph</div>
-                <div className="text-base font-medium text-ink mb-1">No memories to graph</div>
+                <div className="font-mono text-[11px] text-faint mb-1">
+                  empty_graph
+                </div>
+                <div className="text-base font-medium text-ink mb-1">
+                  No memories to graph
+                </div>
                 <div className="text-sm text-dim">
                   Remember something on the Browse page first.
                 </div>
               </div>
             ) : (
-              <GraphSvg nodes={nodes} edges={edges} seed={seed!} onSelect={setSeed} />
+              <GraphSvg
+                nodes={nodes}
+                edges={edges}
+                seed={seed!}
+                onSelect={setSeed}
+              />
             )}
           </CardContent>
         </Card>
@@ -164,7 +183,11 @@ function GraphSvg({
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full block">
       <defs>
         <radialGradient id="seed-glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
+          <stop
+            offset="0%"
+            stopColor="var(--color-accent)"
+            stopOpacity="0.35"
+          />
           <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
         </radialGradient>
       </defs>
@@ -189,7 +212,8 @@ function GraphSvg({
       {nodes.map((n) => {
         const r = 12 + Math.min(20, n.hits * 0.4);
         const isSeed = n.id === seed;
-        const fill = n.tier === "warm" ? "var(--color-warm)" : "var(--color-cold)";
+        const fill =
+          n.tier === "warm" ? "var(--color-warm)" : "var(--color-cold)";
         return (
           <g
             key={n.id}
@@ -197,7 +221,12 @@ function GraphSvg({
             onClick={() => onSelect(n.id)}
           >
             {isSeed ? (
-              <circle cx={n.x * W} cy={n.y * H} r={r * 3.5} fill="url(#seed-glow)" />
+              <circle
+                cx={n.x * W}
+                cy={n.y * H}
+                r={r * 3.5}
+                fill="url(#seed-glow)"
+              />
             ) : null}
             <circle
               cx={n.x * W}
@@ -245,7 +274,9 @@ function Inspector({
   edges: Edge[];
 }) {
   const node = seed ? nodes.find((n) => n.id === seed) : null;
-  const seedEdges = seed ? edges.filter((e) => e.from === seed || e.to === seed) : [];
+  const seedEdges = seed
+    ? edges.filter((e) => e.from === seed || e.to === seed)
+    : [];
   return (
     <Card>
       <div className="px-[18px] py-[14px] border-b border-rule-soft">
@@ -255,10 +286,14 @@ function Inspector({
         {node ? (
           <>
             <div className="text-base font-semibold text-ink">{node.label}</div>
-            <div className="font-mono text-[11px] text-dim mt-0.5">{node.id}</div>
+            <div className="font-mono text-[11px] text-dim mt-0.5">
+              {node.id}
+            </div>
             <div className="grid grid-cols-2 gap-3 mt-4">
               <div>
-                <div className="text-lg font-semibold text-ink tabular-nums">{node.hits}</div>
+                <div className="text-lg font-semibold text-ink tabular-nums">
+                  {node.hits}
+                </div>
                 <div className="font-mono text-[9px] text-faint uppercase tracking-[0.06em]">
                   Hits
                 </div>
@@ -274,11 +309,15 @@ function Inspector({
             </div>
             <div className="mt-4 pt-4 border-t border-rule-soft text-[12px]">
               <div className="font-mono text-dim mb-1">Tier</div>
-              <Pill tone={node.tier === "warm" ? "warm" : "cold"}>{node.tier}</Pill>
+              <Pill tone={node.tier === "warm" ? "warm" : "cold"}>
+                {node.tier}
+              </Pill>
             </div>
           </>
         ) : (
-          <div className="text-sm text-dim">Pick a seed to inspect its neighbours.</div>
+          <div className="text-sm text-dim">
+            Pick a seed to inspect its neighbours.
+          </div>
         )}
       </CardContent>
     </Card>

@@ -12,7 +12,6 @@
 
 You have a persistent memory system through the `novamem` MCP server. It exposes hybrid search (keyword + vector + graph + recency + entity — 5 signals, graph/entity weights at 0 in production calibration) over durable entries the user has accumulated across sessions. **Use it.** Don't re-derive things the user already told you.
 
-
 ## Mandatory memory protocol
 
 NovaMem is not an optional lookup tool. Use it by default:
@@ -86,13 +85,13 @@ if you only need to bump metadata or confidence.
 
 ## Project scope (sub-brains)
 
-A project is a *sub-brain* — its memories are a separate shelf from
+A project is a _sub-brain_ — its memories are a separate shelf from
 your user-global memory. Lifecycle:
 
 - `project_list` — what you have access to.
 - `project_create({name})` — own a new project.
 - `project_delete({project})` — purge it (owner only).
-- `project_activate({project})` — set the active project. memory_* calls
+- `project_activate({project})` — set the active project. memory\_\* calls
   without an explicit `project` arg default to it: search/recent/neighbors
   union user-global with the active project; remember/forget target it
   directly. Use this when the user signals they're working on a specific
@@ -102,7 +101,7 @@ your user-global memory. Lifecycle:
   display name). Owner only.
 - `project_unshare({project, username})` — remove a member. Owner only.
 
-When passing `project` to a memory_* call, an id (ULID) or human name
+When passing `project` to a memory\_\* call, an id (ULID) or human name
 both work. Omit `project` to use whatever's active.
 
 ## Decay & reinforcement

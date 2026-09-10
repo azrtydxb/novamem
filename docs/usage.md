@@ -21,7 +21,6 @@ flowchart LR
 
 A user-global entry is invisible to anyone else, period. A project entry is visible to every member of that project — that's the whole point of sharing.
 
-
 ## Mandatory agent protocol
 
 NovaMem works best when agents use it without waiting to be told. Integrations should instruct the model to:
@@ -37,21 +36,21 @@ NovaMem works best when agents use it without waiting to be told. Integrations s
 
 Hybrid search runs **keyword (FTS)** + **vector (cosine)** + **graph (neighbour)** + **recency (rank prior)** + **entity (identifier bridge)** in parallel and fuses the five with weighted scoring:
 
-| Default weight | Signal | Best for |
-|---|---|---|
-| 0.65 | vector | concept-level questions, paraphrases |
-| 0.15 | keyword | literal symbol / id / file / hash matches |
-| 0.10 | recency | recently accessed entries (exponential decay prior) |
-| 0.05 | graph | adjacency via co-occurrence edges (defaulted to 0 in production) |
-| 0.05 | entity | exact identifier bridging (defaulted to 0 in production) |
+| Default weight | Signal  | Best for                                                         |
+| -------------- | ------- | ---------------------------------------------------------------- |
+| 0.65           | vector  | concept-level questions, paraphrases                             |
+| 0.15           | keyword | literal symbol / id / file / hash matches                        |
+| 0.10           | recency | recently accessed entries (exponential decay prior)              |
+| 0.05           | graph   | adjacency via co-occurrence edges (defaulted to 0 in production) |
+| 0.05           | entity  | exact identifier bridging (defaulted to 0 in production)         |
 
 Override weights when a default doesn't fit the question:
 
-| Need | `weights` |
-|---|---|
-| Exact id / file path / commit hash | `{ keyword: 1, vector: 0 }` |
-| Pure semantic ("things like X" with no shared tokens) | `{ vector: 1, keyword: 0 }` |
-| Neighbour-driven recall around a known entry | use [`memory_neighbors`](#graph-traversal-memory_neighbors) |
+| Need                                                  | `weights`                                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------- |
+| Exact id / file path / commit hash                    | `{ keyword: 1, vector: 0 }`                                 |
+| Pure semantic ("things like X" with no shared tokens) | `{ vector: 1, keyword: 0 }`                                 |
+| Neighbour-driven recall around a known entry          | use [`memory_neighbors`](#graph-traversal-memory_neighbors) |
 
 Hits below \~0.4 are misses — treat them as "nothing relevant" rather than chasing low-confidence matches.
 
@@ -118,11 +117,11 @@ This runs even when `force: true`, so a duplicate of yourself just returns the e
 
 Set these on `remember` (and `update`) when known:
 
-| Field | Vocabulary | Purpose |
-|---|---|---|
-| `sourceType` | `chat` / `email` / `code-review` / `doc` / `inference` / `observation` / `system` / `manual` | filter by where the fact came from |
-| `capturedFrom` | free text | agent name, conversation id, channel ref |
-| `confidence` | `0..1`, default `1.0` | lower for inferred facts; usable as a future filter |
+| Field          | Vocabulary                                                                                   | Purpose                                             |
+| -------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `sourceType`   | `chat` / `email` / `code-review` / `doc` / `inference` / `observation` / `system` / `manual` | filter by where the fact came from                  |
+| `capturedFrom` | free text                                                                                    | agent name, conversation id, channel ref            |
+| `confidence`   | `0..1`, default `1.0`                                                                        | lower for inferred facts; usable as a future filter |
 
 ## Updating (`memory_update`)
 
@@ -161,15 +160,15 @@ A project is a named collection of memories the owner can share with other users
 
 The seven `project_*` tools cover the full lifecycle:
 
-| Tool | Who | Purpose |
-|---|---|---|
-| `project_list` | any user | list projects the caller owns or is a member of |
-| `project_create` | any user | create a new project; the caller becomes its owner. Returns the assigned ULID |
-| `project_delete` | owner only | delete the project and **every** memory entry, vector, and graph node in it. No undo |
-| `project_share` | owner only | add another user as a member by their **exact email address**. Member can read and write |
-| `project_unshare` | owner only | remove a member. The owner cannot unshare themselves — `project_delete` instead |
-| `project_activate` | any user | set the caller's active project (server-side per-user state) |
-| `project_deactivate` | any user | clear the active project |
+| Tool                 | Who        | Purpose                                                                                  |
+| -------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `project_list`       | any user   | list projects the caller owns or is a member of                                          |
+| `project_create`     | any user   | create a new project; the caller becomes its owner. Returns the assigned ULID            |
+| `project_delete`     | owner only | delete the project and **every** memory entry, vector, and graph node in it. No undo     |
+| `project_share`      | owner only | add another user as a member by their **exact email address**. Member can read and write |
+| `project_unshare`    | owner only | remove a member. The owner cannot unshare themselves — `project_delete` instead          |
+| `project_activate`   | any user   | set the caller's active project (server-side per-user state)                             |
+| `project_deactivate` | any user   | clear the active project                                                                 |
 
 ### Active project
 
@@ -184,12 +183,12 @@ Use this when the user signals they're working on a specific project ("let's swi
 
 Per-caller snapshot of how big the caller's memory is, scoped to the authenticated user. No arguments; non-mutating. Returns:
 
-| Field | Shape | Meaning |
-|---|---|---|
-| `byNamespace` | `Record<string, {warm, cold}>` | Entry counts grouped by namespace, split by tier |
-| `totalWarm` / `totalCold` | `number` | Caller's totals across all namespaces |
-| `lastDecayAt` | ISO-8601 or `null` | When the service last ran the decay loop (service-wide context) |
-| `uptimeMs` | `number` | Service uptime in ms (service-wide context) |
+| Field                     | Shape                          | Meaning                                                         |
+| ------------------------- | ------------------------------ | --------------------------------------------------------------- |
+| `byNamespace`             | `Record<string, {warm, cold}>` | Entry counts grouped by namespace, split by tier                |
+| `totalWarm` / `totalCold` | `number`                       | Caller's totals across all namespaces                           |
+| `lastDecayAt`             | ISO-8601 or `null`             | When the service last ran the decay loop (service-wide context) |
+| `uptimeMs`                | `number`                       | Service uptime in ms (service-wide context)                     |
 
 Useful for skills that want to surface a "you have N entries across M namespaces" hint without polling the dashboard. **Not** the dashboard's full Metrics view — that's `/v1/me/metrics` (per-user counters + rolling rates) or `/v1/admin/metrics` (the whole service).
 
@@ -220,22 +219,20 @@ For agent-host integrations (when to remember, what weights to pick, project sco
 
 ## Errors and signals
 
-| Response | Meaning | What to do |
-|---|---|---|
-| `{ id: null, rejected: <reason> }` | Worthiness gate | Surface the reason; retry with `force: true` only if the user asked |
-| `{ id: <existing>, deduplicated: true }` | Exact-duplicate fast-path | Success — the existing entry was reinforced |
-| `{ id: <existing>, deduplicated: true, updated: true }` | `memory_capture` near-duplicate/refinement | Success — the existing active entry was rewritten in place |
-| `{ id: <new>, superseded: [<old>] }` | `memory_capture` contradiction | Success — the old active fact was marked superseded and hidden from normal recall |
-| `degraded: true` on `search`/`neighbors` | A backing tier failed (vector store, FTS, or the relations query) | Mention to the user; the tiers that answered still count |
-| `401` | Bearer missing / revoked | Don't retry; surface to the user |
-| `403 not a member` | Project exists but caller can't reach it | Distinct from `404`; the project name is right but you don't have access |
-| `404 no such project` | Project name/id doesn't resolve | Caller should `project_list` to see what's available |
-
+| Response                                                | Meaning                                                           | What to do                                                                        |
+| ------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `{ id: null, rejected: <reason> }`                      | Worthiness gate                                                   | Surface the reason; retry with `force: true` only if the user asked               |
+| `{ id: <existing>, deduplicated: true }`                | Exact-duplicate fast-path                                         | Success — the existing entry was reinforced                                       |
+| `{ id: <existing>, deduplicated: true, updated: true }` | `memory_capture` near-duplicate/refinement                        | Success — the existing active entry was rewritten in place                        |
+| `{ id: <new>, superseded: [<old>] }`                    | `memory_capture` contradiction                                    | Success — the old active fact was marked superseded and hidden from normal recall |
+| `degraded: true` on `search`/`neighbors`                | A backing tier failed (vector store, FTS, or the relations query) | Mention to the user; the tiers that answered still count                          |
+| `401`                                                   | Bearer missing / revoked                                          | Don't retry; surface to the user                                                  |
+| `403 not a member`                                      | Project exists but caller can't reach it                          | Distinct from `404`; the project name is right but you don't have access          |
+| `404 no such project`                                   | Project name/id doesn't resolve                                   | Caller should `project_list` to see what's available                              |
 
 ## Client adoption / refresh
 
 Call `memory_adoption` or `POST /v1/adoption` when a host may be using stale MCP tools or stale instructions. It reports the current tool surface, instructions hash, feature flags, diagnostics, and refresh commands. For Hermes, use `/reload-mcp`, `/reload-skills`, then `/reset` or a fresh session.
-
 
 ## Scheduled jobs and subagents
 

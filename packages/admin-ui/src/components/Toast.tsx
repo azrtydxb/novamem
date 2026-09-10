@@ -1,6 +1,18 @@
-import { createContext, ReactNode, useCallback, useContext, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, AlertTriangle, AlertCircle, Info, X } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  X,
+} from "lucide-react";
 import { cn } from "../lib/utils";
 
 type Tone = "success" | "warning" | "danger" | "info";
@@ -63,12 +75,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setToasts((cur) => [...cur, { ...t, id }]);
       window.setTimeout(() => dismiss(id), 5000);
     },
-    [dismiss],
+    [dismiss]
   );
 
   const value: ToastContextValue = {
     push,
-    success: (title, description) => push({ tone: "success", title, description }),
+    success: (title, description) =>
+      push({ tone: "success", title, description }),
     error: (title, description) => push({ tone: "danger", title, description }),
     info: (title, description) => push({ tone: "info", title, description }),
   };
@@ -91,10 +104,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 key={t.id}
                 className={cn(
                   "pointer-events-auto flex items-start gap-3 rounded-lg border bg-panel/95 backdrop-blur p-3 shadow-card animate-slide-in-right",
-                  TONE[t.tone],
+                  TONE[t.tone]
                 )}
               >
-                <Icon className={cn("h-4 w-4 mt-0.5 flex-none", ICON_TONE[t.tone])} />
+                <Icon
+                  className={cn("h-4 w-4 mt-0.5 flex-none", ICON_TONE[t.tone])}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ink">{t.title}</div>
                   {t.description ? (
@@ -114,9 +129,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             );
           })}
         </div>,
-        document.body,
+        document.body
       )}
     </ToastCtx.Provider>
   );
 }
-

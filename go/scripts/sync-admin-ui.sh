@@ -20,8 +20,8 @@ src="$here/../../packages/admin-ui/dist"
 dst="$here/../internal/httpapi/admin-ui"
 
 if [ ! -f "$src/index.html" ]; then
-  echo "sync-admin-ui: $src/index.html missing — run the admin-ui build first" >&2
-  exit 1
+	echo "sync-admin-ui: $src/index.html missing — run the admin-ui build first" >&2
+	exit 1
 fi
 
 rm -rf "$dst"

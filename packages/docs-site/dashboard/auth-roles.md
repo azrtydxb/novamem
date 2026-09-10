@@ -24,17 +24,17 @@ The bootstrap flow only fires when the `user` table is empty. After that the env
 
 ## Roles
 
-| Capability | admin | user |
-|---|---|---|
-| Sign in to dashboard | ✓ | ✓ |
-| Create / list / share / delete projects | ✓ | ✓ |
-| Mint own bearer tokens | ✓ | ✓ |
-| Browse / search / remember / forget — own memories | ✓ | ✓ |
-| Browse / search project memories the user is a member of | ✓ | ✓ |
-| Manage other users (`/admin/users`) — create, role, ban, password reset | ✓ | ✗ |
-| View tenant-aggregate metrics | ✓ | ✗ |
-| Revoke any tenant token | ✓ | own only |
-| Read the audit log | ✓ | ✗ |
+| Capability                                                              | admin | user     |
+| ----------------------------------------------------------------------- | ----- | -------- |
+| Sign in to dashboard                                                    | ✓     | ✓        |
+| Create / list / share / delete projects                                 | ✓     | ✓        |
+| Mint own bearer tokens                                                  | ✓     | ✓        |
+| Browse / search / remember / forget — own memories                      | ✓     | ✓        |
+| Browse / search project memories the user is a member of                | ✓     | ✓        |
+| Manage other users (`/admin/users`) — create, role, ban, password reset | ✓     | ✗        |
+| View tenant-aggregate metrics                                           | ✓     | ✗        |
+| Revoke any tenant token                                                 | ✓     | own only |
+| Read the audit log                                                      | ✓     | ✗        |
 
 A user's "own memory" is private — invisible to admins until the user shares it via project membership. Admin role grants administrative powers, not read access to private user memories.
 
@@ -49,6 +49,6 @@ Rotate `NOVAMEM_COOKIE_SECRET` to forcibly invalidate every active session.
 
 ## See also
 
-- [Users (admin)](/dashboard/users) — create / role / ban
-- [API tokens](/dashboard/tokens) — bearer lifecycle
-- [Security model](/ops/security) — full auth flow + threat model
+- [Users (admin)](./users.md) — create / role / ban
+- [API tokens](./tokens.md) — bearer lifecycle
+- [Security model](../ops/security.md) — full auth flow + threat model

@@ -26,7 +26,7 @@ func TestULIDTimestampEncoding(t *testing.T) {
 	// Time ordering: ids minted a millisecond apart sort by prefix.
 	a := ulidAt(time.UnixMilli(1_000_000))
 	b := ulidAt(time.UnixMilli(2_000_000))
-	if !(a[:10] < b[:10]) {
+	if a[:10] >= b[:10] {
 		t.Fatalf("time prefixes not ordered: %q vs %q", a[:10], b[:10])
 	}
 }

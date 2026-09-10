@@ -38,7 +38,7 @@ Memory operations (22 tools total, every tool accepts an optional `project` — 
 Project lifecycle:
 
 - `project_list` / `project_create` / `project_delete`
-- `project_activate({ project })` / `project_deactivate` — set or clear the caller's active project. When set, memory_* calls without an explicit `project` arg default to it.
+- `project_activate({ project })` / `project_deactivate` — set or clear the caller's active project. When set, memory\_\* calls without an explicit `project` arg default to it.
 - `project_share({ project, username })` / `project_unshare(...)` — owner adds/removes members by their **exact email address** (the server resolves via `findUserByExactEmail`).
 
 ## See also

@@ -33,7 +33,10 @@ export interface MintTokenOptions {
 }
 
 /** Probe the server's /health endpoint. Throws AuthError on non-2xx. */
-export async function probeHealth(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<void> {
+export async function probeHealth(
+  baseUrl: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<void> {
   const url = trimTrailingSlash(baseUrl) + "/health";
   let res: Response;
   try {
@@ -41,11 +44,14 @@ export async function probeHealth(baseUrl: string, fetchImpl: typeof fetch = fet
   } catch (e) {
     throw new AuthError(
       `cannot reach ${url} — is the server running? (${(e as Error).message})`,
-      0,
+      0
     );
   }
   if (!res.ok) {
-    throw new AuthError(`health check failed: ${res.status} ${res.statusText}`, res.status);
+    throw new AuthError(
+      `health check failed: ${res.status} ${res.statusText}`,
+      res.status
+    );
   }
 }
 
@@ -58,7 +64,10 @@ export async function signIn(opts: SignInOptions): Promise<string> {
   const url = trimTrailingSlash(opts.baseUrl) + "/api/auth/sign-in/email";
   const res = await fetchImpl(url, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: trimTrailingSlash(opts.baseUrl) },
+    headers: {
+      "content-type": "application/json",
+      origin: trimTrailingSlash(opts.baseUrl),
+    },
     body: JSON.stringify({ email: opts.email, password: opts.password }),
     redirect: "manual",
   });
@@ -70,12 +79,15 @@ export async function signIn(opts: SignInOptions): Promise<string> {
     // a length-bounded fallback.
     throw new AuthError(
       `sign-in failed: ${res.status} ${res.statusText}${formatBodyError(body)}`,
-      res.status,
+      res.status
     );
   }
   const cookie = extractSessionCookie(res);
   if (!cookie) {
-    throw new AuthError("sign-in succeeded but no session cookie was returned", 0);
+    throw new AuthError(
+      "sign-in succeeded but no session cookie was returned",
+      0
+    );
   }
   return cookie;
 }
@@ -100,14 +112,19 @@ export async function mintToken(opts: MintTokenOptions): Promise<string> {
     const body = await res.text().catch(() => "");
     // Same redaction policy as signIn — never echo the raw body.
     throw new AuthError(
-      `token mint failed: ${res.status} ${res.statusText}${formatBodyError(body)}`,
-      res.status,
+      `token mint failed: ${res.status} ${res.statusText}${formatBodyError(
+        body
+      )}`,
+      res.status
     );
   }
   const json = (await res.json()) as { token?: string; plaintext?: string };
   const plaintext = json.token ?? json.plaintext;
   if (!plaintext || typeof plaintext !== "string") {
-    throw new AuthError("token mint succeeded but response did not include plaintext", 0);
+    throw new AuthError(
+      "token mint succeeded but response did not include plaintext",
+      0
+    );
   }
   return plaintext;
 }
@@ -123,17 +140,25 @@ export function extractSessionCookie(res: Response): string | null {
   // Node's fetch returns multiple Set-Cookie via headers.getSetCookie() on
   // 22+. Older 20.x lacks that; fall back to the raw header.
   const fromGetSetCookie =
-    typeof (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie === "function"
-      ? (res.headers as Headers & { getSetCookie: () => string[] }).getSetCookie()
+    typeof (res.headers as Headers & { getSetCookie?: () => string[] })
+      .getSetCookie === "function"
+      ? (
+          res.headers as Headers & { getSetCookie: () => string[] }
+        ).getSetCookie()
       : null;
-  const candidates = fromGetSetCookie ?? splitSetCookie(res.headers.get("set-cookie"));
+  const candidates =
+    fromGetSetCookie ?? splitSetCookie(res.headers.get("set-cookie"));
   for (const directive of candidates) {
     const pair = directive.split(";", 1)[0]?.trim();
     if (!pair) continue;
     const eq = pair.indexOf("=");
     if (eq < 0) continue;
     const name = pair.slice(0, eq).trim();
-    if (name === "nm.session_token" || name.endsWith(".session_token") || name === "session_token") {
+    if (
+      name === "nm.session_token" ||
+      name.endsWith(".session_token") ||
+      name === "session_token"
+    ) {
       return pair;
     }
   }
