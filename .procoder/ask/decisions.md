@@ -201,3 +201,38 @@ Options:
 
 Independent of the choice, `TestRateLimiting` should be made
 connection-reuse-independent so the property is actually covered.
+
+## How should updating a memory handle its derived facts?
+
+Found 2026-09-10 while testing novamem through Claude Code against the
+kw deployment. With extraction enabled, `PUT /v1/memories/{id}`
+re-embeds the source entry and leaves derived `[fact]` rows untouched.
+Reproduced: a source corrected from "every 30 days" to "every 14 days"
+keeps a derived row asserting 30 days, and search ranks that stale
+derivative **above** the correction (1.480 vs 0.921), so an agent acts
+on the value the user just fixed.
+
+The link already exists — derived rows carry
+`metadata.source_chunk_id` — so the update path simply does not follow
+it. Backlog:
+`.procoder/backlog/stories/20260910-stale-derived-facts-survive-update.md`.
+
+Options:
+
+- **Re-extract on update.** Delete the derivatives and re-run extraction
+  against the new content. Most faithful; costs an LLM call on every
+  update, and the derived ids change.
+- **Delete derivatives on update.** Drop them and let the next
+  extraction pass (or nothing) recreate them. Cheap and always correct
+  in the sense that nothing stale survives; loses derived structure
+  until something re-derives it.
+- **Mark derivatives superseded** and exclude them from search while
+  keeping them for provenance. Preserves history; needs a visibility
+  predicate change, which is a place this codebase has been bitten
+  before.
+- **Leave it** and document that corrections do not propagate to derived
+  facts.
+
+Whichever is chosen, `memory_forget` should be checked in the same pass:
+an orphaned derivative after a delete is the same bug with a different
+verb.
