@@ -236,3 +236,50 @@ Options:
 Whichever is chosen, `memory_forget` should be checked in the same pass:
 an orphaned derivative after a delete is the same bug with a different
 verb.
+
+## How do we make the agent-facing surfaces structurally unable to diverge?
+
+Audited 2026-09-10. Already enforced: routes ↔ OpenAPI
+(`TestOpenAPIMatchesRegisteredRoutes`), OpenAPI ↔ the checked-in
+`docs/api/openapi.json`, `tooldefs.json` ↔ the conformance snapshot
+(names + inputSchema), and `skills/novamem/` ↔ the installer's embedded
+copy (byte-identical).
+
+Unprotected, in order of risk:
+
+1. **`novamemInstructions` ↔ `SKILL.md`** — the same behavioural
+   contract written twice by hand (a 3,591-char Go const in
+   `adoption.go:55` and a 9,514-char markdown file). Both name all 21
+   tools and share the same rule vocabulary today, purely through
+   diligence.
+2. **Skill ↔ tool list** — nothing asserts the skill documents every
+   tool, or that it names no tool that has been removed.
+3. **Prose docs ↔ reality** — how `/api-docs` (#264) survived.
+   `scripts/doc-smoke.mjs` exists but its 8 invariants are each a
+   _reaction_ to past drift, so novel drift is never caught.
+4. **Installer output ↔ intended transport** (#267).
+5. **`docs/` ↔ `packages/docs-site/`** — 8 overlapping pages, drifted in
+   _both_ directions (the site's architecture page is newer: pgvector,
+   five signals, `memory_relations`; `docs/architecture.md` still says
+   Qdrant-only).
+
+The theme: hand-written invariants only catch drift someone predicted.
+Derived checks — comparing docs and skills against the generated
+artifacts — catch drift nobody predicted.
+
+### Decision 1 — unify the MCP `instructions` with the skill
+
+- **Embed a delimited section of SKILL.md.** One source; the wire
+  payload stays lean.
+- **Embed the whole SKILL.md.** Simplest possible; ~9.5KB on every
+  `initialize` instead of 3.6KB.
+- **Keep both, drift-test them.** Weakest — wording can still diverge
+  while a test passes.
+
+### Decision 2 — the docs/ ↔ docs-site duplication
+
+- **One source**: `docs/` canonical, the site builds from it, duplicates
+  deleted.
+- **Keep both, add an equality check** — forces the two to stay
+  byte-identical, which may fight VitePress-specific needs.
+- **Leave it** — out of scope for this pass.

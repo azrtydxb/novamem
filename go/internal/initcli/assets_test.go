@@ -10,12 +10,12 @@ import (
 // drift silently is a bug waiting to ship, so this fails the build the
 // moment they diverge — re-sync with:
 //
-//	rsync -a --delete skills/novamem/ go/internal/initcli/assets/skill/
 //	rsync -a --delete integrations/claude-code/commands/ go/internal/initcli/assets/commands/
 func TestEmbeddedAssetsMatchRepoSources(t *testing.T) {
 	repo := filepath.Join("..", "..", "..")
 	for _, pair := range []struct{ source, embedded string }{
-		{filepath.Join(repo, "skills", "novamem"), "assets/skill"},
+		// The skill is not embedded here — it lives once in agentskill,
+		// which owns its own drift check against skills/novamem.
 		{filepath.Join(repo, "integrations", "claude-code", "commands"), "assets/commands"},
 	} {
 		if _, err := os.Stat(pair.source); err != nil {

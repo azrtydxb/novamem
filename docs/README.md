@@ -17,7 +17,7 @@ Tiered long-term memory for AI agents — keyword + vector + graph + recency + e
 
 ## Connect an AI tool
 
-**One-shot installer**: `npx @azrtydxb/novamem-init` signs you in, mints a bearer, and wires every supported host on your machine. See [`@azrtydxb/novamem-init`](../packages/init/README.md).
+**One-shot installer**: the `novamem-init` binary signs you in, mints a bearer, and wires every supported host on your machine. It ships from GitHub Releases rather than npm (see [ADR 0001](../.procoder/adr/0001-go-tool-distribution-via-github-releases.md)); [Install](install/) covers getting it.
 
 Or pick your host manually — each guide has the exact MCP config block to paste:
 
@@ -29,7 +29,7 @@ Or pick your host manually — each guide has the exact MCP config block to past
 
 ## Reference
 
-- [API](api/README.md) — generated OpenAPI 3.0 spec ([openapi.json](api/openapi.json)); live Swagger UI at `/api-docs` on a running server
+- [API](api/README.md) — generated OpenAPI 3.0 spec ([openapi.json](api/openapi.json)); a running server serves it raw at `/openapi.json`
 - [Security](../SECURITY.md) — auth model, hardening checklist, threat model
 - [Changelog](../CHANGELOG.md)
 

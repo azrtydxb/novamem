@@ -9,11 +9,17 @@ metadata:
   homepage: https://github.com/azrtydxb/novamem
 ---
 
+<!-- mcp-instructions:start -->
+
 # novamem · long-term memory
 
 You have a persistent memory system through the `novamem` MCP server. It exposes hybrid retrieval (keyword + vector + graph + recency + entity — 5 signals, graph/entity weights default to 0 in production calibration) over durable entries the user has accumulated across sessions, plus project (sub-brain) scoping. **Use it.** Don't re-derive things the user already told you.
 
-The server ships these same rules to compliant clients via the MCP `instructions` field on `initialize`; this skill is the equivalent for clients that don't honour `instructions`.
+<!-- mcp-instructions:end -->
+
+The server ships these same rules to compliant clients via the MCP `instructions` field on `initialize`; this skill is the equivalent for clients that don't honour `instructions`. Both come from this file: the regions between `mcp-instructions` markers are what the server sends, so the two cannot disagree.
+
+<!-- mcp-instructions:start -->
 
 ## Mandatory memory protocol
 
@@ -99,6 +105,8 @@ The server applies a **worthiness gate**. Inputs shorter than 12 chars or matchi
 
 When you remember something proactively, mention it in one short sentence ("Saved that as a memory.") so the user can correct or veto.
 
+<!-- mcp-instructions:end -->
+
 ## When to call `memory_update`
 
 Facts evolve. If you know the exact old entry id, call `memory_update`; otherwise use `memory_capture`, which searches active nearby memories and either updates or supersedes for you. Update preserves the entry's id, hit count, and graph edges; it re-embeds when `content` changes. Skip the embedder by omitting `content` if you only need to bump metadata, provenance, or confidence.
@@ -111,6 +119,8 @@ When known, set these on `remember` and `update`:
 - `capturedFrom` — agent name, conversation id, or other channel reference
 - `confidence` — 0..1, default 1.0; lower for inferred facts
 
+<!-- mcp-instructions:start -->
+
 ## Project scope (sub-brains)
 
 A project is a _sub-brain_ — its memories are a separate shelf from your user-global memory.
@@ -120,6 +130,8 @@ A project is a _sub-brain_ — its memories are a separate shelf from your user-
 - `includeProjects[]` (search / recent / neighbors) unions user-global with the listed projects, capped at 16
 
 Use `project_activate({ project })` when the user signals they're working on a specific project — `memory_*` calls then default to it: `search` / `recent` / `neighbors` union it with user-global; `remember` / `forget` / `update` target it directly.
+
+<!-- mcp-instructions:end -->
 
 ## Decay & reinforcement
 
