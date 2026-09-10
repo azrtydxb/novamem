@@ -17,14 +17,9 @@
     "bench:smoke": "cd go && go run ./cmd/novamem-bench --fixture ../packages/benchmarks/fixtures/novamem-recall-smoke.json",
     "docs:api": "pnpm --filter @azrtydxb/novamem-server build && pnpm --filter @azrtydxb/novamem-server docs:api",
     "docs:smoke": "node scripts/doc-smoke.mjs",
-    "release:preflight": "node scripts/release-preflight.mjs",
-    "changeset": "changeset",
-    "release:version": "changeset version",
-    "release:publish": "pnpm -r build && changeset publish",
     "conformance": "cd conformance && go test -count=1 -v ./..."
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^20.19",
     "eslint": "^10.9.0",

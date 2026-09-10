@@ -97,31 +97,32 @@ about what state it is starting from. Migrations are the only path.
 
 ## Releases
 
-Driven by [Changesets](https://github.com/changesets/changesets). No token, OIDC publish via npm Trusted Publishers. Each publishable package (`@azrtydxb/novamem`, `@azrtydxb/novamem-mcp`, `@azrtydxb/novamem-init`) versions independently — you only release what changed. See `.github/workflows/release.yml`.
+**npm publishing is retired.** The three publishable packages —
+`@azrtydxb/novamem` (client), `@azrtydxb/novamem-mcp` (stdio shim) and
+`@azrtydxb/novamem-init` (installer) — were superseded by Go binaries and
+removed from the tree, and every remaining workspace package is private.
+Changesets, `release.yml` and `pnpm release:preflight` went with them.
+Already-published versions stay on npm and keep working; they just get no
+successors. See
+[ADR 0001](.procoder/adr/0001-go-tool-distribution-via-github-releases.md)
+and [ADR 0002](.procoder/adr/0002-deprecate-npm-ts-client.md).
 
-### What you do on a PR
+What ships now:
 
-If your PR changes a publishable package, run:
+| Artefact                      | How                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| Server image                  | `vX.Y.Z` tag → CI's docker jobs push `ghcr.io/azrtydxb/novamem`              |
+| `novamem-init`, `novamem-mcp` | same tag → `release-binaries.yml` attaches per-platform archives + checksums |
+| Go client                     | consumed by module path, no release step                                     |
 
-```bash
-pnpm changeset
-```
+Installing the CLIs is `scripts/install.sh` — see
+[the release-flow docs](packages/docs-site/contribute/releases.md) for the
+targets, the checksum rule, and why both binaries ship in one archive.
 
-Pick the affected packages and the bump kind (`patch` / `minor` / `major`), write a one-line summary. This writes a `.changeset/<random-name>.md` file. **Commit it with the rest of your PR.** Changes that only touch private packages (`@azrtydxb/novamem-server`, `@azrtydxb/novamem-admin-ui`) or non-source paths (docs/CI/tests) don't need a changeset.
-
-### What CI does on merge
-
-When the PR merges to `main`, the release workflow looks for unconsumed `.changeset/*.md` files. Two states:
-
-1. **Pending changesets exist** → workflow opens (or updates) a `chore(release): version packages` PR that bumps every affected `package.json` version, regenerates per-package `CHANGELOG.md`s, and deletes the consumed changeset files. **Review and merge that PR** when ready to ship.
-2. **No pending changesets** (i.e. you just merged the version PR) → workflow runs `pnpm changeset publish`, which calls `npm publish` per package and skips versions already on the registry. Provenance attaches via `NPM_CONFIG_PROVENANCE=true` set at the workflow job level (the `--provenance` flag isn't pluggable through the changesets action). Result: only the changed packages publish, each with a Sigstore attestation.
-
-### Notes
-
-- Versions are **independent per package** — bumping `@azrtydxb/novamem` doesn't bump `-mcp` or `-init`.
-- Tags become per-package: `@azrtydxb/novamem@1.2.0`, `@azrtydxb/novamem-init@1.1.4`. The legacy mono `vX.Y.Z` tags (v0.1.0 – v1.1.1) stay around but won't be added to.
-- npm Trusted Publishers binding requires Node 24 (npm 11+) so OIDC authenticates the publish PUT, not just the Sigstore signing. Don't downgrade `node-version` in `release.yml`.
-- `pnpm release:preflight` / `pnpm docs:smoke` still run via CI's `test` job — they're independent of the release flow.
+CI still runs a `package (npm)` job. It publishes nothing: it asserts
+that no publishable package has reappeared, and exists only because
+`package (npm)` is still a **required status check** on `main`. Remove
+that requirement in branch protection and the job can go too.
 
 ## Per-package source layout
 
