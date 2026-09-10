@@ -9,31 +9,17 @@ novamem has two parallel release pathways:
 - **npm packages** — versioned via [Changesets](https://github.com/changesets/changesets), published to npm
 - **Server image** — versioned via manual `vX.Y.Z` tags, published to ghcr.io
 
-## npm packages (Changesets)
+## npm packages — retired
 
-The published packages: `@azrtydxb/novamem`, `@azrtydxb/novamem-mcp`, `@azrtydxb/novamem-init`. The `mcp` and `init` packages are `linked` so they bump together.
+npm publishing is no longer part of this repo. `@azrtydxb/novamem`
+(client), `@azrtydxb/novamem-mcp` (stdio shim) and
+`@azrtydxb/novamem-init` (installer) were superseded by Go binaries and
+removed, along with Changesets and the npm release workflow. Every
+remaining workspace package is private, so there is nothing to publish.
 
-### Workflow
-
-1. **Add a changeset** in your PR:
-
-   ```bash
-   pnpm changeset
-   ```
-
-   Pick the package(s), the bump type (patch / minor / major), and write the changelog line.
-
-2. **Merge** the PR. The Release workflow opens or updates a "Version Packages" PR with the bumps applied.
-
-3. **Merge the Version Packages PR.** The Release workflow runs `pnpm changeset publish` with `NPM_CONFIG_PROVENANCE=true` (Trusted Publishers, no token).
-
-4. The release tag is `@azrtydxb/<pkg>@X.Y.Z`. GitHub Releases auto-created from the changelog.
-
-### Notes
-
-- Server (`@azrtydxb/novamem-server`) is in the `ignore` list in `.changeset/config.json` — Changesets won't bump it. It's released manually (see below).
-- npm publishes use Trusted Publishers (OIDC). No token in the workflow.
-- Node 24 is required for `npm publish` PUT auth — Node 22 ships npm 10 which lacks it.
+Versions already on npm stay published and keep working; they get no
+successors. What ships now is the **server image** and the **CLI
+binaries** — see the two sections below.
 
 ## Server image (manual vX.Y.Z)
 

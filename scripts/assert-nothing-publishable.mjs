@@ -6,9 +6,12 @@
 // release workflow needs restoring, and silently shipping nothing is the
 // worst of the three outcomes.
 import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
-const dir = "packages";
+// Resolved from this file, not the cwd, so it behaves the same run from
+// the repo root, from scripts/, or by an absolute path.
+const dir = fileURLToPath(new URL("../packages", import.meta.url));
 const publishable = [];
 for (const entry of readdirSync(dir, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;

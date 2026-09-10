@@ -12,9 +12,12 @@ import js from "@eslint/js";
 // 7.x); support is tracked in typescript-eslint#10940. The version is
 // checked BEFORE importing, because the module prints its refusal to
 // stderr as it throws — which made every eslint run look like it had
-// failed, and procoder's lint gate report the file as unchecked. When a
-// release supports TS 7, linting TypeScript switches on here with no
-// further change.
+// failed, and procoder's lint gate report the file as unchecked.
+//
+// The guard is a hard version floor, NOT a capability probe: it cannot
+// tell whether the installed typescript-eslint has gained TS 7 support.
+// When #10940 ships, DELETE the tsMajor check below — nothing else here
+// needs to change, but nothing enables TypeScript linting on its own.
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
