@@ -924,6 +924,14 @@ func (e *Engine) Forget(ctx context.Context, userID, id string, project *string)
 			}
 		}
 	}
+	// Facts distilled from this entry die with it. Left behind they are
+	// unreachable — nothing links back to a deleted source — yet they
+	// still answer searches, so a user who deleted a fact keeps being
+	// told it. That is the opposite of what forget promises, and it
+	// matters most for exactly the entries someone bothered to delete.
+	if !e.deleteDerivedFacts(ctx, userID, id, entry.ProjectID) {
+		coldDeleteOk = false
+	}
 	e.logChange(ctx, userID, entry.ProjectID, id, "deleted", map[string]any{"coldDeleteOk": coldDeleteOk})
 	return ForgetResult{Deleted: true, ColdDeleteOk: coldDeleteOk}, nil
 }
@@ -1023,6 +1031,29 @@ func (e *Engine) Update(ctx context.Context, userID, id string, req UpdateReques
 		}
 		if entry == nil {
 			return UpdateResult{Updated: true}, nil
+		}
+		// The same reasoning as the stale vector below, one level up:
+		// facts distilled from the OLD wording still assert the old
+		// claim, and they outrank their own corrected source in search —
+		// so a correction silently fails to take. Drop them and re-derive
+		// from the new text. Re-arm the pending marker first so the
+		// reconciler retries if the extractor is down; leaving an entry
+		// with no facts is recoverable, leaving it with wrong ones is not.
+		e.deleteDerivedFacts(ctx, userID, id, entry.ProjectID)
+		if e.extractor != nil {
+			pendingAt := e.now()
+			if err := e.warm.SetFactsPendingAt(ctx, id, &pendingAt); err != nil {
+				e.log.Warn("could not re-arm fact extraction after update", "entryId", id, "err", err)
+			}
+			e.scheduleFactExtraction(storeFactsArgs{
+				userID:       userID,
+				projectID:    entry.ProjectID,
+				chunkID:      id,
+				chunkContent: *req.Content,
+				namespace:    entry.Namespace,
+				sensitivity:  req.Sensitivity,
+				parentSource: entry.Source,
+			})
 		}
 		var embedding []float64
 		if e.vectorTierReady() {
