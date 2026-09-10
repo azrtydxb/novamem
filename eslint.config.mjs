@@ -9,15 +9,30 @@
 import js from "@eslint/js";
 
 // typescript-eslint refuses to load against TypeScript 7 (this repo is on
-// 7.0.2); support is tracked in typescript-eslint#10940. Importing it
-// unconditionally threw for EVERY file, JavaScript included — so it is
-// loaded defensively. When a release supports TS 7, TypeScript linting
-// switches on here with no further change.
+// 7.x); support is tracked in typescript-eslint#10940. The version is
+// checked BEFORE importing, because the module prints its refusal to
+// stderr as it throws — which made every eslint run look like it had
+// failed, and procoder's lint gate report the file as unchecked.
+//
+// The guard is a hard version floor, NOT a capability probe: it cannot
+// tell whether the installed typescript-eslint has gained TS 7 support.
+// When #10940 ships, DELETE the tsMajor check below — nothing else here
+// needs to change, but nothing enables TypeScript linting on its own.
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 let typescriptConfigs = [];
 let typescriptUnavailable = null;
 try {
-  const tseslint = (await import("typescript-eslint")).default;
-  typescriptConfigs = tseslint.configs.recommended;
+  const tsMajor = Number(
+    require("typescript/package.json").version.split(".")[0]
+  );
+  if (tsMajor >= 7) {
+    typescriptUnavailable = `typescript-eslint does not support TypeScript ${tsMajor} yet (typescript-eslint#10940)`;
+  } else {
+    typescriptConfigs = (await import("typescript-eslint")).default.configs
+      .recommended;
+  }
 } catch (err) {
   typescriptUnavailable = err instanceof Error ? err.message : String(err);
 }

@@ -64,8 +64,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --reporter=append-only
       # Build before typecheck so workspace packages that consume each
-      # other's `dist/` (e.g. packages/mcp imports @azrtydxb/novamem types)
-      # see compiled .d.ts files.
+      # other's `dist/` see compiled .d.ts files.
       - run: pnpm build
       - run: pnpm typecheck
       # ESLint over the repo's JavaScript. TypeScript is excluded until
@@ -128,39 +127,24 @@ jobs:
       # `--prod` so dev-only CVEs (e.g. in build tooling) don't block PRs.
       - run: pnpm audit --prod --audit-level=high
 
-  # ── Package build (arch-agnostic JS — npm publish artefacts) ──────────
-  # @azrtydxb/novamem and @azrtydxb/novamem-mcp are pure JS; one build covers
-  # every consumer arch. Verifies `pnpm pack` produces installable tarballs
-  # and uploads them as artefacts so a release workflow can pull them.
+  # ── Package build (npm) ───────────────────────────────────────────────
+  # npm publishing is retired: the three publishable packages (client,
+  # mcp, init) were superseded by Go binaries and deleted, and every
+  # remaining workspace package is private. Nothing is left to pack.
+  #
+  # The job is kept — with its name unchanged — ONLY because
+  # `package (npm)` is a required status check on main. Deleting it would
+  # leave every PR waiting forever for a check that never reports. Remove
+  # the required check in branch protection, then delete this job.
   package:
     name: package (npm)
     needs: [test]
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --reporter=append-only
-      - run: pnpm -r build
-      - name: pnpm pack (client + mcp + init)
-        run: |
-          mkdir -p dist-tarballs
-          # `pnpm --filter X pack` injects --recursive which pack rejects;
-          # cd into each package and pack directly instead.
-          ( cd packages/client && pnpm pack --pack-destination ../../dist-tarballs )
-          ( cd packages/mcp    && pnpm pack --pack-destination ../../dist-tarballs )
-          ( cd packages/init   && pnpm pack --pack-destination ../../dist-tarballs )
-          ls -la dist-tarballs
-      - uses: actions/upload-artifact@v7
-        with:
-          name: npm-tarballs
-          path: dist-tarballs/*.tgz
-          if-no-files-found: error
-          retention-days: 14
+      - name: Confirm nothing is publishable
+        run: node scripts/assert-nothing-publishable.mjs
 
   # ── Docker image (native per arch) ────────────────────────────────────
   # Each arch builds on its own native runner — amd64 on novanas ARC,

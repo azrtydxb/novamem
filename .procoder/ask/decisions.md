@@ -26,3 +26,36 @@ published since 24 Aug blocked it instead: CVE-2026-56854 (CRITICAL,
 golang.org/x/crypto 0.52.0 → 0.55.0, caught by Trivy) and six HIGH
 fast-uri advisories (→ 4.1.4, caught by pnpm audit). Both fixed; all 12
 checks green at merge.
+
+## How far to take the deprecated-package cleanup?
+
+Four TypeScript packages (~6,568 LOC) are superseded by Go and still in
+the tree, still pulling npm dependencies we pay to patch — the fast-uri
+advisory just fixed came from `packages/mcp`, which `go/cmd/novamem-mcp`
+already replaced.
+
+Two recorded decisions currently gate deleting them:
+
+- **ADR 0002** — publish a final npm version carrying the deprecation
+  README, THEN delete. Note `npm deprecate` marks already-published
+  versions and needs no source, so deleting first does not prevent
+  deprecating; it only skips the final README-bearing release.
+- **ADR 0004** — reproduce a published benchmark number in the Go
+  harness BEFORE deleting `packages/benchmarks`, so docs/benchmarks/
+  claims stay reproducible. The model endpoint is reachable again, so
+  this is now possible rather than blocked.
+
+Options:
+
+- Delete client + mcp + init now; keep benchmarks until the Go harness
+  reproduces a published number (honours ADR 0004, ends most of the
+  maintenance).
+- Delete all four now, accepting that the published benchmark numbers
+  lose their original harness.
+- Publish the final deprecation versions first (owner action), then
+  delete everything.
+- Delete nothing yet.
+
+**Decision (2026-09-10, owner):** delete client + mcp + init now; keep
+`packages/benchmarks` until the Go harness reproduces a published
+number (ADR 0004 still stands, and the models are reachable again).
