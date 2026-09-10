@@ -204,7 +204,7 @@ Co-occurrence edges live in the bitemporal `memory_relations` table (`valid_from
 
 ## Transports
 
-- **HTTP/JSON** — Fastify 5. Bodies validated with Zod. OpenAPI 3.0 is generated from the live Fastify route tree and route schemas via `@fastify/swagger`, served raw at `/openapi.json`, and served raw at `/openapi.json`. There is no bundled HTML API browser.
+- **HTTP/JSON** — Go `net/http`. OpenAPI 3.0 is generated from the server's own route table (`internal/httpapi/openapi_routes.go`) by `cmd/gen-openapi`, written to `docs/api/openapi.json`, and served raw at `/openapi.json`. A drift test fails the build if the checked-in document and the registered routes disagree. There is no bundled HTML API browser.
 - **MCP SSE (recommended)** — `GET /mcp/sse` opens an event stream; `POST /mcp/messages?sessionId=…` sends JSON-RPC. User identity is captured at handshake from the auth hook. Direct-SSE clients connect without a shim.
 - **MCP stdio (legacy shim)** — `packages/mcp/src/index.ts` is a thin stdio↔HTTP bridge for clients that don't speak remote MCP yet. The shim talks to the same `/v1/*` and `/api/auth/*` endpoints any other client uses.
 

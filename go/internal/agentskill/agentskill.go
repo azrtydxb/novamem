@@ -31,10 +31,25 @@ const (
 	markerEnd   = "<!-- mcp-instructions:end -->"
 )
 
-// relLink matches a markdown link to a repo-relative path. Those paths
-// mean nothing to a client that received the text over the wire and has
-// no skill directory, so the link text is kept and the target dropped.
-var relLink = regexp.MustCompile(`\[([^\]]+)\]\((?:\./)?[^)]*\.md(?:#[^)]*)?\)`)
+// mdLink matches any markdown link; flattenRelativeLinks decides which
+// targets survive. Repo-relative paths mean nothing to a client that
+// received this text over the wire and has no skill directory, so their
+// target is dropped and the link text kept. Absolute URLs and in-page
+// anchors resolve anywhere, so they are left alone.
+var mdLink = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+
+func flattenRelativeLinks(s string) string {
+	return mdLink.ReplaceAllStringFunc(s, func(m string) string {
+		g := mdLink.FindStringSubmatch(m)
+		target := strings.TrimSpace(g[2])
+		if strings.Contains(target, "://") ||
+			strings.HasPrefix(target, "#") ||
+			strings.HasPrefix(target, "mailto:") {
+			return m
+		}
+		return g[1]
+	})
+}
 
 // FS returns the skill tree rooted where an installer expects it.
 func FS() (fs.FS, error) { return fs.Sub(skillFS, "skill") }
@@ -68,6 +83,11 @@ func extractMarked(doc string) (string, error) {
 		if i < 0 {
 			break
 		}
+		// An end marker in the text we are about to skip has no start —
+		// silently dropping it would render a truncated contract.
+		if strings.Contains(rest[:i], markerEnd) {
+			return "", fmt.Errorf("agentskill: %q with no matching %q", markerEnd, markerStart)
+		}
 		after := rest[i+len(markerStart):]
 		j := strings.Index(after, markerEnd)
 		if j < 0 {
@@ -86,6 +106,6 @@ func extractMarked(doc string) (string, error) {
 		return "", fmt.Errorf("agentskill: SKILL.md contains no %q region", markerStart)
 	}
 	joined := strings.Join(regions, "\n\n")
-	joined = relLink.ReplaceAllString(joined, "$1")
+	joined = flattenRelativeLinks(joined)
 	return joined + "\n", nil
 }

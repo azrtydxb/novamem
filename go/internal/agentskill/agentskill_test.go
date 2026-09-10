@@ -2,6 +2,7 @@ package agentskill
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,7 +39,7 @@ func TestEmbeddedSkillMatchesRepoSource(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		got, err := os.ReadFile(filepath.Join("skill", rel))
+		got, err := fs.ReadFile(embedded, rel)
 		if err != nil {
 			t.Errorf("%s is in skills/novamem but not embedded: %v", rel, err)
 			return nil
@@ -51,7 +52,19 @@ func TestEmbeddedSkillMatchesRepoSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = embedded
+	// The reverse: an embedded file with no counterpart in the repo
+	// source would ship content nobody can find or edit.
+	if err := fs.WalkDir(embedded, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if !seen[path] {
+			t.Errorf("%s is embedded but absent from skills/novamem", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // The instructions must render, and must carry the parts the server and
@@ -136,9 +149,13 @@ func TestSkillDocumentsExactlyTheAdvertisedTools(t *testing.T) {
 func toolLikeTokens(doc string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, field := range strings.FieldsFunc(doc, func(r rune) bool {
-		return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
-	}) {
+	isIdent := func(r rune) bool {
+		return r == '_' ||
+			(r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9')
+	}
+	for _, field := range strings.FieldsFunc(doc, func(r rune) bool { return !isIdent(r) }) {
 		var suffix string
 		switch {
 		case strings.HasPrefix(field, "memory_"):
@@ -168,6 +185,9 @@ func TestExtractMarkedRejectsMalformedMarkers(t *testing.T) {
 		"unopened":  "body\n" + markerEnd + "\n",
 		"nested":    markerStart + "\na\n" + markerStart + "\nb\n" + markerEnd + "\n",
 		"no region": "# just a document\n",
+		// A stray end before a later start: skipping the prefix without
+		// checking it would render a truncated contract silently.
+		"stray end before a start": markerEnd + "\nx\n" + markerStart + "\nkeep\n" + markerEnd + "\n",
 	}
 	for name, doc := range cases {
 		if _, err := extractMarked(doc); err == nil {
@@ -180,5 +200,24 @@ func TestExtractMarkedRejectsMalformedMarkers(t *testing.T) {
 	}
 	if strings.TrimSpace(got) != "keep" {
 		t.Errorf("extract = %q, want %q", got, "keep")
+	}
+}
+
+// Repo-relative link targets are meaningless to a client that only got
+// the text over the wire, so they are dropped; absolute URLs and
+// in-page anchors resolve anywhere and must survive intact.
+func TestFlattenRelativeLinks(t *testing.T) {
+	for input, want := range map[string]string{
+		"see [search](references/search.md)":      "see search",
+		"see [search](./references/search.md)":    "see search",
+		"see [x](../other/doc.md#frag)":           "see x",
+		"see [spec](https://example.com/spec.md)": "see [spec](https://example.com/spec.md)",
+		"see [spec](http://example.com/a.md#b)":   "see [spec](http://example.com/a.md#b)",
+		"see [top](#heading)":                     "see [top](#heading)",
+		"mail [us](mailto:a@example.com)":         "mail [us](mailto:a@example.com)",
+	} {
+		if got := flattenRelativeLinks(input); got != want {
+			t.Errorf("flattenRelativeLinks(%q)\n got  %q\n want %q", input, got, want)
+		}
 	}
 }
