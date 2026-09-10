@@ -35,6 +35,11 @@ type Options struct {
 	MaxSessionsPerUser int
 	IdleTimeout        time.Duration
 	ReapInterval       time.Duration
+
+	// CookieSecret is the key root for signed streamable session ids
+	// (ADR 0005). Empty — auth_mode=none — leaves ids unsigned, which
+	// confines each session to the replica that minted it.
+	CookieSecret string
 }
 
 // Server hosts both transports over shared JSON-RPC handling. One
@@ -46,6 +51,7 @@ type Server struct {
 	allowedOrigins []string
 	call           CallFunc
 	maxPerUser     int
+	sessionKey     []byte
 
 	streamable *registry
 	sse        *registry
@@ -53,6 +59,8 @@ type Server struct {
 	stopOnce   sync.Once
 }
 
+// NewServer builds a Server and starts its idle-session reaper; the
+// caller owns Close.
 func NewServer(opts Options) *Server {
 	if opts.MaxSessionsPerUser == 0 {
 		opts.MaxSessionsPerUser = defaultMaxSessionsPerUser
@@ -69,9 +77,16 @@ func NewServer(opts Options) *Server {
 		allowedOrigins: opts.AllowedOrigins,
 		call:           opts.Call,
 		maxPerUser:     opts.MaxSessionsPerUser,
+		sessionKey:     deriveSessionKey(opts.CookieSecret),
 		streamable:     newRegistry(opts.IdleTimeout),
 		sse:            newRegistry(opts.IdleTimeout),
 		stop:           make(chan struct{}),
+	}
+	if s.sessionKey == nil && s.log != nil {
+		// Say it once at startup rather than letting operators discover
+		// it as clients failing with 404 after a scale-out.
+		s.log.Warn("mcp: no cookie secret configured — streamable session ids " +
+			"are process-local, so replicas > 1 requires per-client load-balancer affinity")
 	}
 	go s.reapLoop(opts.ReapInterval)
 	return s
