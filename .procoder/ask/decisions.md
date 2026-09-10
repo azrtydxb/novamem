@@ -18,3 +18,11 @@ Options:
 
 **Decision (2026-09-10, owner):** re-check `docker (arm64)` and merge if
 the required checks are green. Copilot's missing review is accepted.
+
+**Outcome (2026-09-10):** merged as fd853b9 (squash), branch deleted.
+`docker (arm64)` had not failed on its merits — it was cancelled after
+24h queued with no runner. Once runners returned, two advisories
+published since 24 Aug blocked it instead: CVE-2026-56854 (CRITICAL,
+golang.org/x/crypto 0.52.0 → 0.55.0, caught by Trivy) and six HIGH
+fast-uri advisories (→ 4.1.4, caught by pnpm audit). Both fixed; all 12
+checks green at merge.
