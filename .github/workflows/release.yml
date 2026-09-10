@@ -77,7 +77,7 @@ jobs:
       # which skips versions already on the registry. Provenance attaches
       # via `NPM_CONFIG_PROVENANCE=true` set at the job level above.
       - name: Version + publish
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           version: pnpm changeset version
           publish: pnpm changeset publish
