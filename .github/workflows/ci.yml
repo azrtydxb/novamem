@@ -159,7 +159,17 @@ jobs:
       contents: read
       packages: write # publish container images to ghcr.io
     needs: [go, test]
-    timeout-minutes: 20
+    # 45, not 20. The build+push step alone measured 787s (13 min) on a
+    # cache MISS — and a miss is the normal case after any commit that
+    # touches the Go tree, because PR builds are cache-from only (no
+    # cache-to, deliberately, so an untrusted PR cannot poison the shared
+    # Zot cache) and therefore only main populates it. At 20 minutes both
+    # arches raced the limit: arm64 squeezed in at ~14.5 min while amd64
+    # was cancelled at exactly 20:00 on three consecutive main pushes,
+    # which is why main ended up with no published image at all. A warm
+    # cache finishes the same build in ~2 min, so this ceiling only ever
+    # applies to the cold path.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
