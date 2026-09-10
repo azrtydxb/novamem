@@ -27,11 +27,12 @@ func rateLimitStores(t *testing.T) (*Store, *Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(poolA.Close)
 	poolB, err := pgxpool.New(ctx, url)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { poolA.Close(); poolB.Close() })
+	t.Cleanup(poolB.Close)
 	if err := Migrate(ctx, poolA, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -145,30 +146,47 @@ func TestSweepRateLimitsRemovesOnlyClosedWindows(t *testing.T) {
 	a, _ := rateLimitStores(t)
 	ctx := context.Background()
 	live := uniqueKey(t) + "-live"
+	closed := uniqueKey(t) + "-closed"
 
 	if _, _, err := a.TakeRateLimit(ctx, live, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	// Sweeping anything older than an hour must not touch a live window.
-	if err := a.SweepRateLimits(ctx, time.Hour); err != nil {
+	// A window that has genuinely elapsed, rather than a negative sweep
+	// threshold — that would push the cutoff into the future and delete
+	// live rows, which is the opposite of what this asserts.
+	if _, _, err := a.TakeRateLimit(ctx, closed, time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(50 * time.Millisecond)
+
+	if err := a.SweepRateLimits(ctx, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Count rows directly: a fresh count from TakeRateLimit would prove
+	// nothing, since an elapsed window restarts at 1 whether or not the
+	// row was ever collected.
+	rows := func(key string) int {
+		t.Helper()
+		var n int
+		if err := a.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM rate_limits WHERE key = $1`, key).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := rows(closed); n != 0 {
+		t.Errorf("closed window: %d row(s) survived the sweep, want 0", n)
+	}
+	if n := rows(live); n != 1 {
+		t.Errorf("live window: %d row(s), want 1 — the sweep collected a window still in use", n)
+	}
+	// And the live window really is still counting.
 	count, _, err := a.TakeRateLimit(ctx, live, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 2 {
-		t.Fatalf("count = %d, want 2 — the sweep dropped a live window", count)
-	}
-	// Sweeping everything already elapsed does collect it once closed.
-	if err := a.SweepRateLimits(ctx, -time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	count, _, err = a.TakeRateLimit(ctx, live, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("count = %d, want 1 — the row survived a sweep of closed windows", count)
+		t.Errorf("live window count = %d, want 2", count)
 	}
 }
