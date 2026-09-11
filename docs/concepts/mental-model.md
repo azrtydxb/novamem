@@ -1,6 +1,6 @@
 # Usage
 
-What novamem does, when to use each tool, what the gates and decay loops mean for you. For the underlying mechanics see [architecture.md](architecture.md). For per-tool field reference see [skills/novamem/references/](../skills/novamem/references) or the [OpenAPI spec](api/README.md).
+What novamem does, when to use each tool, what the gates and decay loops mean for you. For the underlying mechanics see [the system architecture](../architecture/system.md). For per-tool field reference see [skills/novamem/references/](https://github.com/azrtydxb/novamem/tree/main/skills/novamem/references) or the [OpenAPI spec](../api/openapi.md).
 
 ## Mental model
 
@@ -141,7 +141,7 @@ Hard delete: removes warm row, FTS shadow, cold vector, and graph edges. There i
 
 Surfacing a cold entry via `recent` does **not** auto-promote it (only `search` does); recall is non-mutating.
 
-## Neighbour traversal (`memory_neighbors`)
+## Graph traversal (`memory_neighbors`) {#graph-traversal-memory-neighbors}
 
 Walks the relation edges around a seed entry (depth 1–3) and returns the
 connected memories, scored by edge strength along the path. Edges live in
@@ -215,7 +215,7 @@ Response: `{ walked, merged, edgesPromoted, durationMs }`.
 
 ## Per-host wiring
 
-For agent-host integrations (when to remember, what weights to pick, project scoping conventions), see the [Connect](README.md#connect-an-ai-tool) guides — each one has the host-specific behaviour rules and a `verify` snippet.
+For agent-host integrations (when to remember, what weights to pick, project scoping conventions), see the [Connect](../connect/others.md) guides — each one has the host-specific behaviour rules and a `verify` snippet.
 
 ## Errors and signals
 
@@ -244,3 +244,7 @@ Non-chat agents must follow the same adoption boundary as chat agents:
 4. Do not rely on a skill-only install for real memory use: the host must also have an MCP or HTTP tool path that can actually call NovaMem.
 
 MCP instructions can strongly direct host behaviour, but NovaMem cannot force an LLM client to call tools unless that client exposes tool-call telemetry. Use `memory_adoption` with observed tools and instructions hash to detect stale or incomplete clients.
+
+## Context packs v2
+
+`memory_context` returns `contextPack` grouped both by memory type and by scope. `userGlobal` contains memories that apply across projects; `projectScoped` contains memories tied to a specific sub-brain. Agents should prefer project-scoped operational facts when the user is inside a project, while still applying user-global preferences and safety constraints.

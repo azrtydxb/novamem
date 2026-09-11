@@ -121,7 +121,7 @@ What ships now:
 | Go client                     | consumed by module path, no release step                                     |
 
 Installing the CLIs is `scripts/install.sh` — see
-[the release-flow docs](packages/docs-site/contribute/releases.md#cli-binaries-novamem-init-novamem-mcp) for the
+[the release-flow docs](docs/contribute/releases.md#cli-binaries-novamem-init-novamem-mcp) for the
 targets, the checksum rule, and why both binaries ship in one archive.
 
 CI still runs a `package (npm)` job. It publishes nothing: it asserts

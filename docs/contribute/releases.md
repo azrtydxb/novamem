@@ -6,7 +6,7 @@ title: Release flow
 
 novamem has two parallel release pathways:
 
-- **npm packages** — versioned via [Changesets](https://github.com/changesets/changesets), published to npm
+- **CLI binaries** (`novamem-init`, `novamem-mcp`) — built by CI from a `vX.Y.Z` tag and attached to the GitHub release
 - **Server image** — versioned via manual `vX.Y.Z` tags, published to ghcr.io
 
 ## npm packages — retired
@@ -42,12 +42,11 @@ The server isn't published to npm. The release artifact is the docker image.
 
 ### Tag conventions
 
-| Tag                     | What                                         |
-| ----------------------- | -------------------------------------------- |
-| `vX.Y.Z`                | Server release. Repo-wide.                   |
-| `@azrtydxb/<pkg>@X.Y.Z` | Per-package npm release.                     |
-| `:main`                 | Always-latest main. Don't use in production. |
-| `:sha-<7chars>`         | Deterministic. Pin in production.            |
+| Tag             | What                                         |
+| --------------- | -------------------------------------------- |
+| `vX.Y.Z`        | Server release. Repo-wide.                   |
+| `:main`         | Always-latest main. Don't use in production. |
+| `:sha-<7chars>` | Deterministic. Pin in production.            |
 
 ## CLI binaries (novamem-init, novamem-mcp)
 
@@ -88,7 +87,7 @@ macOS on Intel is not a published target; build from source with
 
 `main` requires:
 
-- 6 status checks green: `test (amd64)`, `test (arm64)`, `audit`, `package npm`, `docker amd64`, `docker arm64`
+- every status check green, including `go (build + vet + test)`, `audit`, `docker (amd64)` and `docker (arm64)`
 - Branch up-to-date with `main` before merge (`strict: true`)
 - 1 approving review (or auto-approve via `enable-automerge` for fix-up PRs)
 
@@ -96,8 +95,6 @@ Auto-merge does NOT auto-update branches that fall BEHIND. If a PR sits BEHIND b
 
 ## When something fails to publish
 
-- **npm 404** on publish — the package is on Trusted Publishers but the workflow ran with an old npm. Make sure `setup-node` uses `node-version: 24`.
-- **`workspace:*` in published tarball** — happens if you publish via `npm publish` directly. Always use `pnpm publish` (or `pnpm changeset publish`), which rewrites workspace protocol entries.
 - **Docker push fails on attestation manifest** — the workflow uses `docker/build-push-action` with `push: true` after Trivy. Don't `docker tag` + `docker push` on a `--load`'d image; the attestation manifest gets stripped.
 
 ## Reading the release page

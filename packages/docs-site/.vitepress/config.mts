@@ -13,7 +13,30 @@ export default withMermaid(
     title: "novamem",
     description: "Tiered memory for AI agents — full documentation",
     base: "/novamem/docs/",
+
+    // The pages live in `docs/`, which is the single source: editing a
+    // doc in the repo IS editing the site. This package holds only the
+    // configuration and the static assets. Nothing under `docs/` may be
+    // duplicated back here — `scripts/doc-smoke.mjs` fails if it is.
+    srcDir: "../../docs",
     outDir: "../../site/docs",
+
+    // Not every page in `docs/` is published. These are internal working
+    // documents — migration specs, parity audits, benchmark write-ups —
+    // kept in the repo for contributors, deliberately out of the site's
+    // navigation and search.
+    srcExclude: [
+      "README.md",
+      "superpowers/**",
+      "architecture/go-parity-audit.md",
+      "architecture/mem0-alignment.md",
+      "benchmarks/**",
+      // Describes an OpenTelemetry exporter the Go server does not have.
+      // Publishing it would hand operators settings that are silently
+      // ignored. Kept in the repo as the spec for reinstating tracing
+      // (#277); out of the site until that is true.
+      "observability.md",
+    ],
     cleanUrls: true,
     appearance: "dark",
     lastUpdated: true,
@@ -56,7 +79,7 @@ export default withMermaid(
           items: [
             { text: "Overview", link: "/" },
             { text: "Quick start", link: "/getting-started" },
-            { text: "Mental model", link: "/concepts/mental-model" },
+            { text: "Usage & mental model", link: "/concepts/mental-model" },
           ],
         },
         {
@@ -170,8 +193,7 @@ export default withMermaid(
       search: { provider: "local" },
 
       editLink: {
-        pattern:
-          "https://github.com/azrtydxb/novamem/edit/main/packages/docs-site/:path",
+        pattern: "https://github.com/azrtydxb/novamem/edit/main/docs/:path",
         text: "Edit this page on GitHub",
       },
 
@@ -183,13 +205,12 @@ export default withMermaid(
       theme: { light: "github-light", dark: "github-dark" },
     },
 
-    // Dead-link checker ignores migrated relative paths that resolve outside
-    // the docs-site root (e.g. links to ../../.env.example or ../../deploy/).
-    // Those are repo-relative links from the original docs/ markdown — they
-    // work on GitHub's renderer but not in VitePress. Migrating each one to
-    // an absolute github.com URL is a follow-up; for now skip the check so
-    // the build passes.
-    ignoreDeadLinks: true,
+    // The dead-link checker is ON: every internal link now points inside
+    // one tree, so a page that moves and leaves a link behind fails the
+    // build instead of shipping a 404. Only localhost URLs are exempt —
+    // they are install instructions, not links, and nothing is listening
+    // on :7778 while the site builds.
+    ignoreDeadLinks: [/^https?:\/\/localhost/],
 
     // Mermaid theme to match the dark palette. Tokens picked from the
     // Grid stylesheet so diagrams blend with the rest of the docs page.

@@ -14,6 +14,9 @@ on:
   push:
     branches: [main]
     paths:
+      # `docs/` is the source the site is built from — see srcDir in
+      # packages/docs-site/.vitepress/config.mts. A doc edit IS a site edit.
+      - "docs/**"
       - "site/**"
       - "packages/docs-site/**"
       - ".github/workflows/pages.yml"
