@@ -121,6 +121,12 @@ jobs:
       # /v1/admin/users.
       - run: cd go && go run ./cmd/gen-openapi
       - run: git diff --exit-code docs/api/openapi.json
+      # Same treatment for the MCP tool catalogue: the page is rendered
+      # from tooldefs.json, so a tool added or removed without
+      # regenerating fails here instead of leaving the docs promising a
+      # tool that does not exist.
+      - run: cd go && go run ./cmd/gen-tool-docs
+      - run: git diff --exit-code docs/api/mcp-tools.md
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
