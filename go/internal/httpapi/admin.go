@@ -51,7 +51,7 @@ func (s *server) registerAdmin(mux *routeMux) {
 func (s *server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	u := s.dashUser(r)
 	if u == nil {
-		s.sendError(w, http.StatusUnauthorized, "unauthorized")
+		s.sendUnauthorized(w, r)
 		return false
 	}
 	if u.Role != "admin" {
@@ -339,7 +339,7 @@ func (s *server) handleAdminHealthDeep(w http.ResponseWriter, r *http.Request) {
 	// credentials" from "wrong role", so both are 401.
 	u := s.dashUser(r)
 	if u == nil || u.Role != "admin" {
-		s.sendError(w, http.StatusUnauthorized, "unauthorized")
+		s.sendUnauthorized(w, r)
 		return
 	}
 	h := s.engine.Health(r.Context())

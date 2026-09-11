@@ -14,6 +14,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,6 +40,62 @@ func main() {
 		fmt.Fprintln(os.Stderr, "novamem-mcp:", err)
 		os.Exit(1)
 	}
+}
+
+// mirrorRequestHeaders copies the body fields the Streamable HTTP
+// transport mirrors into headers. Only what the body actually declares
+// is set: a legacy `initialize` carries no protocol version in _meta, so
+// no version header is sent and the server keeps serving it as legacy.
+func mirrorRequestHeaders(h http.Header, msg []byte) {
+	var body struct {
+		Method string `json:"method"`
+		Params struct {
+			Name string `json:"name"`
+			URI  string `json:"uri"`
+			Meta struct {
+				ProtocolVersion string `json:"io.modelcontextprotocol/protocolVersion"`
+			} `json:"_meta"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(msg, &body) != nil || body.Method == "" {
+		return
+	}
+	h.Set("Mcp-Method", body.Method)
+	if v := body.Params.Meta.ProtocolVersion; v != "" {
+		h.Set("MCP-Protocol-Version", v)
+	}
+	switch body.Method {
+	case "tools/call":
+		h.Set("Mcp-Name", encodeHeaderValue(body.Params.Name))
+	case "resources/read", "prompts/get":
+		if body.Params.URI != "" {
+			h.Set("Mcp-Name", encodeHeaderValue(body.Params.URI))
+		} else {
+			h.Set("Mcp-Name", encodeHeaderValue(body.Params.Name))
+		}
+	}
+}
+
+// encodeHeaderValue applies the spec's =?base64?…?= sentinel to any
+// value that cannot travel as a plain ASCII header — including a plain
+// value that happens to look like the sentinel, which would otherwise be
+// decoded by the server into something else.
+func encodeHeaderValue(v string) string {
+	safe := v != "" &&
+		!strings.HasPrefix(v, "=?base64?") &&
+		v == strings.TrimSpace(v)
+	if safe {
+		for i := 0; i < len(v); i++ {
+			if v[i] < 0x20 || v[i] > 0x7E {
+				safe = false
+				break
+			}
+		}
+	}
+	if safe {
+		return v
+	}
+	return "=?base64?" + base64.StdEncoding.EncodeToString([]byte(v)) + "?="
 }
 
 type bridge struct {
@@ -96,6 +153,13 @@ func (b *bridge) relay(msg []byte) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	// On the HTTP hop this bridge IS the Streamable HTTP client, so it
+	// owes the server the request-metadata headers the transport
+	// requires: Mcp-Method on every request, Mcp-Name on tools/call, and
+	// MCP-Protocol-Version matching the body's _meta. Without them a
+	// host speaking the modern era over stdio was rejected -32020
+	// (HeaderMismatch) — the bridge worked only for legacy hosts.
+	mirrorRequestHeaders(req.Header, msg)
 	if b.token != "" {
 		req.Header.Set("Authorization", "Bearer "+b.token)
 	}
@@ -127,14 +191,41 @@ func (b *bridge) relay(msg []byte) {
 	}
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		for _, data := range sseData(body) {
-			b.writeLine(data)
+			if !b.writeMessage(data) {
+				b.writeErr(msg, fmt.Errorf("upstream sent a frame that is not a JSON-RPC message (HTTP %d)", resp.StatusCode))
+			}
 		}
 		return
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
+		// An empty body on an error status leaves the host waiting on an
+		// id forever unless we answer it ourselves.
+		if resp.StatusCode >= 400 {
+			b.writeErr(msg, fmt.Errorf("upstream returned HTTP %d with an empty body", resp.StatusCode))
+		}
 		return
 	}
-	b.writeLine(body)
+	if !b.writeMessage(body) {
+		// Valid JSON or not, it is not an MCP message: novamem's own
+		// `{"error":"unauthorized"}` 401 lands here, as does an HTML
+		// error page from a proxy. Either way the host gets an answer
+		// carrying the reason instead of silence on a request id.
+		b.writeErr(msg, fmt.Errorf("upstream returned HTTP %d with a body that is not a JSON-RPC message: %s",
+			resp.StatusCode, firstLine(body)))
+	}
+}
+
+// firstLine trims an upstream body to something safe to embed in a
+// JSON-RPC error message.
+func firstLine(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
 }
 
 // sseData extracts the data payload of each SSE event frame.
@@ -180,6 +271,42 @@ func (b *bridge) writeErr(msg []byte, cause error) {
 	b.writeLine(env)
 }
 
+// writeMessage emits one framed stdio message, or reports why it could
+// not.
+//
+// The stdio transport is strict about what may appear here: "Messages
+// are delimited by newlines, and MUST NOT contain embedded newlines",
+// and "the server MUST NOT write anything to its stdout that is not a
+// valid MCP message". This bridge forwards bytes it did not produce —
+// from whatever NOVAMEM_BASE_URL points at, possibly through a proxy
+// that can interpose an HTML error page, or from novamem itself
+// answering a 401 with `{"error":"unauthorized"}`. Neither is an MCP
+// message. The first would desynchronise the host's parser for the rest
+// of the process's life; the second is syntactically fine JSON that
+// still means nothing to an MCP host.
+//
+// So the check is the JSON-RPC envelope, not merely JSON syntax: a
+// `jsonrpc` member is the cheapest thing that separates a message from
+// a body that happens to parse.
+func (b *bridge) writeMessage(p []byte) bool {
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, p); err != nil {
+		return false
+	}
+	var probe struct {
+		JSONRPC string `json:"jsonrpc"`
+	}
+	if json.Unmarshal(buf.Bytes(), &probe) != nil || probe.JSONRPC == "" {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, _ = b.out.Write(append(buf.Bytes(), '\n'))
+	return true
+}
+
+// writeLine frames a message this bridge produced itself, which is a
+// JSON-RPC envelope by construction.
 func (b *bridge) writeLine(p []byte) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

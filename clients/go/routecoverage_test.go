@@ -20,12 +20,11 @@ var routeMap = map[string]string{
 	"GET /health": "Client.Health",
 	"GET /live":   "non-goal: liveness probe for orchestrators, not an API client call",
 	"GET /ready":  "non-goal: readiness probe for orchestrators, not an API client call",
+	"GET /.well-known/oauth-protected-resource": "non-goal: RFC 9728 discovery document for MCP clients; this client is handed a bearer, it does not discover one",
 
-	"POST /mcp":          "non-goal: MCP transport — spoken by MCP hosts and the shim, not the REST client",
-	"GET /mcp":           "non-goal: MCP transport",
-	"DELETE /mcp":        "non-goal: MCP transport",
-	"POST /mcp/messages": "non-goal: MCP legacy SSE transport",
-	"GET /mcp/sse":       "non-goal: MCP legacy SSE transport",
+	"POST /mcp":   "non-goal: MCP transport — spoken by MCP hosts and the shim, not the REST client",
+	"GET /mcp":    "non-goal: MCP transport",
+	"DELETE /mcp": "non-goal: MCP transport",
 
 	"GET /v1/admin/audit-log":        "non-goal: dashboard-only read; add on first programmatic consumer",
 	"GET /v1/admin/health/deep":      "non-goal: dashboard-only read",

@@ -121,6 +121,11 @@ func sseHeaders(w http.ResponseWriter) {
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-cache")
 	h.Set("Connection", "keep-alive")
+	// "When initiating an SSE stream, servers SHOULD include the
+	// X-Accel-Buffering: no header" — without it nginx (which fronts
+	// every deployment of this we run) accumulates frames in a buffer
+	// and the stream stops being a stream.
+	h.Set("X-Accel-Buffering", "no")
 	h.Set("X-Frame-Options", "DENY")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")

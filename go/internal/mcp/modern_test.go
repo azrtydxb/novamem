@@ -27,8 +27,13 @@ func modernPost(t *testing.T, h http.Handler, method, body string, over map[stri
 	return post(t, h, body, hdr)
 }
 
+// modernBody builds a CONFORMING modern request: this revision makes
+// both protocolVersion and clientCapabilities required `_meta` fields,
+// so a helper that omitted either would be testing a request the spec
+// says servers must reject.
 func modernBody(id, method, extra string) string {
-	meta := `"_meta":{"` + metaProtocolVersion + `":"` + modernVer + `"}`
+	meta := `"_meta":{"` + metaProtocolVersion + `":"` + modernVer +
+		`","` + metaClientCapabilities + `":{}}`
 	params := "{" + meta
 	if extra != "" {
 		params += "," + extra
@@ -312,5 +317,173 @@ func TestLegacyInitializeNeverFallsBackToModern(t *testing.T) {
 		if got != latestLegacyVersion() {
 			t.Errorf("asked %s, got %s, want %s", asked, got, latestLegacyVersion())
 		}
+	}
+}
+
+// `io.modelcontextprotocol/clientCapabilities` is REQUIRED on every
+// modern request: "A request missing any required field is malformed;
+// the server MUST reject it with JSON-RPC error code -32602 (Invalid
+// params). On HTTP, the response status MUST be 400 Bad Request."
+//
+// The server needs nothing from the field. The point is that a
+// stateless server reads every request's capabilities without a
+// handshake, so a request omitting them is not one this revision
+// defines — and accepting it teaches clients a shape no other server
+// has to honour.
+//
+// proved by: every modern test in this file passed before the check
+// existed, because the helper above never sent the field.
+func TestModernRejectsAMissingClientCapabilities(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"` +
+		metaProtocolVersion + `":"` + modernVer + `"}}}`
+	rec := modernPost(t, h, "tools/list", body, nil)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400\n%s", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		Error struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Error.Code != codeInvalidParams {
+		t.Errorf("code = %d, want %d", env.Error.Code, codeInvalidParams)
+	}
+	if !strings.Contains(env.Error.Message, metaClientCapabilities) {
+		t.Errorf("message %q does not name the missing field", env.Error.Message)
+	}
+}
+
+// The spec splits tool failures in two and puts "unknown tool" on the
+// protocol side — a JSON-RPC error, not `isError` content. The
+// distinction is about who can act on it: a model can retry a tool that
+// rejected its arguments, but cannot conjure a tool the server does not
+// have.
+//
+// The legacy era keeps the transcribed isError shape; this is the modern
+// era only.
+//
+// proved by: removed the HasTool guard — the call falls through to the
+// dispatcher and comes back 200 with isError content, and the error
+// assertions below fail.
+func TestModernUnknownToolIsAProtocolError(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	body := modernBody("1", "tools/call", `"name":"memory_nonexistent","arguments":{}`)
+	rec := modernPost(t, h, "tools/call", body, map[string]string{"Mcp-Name": "memory_nonexistent"})
+
+	var env struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body is not JSON-RPC: %s", rec.Body)
+	}
+	if env.Error == nil {
+		t.Fatalf("unknown tool came back as a result, not a protocol error: %s", rec.Body)
+	}
+	if env.Error.Code != codeInvalidParams {
+		t.Errorf("code = %d, want %d", env.Error.Code, codeInvalidParams)
+	}
+	if !strings.Contains(env.Error.Message, "memory_nonexistent") {
+		t.Errorf("message %q does not name the tool", env.Error.Message)
+	}
+
+	// A tool that DOES exist but fails still reports as tool content, so
+	// the model can act on it.
+	ok := modernBody("2", "tools/call", `"name":"memory_search","arguments":{}`)
+	okRec := modernPost(t, h, "tools/call", ok, map[string]string{"Mcp-Name": "memory_search"})
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("an advertised tool should dispatch: %d %s", okRec.Code, okRec.Body)
+	}
+}
+
+// This server returns all 21 tools in one page and never issues a
+// `nextCursor`, so any cursor a client sends is one it never got from
+// here. Ignoring it and serving page one again would leave a paging
+// client looping over the same page forever.
+func TestModernToolsListRejectsAnUnknownCursor(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	body := modernBody("1", "tools/list", `"cursor":"eyJwYWdlIjogM30="`)
+	rec := modernPost(t, h, "tools/list", body, nil)
+
+	var env struct {
+		Error *struct {
+			Code int `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Error == nil || env.Error.Code != codeInvalidParams {
+		t.Fatalf("want -32602 for an unknown cursor, got %s", rec.Body)
+	}
+
+	// The unpaginated call is untouched, and carries no nextCursor —
+	// which is how a client knows it has the whole list.
+	plain := modernPost(t, h, "tools/list", modernBody("2", "tools/list", ""), nil)
+	res := decodeResult(t, plain)
+	if _, ok := res["nextCursor"]; ok {
+		t.Error("nextCursor present on a single-page list")
+	}
+}
+
+// Two ways a malformed modern request used to slip past validation and
+// be served as though it had asked for something valid. Both were found
+// by review, not by the suite.
+func TestModernRejectsMalformedParams(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	meta := `"_meta":{"` + metaProtocolVersion + `":"` + modernVer +
+		`","` + metaClientCapabilities + `":{}}`
+
+	errCode := func(t *testing.T, rec *httptest.ResponseRecorder) int {
+		t.Helper()
+		var env struct {
+			Error *struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatalf("body is not JSON-RPC: %s", rec.Body)
+		}
+		if env.Error == nil {
+			t.Fatalf("wanted an error, got: %s", rec.Body)
+		}
+		return env.Error.Code
+	}
+
+	// A cursor of the wrong type made the whole params decode fail. The
+	// error was discarded, so `cursor` read as absent and the client was
+	// served page one — the loop the cursor check exists to break.
+	t.Run("a cursor of the wrong type is not silently no cursor", func(t *testing.T) {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{` + meta + `,"cursor":123}}`
+		rec := modernPost(t, h, "tools/list", body, nil)
+		if got := errCode(t, rec); got != codeInvalidParams {
+			t.Errorf("code = %d, want %d", got, codeInvalidParams)
+		}
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", rec.Code)
+		}
+	})
+
+	// The field is typed ClientCapabilities. `_meta` holds raw JSON, so a
+	// presence check alone accepted null, arrays and strings.
+	for _, bad := range []string{`null`, `[]`, `"tools"`, `42`} {
+		t.Run("clientCapabilities is not an object: "+bad, func(t *testing.T) {
+			body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"` +
+				metaProtocolVersion + `":"` + modernVer + `","` +
+				metaClientCapabilities + `":` + bad + `}}}`
+			rec := modernPost(t, h, "tools/list", body, nil)
+			if got := errCode(t, rec); got != codeInvalidParams {
+				t.Errorf("code = %d, want %d", got, codeInvalidParams)
+			}
+		})
 	}
 }

@@ -19,7 +19,7 @@ const (
 
 	openapiServers = `[{"url":"/","description":"this server"}]`
 
-	openapiTags = "[{\"name\":\"memory\",\"description\":\"Read/write the memory data plane\"},{\"name\":\"lifecycle\",\"description\":\"Decay, dream cycle, orphan reaper, stats\"},{\"name\":\"auth\",\"description\":\"Rotate `nm_…` bearers (Better Auth's own surface lives at /api/auth/*)\"},{\"name\":\"self-service\",\"description\":\"Per-caller settings (active project)\"},{\"name\":\"projects\",\"description\":\"Project CRUD + membership\"},{\"name\":\"tokens\",\"description\":\"Per-device `nm_…` bearer management\"},{\"name\":\"metrics\",\"description\":\"Per-user metrics + 24h history\"},{\"name\":\"admin\",\"description\":\"Admin-only endpoints (role=admin)\"},{\"name\":\"mcp\",\"description\":\"Model Context Protocol transports (Streamable HTTP + legacy SSE)\"},{\"name\":\"liveness\",\"description\":\"Health checks\"}]"
+	openapiTags = "[{\"name\":\"memory\",\"description\":\"Read/write the memory data plane\"},{\"name\":\"lifecycle\",\"description\":\"Decay, dream cycle, orphan reaper, stats\"},{\"name\":\"auth\",\"description\":\"Rotate `nm_…` bearers (Better Auth's own surface lives at /api/auth/*)\"},{\"name\":\"self-service\",\"description\":\"Per-caller settings (active project)\"},{\"name\":\"projects\",\"description\":\"Project CRUD + membership\"},{\"name\":\"tokens\",\"description\":\"Per-device `nm_…` bearer management\"},{\"name\":\"metrics\",\"description\":\"Per-user metrics + 24h history\"},{\"name\":\"admin\",\"description\":\"Admin-only endpoints (role=admin)\"},{\"name\":\"mcp\",\"description\":\"Model Context Protocol transport (Streamable HTTP, dual-era)\"},{\"name\":\"liveness\",\"description\":\"Health checks\"}]"
 )
 
 var apiRoutes = []apiRoute{
@@ -421,6 +421,14 @@ var apiRoutes = []apiRoute{
 		Summary:   "Readiness probe — dependency checks, boolean only",
 		Tags:      []string{"readiness"},
 		Responses: `{"200":{"description":"Default Response","content":{"application/json":{"schema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}}}},"503":{"description":"Default Response","content":{"application/json":{"schema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}}}}}`,
+	},
+	{
+		Method:      "GET",
+		Path:        "/.well-known/oauth-protected-resource",
+		Summary:     "OAuth 2.0 Protected Resource Metadata (RFC 9728)",
+		Tags:        []string{"auth"},
+		Description: "Discovery document the MCP authorization flow starts from: an unauthenticated request to a protected route answers 401 with `WWW-Authenticate: Bearer resource_metadata=\"…\"` pointing here. Public — discovery has to work before the caller holds a credential.\n\nnovamem is an OAuth 2.1 *resource* server in shape but not in issuance: it mints its own `nm_…` bearers from the dashboard rather than delegating to an authorization server, so `authorization_servers` is deliberately absent. Naming one that cannot issue tokens for this resource would send clients into a flow that dead-ends.",
+		Responses:   `{"200":{"description":"Default Response","content":{"application/json":{"schema":{"type":"object","properties":{"resource":{"type":"string"},"bearer_methods_supported":{"type":"array","items":{"type":"string"}},"resource_name":{"type":"string"},"resource_documentation":{"type":"string"}},"required":["resource"],"additionalProperties":true}}}}}`,
 	},
 	{
 		Method:    "GET",

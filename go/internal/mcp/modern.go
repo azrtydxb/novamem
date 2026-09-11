@@ -23,8 +23,9 @@ import (
 const (
 	// _meta keys defined by the spec. The prefix is mandatory and
 	// reserved for the protocol itself.
-	metaProtocolVersion = "io.modelcontextprotocol/protocolVersion"
-	metaServerInfo      = "io.modelcontextprotocol/serverInfo"
+	metaProtocolVersion    = "io.modelcontextprotocol/protocolVersion"
+	metaClientCapabilities = "io.modelcontextprotocol/clientCapabilities"
+	metaServerInfo         = "io.modelcontextprotocol/serverInfo"
 
 	// Error codes from the range the spec reserves for itself
 	// (-32020..-32099); -32000..-32019 stays implementation-defined.
@@ -34,6 +35,9 @@ const (
 	// stay on the implementation-defined -32000.
 	codeHeaderMismatch             = -32020
 	codeUnsupportedProtocolVersion = -32022
+	// JSON-RPC's own Invalid params, which the spec names for a request
+	// whose `_meta` is missing a required field.
+	codeInvalidParams = -32602
 
 	discoverMethod = "server/discover"
 
@@ -58,7 +62,16 @@ const (
 type modernParams struct {
 	Name      string                     `json:"name"`
 	Arguments map[string]any             `json:"arguments"`
+	Cursor    *string                    `json:"cursor"`
 	Meta      map[string]json.RawMessage `json:"_meta"`
+
+	// decodeErr records a params body that did not fit this shape —
+	// `cursor: 123`, say. Discarding it meant such a request arrived
+	// with every field at its zero value and was served as though it had
+	// asked for nothing: a bad cursor became "no cursor" and the client
+	// got page one again, which is the very loop the cursor check exists
+	// to break.
+	decodeErr error
 }
 
 // declaredVersion is the protocol version this request declares, or ""
@@ -92,7 +105,7 @@ func classifyEra(headerVersion string, body []byte) (*rpcRequest, modernParams, 
 		return nil, p, false
 	}
 	if len(req.Params) > 0 {
-		_ = json.Unmarshal(req.Params, &p)
+		p.decodeErr = json.Unmarshal(req.Params, &p)
 	}
 	switch {
 	case req.Method == "initialize":
@@ -134,10 +147,58 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 		return
 	}
 
+	// `io.modelcontextprotocol/clientCapabilities` is a REQUIRED _meta
+	// field in this revision, and "a request missing any required field
+	// is malformed; the server MUST reject it with -32602 … On HTTP, the
+	// response status MUST be 400 Bad Request."
+	//
+	// It is required even though this server needs nothing from it: the
+	// point is that a stateless server can read every request's
+	// capabilities without a handshake, so a request that omits them is
+	// not a request this revision defines.
+	//
+	// Checked below the notification branch on purpose: the rule binds
+	// requests, and a notification is not one — the spec says outright
+	// that header requirements for notification POSTs are undefined in
+	// this revision.
+	if p.decodeErr != nil {
+		writeModernErr(w, http.StatusBadRequest, req.ID, codeInvalidParams,
+			"Invalid params: "+p.decodeErr.Error(), nil)
+		return
+	}
+	raw, ok := p.Meta[metaClientCapabilities]
+	if !ok {
+		writeModernErr(w, http.StatusBadRequest, req.ID, codeInvalidParams,
+			"missing required _meta field "+metaClientCapabilities, nil)
+		return
+	}
+	// Present is not enough: the field is typed `ClientCapabilities`, so
+	// `null`, an array or a string is a malformed request, not a
+	// capabilities declaration. `_meta` holds raw JSON, so nothing else
+	// would have noticed.
+	var caps map[string]json.RawMessage
+	if json.Unmarshal(raw, &caps) != nil || caps == nil {
+		writeModernErr(w, http.StatusBadRequest, req.ID, codeInvalidParams,
+			"_meta field "+metaClientCapabilities+" must be an object", nil)
+		return
+	}
+
 	switch req.Method {
 	case discoverMethod:
 		writeJSON(w, http.StatusOK, okResponse(req.ID, s.discoverResult()))
 	case "tools/list":
+		// tools/list supports pagination, and this server never
+		// paginates: 21 compile-time tools go out in one page with no
+		// `nextCursor`, which the spec reads as end-of-results. So any
+		// cursor a client sends is one this server never issued, and
+		// "invalid cursors SHOULD result in an error with code -32602".
+		// Silently ignoring it would serve page one forever to a client
+		// that believes it is paging.
+		if p.Cursor != nil {
+			writeJSON(w, http.StatusOK, errResponse(req.ID, codeInvalidParams,
+				"Invalid params: unknown cursor (this server returns the full tool list in one page)"))
+			return
+		}
 		writeJSON(w, http.StatusOK, okResponse(req.ID, rpcObj{
 			{"resultType", resultTypeComplete},
 			{"tools", ToolDefinitions()},
@@ -147,7 +208,21 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 		}))
 	case "tools/call":
 		if p.Name == "" {
-			writeJSON(w, http.StatusOK, errResponse(req.ID, -32602, "Invalid params"))
+			writeJSON(w, http.StatusOK, errResponse(req.ID, codeInvalidParams, "Invalid params"))
+			return
+		}
+		// The spec splits tool failures in two, and puts "unknown tool"
+		// on the protocol side: a JSON-RPC error, not `isError` content.
+		// The distinction is about who can act on it — a model can retry
+		// a tool that rejected its arguments, but cannot conjure a tool
+		// the server does not have, so telling it "unknown tool" as
+		// ordinary content invites a retry loop over a name that will
+		// never exist.
+		//
+		// The legacy era keeps the transcribed `isError` shape: earlier
+		// revisions specified it that way and its clients expect it.
+		if !HasTool(p.Name) {
+			writeJSON(w, http.StatusOK, errResponse(req.ID, codeInvalidParams, "Unknown tool: "+p.Name))
 			return
 		}
 		res := s.callTool(r.Context(), userID, p.Name, p.Arguments)
