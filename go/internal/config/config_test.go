@@ -17,10 +17,12 @@ package config
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -545,37 +547,77 @@ func TestKeepaliveInterval(t *testing.T) {
 // without them "one source" is a claim rather than a property.
 // ---------------------------------------------------------------------
 
-// envLiteral matches an environment variable name passed as a literal to
-// one of the os environment functions.
-var envLiteral = regexp.MustCompile(`os\.(?:Getenv|LookupEnv|Unsetenv|Setenv)\("([A-Z][A-Z0-9_]*)"\)`)
+// envReaders are the functions allowed to touch the process
+// environment. Every one of them calls spec() first, so a read that
+// goes through any of them is checked against the registry.
+var envReaders = map[string]bool{
+	"lookupEnv": true, "hasValue": true, "scrub": true,
+	"strEnv": true, "enumEnv": true, "optEnv": true,
+	"boolEnv": true, "coerceBool": true, "disableBool": true,
+	"portEnv": true, "intEnv": true, "posIntEnv": true,
+	"unitFloatEnv": true, "posFloatEnv": true, "csvEnv": true,
+}
 
-// TestEveryVariableReadIsDeclared scans this package's own source for a
-// bare environment read. The helpers take a key and assert its
-// declaration, so the only way to read an undeclared variable is to call
-// os.Getenv with a literal — which is what this finds.
+// TestEveryVariableReadIsDeclared asserts that nothing in this package
+// reads the environment except through a registry-checked reader.
 //
-// Without it the registry degrades quietly: someone adds one os.Getenv
-// in a hurry, the loader reads a variable the reference page has never
-// heard of, and the page is silently incomplete again. That is precisely
-// the state this refactor found the repo in.
+// It parses the package rather than grepping it. An earlier version
+// matched `os.Getenv("LITERAL")` with a regular expression, which was
+// weaker than it claimed: `os.Getenv(decayKey)` — a call this very
+// package made — passed straight through it, as would any future read
+// with a computed key. Checking the call's ENCLOSING FUNCTION instead of
+// its argument removes the loophole entirely, because a variable cannot
+// be read at all without calling one of the readers, and every reader
+// calls spec().
 func TestEveryVariableReadIsDeclared(t *testing.T) {
-	files, err := filepath.Glob("*.go")
+	// Parsed file by file rather than with parser.ParseDir, which is
+	// deprecated as of Go 1.25 for not honouring build tags. The files
+	// are enumerated here anyway, so the package view buys nothing.
+	fset := token.NewFileSet()
+	names, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(f)
+		file, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, m := range envLiteral.FindAllStringSubmatch(string(src), -1) {
-			if _, ok := Lookup(m[1]); !ok {
-				t.Errorf("%s reads %s directly, but it has no row in registry.go — "+
-					"add one, or the variable will be undocumented", f, m[1])
-			}
+		{
+			var enclosing string
+			ast.Inspect(file, func(n ast.Node) bool {
+				if fn, ok := n.(*ast.FuncDecl); ok {
+					enclosing = fn.Name.Name
+					return true
+				}
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				ident, ok := sel.X.(*ast.Ident)
+				if !ok || ident.Name != "os" {
+					return true
+				}
+				switch sel.Sel.Name {
+				case "Getenv", "LookupEnv", "Setenv", "Unsetenv", "Environ":
+				default:
+					return true
+				}
+				if !envReaders[enclosing] {
+					t.Errorf("%s:%d: %s calls os.%s directly — every environment "+
+						"read must go through a registry-checked reader, or the "+
+						"variable ends up undeclared and undocumented",
+						name, fset.Position(call.Pos()).Line, enclosing, sel.Sel.Name)
+				}
+				return true
+			})
 		}
 	}
 }
@@ -605,18 +647,42 @@ func TestEveryDeclaredVariableIsReachable(t *testing.T) {
 		t.Fatalf("Load with every declared variable set: %v", err)
 	}
 
-	// Now the other half: a variable in the table that Load never reads
-	// would be documented and inert. Proven by removing it from the
-	// environment one at a time and checking the result changes —
-	// which is expensive — so instead assert the cheap structural fact
-	// that every row names a variable the package source mentions.
-	src := packageSource(t)
+	// The other half: a variable in the table that nothing reads would
+	// be documented and inert.
+	//
+	// registry.go is EXCLUDED from the search. Including it made this
+	// check vacuous — every name is declared there, so the scan matched
+	// its own source and passed even with the corresponding read
+	// deleted. The name has to appear somewhere that reads it.
+	src := readSites(t)
 	for _, v := range Vars {
 		if !strings.Contains(src, `"`+v.Name+`"`) {
-			t.Errorf("%s is declared in registry.go but never named in the package — "+
+			t.Errorf("%s is declared in registry.go but named nowhere that reads it — "+
 				"it is documented and does nothing", v.Name)
 		}
 	}
+}
+
+// readSites is the package source MINUS the registry declarations, so a
+// name found in it was found at a call site.
+func readSites(t *testing.T) string {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") || f == "registry.go" {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Write(src)
+	}
+	return b.String()
 }
 
 // sampleValue produces a value each kind accepts, so the reachability
@@ -651,26 +717,6 @@ func sampleValue(v Var) string {
 		}
 		return "x"
 	}
-}
-
-func packageSource(t *testing.T) string {
-	t.Helper()
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var b strings.Builder
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b.Write(src)
-	}
-	return b.String()
 }
 
 // TestRegistryIsWellFormed — the rules a row must satisfy for the

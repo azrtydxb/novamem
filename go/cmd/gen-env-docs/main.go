@@ -43,8 +43,6 @@ const (
 )
 
 func main() {
-	auditDocs()
-
 	page, err := os.ReadFile(docPath)
 	if err != nil {
 		fail("reading %s: %v", docPath, err)
@@ -62,6 +60,13 @@ func main() {
 	fmt.Printf("wrote %s (%d variables)\n", docPath, len(config.Vars))
 
 	writeEnvExample()
+
+	// AFTER the pages are written, not before. Auditing first deadlocks
+	// on the very change the audit exists to support: removing a
+	// variable leaves its name in the committed env-reference.md, so a
+	// pre-write audit fails on the stale page and exits before it can
+	// regenerate the page that would have removed the name.
+	auditDocs()
 }
 
 func render() string {
@@ -199,7 +204,7 @@ func desc(v config.Var) string {
 		parts = append(parts, "**Secret** — keep it out of a ConfigMap and out of a committed `.env`.")
 	}
 	if v.Required != "" {
-		parts = append(parts, "Required when "+v.Required+".")
+		parts = append(parts, requiredClause(v))
 	}
 	return strings.Join(parts, " ")
 }
@@ -425,23 +430,29 @@ func writeEnvExample() {
 
 # ═══ Required ════════════════════════════════════════════════════════
 `)
+	for _, e := range templateExtras {
+		b.WriteString("\n" + comment(e.description) + e.name + "=" + e.example + "\n")
+	}
 	for _, v := range config.Vars {
 		// Conditionally required variables belong with their subsystem,
 		// not here: a deployment that never enables the observer should
 		// not be shown an empty NOVAMEM_OBSERVER_MODEL at the top of
 		// the file as though it were missing something. What does belong
 		// here is a condition that already holds untouched.
-		if !v.NeededByDefault {
+		if !v.NeededByDefault && !v.TemplateLive {
 			continue
 		}
-		b.WriteString("\n" + comment(v.Description+" "+requiredClause(v)) +
-			v.Name + "=" + v.Example + "\n")
+		clause := ""
+		if v.Required != "" {
+			clause = " " + requiredClause(v)
+		}
+		b.WriteString("\n" + comment(v.Description+clause) + v.Name + "=" + v.Example + "\n")
 	}
 
 	for _, section := range sectionsInOrder() {
 		var rows []config.Var
 		for _, v := range config.Vars {
-			if v.Section == section && !v.NeededByDefault && v.Deprecated == "" {
+			if v.Section == section && !v.NeededByDefault && !v.TemplateLive && v.Deprecated == "" {
 				rows = append(rows, v)
 			}
 		}
@@ -455,6 +466,7 @@ func writeEnvExample() {
 	}
 	out := b.String()
 	checkNoAmbiguousLines(out)
+	checkComposeIsSatisfiable(out)
 	if err := os.WriteFile(envExamplePath, []byte(out), 0o644); err != nil {
 		fail("writing %s: %v", envExamplePath, err)
 	}
@@ -533,5 +545,87 @@ func checkNoAmbiguousLines(out string) {
 			"NAME=, which reads as a second setting. Prose lines are indented "+
 			"past the comment marker to prevent exactly this.",
 			envExamplePath, strings.Join(dupes, ", "))
+	}
+}
+
+// templateExtras are variables .env.example must carry that the SERVER
+// does not read, so they have no place in the config registry.
+//
+// Dropping POSTGRES_PASSWORD from the generated template broke the
+// documented `cp .env.example .env && docker compose up` flow outright:
+// docker-compose.yaml interpolates it into both the postgres service and
+// NOVAMEM_WARM_URL with `:?`, so Compose aborts before anything starts.
+// A template that the quickstart cannot use is a worse failure than the
+// drift this generator was written to remove.
+//
+// They stay out of the reference table, which documents what the server
+// reads; the page names them in its hand-written notes instead.
+var templateExtras = []struct{ name, example, description string }{
+	{
+		name:    "POSTGRES_PASSWORD",
+		example: "CHANGE_ME",
+		description: "Read by Docker Compose, not by the server: it is interpolated " +
+			"into the postgres service and into NOVAMEM_WARM_URL below. Compose " +
+			"refuses to start without it. Ignored outside Compose — a Kubernetes " +
+			"or manual install sets NOVAMEM_WARM_URL directly.",
+	},
+}
+
+const composePath = "../docker-compose.yaml"
+
+// composeRequired matches a Compose interpolation that aborts the stack
+// when the variable is unset: ${VAR:?message}.
+var composeRequired = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*):\?`)
+
+// templateAssignment matches a live (uncommented) assignment.
+var templateAssignment = regexp.MustCompile(`(?m)^([A-Z][A-Z0-9_]*)=`)
+
+// checkComposeIsSatisfiable refuses to write a template that the
+// documented quickstart cannot use.
+//
+// `cp .env.example .env && docker compose up` is the first thing a new
+// user runs. Compose interpolates POSTGRES_PASSWORD and
+// NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD with `:?`, so it aborts before
+// starting anything if either is missing from the file — and a variable
+// that is merely commented out is missing. Generating this template from
+// the server's registry dropped POSTGRES_PASSWORD entirely, because the
+// server does not read it; that is how a single-source refactor breaks
+// the quickstart while every test still passes.
+//
+// The fix is not to hardcode the two names here: it is to check them
+// against the Compose file, so a new `:?` interpolation added there
+// fails this generator until the template carries it.
+func checkComposeIsSatisfiable(template string) {
+	compose, err := os.ReadFile(composePath)
+	if err != nil {
+		// Not fatal: the generator must still work in a checkout where
+		// the Compose file has been moved or removed.
+		fmt.Fprintf(os.Stderr, "gen-env-docs: skipping the compose check: %v\n", err)
+		return
+	}
+	live := map[string]bool{}
+	for _, m := range templateAssignment.FindAllStringSubmatch(template, -1) {
+		live[m[1]] = true
+	}
+	// Deduped: Compose interpolates POSTGRES_PASSWORD into both the
+	// postgres service and NOVAMEM_WARM_URL, and naming it twice in the
+	// error reads like two separate problems.
+	seen := map[string]bool{}
+	var missing []string
+	for _, m := range composeRequired.FindAllStringSubmatch(string(compose), -1) {
+		if !live[m[1]] && !seen[m[1]] {
+			seen[m[1]] = true
+			missing = append(missing, m[1])
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		fail("docker-compose.yaml aborts without %s, but %s does not set %s.\n\n"+
+			"`cp .env.example .env && docker compose up` is the documented quickstart "+
+			"and would fail before anything starts. Give the variable a live line: set "+
+			"NeededByDefault (the server requires it) or TemplateLive (only a deploy "+
+			"path does) in registry.go, or add it to templateExtras if the server never "+
+			"reads it.",
+			strings.Join(missing, ", "), envExamplePath, strings.Join(missing, " or "))
 	}
 }

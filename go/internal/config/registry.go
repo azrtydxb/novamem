@@ -90,6 +90,14 @@ type Var struct {
 	// top of the generated .env.example, live rather than commented out,
 	// because a copied template that omits them does not start.
 	NeededByDefault bool
+	// TemplateLive writes the variable live (uncommented) in
+	// .env.example even though the server starts without it, because a
+	// documented install path demands it up front — Docker Compose
+	// interpolates NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD with `:?` and aborts
+	// when it is unset. Kept separate from Required, which means "the
+	// SERVER refuses to start"; conflating them would make the reference
+	// page claim a fail-fast that does not exist.
+	TemplateLive bool
 	// Example is the value the generated .env.example shows for a
 	// variable the operator must fill in. It must be a value that does
 	// NOT work — an example credential that happens to be valid is one
@@ -188,7 +196,12 @@ var Vars = []Var{
 	},
 	{
 		Name: "NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD", Kind: KindString, Section: secAuth, Secret: true,
-		Description: "Password for the bootstrap admin. Read once and then removed from the process environment, so a later `env` dump or a child process cannot see it.",
+		// The server starts happily without it — it simply seeds no
+		// admin — but docker-compose.yaml interpolates it with `:?`, so
+		// the quickstart aborts before anything runs. Live in the
+		// template for that reason, not because startup depends on it.
+		TemplateLive: true,
+		Description:  "Password for the bootstrap admin, used only on first boot when the deployment has no users yet. Read once and then removed from the process environment, so a later `env` dump or a child process cannot see it. Docker Compose requires it to be set even when it will not be used.",
 	},
 	{
 		Name: "NOVAMEM_ADMIN_DASHBOARD", Kind: KindDisableBool, Default: true, Section: secAuth,

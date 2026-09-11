@@ -51,7 +51,15 @@ services:
       # switch postgres to image pgvector/pgvector:pg16, and add
       # `shm_size: 512mb` to the postgres service.
       NOVAMEM_COLD_URL: http://qdrant:6333
-      NOVAMEM_EMBEDDINGS_PROVIDER: local-transformers
+      # Deliberately unset: the Go server has no in-process embedder and
+      # REFUSES TO START on local-transformers, which this line used to
+      # pin. Unset leaves the vector tier unconfigured — writes still
+      # store and search degrades to the keyword tier — so the stack
+      # comes up and works. To enable embeddings, run a model behind an
+      # OpenAI-compatible endpoint and set:
+      #   NOVAMEM_EMBEDDINGS_PROVIDER: openai-compatible
+      #   NOVAMEM_EMBEDDINGS_ENDPOINT: http://your-embedder:8080/v1
+      #   NOVAMEM_EMBEDDINGS_MODEL: your-model-id
       NOVAMEM_AUTH_MODE: ${NOVAMEM_AUTH_MODE:-user}
       NOVAMEM_ADMIN_DASHBOARD: ${NOVAMEM_ADMIN_DASHBOARD:-1}
       NOVAMEM_BOOTSTRAP_ADMIN_EMAIL: ${NOVAMEM_BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}

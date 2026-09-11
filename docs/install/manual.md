@@ -66,18 +66,20 @@ When `NOVAMEM_AUTH_MODE=user` and no admin user exists, novamem seeds one from `
 
 ## Configuration
 
-Full env reference: [.env.example](https://github.com/azrtydxb/novamem/blob/main/.env.example). The fields you'll touch most:
+Every variable, with its real default and what goes wrong at the wrong
+value, is in the [environment reference](./env-reference.md). That page is
+generated from the loader, so it cannot disagree with the server the way a
+second table here would — this one did, listing `local-transformers` as the
+embeddings default when the Go server refuses to start on it.
 
-| Var                           | Default                 | Notes                                                                                              |
-| ----------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
-| `NOVAMEM_PORT`                | `7778`                  | HTTP + MCP-SSE listen port                                                                         |
-| `NOVAMEM_BASE_URL`            | `http://localhost:7778` | Public origin; **must** match the browser's `Origin` header for Better Auth's trusted-origin check |
-| `NOVAMEM_AUTH_MODE`           | `user`                  | `user` / `bearer` / `none`; only `user` enforces per-user isolation                                |
-| `NOVAMEM_COOKIE_SECRET`       | _(none)_                | 32+ hex chars; **must** be set in production                                                       |
-| `NOVAMEM_INSECURE_COOKIES`    | `0`                     | `1` to allow non-Secure cookies (plain-HTTP dev only)                                              |
-| `NOVAMEM_EMBEDDINGS_PROVIDER` | `local-transformers`    | Or `openai-compatible` with `_ENDPOINT` + `_MODEL` + `_API_KEY`                                    |
-| `NOVAMEM_DECAY_INTERVAL_MS`   | `21600000` (6h)         | Decay loop + dream cycle cadence                                                                   |
-| `NOVAMEM_PG_POOL_MAX`         | `20`                    | Per-process Postgres pool size                                                                     |
+The four you are most likely to set on a manual install:
+
+| Var                     | Notes                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `NOVAMEM_WARM_URL`      | Required. Postgres DSN; the server will not start without it.                      |
+| `NOVAMEM_COOKIE_SECRET` | Required unless `NOVAMEM_AUTH_MODE=none`. `openssl rand -hex 32`.                  |
+| `NOVAMEM_BASE_URL`      | Public origin; **must** match the browser's `Origin` for the trusted-origin check. |
+| `NOVAMEM_AUTH_MODE`     | `user` (default) / `bearer` / `none`; only `user` enforces per-user isolation.     |
 
 ## Verify
 

@@ -291,7 +291,7 @@ func Load() (Config, error) {
 	// as a deprecated alias for deployments that picked up the Go-only
 	// spelling; the TS name wins when both are set.
 	decayKey := "NOVAMEM_DECAY_DAYS"
-	if os.Getenv(decayKey) == "" && os.Getenv("NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS") != "" {
+	if !hasValue(decayKey, KindPosFloat) && hasValue("NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS", KindPosFloat) {
 		decayKey = "NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS"
 	}
 	if c.DecayEffectiveDays, err = posFloatEnv(decayKey); err != nil {
@@ -320,7 +320,7 @@ func Load() (Config, error) {
 	c.BootstrapAdminPassword = strEnv("NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD")
 	// main.ts scrubs the password from the environment right after
 	// reading it so a later `env` dump (or a child process) can't see it.
-	_ = os.Unsetenv("NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD")
+	scrub("NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD")
 
 	// Unset (or anything that isn't a falsy spelling) leaves the admin
 	// surface enabled — config.ts admin.dashboard.
@@ -420,6 +420,23 @@ func Load() (Config, error) {
 func lookupEnv(key string, kind Kind) (string, bool) {
 	spec(key, kind)
 	return os.LookupEnv(key)
+}
+
+// hasValue reports whether key is set to a non-empty value. Used for the
+// deprecated-alias precedence, which is a question about presence rather
+// than about a parsed value.
+func hasValue(key string, kind Kind) bool {
+	spec(key, kind)
+	return os.Getenv(key) != ""
+}
+
+// scrub removes a variable from the process environment after it has
+// been read, so a later `env` dump or a child process cannot see it.
+func scrub(key string) {
+	spec(key, KindString)
+	// The error case is a malformed name, which spec has already ruled
+	// out by finding it in the registry.
+	_ = os.Unsetenv(key)
 }
 
 // strEnv — a string, with an empty value treated as unset. Variables
