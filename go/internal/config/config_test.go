@@ -47,20 +47,33 @@ func clearEnv(t *testing.T, overrides map[string]string) {
 			saved[k] = nil
 		}
 	}
+	// set/unset report errors only for a malformed name, which would
+	// mean a bad row in the registry rather than a flaky environment —
+	// worth failing on rather than ignoring, and errcheck agrees.
+	unset := func(k string) {
+		if err := os.Unsetenv(k); err != nil {
+			t.Fatalf("unsetting %s: %v", k, err)
+		}
+	}
+	set := func(k, v string) {
+		if err := os.Setenv(k, v); err != nil {
+			t.Fatalf("setting %s: %v", k, err)
+		}
+	}
 	for _, v := range Vars {
 		remember(v.Name)
-		os.Unsetenv(v.Name)
+		unset(v.Name)
 	}
 	for k, v := range overrides {
 		remember(k)
-		os.Setenv(k, v)
+		set(k, v)
 	}
 	t.Cleanup(func() {
 		for k, v := range saved {
 			if v == nil {
-				os.Unsetenv(k)
+				unset(k)
 			} else {
-				os.Setenv(k, *v)
+				set(k, *v)
 			}
 		}
 	})
