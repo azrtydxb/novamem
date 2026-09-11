@@ -501,3 +501,53 @@ Options:
 - Both: repoint at Nexus _and_ make the export non-fatal, so the next
   registry move does not turn main red again.
 - Drop the registry cache entirely and rely on cold builds.
+
+## Should the Nexus cache connection verify TLS, now that it carries a credential?
+
+#287 repoints the BuildKit cache at Nexus and keeps the
+`buildkitd-config-inline` entry that the Zot setup used:
+
+    [registry."192.168.10.131"]
+      insecure = true
+
+Copilot flagged this, correctly. With Zot the setting was harmless — that
+cache took anonymous writes, so nothing confidential crossed the
+connection. Nexus requires a credential to write, so #287 sends
+`NEXUS_USER` / `NEXUS_PASSWORD` over a channel whose certificate is not
+verified. An active attacker on the flat LAN between the ARC runners and
+192.168.10.131 could capture it. The change introduces the exposure; it
+was not there before.
+
+Verified while investigating:
+
+- Nexus serves a cert with `CN=nexus`, issued by `O=Azrty,
+CN=kw-cluster-internal-ca`, valid to 2026-12-10.
+- The CA certificate is available in the `nexus/nexus-tls` secret as
+  `ca.crt`, and a `cluster-ca` ClusterIssuer exists. A CA _public_
+  certificate is not a secret and can be committed.
+- BuildKit's `[registry."host"] ca = ["/path/to/ca.pem"]` takes file
+  paths only — there is no inline form — and
+  `docker/setup-buildx-action` exposes no way to mount a file into the
+  buildkit container. So simply pointing at a committed cert does not
+  work with the current builder.
+- There is already a `buildkit` Deployment and LoadBalancer at
+  192.168.10.130 in the cluster, created the same day as Nexus. A pod
+  can mount the CA, and buildx supports `driver: remote`.
+
+Options:
+
+- Accept `insecure = true` and ship #287 as it stands. Matches the
+  established pattern for this cluster, and the path is runner-to-service
+  on a trusted LAN. Cheapest; leaves a credential on an unverified
+  channel.
+- Scope the blast radius instead of the channel: give CI a dedicated
+  Nexus account whose only permission is write on
+  `azrtydxb/novamem-buildcache`. A captured credential could then poison
+  a build cache and nothing else. Needs a Nexus role/user created.
+- Move the builds to the in-cluster buildkit at 192.168.10.130 via
+  `driver: remote`. That pod can mount `kw-cluster-internal-ca`, so TLS
+  is verified properly and the credential never crosses an unverified
+  connection. Largest change, and it looks like where the cluster is
+  heading anyway.
+- Drop the registry cache and build cold every time (~13 min per arch).
+  No credential, no cache, no exposure.
