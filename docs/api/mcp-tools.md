@@ -6,7 +6,7 @@ title: MCP tools
 
 <!-- tool-catalogue:start -->
 
-_21 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](https://github.com/azrtydxb/novamem/blob/main/go/internal/mcp/tooldefs.json) by `go run ./cmd/gen-tool-docs` — the descriptions below are the ones the server sends on `tools/list`, not a paraphrase of them. Edit the JSON, not this table._
+_21 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](https://github.com/azrtydxb/novamem/blob/main/go/internal/mcp/tooldefs.json) by `go run ./cmd/gen-tool-docs` — the descriptions below are the ones the server sends on `tools/list`, not a paraphrase of them. Edit [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and re-run `go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs` — not this table, and not tooldefs.json, which is itself generated._
 
 ## Memory tools
 

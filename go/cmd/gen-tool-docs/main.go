@@ -85,8 +85,11 @@ func render(tools []tool) string {
 	fmt.Fprintf(&b, "_%d tools. This section is generated from "+
 		"[`go/internal/mcp/tooldefs.json`](https://github.com/azrtydxb/novamem/blob/main/go/internal/mcp/tooldefs.json) "+
 		"by `go run ./cmd/gen-tool-docs` — the descriptions below are the ones the server sends on `tools/list`, "+
-		"not a paraphrase of them. Edit the JSON, not this table._\n", len(tools))
+		"not a paraphrase of them. Edit [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) "+
+		"and re-run `go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs` — not this table, and not tooldefs.json, "+
+		"which is itself generated._\n", len(tools))
 
+	rendered := map[string]bool{}
 	for _, family := range []struct{ prefix, heading string }{
 		{"memory_", "Memory tools"},
 		{"project_", "Project tools"},
@@ -96,6 +99,7 @@ func render(tools []tool) string {
 			if !strings.HasPrefix(t.Name, family.prefix) {
 				continue
 			}
+			rendered[t.Name] = true
 			fmt.Fprintf(&b, "### `%s`\n\n%s\n\n", t.Name, prose(t.Description))
 			b.WriteString(args(t))
 			b.WriteString("\n")
@@ -105,6 +109,14 @@ func render(tools []tool) string {
 	// and a page that the formatter rewrites turns the CI drift gate into
 	// a permanent false positive.
 	out := blankRun.ReplaceAllString(b.String(), "\n\n")
+	// A tool outside the known families would otherwise be counted in the
+	// header and then silently left out of the page — a catalogue that
+	// says 22 and lists 21. Louder to stop than to under-report.
+	for _, t := range tools {
+		if !rendered[t.Name] {
+			fail("tool %q is in no rendered family — add a section for its prefix", t.Name)
+		}
+	}
 	return strings.TrimRight(out, "\n") + "\n"
 }
 

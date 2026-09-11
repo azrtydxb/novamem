@@ -73,11 +73,11 @@ Each release ships a self-contained migration; the application code in each rele
 
 ### Useful commands
 
-| Command                                  | What it does                                                                                                      |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `cd go && go test ./internal/warmstore/` | Checks journal order, that every entry resolves to an embedded file, and that no applied migration's hash changed |
-| `cd go && go run ./cmd/gen-contract`     | Regenerates every contract artifact from `api/openapi.yaml` (CI fails on drift)                                   |
-| `go/scripts/sync-admin-ui.sh`            | Copies a fresh `packages/admin-ui/dist` into the binary's embedded assets                                         |
+| Command                                                            | What it does                                                                                                      |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `cd go && go test ./internal/warmstore/`                           | Checks journal order, that every entry resolves to an embedded file, and that no applied migration's hash changed |
+| `cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs` | Regenerates every contract artifact from `api/openapi.yaml` (CI fails on drift)                                   |
+| `go/scripts/sync-admin-ui.sh`                                      | Copies a fresh `packages/admin-ui/dist` into the binary's embedded assets                                         |
 
 Never apply schema changes to a production-grade database by hand or with an
 ad-hoc tool: that skips the journal and makes every later migration ambiguous

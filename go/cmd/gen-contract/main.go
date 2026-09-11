@@ -139,12 +139,20 @@ func collect(paths map[string]any) ([]mcpTool, []route) {
 	// happen to sort. Deriving it from path order would have silently
 	// reshuffled the surface the day the contract moved into YAML.
 	sort.Slice(tools, func(i, j int) bool { return tools[i].order() < tools[j].order() })
-	seen := map[int]string{}
+	seenOrder := map[int]string{}
+	seenName := map[string]bool{}
 	for _, t := range tools {
-		if prev, dup := seen[t.order()]; dup {
+		if prev, dup := seenOrder[t.order()]; dup {
 			fail("tools %q and %q both declare x-order %d", prev, t.name(), t.order())
 		}
-		seen[t.order()] = t.name()
+		seenOrder[t.order()] = t.name()
+		// Two bindings with the same name would put a duplicate entry in
+		// tools/list while the server's own name index collapsed them —
+		// one of the two tools would be advertised and unreachable.
+		if seenName[t.name()] {
+			fail("tool %q is bound by more than one operation", t.name())
+		}
+		seenName[t.name()] = true
 	}
 	return tools, routes
 }

@@ -140,8 +140,11 @@ The comment plus the assertion together document why the test exists.
 1. `cd go && go build ./... && go vet ./... && go test ./...` — the same
    for `clients/go` and `conformance`
 2. `golangci-lint run ./...` at the pinned version
-3. `cd go && go run ./cmd/gen-contract` followed by
-   `git diff --exit-code docs/api/openapi.json` — the OpenAPI drift gate
+3. `cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs`
+   followed by `git diff --exit-code` over `api/`, `docs/api/`,
+   `tooldefs.json`, the embedded `openapi.json` and `routes_gen.go` — the
+   contract drift gate. `api/openapi.yaml` is the source; every one of
+   those is an output of it
 4. `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` for the SPA
    and this site
 5. `pnpm docs:smoke` — documentation invariants

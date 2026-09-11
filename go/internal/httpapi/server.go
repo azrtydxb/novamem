@@ -1,8 +1,8 @@
 // Package httpapi carries the HTTP surface: the three health probes with
 // the TS server's exact bodies, /openapi.json serving the contract
-// document rendered from this server's own route table (openapi.go +
-// openapi_routes.go), and the slice-2 data plane (dataplane.go) behind
-// the none|bearer auth middleware (auth.go).
+// document — authored in api/openapi.yaml and embedded here by
+// cmd/gen-contract, not assembled at runtime — and the data plane
+// (dataplane.go) behind the none|bearer auth middleware (auth.go).
 //
 // Contract notes transcribed from packages/server/src/http.ts:
 //   - /live is liveness only: 200 {"ok":true} with NO dependency checks.
