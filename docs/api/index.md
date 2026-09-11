@@ -18,7 +18,7 @@ Machine-readable: [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/
 cd go && go run ./cmd/gen-openapi
 ```
 
-The generator walks the route table and schema definitions in `go/internal/httpapi/openapi.go` and writes JSON to `docs/api/openapi.json`. CI re-runs it and fails on a dirty tree.
+The generator walks the route table in `go/internal/httpapi/openapi_routes.go` (schemas and the document skeleton live in `openapi.go` beside it) and writes JSON to `docs/api/openapi.json`. CI re-runs it and fails on a dirty tree.
 
 ## Routes by purpose
 
@@ -27,7 +27,7 @@ The generator walks the route table and schema definitions in `go/internal/httpa
 | **[Authentication](./auth.md)**   | `/api/auth/*`, `POST /v1/me/tokens`                                                                               | mixed          |
 | **[Data plane](./data-plane.md)** | `/v1/search`, `/v1/remember`, `/v1/capture`, `/v1/recent`, `/v1/neighbors`, `/v1/forget`, `PUT /v1/memories/{id}` | user API token |
 | **[Admin & users](./admin.md)**   | `/v1/admin/*`, `/api/auth/admin/*`                                                                                | session admin  |
-| **[MCP tools](./mcp-tools.md)**   | `/mcp/sse`, `/mcp/messages`                                                                                       | tenant bearer  |
+| **[MCP tools](./mcp-tools.md)**   | `/mcp`, `/mcp/sse`, `/mcp/messages`                                                                               | user API token |
 
 ## Per-user (cookie-auth) variants
 

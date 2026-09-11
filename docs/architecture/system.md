@@ -12,7 +12,7 @@ flowchart TB
         CLI["HTTP CLI / SDK"]
     end
 
-    subgraph server["@azrtydxb/novamem-server (Fastify · :7778 · HTTP + SSE)"]
+    subgraph server["novamem-server (Go · :7778 · HTTP + MCP)"]
         ROUTES["/admin · /openapi.json · /api/auth/* · /v1/* · /mcp/sse"]
         ENGINE["MemoryEngine"]
         BA["Better Auth<br/>sessions · admin RBAC · JWT"]
@@ -263,6 +263,6 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - No OpenTelemetry exporter (Prometheus exposition is at `/v1/admin/metrics/prom`).
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
-- The OpenAPI spec is generated from the Fastify route tree and route Zod schemas via `@fastify/swagger`; `/openapi.json` should be smoke-checked after adding routes.
+- The OpenAPI spec is generated from the Go route table by `cmd/gen-openapi`; a CI drift gate re-runs it and fails on a dirty tree, so adding a route means regenerating in the same commit.
 
 See [CHANGELOG.md](https://github.com/azrtydxb/novamem/blob/main/CHANGELOG.md) for behaviour shifts and [the hardening guide](../ops/hardening.md) for the production hardening checklist.

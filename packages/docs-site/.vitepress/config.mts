@@ -31,6 +31,11 @@ export default withMermaid(
       "architecture/go-parity-audit.md",
       "architecture/mem0-alignment.md",
       "benchmarks/**",
+      // Describes an OpenTelemetry exporter the Go server does not have.
+      // Publishing it would hand operators settings that are silently
+      // ignored. Kept in the repo as the spec for reinstating tracing
+      // (#277); out of the site until that is true.
+      "observability.md",
     ],
     cleanUrls: true,
     appearance: "dark",
@@ -146,7 +151,6 @@ export default withMermaid(
             { text: "Security model", link: "/ops/security" },
             { text: "Hardening checklist", link: "/ops/hardening" },
             { text: "Audit log", link: "/ops/audit-log" },
-            { text: "Observability", link: "/observability" },
             { text: "Backup & restore", link: "/ops/backup" },
             { text: "Upgrades", link: "/ops/upgrades" },
           ],
