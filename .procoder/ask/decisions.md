@@ -336,8 +336,10 @@ exists only in #275, unmerged and stacked behind #274 and #273. The raw
 spec at `http://novamem.kw.local/openapi.json` does answer (200, 74,185
 bytes), so what kw is missing is the rendering, not the contract.
 
-Deploying is not a rollout-restart: the image has to be built for amd64
-with buildx and piped over ssh into the k3s containerd.
+Corrected while deploying: kw is an **arm64** k3s cluster that pulls
+`ghcr.io/azrtydxb/novamem:sha-<short>` from the registry — CI builds the
+image, and the deploy is a tag bump. The build-and-ssh-pipe flow is the
+248 cluster, not this one.
 
 Options:
 
