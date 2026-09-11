@@ -117,7 +117,7 @@ jobs:
       # it. Regenerate and diff: an edit to any output without an edit to
       # the source fails here.
       - run: cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs
-      - run: git diff --exit-code api/ docs/api/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go
+      - run: git diff --exit-code api/ docs/api/ conformance/reference/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:

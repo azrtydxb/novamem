@@ -232,7 +232,7 @@ func TestMCPStreamableTransport(t *testing.T) {
 		raw, err := os.ReadFile(filepath.FromSlash(streamableSnapshotPath))
 		if err != nil {
 			if os.IsNotExist(err) {
-				t.Fatal("reference/tools.snapshot.json missing — regenerate with scripts/snapshot-tools.mjs against the oracle")
+				t.Fatal("reference/tools.snapshot.json missing — regenerate with `cd go && go run ./cmd/gen-contract`")
 			}
 			t.Fatal(err)
 		}
