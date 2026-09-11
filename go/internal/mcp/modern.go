@@ -62,6 +62,7 @@ const (
 type modernParams struct {
 	Name      string                     `json:"name"`
 	Arguments map[string]any             `json:"arguments"`
+	Cursor    *string                    `json:"cursor"`
 	Meta      map[string]json.RawMessage `json:"_meta"`
 }
 
@@ -162,6 +163,18 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 	case discoverMethod:
 		writeJSON(w, http.StatusOK, okResponse(req.ID, s.discoverResult()))
 	case "tools/list":
+		// tools/list supports pagination, and this server never
+		// paginates: 21 compile-time tools go out in one page with no
+		// `nextCursor`, which the spec reads as end-of-results. So any
+		// cursor a client sends is one this server never issued, and
+		// "invalid cursors SHOULD result in an error with code -32602".
+		// Silently ignoring it would serve page one forever to a client
+		// that believes it is paging.
+		if p.Cursor != nil {
+			writeJSON(w, http.StatusOK, errResponse(req.ID, codeInvalidParams,
+				"Invalid params: unknown cursor (this server returns the full tool list in one page)"))
+			return
+		}
 		writeJSON(w, http.StatusOK, okResponse(req.ID, rpcObj{
 			{"resultType", resultTypeComplete},
 			{"tools", ToolDefinitions()},

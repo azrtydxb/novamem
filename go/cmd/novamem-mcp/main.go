@@ -14,6 +14,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,6 +40,62 @@ func main() {
 		fmt.Fprintln(os.Stderr, "novamem-mcp:", err)
 		os.Exit(1)
 	}
+}
+
+// mirrorRequestHeaders copies the body fields the Streamable HTTP
+// transport mirrors into headers. Only what the body actually declares
+// is set: a legacy `initialize` carries no protocol version in _meta, so
+// no version header is sent and the server keeps serving it as legacy.
+func mirrorRequestHeaders(h http.Header, msg []byte) {
+	var body struct {
+		Method string `json:"method"`
+		Params struct {
+			Name string `json:"name"`
+			URI  string `json:"uri"`
+			Meta struct {
+				ProtocolVersion string `json:"io.modelcontextprotocol/protocolVersion"`
+			} `json:"_meta"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(msg, &body) != nil || body.Method == "" {
+		return
+	}
+	h.Set("Mcp-Method", body.Method)
+	if v := body.Params.Meta.ProtocolVersion; v != "" {
+		h.Set("MCP-Protocol-Version", v)
+	}
+	switch body.Method {
+	case "tools/call":
+		h.Set("Mcp-Name", encodeHeaderValue(body.Params.Name))
+	case "resources/read", "prompts/get":
+		if body.Params.URI != "" {
+			h.Set("Mcp-Name", encodeHeaderValue(body.Params.URI))
+		} else {
+			h.Set("Mcp-Name", encodeHeaderValue(body.Params.Name))
+		}
+	}
+}
+
+// encodeHeaderValue applies the spec's =?base64?…?= sentinel to any
+// value that cannot travel as a plain ASCII header — including a plain
+// value that happens to look like the sentinel, which would otherwise be
+// decoded by the server into something else.
+func encodeHeaderValue(v string) string {
+	safe := v != "" &&
+		!strings.HasPrefix(v, "=?base64?") &&
+		v == strings.TrimSpace(v)
+	if safe {
+		for i := 0; i < len(v); i++ {
+			if v[i] < 0x20 || v[i] > 0x7E {
+				safe = false
+				break
+			}
+		}
+	}
+	if safe {
+		return v
+	}
+	return "=?base64?" + base64.StdEncoding.EncodeToString([]byte(v)) + "?="
 }
 
 type bridge struct {
@@ -96,6 +153,13 @@ func (b *bridge) relay(msg []byte) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	// On the HTTP hop this bridge IS the Streamable HTTP client, so it
+	// owes the server the request-metadata headers the transport
+	// requires: Mcp-Method on every request, Mcp-Name on tools/call, and
+	// MCP-Protocol-Version matching the body's _meta. Without them a
+	// host speaking the modern era over stdio was rejected -32020
+	// (HeaderMismatch) — the bridge worked only for legacy hosts.
+	mirrorRequestHeaders(req.Header, msg)
 	if b.token != "" {
 		req.Header.Set("Authorization", "Bearer "+b.token)
 	}

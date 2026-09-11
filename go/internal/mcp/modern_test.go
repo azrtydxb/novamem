@@ -404,3 +404,33 @@ func TestModernUnknownToolIsAProtocolError(t *testing.T) {
 		t.Fatalf("an advertised tool should dispatch: %d %s", okRec.Code, okRec.Body)
 	}
 }
+
+// This server returns all 21 tools in one page and never issues a
+// `nextCursor`, so any cursor a client sends is one it never got from
+// here. Ignoring it and serving page one again would leave a paging
+// client looping over the same page forever.
+func TestModernToolsListRejectsAnUnknownCursor(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	body := modernBody("1", "tools/list", `"cursor":"eyJwYWdlIjogM30="`)
+	rec := modernPost(t, h, "tools/list", body, nil)
+
+	var env struct {
+		Error *struct {
+			Code int `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Error == nil || env.Error.Code != codeInvalidParams {
+		t.Fatalf("want -32602 for an unknown cursor, got %s", rec.Body)
+	}
+
+	// The unpaginated call is untouched, and carries no nextCursor —
+	// which is how a client knows it has the whole list.
+	plain := modernPost(t, h, "tools/list", modernBody("2", "tools/list", ""), nil)
+	res := decodeResult(t, plain)
+	if _, ok := res["nextCursor"]; ok {
+		t.Error("nextCursor present on a single-page list")
+	}
+}

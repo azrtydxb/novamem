@@ -134,3 +134,67 @@ func nonEmptyLines(s string) []string {
 	}
 	return out
 }
+
+// On the HTTP hop this bridge is the Streamable HTTP client, so it owes
+// the server the transport's request-metadata headers. Without them a
+// host speaking the modern era over stdio was rejected -32020
+// (HeaderMismatch): the bridge worked only for legacy hosts, and
+// nothing said so.
+func TestMirrorsTheTransportHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want map[string]string
+	}{
+		{
+			name: "modern tools/call carries method, name and version",
+			body: `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_search",` +
+				`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			want: map[string]string{
+				"Mcp-Method":           "tools/call",
+				"Mcp-Name":             "memory_search",
+				"Mcp-Protocol-Version": "2026-07-28",
+			},
+		},
+		{
+			// A legacy initialize declares no version in _meta, so no
+			// version header goes out — setting one would flip the
+			// server onto the modern path and strand the handshake.
+			name: "legacy initialize gets no version header",
+			body: `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`,
+			want: map[string]string{
+				"Mcp-Method":           "initialize",
+				"Mcp-Protocol-Version": "",
+				"Mcp-Name":             "",
+			},
+		},
+		{
+			name: "a name that cannot travel as ASCII is sentinel-encoded",
+			body: `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_世",` +
+				`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			want: map[string]string{"Mcp-Name": "=?base64?bWVtb3J5X+S4lg==?="},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := http.Header{}
+			mirrorRequestHeaders(h, []byte(tc.body))
+			for k, want := range tc.want {
+				if got := h.Get(k); got != want {
+					t.Errorf("%s = %q, want %q", k, got, want)
+				}
+			}
+		})
+	}
+}
+
+// A plain value that merely looks like the sentinel must be encoded too,
+// or the server decodes it into something the body never said.
+func TestSentinelLookalikeIsEncoded(t *testing.T) {
+	got := encodeHeaderValue("=?base64?literal?=")
+	if got == "=?base64?literal?=" {
+		t.Fatal("a sentinel-shaped value was passed through unencoded")
+	}
+	if !strings.HasPrefix(got, "=?base64?") || !strings.HasSuffix(got, "?=") {
+		t.Fatalf("not sentinel-encoded: %q", got)
+	}
+}
