@@ -14,16 +14,16 @@ _21 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](http
 
 Mandatory first-pass grounding tool. CALL THIS before answering any substantive user request. Returns relevant hybrid search results plus recent memory in one response so agents stop ignoring memory unless explicitly told.
 
-| Argument            | Type   | Required | Description                                                              |
-| ------------------- | ------ | -------- | ------------------------------------------------------------------------ |
-| `includeNamespaces` | array  | —        | _undocumented — see #266_                                                |
-| `includeProjects`   | array  | —        | _undocumented — see #266_                                                |
-| `k`                 | number | —        | Top-K relevant/recent entries to return.                                 |
-| `maxSensitivity`    | string | —        | Maximum sensitivity to return; defaults to private, excluding sensitive. |
-| `message`           | string | yes      | The user's current message or task.                                      |
-| `namespace`         | string | —        | _undocumented — see #266_                                                |
-| `project`           | string | —        | Project id or human name.                                                |
-| `weights`           | object | —        | _undocumented — see #266_                                                |
+| Argument            | Type   | Required | Description                                                                   |
+| ------------------- | ------ | -------- | ----------------------------------------------------------------------------- |
+| `includeNamespaces` | array  | —        | Union results across these shelves. Takes precedence over `namespace`.        |
+| `includeProjects`   | array  | —        | Active-project mode: union user-global with each listed project (id or name). |
+| `k`                 | number | —        | Top-K relevant/recent entries to return.                                      |
+| `maxSensitivity`    | string | —        | Maximum sensitivity to return; defaults to private, excluding sensitive.      |
+| `message`           | string | yes      | The user's current message or task.                                           |
+| `namespace`         | string | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf. |
+| `project`           | string | —        | Project id or human name.                                                     |
+| `weights`           | object | —        | Per-signal weight overrides. Omit to use defaults.                            |
 
 ### `memory_capture`
 
@@ -31,40 +31,40 @@ Low-friction durable write path. CALL THIS after meaningful work to save durable
 
 | Argument       | Type    | Required | Description                                                                                                                                                                |
 | -------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `capturedFrom` | string  | —        | _undocumented — see #266_                                                                                                                                                  |
+| `capturedFrom` | string  | —        | Agent name, conversation id, or other channel ref.                                                                                                                         |
 | `confidence`   | number  | —        | 0..1, default 1.0                                                                                                                                                          |
-| `content`      | string  | yes      | _undocumented — see #266_                                                                                                                                                  |
+| `content`      | string  | yes      | The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.                                                            |
 | `expiresAt`    | string  | —        | Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted. |
-| `force`        | boolean | —        | _undocumented — see #266_                                                                                                                                                  |
-| `metadata`     | object  | —        | _undocumented — see #266_                                                                                                                                                  |
-| `namespace`    | string  | —        | _undocumented — see #266_                                                                                                                                                  |
+| `force`        | boolean | —        | Bypass the worthiness gate. Default false.                                                                                                                                 |
+| `metadata`     | object  | —        | Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.                                                                                    |
+| `namespace`    | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                              |
 | `project`      | string  | —        | Optional project (sub-brain) to scope to.                                                                                                                                  |
-| `sensitivity`  | string  | —        | _undocumented — see #266_                                                                                                                                                  |
-| `source`       | string  | —        | _undocumented — see #266_                                                                                                                                                  |
-| `sourceType`   | string  | —        | _undocumented — see #266_                                                                                                                                                  |
+| `sensitivity`  | string  | —        | public \| internal \| private \| sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise.                                                   |
+| `source`       | string  | —        | Free-text origin label stored with the entry (e.g. an app or surface name).                                                                                                |
+| `sourceType`   | string  | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                                                                        |
 
 ### `memory_session_recap`
 
 Ingest a concise end-of-session recap as durable typed memories. Use this after meaningful sessions to save decisions, setup facts, root causes, preferences, project conventions, and safety constraints without dumping transcripts.
 
-| Argument             | Type    | Required | Description                               |
-| -------------------- | ------- | -------- | ----------------------------------------- |
-| `capturedFrom`       | string  | —        | _undocumented — see #266_                 |
-| `confidence`         | number  | —        | 0..1, default 1.0                         |
-| `decisions`          | array   | —        | _undocumented — see #266_                 |
-| `force`              | boolean | —        | _undocumented — see #266_                 |
-| `metadata`           | object  | —        | _undocumented — see #266_                 |
-| `namespace`          | string  | —        | _undocumented — see #266_                 |
-| `other`              | array   | —        | _undocumented — see #266_                 |
-| `preferences`        | array   | —        | _undocumented — see #266_                 |
-| `project`            | string  | —        | Optional project (sub-brain) to scope to. |
-| `projectConventions` | array   | —        | _undocumented — see #266_                 |
-| `rootCauses`         | array   | —        | _undocumented — see #266_                 |
-| `safetyConstraints`  | array   | —        | _undocumented — see #266_                 |
-| `sensitivity`        | string  | —        | _undocumented — see #266_                 |
-| `setupFacts`         | array   | —        | _undocumented — see #266_                 |
-| `source`             | string  | —        | _undocumented — see #266_                 |
-| `sourceType`         | string  | —        | _undocumented — see #266_                 |
+| Argument             | Type    | Required | Description                                                                                                              |
+| -------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `capturedFrom`       | string  | —        | Agent name, conversation id, or other channel ref.                                                                       |
+| `confidence`         | number  | —        | 0..1, default 1.0                                                                                                        |
+| `decisions`          | array   | —        | Decisions reached this session, one self-contained sentence each.                                                        |
+| `force`              | boolean | —        | Bypass the worthiness gate. Default false.                                                                               |
+| `metadata`           | object  | —        | Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.                                  |
+| `namespace`          | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                            |
+| `other`              | array   | —        | Durable items that fit none of the typed buckets above.                                                                  |
+| `preferences`        | array   | —        | Preferences the user expressed, one per item.                                                                            |
+| `project`            | string  | —        | Optional project (sub-brain) to scope to.                                                                                |
+| `projectConventions` | array   | —        | Conventions this project follows, one per item.                                                                          |
+| `rootCauses`         | array   | —        | Root causes established this session — what actually went wrong, not what was tried.                                     |
+| `safetyConstraints`  | array   | —        | Constraints that must not be violated later (destructive operations, approval boundaries).                               |
+| `sensitivity`        | string  | —        | public \| internal \| private \| sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise. |
+| `setupFacts`         | array   | —        | Verified environment facts: hosts, paths, versions, credentials' locations (never the credentials).                      |
+| `source`             | string  | —        | Free-text origin label stored with the entry (e.g. an app or surface name).                                              |
+| `sourceType`         | string  | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                      |
 
 ### `memory_hygiene`
 
@@ -104,7 +104,7 @@ Search the user's persistent memory store for facts about them. CALL THIS PROACT
 | `k`                 | number | —        | Top-K to return (default 10)                                                                                                                                                                                       |
 | `namespace`         | string | —        | Single namespace shelf to search. Overridden by `includeNamespaces` when both are set. Omit both to fan out across every namespace with entries visible in the current scope (user-global and/or active projects). |
 | `project`           | string | —        | Project to scope to. Accepts id (ULID) or human name. Omit for user-wide entries.                                                                                                                                  |
-| `query`             | string | yes      | _undocumented — see #266_                                                                                                                                                                                          |
+| `query`             | string | yes      | What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.                                                                                        |
 | `weights`           | object | —        | Per-signal weight overrides. Omit to use defaults.                                                                                                                                                                 |
 
 ### `memory_remember`
@@ -115,12 +115,12 @@ Store a personal fact about the user in their persistent memory store. USE THIS 
 | -------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `capturedFrom` | string  | —        | Agent name, conversation id, or other channel ref.                                                                                                                         |
 | `confidence`   | number  | —        | 0..1, default 1.0                                                                                                                                                          |
-| `content`      | string  | yes      | _undocumented — see #266_                                                                                                                                                  |
+| `content`      | string  | yes      | The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.                                                            |
 | `expiresAt`    | string  | —        | Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted. |
 | `force`        | boolean | —        | Bypass the worthiness gate. Default false.                                                                                                                                 |
-| `namespace`    | string  | —        | _undocumented — see #266_                                                                                                                                                  |
+| `namespace`    | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                              |
 | `project`      | string  | —        | Optional project (sub-brain) to scope to.                                                                                                                                  |
-| `source`       | string  | —        | _undocumented — see #266_                                                                                                                                                  |
+| `source`       | string  | —        | Free-text origin label stored with the entry (e.g. an app or surface name).                                                                                                |
 | `sourceType`   | string  | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                                                                        |
 
 ### `memory_today`
@@ -130,11 +130,11 @@ Surface what the user has worked on today. CALL THIS AT THE START OF A NEW CONVE
 | Argument            | Type   | Required | Description                                                                                                                                            |
 | ------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `contentMode`       | string | —        | "snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids" omits content and metadata (rank first, hydrate later). Default "full". |
-| `includeNamespaces` | array  | —        | _undocumented — see #266_                                                                                                                              |
-| `includeProjects`   | array  | —        | _undocumented — see #266_                                                                                                                              |
-| `k`                 | number | —        | _undocumented — see #266_                                                                                                                              |
-| `maxSensitivity`    | string | —        | _undocumented — see #266_                                                                                                                              |
-| `namespace`         | string | —        | _undocumented — see #266_                                                                                                                              |
+| `includeNamespaces` | array  | —        | Union results across these shelves. Takes precedence over `namespace`.                                                                                 |
+| `includeProjects`   | array  | —        | Active-project mode: union user-global with each listed project (id or name).                                                                          |
+| `k`                 | number | —        | How many entries to return.                                                                                                                            |
+| `maxSensitivity`    | string | —        | Maximum sensitivity to return; defaults to private, excluding sensitive.                                                                               |
+| `namespace`         | string | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                          |
 | `project`           | string | —        | Project id or name.                                                                                                                                    |
 
 ### `memory_recent`
@@ -145,9 +145,9 @@ Time-bounded feed of memory entries newest-first. USE THIS when the user asks "w
 | ------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `contentMode`       | string | —        | "snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids" omits content and metadata (rank first, hydrate later). Default "full". |
 | `includeNamespaces` | array  | —        | Cross-namespace recent feed.                                                                                                                           |
-| `includeProjects`   | array  | —        | _undocumented — see #266_                                                                                                                              |
-| `k`                 | number | —        | _undocumented — see #266_                                                                                                                              |
-| `namespace`         | string | —        | _undocumented — see #266_                                                                                                                              |
+| `includeProjects`   | array  | —        | Active-project mode: union user-global with each listed project (id or name).                                                                          |
+| `k`                 | number | —        | How many entries to return.                                                                                                                            |
+| `namespace`         | string | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                          |
 | `project`           | string | —        | Project id or name.                                                                                                                                    |
 | `since`             | string | —        | ISO-8601 timestamp                                                                                                                                     |
 
@@ -155,38 +155,38 @@ Time-bounded feed of memory entries newest-first. USE THIS when the user asks "w
 
 Walk graph edges from a known memory id to its strongly-linked neighbours. CALL THIS WHEN you've already found one relevant memory via `memory_search` and want adjacent context that the user may have stored alongside it but didn't mention by name — supporting decisions, prior incidents, related ADRs, the rest of a cluster of related facts. Best for "why did we make decision X", "what was the context around Y", "what's connected to this". Depth 1 is the hot path (default); 2 and 3 walk further but cost more. Pass the seed `id` returned by a previous search/recent call. Use this as a _follow-up_ to `memory_search`, not as a first-pass tool.
 
-| Argument          | Type   | Required | Description                                |
-| ----------------- | ------ | -------- | ------------------------------------------ |
-| `depth`           | number | —        | Traversal depth (default 1)                |
-| `id`              | string | yes      | _undocumented — see #266_                  |
-| `includeProjects` | array  | —        | _undocumented — see #266_                  |
-| `k`               | number | —        | _undocumented — see #266_                  |
-| `project`         | string | —        | Project id or name (for entry resolution). |
+| Argument          | Type   | Required | Description                                                                   |
+| ----------------- | ------ | -------- | ----------------------------------------------------------------------------- |
+| `depth`           | number | —        | Traversal depth (default 1)                                                   |
+| `id`              | string | yes      | Seed memory id (ULID) to walk out from.                                       |
+| `includeProjects` | array  | —        | Active-project mode: union user-global with each listed project (id or name). |
+| `k`               | number | —        | How many entries to return.                                                   |
+| `project`         | string | —        | Project id or name (for entry resolution).                                    |
 
 ### `memory_forget`
 
 Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like "forget that", "delete the entry about X", "remove what I said about Y", "that's wrong, drop it". Do NOT call this proactively or as a way to "clean up" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.
 
-| Argument  | Type   | Required | Description                       |
-| --------- | ------ | -------- | --------------------------------- |
-| `id`      | string | yes      | _undocumented — see #266_         |
-| `project` | string | —        | Project id or name (scope check). |
+| Argument  | Type   | Required | Description                                                                                                |
+| --------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `id`      | string | yes      | Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200. |
+| `project` | string | —        | Project id or name (scope check).                                                                          |
 
 ### `memory_update`
 
 Rewrite an existing memory in place when a fact about the user has CHANGED. USE THIS — not forget+remember — when the user says "actually, I moved", "that's outdated", "correction", "I switched to X now", "I no longer use Y", "update what you have on Z". Preserves id, hit count, graph edges, and creation date — so the new content keeps every connection the original had. forget+remember would lose all of that. Omit `content` to update only metadata-side fields (sourceType, confidence, capturedFrom) without re-embedding. If you're not sure whether the old fact still applies somewhere else, search first to find related entries that may also need updating.
 
-| Argument       | Type   | Required | Description                       |
-| -------------- | ------ | -------- | --------------------------------- |
-| `capturedFrom` | string | —        | _undocumented — see #266_         |
-| `confidence`   | number | —        | 0..1                              |
-| `content`      | string | —        | _undocumented — see #266_         |
-| `id`           | string | yes      | Memory id (ULID).                 |
-| `metadata`     | object | —        | _undocumented — see #266_         |
-| `namespace`    | string | —        | _undocumented — see #266_         |
-| `project`      | string | —        | Project id or name (scope check). |
-| `sensitivity`  | string | —        | _undocumented — see #266_         |
-| `sourceType`   | string | —        | _undocumented — see #266_         |
+| Argument       | Type   | Required | Description                                                                                                              |
+| -------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `capturedFrom` | string | —        | Agent name, conversation id, or other channel ref.                                                                       |
+| `confidence`   | number | —        | 0..1                                                                                                                     |
+| `content`      | string | —        | Replacement text. The id, its graph edges and its hit count survive the rewrite.                                         |
+| `id`           | string | yes      | Memory id (ULID).                                                                                                        |
+| `metadata`     | object | —        | Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.                                  |
+| `namespace`    | string | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                            |
+| `project`      | string | —        | Project id or name (scope check).                                                                                        |
+| `sensitivity`  | string | —        | public \| internal \| private \| sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise. |
+| `sourceType`   | string | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                      |
 
 ### `memory_stats`
 

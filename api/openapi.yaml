@@ -55,7 +55,461 @@ components:
       description:
         Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax.
         Browsers attach it automatically.
-  schemas: {}
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: &id001
+          type: string
+      required:
+        - error
+    MemoryEntry:
+      type: object
+      properties:
+        id: *id001
+        content: *id001
+        namespace: *id001
+        project:
+          type: string
+          nullable: true
+        tier:
+          type: string
+          enum:
+            - warm
+            - cold
+        source: *id001
+        score: &id003
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - content
+    RememberResult:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        rejected: *id001
+        deduplicated: &id002
+          type: boolean
+        embedded: *id002
+      required:
+        - id
+    CaptureResult:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        rejected: *id001
+        deduplicated: *id002
+        updated: *id002
+        superseded:
+          type: array
+          items: *id001
+        embedded: *id002
+      required:
+        - id
+    EntryList:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryEntry"
+      required:
+        - results
+    UpdateResult:
+      type: object
+      properties:
+        id: *id001
+        updated: *id002
+        embeddingChanged: *id002
+      required:
+        - id
+        - updated
+        - embeddingChanged
+    ForgetResult:
+      type: object
+      properties:
+        deleted: *id002
+        coldDeleteOk: *id002
+      required:
+        - deleted
+    Stats:
+      type: object
+      properties:
+        byNamespace:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              warm: *id003
+              cold: *id003
+        totalWarm: *id003
+        totalCold: *id003
+        lastDecayAt:
+          type: string
+          nullable: true
+        uptimeMs: *id003
+      required:
+        - byNamespace
+        - totalWarm
+        - totalCold
+    SessionRecapResult:
+      type: object
+      properties:
+        saved: *id003
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureResult"
+      required:
+        - saved
+        - results
+    HygieneReport:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            scanned: *id003
+            lowValue: *id003
+            stale: *id003
+            duplicateClusters: *id003
+            contradictionCandidates: *id003
+            orphanCandidates: *id003
+        lowValue:
+          type: array
+          items: {}
+        stale:
+          type: array
+          items: {}
+        duplicateClusters:
+          type: array
+          items: {}
+        contradictionCandidates:
+          type: array
+          items: {}
+        orphanCandidates:
+          type: array
+          items: {}
+      required:
+        - summary
+    EvaluateReport:
+      type: object
+      properties:
+        suite: *id001
+        passed: *id002
+        summary:
+          type: object
+          properties:
+            total: *id003
+            passed: *id003
+            failed: *id003
+        cases:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *id001
+              passed: *id002
+      required:
+        - suite
+        - passed
+        - summary
+        - cases
+    DecayResult:
+      type: object
+      properties:
+        demoted: *id003
+        promoted: *id003
+        expired: *id003
+      required:
+        - demoted
+        - promoted
+        - expired
+    DreamCycleResult:
+      type: object
+      properties:
+        walked: *id003
+        merged: *id003
+        edgesPromoted: *id003
+        factsWalked: *id003
+        factClustersJudged: *id003
+        factsSuperseded: *id003
+        durationMs: *id003
+    ReapOrphansResult:
+      type: object
+      properties:
+        attempted: *id003
+        cleared: *id003
+        abandoned: *id003
+        pending: *id003
+        total: *id003
+    ObserveResult:
+      type: object
+      properties:
+        observed: *id003
+        reflected: *id002
+        logChars: *id003
+    Project:
+      type: object
+      properties:
+        id: *id001
+        name: *id001
+        ownerUserId: *id001
+        createdAt: *id001
+      required:
+        - id
+        - name
+    ProjectList:
+      type: object
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectListItem"
+      required:
+        - projects
+    ActiveProject:
+      type: object
+      properties:
+        active:
+          type: object
+          properties:
+            id: *id001
+            name: *id001
+          nullable: true
+      required:
+        - active
+    MemberList:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              userId: *id001
+              username: *id001
+              role: *id001
+              joinedAt: *id001
+      required:
+        - members
+    TodayFeed:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum:
+                  - remember
+                  - token
+                  - project
+                  - audit
+              at: *id001
+              text: *id001
+              project:
+                type: string
+                nullable: true
+      required:
+        - events
+    Onboarding:
+      type: object
+      properties:
+        bootstrapDone: *id002
+        userExists: *id002
+        mintedToken: *id002
+        remembered: *id002
+        userId:
+          type: string
+          nullable: true
+    MetricsHistory:
+      type: object
+      properties:
+        hours: *id003
+        samples:
+          type: array
+          items:
+            type: object
+            properties:
+              sampledAt: *id001
+              queries: *id003
+              remembers: *id003
+    TokenList:
+      type: object
+      properties:
+        tokens:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+        - tokens
+    MintedToken:
+      type: object
+      properties:
+        token: *id001
+        userId: *id001
+        createdAt: *id001
+        scope: *id001
+        projectId:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          nullable: true
+        warning: *id001
+      required:
+        - token
+    Usage:
+      type: object
+      properties:
+        entries: *id003
+        quota:
+          type: object
+          properties:
+            maxEntries:
+              type: number
+              nullable: true
+            writesPerMinute:
+              type: number
+              nullable: true
+    ChangeFeed:
+      type: object
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              seq: *id003
+              entryId: *id001
+              projectId:
+                type: string
+                nullable: true
+              change:
+                type: string
+                enum:
+                  - created
+                  - updated
+                  - superseded
+                  - deleted
+                  - expired
+              detail:
+                type: object
+                additionalProperties: true
+                nullable: true
+              at: *id001
+        nextSeq:
+          type: number
+          nullable: true
+      required:
+        - changes
+    Health:
+      type: object
+      properties:
+        ok: *id002
+      required:
+        - ok
+      additionalProperties: false
+    ProjectDeleted:
+      type: object
+      properties:
+        deleted: &id004
+          type: boolean
+        entriesRemoved:
+          type: number
+        coldCollectionsDropped:
+          type: array
+          items: &id006
+            type: string
+          nullable: true
+          description: Per-scope report from the cold vector store; null when it dropped nothing.
+        graphCleared: *id004
+      required:
+        - deleted
+    AdoptionReport:
+      type: object
+      properties:
+        requestedClient: &id005
+          type: string
+        server:
+          type: object
+          additionalProperties: true
+        mcp:
+          type: object
+          additionalProperties: true
+        features:
+          type: object
+          additionalProperties: true
+        requiredTools:
+          type: array
+          items: *id005
+        diagnostics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        refresh:
+          type: object
+          additionalProperties: true
+      required:
+        - requestedClient
+        - server
+        - mcp
+        - diagnostics
+    SearchResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryEntry"
+        degraded:
+          type: boolean
+          description: True when a tier (cold store or graph) was unreachable, so these hits may be partial.
+      required:
+        - results
+    ProjectListItem:
+      type: object
+      properties:
+        id: *id001
+        name: *id001
+        ownerUserId: *id001
+        createdAt: *id001
+        role:
+          type: string
+          description: "The caller's role on this project: owner or member."
+      required:
+        - id
+        - name
+        - role
+    MemberAdded:
+      type: object
+      properties:
+        added: &id007
+          type: boolean
+        userId: *id006
+        username: *id006
+      required:
+        - added
+        - userId
+        - username
+    MemberRemoved:
+      type: object
+      properties:
+        removed: *id007
+      required:
+        - removed
 paths:
   /v1/auth/rotate-token:
     post:
@@ -66,8 +520,22 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: MintedToken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MintedToken"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1AuthRotateToken
+      description:
+        Mint a replacement bearer for the caller and invalidate the one used to make this call,
+        in a single step. The old token stops working the moment this returns, so read the new one from
+        the response before discarding it.
   /v1/adoption:
     post:
       summary: Client adoption and refresh diagnostics for MCP/tooling integrations
@@ -99,7 +567,17 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: AdoptionReport
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdoptionReport"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_adoption
         description:
@@ -150,7 +628,17 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: HygieneReport
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HygieneReport"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_hygiene
         description:
@@ -191,7 +679,17 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: EvaluateReport
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluateReport"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_evaluate
         description:
@@ -310,8 +808,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "200":
-          description: Default Response
+          description: SearchResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
       x-mcp-tool:
         name: memory_search
         description:
@@ -331,6 +839,9 @@ paths:
           properties:
             query:
               type: string
+              description:
+                What to search for, in natural language. Hybrid retrieval fuses keyword, vector,
+                graph, recency and entity signals over it.
             k:
               type: number
               description: Top-K to return (default 10)
@@ -471,8 +982,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "200":
-          description: Default Response
+          description: SearchResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
       x-mcp-tool:
         name: memory_context
         description:
@@ -490,10 +1011,12 @@ paths:
               description: Top-K relevant/recent entries to return.
             namespace:
               type: string
+              description: Namespace shelf to write to / read from. Omit for the caller's default shelf.
             includeNamespaces:
               type: array
               items:
                 type: string
+              description: Union results across these shelves. Takes precedence over `namespace`.
             maxSensitivity:
               type: string
               enum:
@@ -509,6 +1032,7 @@ paths:
               type: array
               items:
                 type: string
+              description: "Active-project mode: union user-global with each listed project (id or name)."
             weights:
               type: object
               properties:
@@ -518,6 +1042,7 @@ paths:
                   type: number
                 graph:
                   type: number
+              description: Per-signal weight overrides. Omit to use defaults.
           required:
             - message
         annotations:
@@ -590,8 +1115,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: Default Response
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "201":
+          description: CaptureResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureResult"
       x-mcp-tool:
         name: memory_capture
         description:
@@ -603,24 +1138,35 @@ paths:
           properties:
             content:
               type: string
+              description:
+                The text to store. One self-contained fact — an entry that needs its conversation
+                to make sense is not durable.
             namespace:
               type: string
+              description: Namespace shelf to write to / read from. Omit for the caller's default shelf.
             source:
               type: string
+              description: Free-text origin label stored with the entry (e.g. an app or surface name).
             sourceType:
               type: string
+              description: chat | email | code-review | doc | inference | observation | system | manual
             capturedFrom:
               type: string
+              description: Agent name, conversation id, or other channel ref.
             confidence:
               type: number
               description: 0..1, default 1.0
             force:
               type: boolean
+              description: Bypass the worthiness gate. Default false.
             project:
               type: string
               description: Optional project (sub-brain) to scope to.
             metadata:
               type: object
+              description:
+                Arbitrary JSON stored alongside the entry and returned with it. Not indexed
+                for search.
             sensitivity:
               type: string
               enum:
@@ -628,6 +1174,9 @@ paths:
                 - internal
                 - private
                 - sensitive
+              description:
+                public | internal | private | sensitive. Omitted, novamem infers sensitive
+                for obvious secrets and private otherwise.
             expiresAt:
               type: string
               description:
@@ -743,8 +1292,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: Default Response
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "201":
+          description: SessionRecapResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionRecapResult"
       x-mcp-tool:
         name: memory_session_recap
         description:
@@ -758,48 +1317,69 @@ paths:
               type: array
               items:
                 type: string
+              description: Decisions reached this session, one self-contained sentence each.
             setupFacts:
               type: array
               items:
                 type: string
+              description:
+                "Verified environment facts: hosts, paths, versions, credentials' locations
+                (never the credentials)."
             rootCauses:
               type: array
               items:
                 type: string
+              description:
+                Root causes established this session — what actually went wrong, not what was
+                tried.
             preferences:
               type: array
               items:
                 type: string
+              description: Preferences the user expressed, one per item.
             projectConventions:
               type: array
               items:
                 type: string
+              description: Conventions this project follows, one per item.
             safetyConstraints:
               type: array
               items:
                 type: string
+              description:
+                Constraints that must not be violated later (destructive operations, approval
+                boundaries).
             other:
               type: array
               items:
                 type: string
+              description: Durable items that fit none of the typed buckets above.
             namespace:
               type: string
+              description: Namespace shelf to write to / read from. Omit for the caller's default shelf.
             source:
               type: string
+              description: Free-text origin label stored with the entry (e.g. an app or surface name).
             sourceType:
               type: string
+              description: chat | email | code-review | doc | inference | observation | system | manual
             capturedFrom:
               type: string
+              description: Agent name, conversation id, or other channel ref.
             confidence:
               type: number
               description: 0..1, default 1.0
             force:
               type: boolean
+              description: Bypass the worthiness gate. Default false.
             project:
               type: string
               description: Optional project (sub-brain) to scope to.
             metadata:
               type: object
+              description:
+                Arbitrary JSON stored alongside the entry and returned with it. Not indexed
+                for search.
             sensitivity:
               type: string
               enum:
@@ -807,6 +1387,9 @@ paths:
                 - internal
                 - private
                 - sensitive
+              description:
+                public | internal | private | sensitive. Omitted, novamem infers sensitive
+                for obvious secrets and private otherwise.
         annotations:
           title: Ingest session recap
           readOnlyHint: false
@@ -878,8 +1461,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: Default Response
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "201":
+          description: RememberResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RememberResult"
       x-mcp-tool:
         name: memory_remember
         description:
@@ -900,10 +1493,15 @@ paths:
           properties:
             content:
               type: string
+              description:
+                The text to store. One self-contained fact — an entry that needs its conversation
+                to make sense is not durable.
             namespace:
               type: string
+              description: Namespace shelf to write to / read from. Omit for the caller's default shelf.
             source:
               type: string
+              description: Free-text origin label stored with the entry (e.g. an app or surface name).
             sourceType:
               type: string
               description: chat | email | code-review | doc | inference | observation | system | manual
@@ -952,8 +1550,18 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: a cacheable text prefix, not a JSON object
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1ContextPrefix
+      description:
+        "A cacheable text prefix describing the caller's memory, shaped for prompt caching:
+        stable across calls so an LLM provider can reuse the cached tokens. Returns 404 when the observer
+        subsystem is disabled."
   /v1/observe:
     post:
       summary: Trigger an observer+reflector pass over recent memories (operator)
@@ -980,8 +1588,21 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: ObserveResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObserveResult"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1Observe
+      description:
+        "Run the observer and reflector over recent entries: extract durable facts, then judge
+        them. Operator-triggered — the same pass runs on a schedule."
   /v1/decay:
     post:
       summary: Trigger a decay sweep (operator)
@@ -1003,8 +1624,22 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: DecayResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecayResult"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1Decay
+      description:
+        Run the decay loop now instead of waiting for its 6h tick. Demotes entries idle longer
+        than their earned lifespan to the cold tier, promotes cold entries that were just hit, and expires
+        anything past its TTL.
   /v1/dream-cycle:
     post:
       summary: Trigger the dedup-merge + edge-promotion pass (operator)
@@ -1015,8 +1650,21 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: DreamCycleResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DreamCycleResult"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1DreamCycle
+      description:
+        "Run the compaction pass now: walk every entry, merge near-duplicates, promote co-occurrence
+        edges, and supersede contradicted facts. Minutes, not seconds, on a large store."
   /v1/memories/{id}:
     put:
       summary: Update a memory entry's content / metadata / namespace
@@ -1074,7 +1722,17 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: UpdateResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateResult"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_update
         description:
@@ -1093,10 +1751,15 @@ paths:
               description: Memory id (ULID).
             content:
               type: string
+              description: Replacement text. The id, its graph edges and its hit count survive the rewrite.
             namespace:
               type: string
+              description: Namespace shelf to write to / read from. Omit for the caller's default shelf.
             metadata:
               type: object
+              description:
+                Arbitrary JSON stored alongside the entry and returned with it. Not indexed
+                for search.
             sensitivity:
               type: string
               enum:
@@ -1104,10 +1767,15 @@ paths:
                 - internal
                 - private
                 - sensitive
+              description:
+                public | internal | private | sensitive. Omitted, novamem infers sensitive
+                for obvious secrets and private otherwise.
             sourceType:
               type: string
+              description: chat | email | code-review | doc | inference | observation | system | manual
             capturedFrom:
               type: string
+              description: Agent name, conversation id, or other channel ref.
             confidence:
               type: number
               description: 0..1
@@ -1134,8 +1802,21 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: ReapOrphansResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapOrphansResult"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1ReapOrphans
+      description:
+        Retry cold-store deletions that failed earlier. An entry deleted while Qdrant was unreachable
+        leaves a row in `cold_orphans`; this drains that queue and reports what is still pending.
   /v1/recent:
     post:
       summary: List recent memories for the caller's scope
@@ -1198,7 +1879,17 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: EntryList
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_recent
         description:
@@ -1213,6 +1904,7 @@ paths:
           properties:
             namespace:
               type: string
+              description: Namespace shelf to write to / read from. Omit for the caller's default shelf.
             includeNamespaces:
               type: array
               items:
@@ -1220,6 +1912,7 @@ paths:
               description: Cross-namespace recent feed.
             k:
               type: number
+              description: How many entries to return.
             since:
               type: string
               description: ISO-8601 timestamp
@@ -1230,6 +1923,7 @@ paths:
               type: array
               items:
                 type: string
+              description: "Active-project mode: union user-global with each listed project (id or name)."
             contentMode:
               type: string
               enum:
@@ -1305,8 +1999,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "200":
-          description: Default Response
+          description: SearchResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
       x-mcp-tool:
         name: memory_neighbors
         description:
@@ -1322,11 +2026,13 @@ paths:
           properties:
             id:
               type: string
+              description: Seed memory id (ULID) to walk out from.
             depth:
               type: number
               description: Traversal depth (default 1)
             k:
               type: number
+              description: How many entries to return.
             project:
               type: string
               description: Project id or name (for entry resolution).
@@ -1334,6 +2040,7 @@ paths:
               type: array
               items:
                 type: string
+              description: "Active-project mode: union user-global with each listed project (id or name)."
           required:
             - id
         annotations:
@@ -1371,7 +2078,17 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: ForgetResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForgetResult"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_forget
         description:
@@ -1386,6 +2103,9 @@ paths:
           properties:
             id:
               type: string
+              description:
+                "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is
+                already gone still answers 200."
             project:
               type: string
               description: Project id or name (scope check).
@@ -1409,7 +2129,17 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_stats
         description:
@@ -1440,8 +2170,15 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: per-caller counters; keys follow the collector
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeMetrics
+      description: "Per-caller counters: queries, writes, and the rolling rates behind the dashboard."
   /v1/me/metrics/history:
     get:
       summary: Rolling 1-48h sample history of queries + remembers
@@ -1460,8 +2197,19 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: MetricsHistory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsHistory"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeMetricsHistory
+      description: 24h of one-minute buckets for the caller, oldest first — the series the dashboard charts.
   /v1/me/tokens:
     get:
       summary: List the caller's API tokens
@@ -1472,8 +2220,21 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: TokenList
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeTokens
+      description:
+        The caller's bearers as metadata only — label, scope, creation and expiry. Plaintext
+        is never stored, so it cannot be listed.
     post:
       summary: Mint a new `nm_…` API token for the caller
       tags:
@@ -1506,9 +2267,22 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: Default Response
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "201":
+          description: MintedToken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MintedToken"
       operationId: postV1MeTokens
+      description:
+        Mint an additional bearer for the caller, optionally scoped to one project or read-only.
+        The plaintext appears in this response and nowhere else.
   /v1/me/tokens/{hash}:
     delete:
       summary: Hard-delete a token by its sha256 hash
@@ -1526,8 +2300,15 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: revocation confirmation
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: deleteV1MeTokensByHash
+      description: Revoke one of the caller's own bearers by its hash, as listed by `GET /v1/me/tokens`.
   /v1/me/projects:
     get:
       summary: List projects the caller owns or is a member of
@@ -1538,7 +2319,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: ProjectList
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: project_list
         description:
@@ -1580,8 +2371,18 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: Default Response
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "201":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
       x-mcp-tool:
         name: project_create
         description:
@@ -1626,7 +2427,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: ProjectDeleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeleted"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: project_delete
         description:
@@ -1672,8 +2483,19 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: MemberList
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeProjectsByIdMembers
+      description: Who can see this project's entries, with each member's role and join time.
     post:
       summary: Invite a user (by exact email) to a project (owner only)
       tags:
@@ -1708,8 +2530,18 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: Default Response
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "201":
+          description: MemberAdded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberAdded"
       x-mcp-tool:
         name: project_share
         description:
@@ -1764,8 +2596,18 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "200":
-          description: Default Response
+          description: MemberRemoved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberRemoved"
       x-mcp-tool:
         name: project_unshare
         description:
@@ -1805,8 +2647,19 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: ActiveProject
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveProject"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeActiveProject
+      description: Which sub-brain the caller's `memory_*` calls default to, or null when none is active.
     put:
       summary: Set the caller's active project
       tags:
@@ -1829,7 +2682,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: ActiveProject
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveProject"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: project_activate
         description:
@@ -1854,6 +2717,18 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 17
+        outputSchema:
+          type: object
+          description:
+            'Over MCP this tool answers `{"active": "<project id>"}` — a bare id string, where
+            the HTTP route answers an object. The two were written separately; the difference is real
+            and is recorded here rather than papered over.'
+          properties:
+            active:
+              type: string
+              description: The activated project id.
+          required:
+            - active
       operationId: putV1MeActiveProject
     delete:
       summary: Clear the caller's active project
@@ -1863,8 +2738,14 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: Default Response
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "204":
+          description: No content — the change is the whole result
       x-mcp-tool:
         name: project_deactivate
         description:
@@ -1884,6 +2765,18 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 18
+        outputSchema:
+          type: object
+          description:
+            'Over MCP this tool answers `{"active": null}`, where the HTTP route answers 204
+            with no body.'
+          properties:
+            active:
+              type: string
+              nullable: true
+              description: Always null — the active project has been cleared.
+          required:
+            - active
       operationId: deleteV1MeActiveProject
   /v1/me/export:
     get:
@@ -1910,8 +2803,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: a streamed NDJSON dump whose line shape is MemoryEntry
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeExport
+      description:
+        Stream every entry the caller owns as NDJSON, one `MemoryEntry` per line. Sized for
+        piping to a file, not for holding in memory.
   /v1/me/import:
     post:
       summary: Import entries (from an export or a migration) as new memories
@@ -1972,8 +2874,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: counts echoed from a streamed upload
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1MeImport
+      description:
+        Restore entries from an NDJSON stream in the shape `/v1/me/export` produces. Applies
+        the same worthiness gate and dedup as a normal write unless forced.
   /v1/me/usage:
     get:
       summary: The caller's stored-entry count and effective quotas
@@ -1984,8 +2895,21 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: Usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Usage"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeUsage
+      description:
+        How much the caller has stored against their quota, and what that quota is. Null ceilings
+        mean unlimited.
   /v1/me/changes:
     get:
       summary: Per-user memory changelog (created/updated/superseded/deleted/expired)
@@ -2019,8 +2943,22 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: ChangeFeed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangeFeed"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeChanges
+      description:
+        Sequence-ordered feed of what changed for the caller — created, updated, superseded,
+        deleted, expired — so a client can catch up after being offline. Pass the previous `nextSeq` to
+        resume.
   /v1/me/today:
     get:
       summary: Lightweight cross-table activity feed for the user dashboard
@@ -2031,7 +2969,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: TodayFeed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayFeed"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_today
         description:
@@ -2046,10 +2994,12 @@ paths:
           properties:
             namespace:
               type: string
+              description: Namespace shelf to write to / read from. Omit for the caller's default shelf.
             includeNamespaces:
               type: array
               items:
                 type: string
+              description: Union results across these shelves. Takes precedence over `namespace`.
             maxSensitivity:
               type: string
               enum:
@@ -2057,6 +3007,7 @@ paths:
                 - internal
                 - private
                 - sensitive
+              description: Maximum sensitivity to return; defaults to private, excluding sensitive.
             contentMode:
               type: string
               enum:
@@ -2068,6 +3019,7 @@ paths:
                 omits content and metadata (rank first, hydrate later). Default "full".'
             k:
               type: number
+              description: How many entries to return.
             project:
               type: string
               description: Project id or name.
@@ -2075,6 +3027,7 @@ paths:
               type: array
               items:
                 type: string
+              description: "Active-project mode: union user-global with each listed project (id or name)."
         annotations:
           title: Today's memory feed
           readOnlyHint: true
@@ -2092,8 +3045,21 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: Onboarding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Onboarding"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1MeOnboarding
+      description:
+        "What a first-run client still needs to do: whether bootstrap ran, whether the user
+        exists, whether a token was minted, whether anything has been remembered yet."
   /v1/admin/tokens/revoke:
     post:
       summary: Revoke a user bearer by plaintext token
@@ -2117,8 +3083,18 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: revocation count
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1AdminTokensRevoke
+      description:
+        Revoke a bearer by presenting its plaintext. The server hashes the input and deletes
+        the matching row, so a token pasted from a leaked config can be killed without knowing which user
+        it belongs to.
   /v1/admin/users:
     post:
       summary: Provision a user (and optionally a bearer token) non-interactively
@@ -2165,8 +3141,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: created admin user
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: postV1AdminUsers
+      description:
+        Provision a user and mint their first `nm_…` bearer. The plaintext token is returned
+        once and never again — it is stored only as a sha256 hash.
     get:
       summary: List every user with entry + token counts
       tags:
@@ -2176,8 +3161,15 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: admin user list
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1AdminUsers
+      description: Every dashboard user with role and creation time. Admin session or admin bearer only.
   /v1/admin/users/{id}:
     delete:
       summary: Delete a user and everything they own (irreversible)
@@ -2201,8 +3193,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: deletion counts
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: deleteV1AdminUsersById
+      description:
+        "Remove a user and everything scoped to them: entries, tokens, project memberships.
+        Irreversible."
   /v1/admin/users/{id}/quota:
     put:
       summary: Set per-user quota overrides (null clears back to server default)
@@ -2238,8 +3239,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: the stored quota
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: putV1AdminUsersByIdQuota
+      description:
+        Set per-user ceilings on stored entries and writes per minute. Null clears a ceiling
+        rather than setting it to zero.
   /v1/admin/audit-log:
     get:
       summary: Tail the audit log
@@ -2260,8 +3270,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: admin-only paged log; shape follows the audit table
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1AdminAuditLog
+      description:
+        "Newest-first tail of every admin action: user create/delete, role change, quota change,
+        token revocation. Written by the server, never by a caller."
   /v1/admin/metrics:
     get:
       summary: Global metrics snapshot (JSON)
@@ -2272,8 +3291,18 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: counters and gauges; keys follow the collector
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1AdminMetrics
+      description:
+        Counters, gauges, rolling rates and 24h history for the whole deployment. Disabled
+        entirely when `NOVAMEM_ADMIN_DASHBOARD=0`, which 404s this route rather than returning an empty
+        body.
   /v1/admin/metrics/prom:
     get:
       summary: Same metrics in Prometheus exposition format
@@ -2284,8 +3313,17 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: Default Response
+          description: Prometheus text exposition, not JSON
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       operationId: getV1AdminMetricsProm
+      description:
+        "The same counters in Prometheus text exposition format, for scraping. Not JSON — `Content-Type:
+        text/plain`."
   /mcp:
     post:
       summary: MCP Streamable HTTP transport (dual-era)
@@ -2301,7 +3339,7 @@ paths:
         are validated on every request; an unsupported version answers -32022 with the list to retry from."
       responses:
         "200":
-          description: Default Response
+          description: "MCP transport: a JSON-RPC envelope or an SSE stream, per the MCP spec"
       operationId: postMcp
     get:
       summary: MCP Streamable HTTP transport (dual-era)
@@ -2317,7 +3355,7 @@ paths:
         are validated on every request; an unsupported version answers -32022 with the list to retry from."
       responses:
         "200":
-          description: Default Response
+          description: "MCP transport: a JSON-RPC envelope or an SSE stream, per the MCP spec"
       operationId: getMcp
     delete:
       summary: MCP Streamable HTTP transport (dual-era)
@@ -2333,7 +3371,7 @@ paths:
         are validated on every request; an unsupported version answers -32022 with the list to retry from."
       responses:
         "200":
-          description: Default Response
+          description: "MCP transport: session teardown, no body"
       operationId: deleteMcp
   /live:
     get:
@@ -2342,18 +3380,16 @@ paths:
         - liveness
       responses:
         "200":
-          description: Default Response
+          description: Health
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                required:
-                  - ok
-                additionalProperties: false
+                $ref: "#/components/schemas/Health"
       operationId: getLive
+      description:
+        Process liveness only — it checks nothing and answers 200 as long as the server is
+        running. A restart probe pointed at `/ready` would restart the pod every time Postgres hiccupped;
+        that is what this exists to avoid.
   /ready:
     get:
       summary: Readiness probe — dependency checks, boolean only
@@ -2361,17 +3397,11 @@ paths:
         - readiness
       responses:
         "200":
-          description: Default Response
+          description: Health
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                required:
-                  - ok
-                additionalProperties: false
+                $ref: "#/components/schemas/Health"
         "503":
           description: Default Response
           content:
@@ -2385,6 +3415,9 @@ paths:
                   - ok
                 additionalProperties: false
       operationId: getReady
+      description:
+        The same check as `/health`, under the name orchestrators expect. 200 when every dependency
+        answers within 5s, 503 otherwise.
   /.well-known/oauth-protected-resource:
     get:
       summary: OAuth 2.0 Protected Resource Metadata (RFC 9728)
@@ -2402,7 +3435,7 @@ paths:
         into a flow that dead-ends.'
       responses:
         "200":
-          description: Default Response
+          description: RFC 9728 document; its shape is the RFC's, not ours
           content:
             application/json:
               schema:
@@ -2429,17 +3462,11 @@ paths:
         - readiness
       responses:
         "200":
-          description: Default Response
+          description: Health
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                required:
-                  - ok
-                additionalProperties: false
+                $ref: "#/components/schemas/Health"
         "503":
           description: Default Response
           content:
@@ -2453,6 +3480,11 @@ paths:
                   - ok
                 additionalProperties: false
       operationId: getHealth
+      description:
+        'Readiness, not liveness: 200 `{"ok":true}` when the warm store and the cold store
+        both answer, 503 `{"ok":false}` when either does not. The body is boolean only — no dependency
+        detail leaks to an unauthenticated caller. Use it as a load-balancer health check; use `/live`
+        for a restart probe.'
   /v1/admin/health/deep:
     get:
       summary: Admin-only dependency snapshot (warm/cold/graph status)
@@ -2462,7 +3494,7 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: Default Response
+          description: per-dependency snapshot; keys follow the dependencies present
           content:
             application/json:
               schema:
@@ -2568,3 +3600,7 @@ paths:
                   - pendingEmbeddings
                 additionalProperties: false
       operationId: getV1AdminHealthDeep
+      description:
+        "Per-dependency status for operators: warm store, cold store and the graph tier reported
+        separately. This is the detail `/health` deliberately withholds from anonymous callers, which
+        is why it is admin-gated."

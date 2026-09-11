@@ -79,7 +79,7 @@ func main() {
 		fail("%s declares no paths", specPath)
 	}
 
-	tools, routes := collect(paths)
+	tools, routes := collect(paths, doc)
 	if len(tools) == 0 {
 		fail("%s binds no MCP tools — every tool is an operation carrying x-mcp-tool", specPath)
 	}
@@ -107,7 +107,82 @@ type route struct {
 // collect walks the spec once, pulling out the tool surface and the
 // route list in declaration-independent (sorted) order so the output is
 // byte-stable.
-func collect(paths map[string]any) ([]mcpTool, []route) {
+// responseSchema pulls an operation's successful application/json
+// schema and resolves a top-level $ref against components, because an
+// MCP client reads inputSchema/outputSchema as standalone JSON Schema
+// and has no document to resolve a local pointer inside.
+//
+// It looks for any 2xx, not just 200: the write paths answer 201, and a
+// generator that only read 200 silently dropped outputSchema from every
+// tool that creates something — quietly, which is the worst way for a
+// contract to be wrong.
+func responseSchema(op, doc map[string]any) map[string]any {
+	resp, _ := op["responses"].(map[string]any)
+	var success map[string]any
+	for _, code := range sortedKeys(resp) {
+		if len(code) == 3 && code[0] == '2' {
+			if m, ok := resp[code].(map[string]any); ok && m["content"] != nil {
+				success = m
+				break
+			}
+		}
+	}
+	content, _ := success["content"].(map[string]any)
+	appjson, _ := content["application/json"].(map[string]any)
+	schema, _ := appjson["schema"].(map[string]any)
+	if schema == nil {
+		return nil
+	}
+	return resolve(schema, doc, 0)
+}
+
+// resolve inlines local $refs. The bound counts $ref HOPS, not nesting
+// depth: a deeply nested schema with no references at all is perfectly
+// valid and an earlier version of this failed it as a false cycle.
+func resolve(node any, doc map[string]any, hops int) map[string]any {
+	if hops > 8 {
+		fail("schema $ref chain longer than 8 hops — is there a cycle?")
+	}
+	m, ok := node.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if ref, isRef := m["$ref"].(string); isRef {
+		const prefix = "#/components/schemas/"
+		if !strings.HasPrefix(ref, prefix) {
+			fail("unsupported $ref %q — only local component schemas resolve", ref)
+		}
+		comps, _ := doc["components"].(map[string]any)
+		schemas, _ := comps["schemas"].(map[string]any)
+		target, found := schemas[strings.TrimPrefix(ref, prefix)]
+		if !found {
+			fail("$ref %q points at a schema that does not exist", ref)
+		}
+		return resolve(target, doc, hops+1)
+	}
+	out := map[string]any{}
+	for k, v := range m {
+		switch vv := v.(type) {
+		case map[string]any:
+			out[k] = resolve(vv, doc, hops)
+		case []any:
+			list := make([]any, 0, len(vv))
+			for _, e := range vv {
+				if em, isMap := e.(map[string]any); isMap {
+					list = append(list, resolve(em, doc, hops))
+				} else {
+					list = append(list, e)
+				}
+			}
+			out[k] = list
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func collect(paths, doc map[string]any) ([]mcpTool, []route) {
 	var tools []mcpTool
 	var routes []route
 
@@ -127,6 +202,36 @@ func collect(paths map[string]any) ([]mcpTool, []route) {
 			if x, ok := op["x-mcp-tool"]; ok {
 				t := toTool(x, m, p)
 				r.Tool = t.name()
+				// The tool's outputSchema is the operation's own 200
+				// response, resolved. Authored once, in the place the HTTP
+				// contract already needed it — so a tool cannot describe a
+				// result shape its route does not return, and adding a
+				// response type gives the MCP surface one for free.
+				// A tool's result is its operation's successful response —
+				// unless the tool declares its own. Most tools and their
+				// routes return the same body; a few do not, because the
+				// MCP dispatcher and the HTTP handler were written
+				// separately (project_activate answers `{"active": "<id>"}`
+				// over MCP and an object over HTTP). Where they differ, the
+				// source says so rather than the generator publishing a
+				// schema that rejects the tool's real answer.
+				if _, authored := t["outputSchema"]; !authored {
+					if out := responseSchema(op, doc); out != nil {
+						t["outputSchema"] = out
+					}
+				}
+				// An operation that backs a tool gets the tool's own
+				// description unless it has written its own. The tool text
+				// is the richest thing anyone wrote about what this
+				// operation does and when to reach for it; leaving the
+				// HTTP reader with only a one-line summary while agents
+				// get a paragraph is an arbitrary difference, and copying
+				// it by hand would be a second copy to keep in step.
+				if _, has := op["description"]; !has {
+					if d, ok := t["description"].(string); ok {
+						op["description"] = d
+					}
+				}
 				tools = append(tools, t)
 			}
 			routes = append(routes, r)

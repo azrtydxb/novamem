@@ -1,6 +1,818 @@
 {
   "components": {
-    "schemas": {},
+    "schemas": {
+      "ActiveProject": {
+        "properties": {
+          "active": {
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "type": "object"
+      },
+      "AdoptionReport": {
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "features": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "mcp": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "refresh": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "requestedClient": {
+            "type": "string"
+          },
+          "requiredTools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "server": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "requestedClient",
+          "server",
+          "mcp",
+          "diagnostics"
+        ],
+        "type": "object"
+      },
+      "CaptureResult": {
+        "properties": {
+          "deduplicated": {
+            "type": "boolean"
+          },
+          "embedded": {
+            "type": "boolean"
+          },
+          "id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "rejected": {
+            "type": "string"
+          },
+          "superseded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "ChangeFeed": {
+        "properties": {
+          "changes": {
+            "items": {
+              "properties": {
+                "at": {
+                  "type": "string"
+                },
+                "change": {
+                  "enum": [
+                    "created",
+                    "updated",
+                    "superseded",
+                    "deleted",
+                    "expired"
+                  ],
+                  "type": "string"
+                },
+                "detail": {
+                  "additionalProperties": true,
+                  "nullable": true,
+                  "type": "object"
+                },
+                "entryId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "seq": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextSeq": {
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "type": "object"
+      },
+      "DecayResult": {
+        "properties": {
+          "demoted": {
+            "type": "number"
+          },
+          "expired": {
+            "type": "number"
+          },
+          "promoted": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "demoted",
+          "promoted",
+          "expired"
+        ],
+        "type": "object"
+      },
+      "DreamCycleResult": {
+        "properties": {
+          "durationMs": {
+            "type": "number"
+          },
+          "edgesPromoted": {
+            "type": "number"
+          },
+          "factClustersJudged": {
+            "type": "number"
+          },
+          "factsSuperseded": {
+            "type": "number"
+          },
+          "factsWalked": {
+            "type": "number"
+          },
+          "merged": {
+            "type": "number"
+          },
+          "walked": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "EntryList": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "EvaluateReport": {
+        "properties": {
+          "cases": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "suite": {
+            "type": "string"
+          },
+          "summary": {
+            "properties": {
+              "failed": {
+                "type": "number"
+              },
+              "passed": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "suite",
+          "passed",
+          "summary",
+          "cases"
+        ],
+        "type": "object"
+      },
+      "ForgetResult": {
+        "properties": {
+          "coldDeleteOk": {
+            "type": "boolean"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
+      "HygieneReport": {
+        "properties": {
+          "contradictionCandidates": {
+            "items": {},
+            "type": "array"
+          },
+          "duplicateClusters": {
+            "items": {},
+            "type": "array"
+          },
+          "lowValue": {
+            "items": {},
+            "type": "array"
+          },
+          "orphanCandidates": {
+            "items": {},
+            "type": "array"
+          },
+          "stale": {
+            "items": {},
+            "type": "array"
+          },
+          "summary": {
+            "properties": {
+              "contradictionCandidates": {
+                "type": "number"
+              },
+              "duplicateClusters": {
+                "type": "number"
+              },
+              "lowValue": {
+                "type": "number"
+              },
+              "orphanCandidates": {
+                "type": "number"
+              },
+              "scanned": {
+                "type": "number"
+              },
+              "stale": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "type": "object"
+      },
+      "MemberAdded": {
+        "properties": {
+          "added": {
+            "type": "boolean"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "added",
+          "userId",
+          "username"
+        ],
+        "type": "object"
+      },
+      "MemberList": {
+        "properties": {
+          "members": {
+            "items": {
+              "properties": {
+                "joinedAt": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "userId": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "type": "object"
+      },
+      "MemberRemoved": {
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "type": "object"
+      },
+      "MemoryEntry": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "project": {
+            "nullable": true,
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "warm",
+              "cold"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ],
+        "type": "object"
+      },
+      "MetricsHistory": {
+        "properties": {
+          "hours": {
+            "type": "number"
+          },
+          "samples": {
+            "items": {
+              "properties": {
+                "queries": {
+                  "type": "number"
+                },
+                "remembers": {
+                  "type": "number"
+                },
+                "sampledAt": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "MintedToken": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "projectId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "warning": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "ObserveResult": {
+        "properties": {
+          "logChars": {
+            "type": "number"
+          },
+          "observed": {
+            "type": "number"
+          },
+          "reflected": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "Onboarding": {
+        "properties": {
+          "bootstrapDone": {
+            "type": "boolean"
+          },
+          "mintedToken": {
+            "type": "boolean"
+          },
+          "remembered": {
+            "type": "boolean"
+          },
+          "userExists": {
+            "type": "boolean"
+          },
+          "userId": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Project": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProjectDeleted": {
+        "properties": {
+          "coldCollectionsDropped": {
+            "description": "Per-scope report from the cold vector store; null when it dropped nothing.",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "entriesRemoved": {
+            "type": "number"
+          },
+          "graphCleared": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "ProjectList": {
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectListItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "ProjectListItem": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "role": {
+            "description": "The caller's role on this project: owner or member.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "type": "object"
+      },
+      "ReapOrphansResult": {
+        "properties": {
+          "abandoned": {
+            "type": "number"
+          },
+          "attempted": {
+            "type": "number"
+          },
+          "cleared": {
+            "type": "number"
+          },
+          "pending": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "RememberResult": {
+        "properties": {
+          "deduplicated": {
+            "type": "boolean"
+          },
+          "embedded": {
+            "type": "boolean"
+          },
+          "id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "rejected": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "SearchResult": {
+        "properties": {
+          "degraded": {
+            "description": "True when a tier (cold store or graph) was unreachable, so these hits may be partial.",
+            "type": "boolean"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
+      },
+      "SessionRecapResult": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureResult"
+            },
+            "type": "array"
+          },
+          "saved": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "saved",
+          "results"
+        ],
+        "type": "object"
+      },
+      "Stats": {
+        "properties": {
+          "byNamespace": {
+            "additionalProperties": {
+              "properties": {
+                "cold": {
+                  "type": "number"
+                },
+                "warm": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "lastDecayAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "totalCold": {
+            "type": "number"
+          },
+          "totalWarm": {
+            "type": "number"
+          },
+          "uptimeMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "byNamespace",
+          "totalWarm",
+          "totalCold"
+        ],
+        "type": "object"
+      },
+      "TodayFeed": {
+        "properties": {
+          "events": {
+            "items": {
+              "properties": {
+                "at": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "remember",
+                    "token",
+                    "project",
+                    "audit"
+                  ],
+                  "type": "string"
+                },
+                "project": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
+      "TokenList": {
+        "properties": {
+          "tokens": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "UpdateResult": {
+        "properties": {
+          "embeddingChanged": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "updated",
+          "embeddingChanged"
+        ],
+        "type": "object"
+      },
+      "Usage": {
+        "properties": {
+          "entries": {
+            "type": "number"
+          },
+          "quota": {
+            "properties": {
+              "maxEntries": {
+                "nullable": true,
+                "type": "number"
+              },
+              "writesPerMinute": {
+                "nullable": true,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
     "securitySchemes": {
       "SessionCookie": {
         "description": "Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax. Browsers attach it automatically.",
@@ -61,7 +873,7 @@
                 }
               }
             },
-            "description": "Default Response"
+            "description": "RFC 9728 document; its shape is the RFC's, not ours"
           }
         },
         "summary": "OAuth 2.0 Protected Resource Metadata (RFC 9728)",
@@ -72,26 +884,18 @@
     },
     "/health": {
       "get": {
+        "description": "Readiness, not liveness: 200 `{\"ok\":true}` when the warm store and the cold store both answer, 503 `{\"ok\":false}` when either does not. The body is boolean only — no dependency detail leaks to an unauthenticated caller. Use it as a load-balancer health check; use `/live` for a restart probe.",
         "operationId": "getHealth",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             },
-            "description": "Default Response"
+            "description": "Health"
           },
           "503": {
             "content": {
@@ -121,26 +925,18 @@
     },
     "/live": {
       "get": {
+        "description": "Process liveness only — it checks nothing and answers 200 as long as the server is running. A restart probe pointed at `/ready` would restart the pod every time Postgres hiccupped; that is what this exists to avoid.",
         "operationId": "getLive",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             },
-            "description": "Default Response"
+            "description": "Health"
           }
         },
         "summary": "Liveness probe — process only, no dependency checks",
@@ -155,7 +951,7 @@
         "operationId": "deleteMcp",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "MCP transport: session teardown, no body"
           }
         },
         "summary": "MCP Streamable HTTP transport (dual-era)",
@@ -168,7 +964,7 @@
         "operationId": "getMcp",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "MCP transport: a JSON-RPC envelope or an SSE stream, per the MCP spec"
           }
         },
         "summary": "MCP Streamable HTTP transport (dual-era)",
@@ -181,7 +977,7 @@
         "operationId": "postMcp",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "MCP transport: a JSON-RPC envelope or an SSE stream, per the MCP spec"
           }
         },
         "summary": "MCP Streamable HTTP transport (dual-era)",
@@ -192,26 +988,18 @@
     },
     "/ready": {
       "get": {
+        "description": "The same check as `/health`, under the name orchestrators expect. 200 when every dependency answers within 5s, 503 otherwise.",
         "operationId": "getReady",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             },
-            "description": "Default Response"
+            "description": "Health"
           },
           "503": {
             "content": {
@@ -241,6 +1029,7 @@
     },
     "/v1/admin/audit-log": {
       "get": {
+        "description": "Newest-first tail of every admin action: user create/delete, role change, quota change, token revocation. Written by the server, never by a caller.",
         "operationId": "getV1AdminAuditLog",
         "parameters": [
           {
@@ -258,7 +1047,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "admin-only paged log; shape follows the audit table"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -277,6 +1076,7 @@
     },
     "/v1/admin/health/deep": {
       "get": {
+        "description": "Per-dependency status for operators: warm store, cold store and the graph tier reported separately. This is the detail `/health` deliberately withholds from anonymous callers, which is why it is admin-gated.",
         "operationId": "getV1AdminHealthDeep",
         "responses": {
           "200": {
@@ -343,7 +1143,7 @@
                 }
               }
             },
-            "description": "Default Response"
+            "description": "per-dependency snapshot; keys follow the dependencies present"
           },
           "401": {
             "content": {
@@ -444,10 +1244,21 @@
     },
     "/v1/admin/metrics": {
       "get": {
+        "description": "Counters, gauges, rolling rates and 24h history for the whole deployment. Disabled entirely when `NOVAMEM_ADMIN_DASHBOARD=0`, which 404s this route rather than returning an empty body.",
         "operationId": "getV1AdminMetrics",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "counters and gauges; keys follow the collector"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -466,10 +1277,21 @@
     },
     "/v1/admin/metrics/prom": {
       "get": {
+        "description": "The same counters in Prometheus text exposition format, for scraping. Not JSON — `Content-Type: text/plain`.",
         "operationId": "getV1AdminMetricsProm",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Prometheus text exposition, not JSON"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -488,6 +1310,7 @@
     },
     "/v1/admin/tokens/revoke": {
       "post": {
+        "description": "Revoke a bearer by presenting its plaintext. The server hashes the input and deletes the matching row, so a token pasted from a leaked config can be killed without knowing which user it belongs to.",
         "operationId": "postV1AdminTokensRevoke",
         "requestBody": {
           "content": {
@@ -511,7 +1334,17 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "revocation count"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -530,10 +1363,21 @@
     },
     "/v1/admin/users": {
       "get": {
+        "description": "Every dashboard user with role and creation time. Admin session or admin bearer only.",
         "operationId": "getV1AdminUsers",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "admin user list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -550,6 +1394,7 @@
         ]
       },
       "post": {
+        "description": "Provision a user and mint their first `nm_…` bearer. The plaintext token is returned once and never again — it is stored only as a sha256 hash.",
         "operationId": "postV1AdminUsers",
         "requestBody": {
           "content": {
@@ -602,7 +1447,17 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "created admin user"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -621,6 +1476,7 @@
     },
     "/v1/admin/users/{id}": {
       "delete": {
+        "description": "Remove a user and everything scoped to them: entries, tokens, project memberships. Irreversible.",
         "operationId": "deleteV1AdminUsersById",
         "parameters": [
           {
@@ -644,7 +1500,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "deletion counts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -663,6 +1529,7 @@
     },
     "/v1/admin/users/{id}/quota": {
       "put": {
+        "description": "Set per-user ceilings on stored entries and writes per minute. Null clears a ceiling rather than setting it to zero.",
         "operationId": "putV1AdminUsersByIdQuota",
         "parameters": [
           {
@@ -702,7 +1569,17 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "the stored quota"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -721,6 +1598,7 @@
     },
     "/v1/adoption": {
       "post": {
+        "description": "Read-only client adoption report. Use this to verify the current MCP tool surface, instructions hash, supported feature flags, and exact refresh/reload guidance when an agent client may be using stale tools or stale instructions.",
         "operationId": "postV1Adoption",
         "requestBody": {
           "content": {
@@ -754,7 +1632,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdoptionReport"
+                }
+              }
+            },
+            "description": "AdoptionReport"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -773,10 +1668,28 @@
     },
     "/v1/auth/rotate-token": {
       "post": {
+        "description": "Mint a replacement bearer for the caller and invalidate the one used to make this call, in a single step. The old token stops working the moment this returns, so read the new one from the response before discarding it.",
         "operationId": "postV1AuthRotateToken",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MintedToken"
+                }
+              }
+            },
+            "description": "MintedToken"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -792,6 +1705,7 @@
     },
     "/v1/capture": {
       "post": {
+        "description": "Low-friction durable write path. CALL THIS after meaningful work to save durable outcomes, decisions, changed preferences, verified setup facts, and root-cause lessons. Do not save secrets or transient task chatter.",
         "operationId": "postV1Capture",
         "requestBody": {
           "content": {
@@ -867,8 +1781,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureResult"
+                }
+              }
+            },
+            "description": "CaptureResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -887,6 +1818,7 @@
     },
     "/v1/context": {
       "post": {
+        "description": "Mandatory first-pass grounding tool. CALL THIS before answering any substantive user request. Returns relevant hybrid search results plus recent memory in one response so agents stop ignoring memory unless explicitly told.",
         "operationId": "postV1Context",
         "requestBody": {
           "content": {
@@ -992,7 +1924,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            },
+            "description": "SearchResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1011,6 +1960,7 @@
     },
     "/v1/context-prefix": {
       "get": {
+        "description": "A cacheable text prefix describing the caller's memory, shaped for prompt caching: stable across calls so an LLM provider can reuse the cached tokens. Returns 404 when the observer subsystem is disabled.",
         "operationId": "getV1ContextPrefix",
         "parameters": [
           {
@@ -1026,7 +1976,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "a cacheable text prefix, not a JSON object"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1045,6 +2005,7 @@
     },
     "/v1/decay": {
       "post": {
+        "description": "Run the decay loop now instead of waiting for its 6h tick. Demotes entries idle longer than their earned lifespan to the cold tier, promotes cold entries that were just hit, and expires anything past its TTL.",
         "operationId": "postV1Decay",
         "requestBody": {
           "content": {
@@ -1065,7 +2026,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecayResult"
+                }
+              }
+            },
+            "description": "DecayResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1084,10 +2062,28 @@
     },
     "/v1/dream-cycle": {
       "post": {
+        "description": "Run the compaction pass now: walk every entry, merge near-duplicates, promote co-occurrence edges, and supersede contradicted facts. Minutes, not seconds, on a large store.",
         "operationId": "postV1DreamCycle",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DreamCycleResult"
+                }
+              }
+            },
+            "description": "DreamCycleResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1106,6 +2102,7 @@
     },
     "/v1/evaluate": {
       "post": {
+        "description": "Run built-in memory quality checks covering supersession, context packs, junk rejection, hygiene availability, and retention policy wiring.",
         "operationId": "postV1Evaluate",
         "requestBody": {
           "content": {
@@ -1127,7 +2124,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluateReport"
+                }
+              }
+            },
+            "description": "EvaluateReport"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1146,6 +2160,7 @@
     },
     "/v1/forget": {
       "post": {
+        "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.",
         "operationId": "postV1Forget",
         "requestBody": {
           "content": {
@@ -1175,7 +2190,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForgetResult"
+                }
+              }
+            },
+            "description": "ForgetResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1194,6 +2226,7 @@
     },
     "/v1/hygiene": {
       "post": {
+        "description": "Read-only hygiene report for memory curation: low-value entries, stale current-state candidates, duplicate clusters, contradiction candidates, and warm/cold orphan candidates.",
         "operationId": "postV1Hygiene",
         "requestBody": {
           "content": {
@@ -1216,7 +2249,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HygieneReport"
+                }
+              }
+            },
+            "description": "HygieneReport"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1235,10 +2285,21 @@
     },
     "/v1/me/active-project": {
       "delete": {
+        "description": "Clear the active-project pin so subsequent `memory_*` calls fall back to user-global only. CALL THIS when the user says \"back to global\", \"context out\", \"clear active project\", \"back to my personal store\", \"no project for now\". Also call when the user pivots away from the current project context to discuss something unrelated and they don't want new memories landing in the old project's scope. Idempotent — safe to call when nothing's active.",
         "operationId": "deleteV1MeActiveProject",
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "204": {
+            "description": "No content — the change is the whole result"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1255,10 +2316,28 @@
         ]
       },
       "get": {
+        "description": "Which sub-brain the caller's `memory_*` calls default to, or null when none is active.",
         "operationId": "getV1MeActiveProject",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveProject"
+                }
+              }
+            },
+            "description": "ActiveProject"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1275,6 +2354,7 @@
         ]
       },
       "put": {
+        "description": "Pin the user's active project so subsequent `memory_*` calls default to that scope without you having to pass `project` every time. CALL THIS when the user says \"let's work on X\", \"switch to project Y\", \"focus on Z for the rest of this session\", \"context me into X\". Reads (search / recent / today / neighbors) union the active project with user-global. Writes (remember / forget / update) target the active project directly — so a remember call no longer lands in user-global by default. Server-side state, persists across SSE reconnects. Idempotent.",
         "operationId": "putV1MeActiveProject",
         "requestBody": {
           "content": {
@@ -1298,7 +2378,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveProject"
+                }
+              }
+            },
+            "description": "ActiveProject"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1317,6 +2414,7 @@
     },
     "/v1/me/changes": {
       "get": {
+        "description": "Sequence-ordered feed of what changed for the caller — created, updated, superseded, deleted, expired — so a client can catch up after being offline. Pass the previous `nextSeq` to resume.",
         "operationId": "getV1MeChanges",
         "parameters": [
           {
@@ -1353,7 +2451,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeFeed"
+                }
+              }
+            },
+            "description": "ChangeFeed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1372,6 +2487,7 @@
     },
     "/v1/me/export": {
       "get": {
+        "description": "Stream every entry the caller owns as NDJSON, one `MemoryEntry` per line. Sized for piping to a file, not for holding in memory.",
         "operationId": "getV1MeExport",
         "parameters": [
           {
@@ -1397,7 +2513,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "a streamed NDJSON dump whose line shape is MemoryEntry"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1416,6 +2542,7 @@
     },
     "/v1/me/import": {
       "post": {
+        "description": "Restore entries from an NDJSON stream in the shape `/v1/me/export` produces. Applies the same worthiness gate and dedup as a normal write unless forced.",
         "operationId": "postV1MeImport",
         "requestBody": {
           "content": {
@@ -1488,7 +2615,17 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "counts echoed from a streamed upload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1507,10 +2644,21 @@
     },
     "/v1/me/metrics": {
       "get": {
+        "description": "Per-caller counters: queries, writes, and the rolling rates behind the dashboard.",
         "operationId": "getV1MeMetrics",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "per-caller counters; keys follow the collector"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1529,6 +2677,7 @@
     },
     "/v1/me/metrics/history": {
       "get": {
+        "description": "24h of one-minute buckets for the caller, oldest first — the series the dashboard charts.",
         "operationId": "getV1MeMetricsHistory",
         "parameters": [
           {
@@ -1544,7 +2693,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsHistory"
+                }
+              }
+            },
+            "description": "MetricsHistory"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1563,10 +2729,28 @@
     },
     "/v1/me/onboarding": {
       "get": {
+        "description": "What a first-run client still needs to do: whether bootstrap ran, whether the user exists, whether a token was minted, whether anything has been remembered yet.",
         "operationId": "getV1MeOnboarding",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Onboarding"
+                }
+              }
+            },
+            "description": "Onboarding"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1585,10 +2769,28 @@
     },
     "/v1/me/projects": {
       "get": {
+        "description": "List the projects (sub-brains) the user belongs to. CALL THIS PROACTIVELY whenever the user mentions \"my project\", \"the X project\", \"the team workspace\", or any project-by-name reference you don't already know the id for — instead of asking the user to clarify which project they mean, list them and disambiguate yourself. Also call before `project_activate`, `project_share`, or `project_unshare` if the user used a name and you want to confirm it exists / spell it correctly. Returns id + name + role (owner/member) per project.",
         "operationId": "getV1MeProjects",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectList"
+                }
+              }
+            },
+            "description": "ProjectList"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1605,6 +2807,7 @@
         ]
       },
       "post": {
+        "description": "Create a new project (sub-brain) — a shared scope of memory the user can later invite teammates to. USE THIS when the user says \"start a new project\", \"create a workspace for X\", \"I'm starting work on Y\", \"new sub-brain\", \"set up a memory bucket for the Z initiative\". The user becomes owner automatically. Pick a clear, short name — the user will see it in the dashboard switcher. Don't create projects unprompted; if the user just mentions working on something, ask first whether they want a dedicated project or whether a namespace within their user-global store is enough. The server assigns a ULID — you don't pick the id.",
         "operationId": "postV1MeProjects",
         "requestBody": {
           "content": {
@@ -1627,8 +2830,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            },
+            "description": "Project"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1647,6 +2867,7 @@
     },
     "/v1/me/projects/{id}": {
       "delete": {
+        "description": "PERMANENTLY delete a project and every memory entry inside it. Cascades through warm rows, FTS, cold-tier Qdrant collections, and graph nodes — irreversible. CALL THIS ONLY after the user has explicitly confirmed: phrases like \"yes delete the X project\", \"go ahead and remove it permanently\", \"trash the whole project\". If the user just says \"delete X\" without confirming consequences, ask first — once. Owner-only; if the user is a member but not owner, they should `project_unshare` themselves (or be unshared by the owner). Accepts id or name; the server resolves names automatically. Mention how many entries / collections / edges were removed in your reply so the user has receipts.",
         "operationId": "deleteV1MeProjectsById",
         "parameters": [
           {
@@ -1662,7 +2883,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDeleted"
+                }
+              }
+            },
+            "description": "ProjectDeleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1681,6 +2919,7 @@
     },
     "/v1/me/projects/{id}/members": {
       "get": {
+        "description": "Who can see this project's entries, with each member's role and join time.",
         "operationId": "getV1MeProjectsByIdMembers",
         "parameters": [
           {
@@ -1696,7 +2935,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberList"
+                }
+              }
+            },
+            "description": "MemberList"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1713,6 +2969,7 @@
         ]
       },
       "post": {
+        "description": "Invite another user to a project the user owns — gives them read AND write access to every entry in it. CALL THIS when the user says \"share X with bob\", \"add alice to my project\", \"give the team access\", \"invite [user] to Y\". Owner-only — if the calling user is just a member, surface that and tell them to ask the owner. Use the invitee's exact email address — display names are self-settable and therefore not accepted as an identifier here. Confirm the email back in your reply (\"added alice@example.com to mcp-fulltest\") so the user catches typos. The invitee will see the project in their dashboard switcher immediately — no email is sent.",
         "operationId": "postV1MeProjectsByIdMembers",
         "parameters": [
           {
@@ -1754,8 +3011,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberAdded"
+                }
+              }
+            },
+            "description": "MemberAdded"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1774,6 +3048,7 @@
     },
     "/v1/me/projects/{id}/members/{userId}": {
       "delete": {
+        "description": "Revoke a member's access to a project. CALL THIS when the user says \"remove bob from X\", \"unshare alice\", \"kick [user] off Y\", \"revoke their access\". Effective immediately — the removed user's next request scoped to the project will 403. The owner cannot unshare themselves; if the user wants to abandon a project they own, use `project_delete` instead (cascade-deletes everything) or transfer ownership first (planned, not yet implemented). Members can unshare themselves to leave the project — they don't need owner permission.",
         "operationId": "deleteV1MeProjectsByIdMembersByUserId",
         "parameters": [
           {
@@ -1799,7 +3074,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRemoved"
+                }
+              }
+            },
+            "description": "MemberRemoved"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1818,10 +3110,28 @@
     },
     "/v1/me/today": {
       "get": {
+        "description": "Surface what the user has worked on today. CALL THIS AT THE START OF A NEW CONVERSATION when the user asks \"what was I doing\", \"where did we leave off\", \"recap\", \"what's new today\", \"catch me up\" — or proactively at session start to ground yourself in the user's current focus before answering anything substantive. Returns the last 24 h of entries newest-first. Cheaper than a full search when the user's question is about *recent* state. Combine with `memory_search` when the question spans further back than today.",
         "operationId": "getV1MeToday",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayFeed"
+                }
+              }
+            },
+            "description": "TodayFeed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1840,10 +3150,28 @@
     },
     "/v1/me/tokens": {
       "get": {
+        "description": "The caller's bearers as metadata only — label, scope, creation and expiry. Plaintext is never stored, so it cannot be listed.",
         "operationId": "getV1MeTokens",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenList"
+                }
+              }
+            },
+            "description": "TokenList"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1860,6 +3188,7 @@
         ]
       },
       "post": {
+        "description": "Mint an additional bearer for the caller, optionally scoped to one project or read-only. The plaintext appears in this response and nowhere else.",
         "operationId": "postV1MeTokens",
         "requestBody": {
           "content": {
@@ -1896,8 +3225,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MintedToken"
+                }
+              }
+            },
+            "description": "MintedToken"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1916,6 +3262,7 @@
     },
     "/v1/me/tokens/{hash}": {
       "delete": {
+        "description": "Revoke one of the caller's own bearers by its hash, as listed by `GET /v1/me/tokens`.",
         "operationId": "deleteV1MeTokensByHash",
         "parameters": [
           {
@@ -1930,7 +3277,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "revocation confirmation"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1949,10 +3306,28 @@
     },
     "/v1/me/usage": {
       "get": {
+        "description": "How much the caller has stored against their quota, and what that quota is. Null ceilings mean unlimited.",
         "operationId": "getV1MeUsage",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Usage"
+                }
+              }
+            },
+            "description": "Usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -1971,6 +3346,7 @@
     },
     "/v1/memories/{id}": {
       "put": {
+        "description": "Rewrite an existing memory in place when a fact about the user has CHANGED. USE THIS — not forget+remember — when the user says \"actually, I moved\", \"that's outdated\", \"correction\", \"I switched to X now\", \"I no longer use Y\", \"update what you have on Z\". Preserves id, hit count, graph edges, and creation date — so the new content keeps every connection the original had. forget+remember would lose all of that. Omit `content` to update only metadata-side fields (sourceType, confidence, capturedFrom) without re-embedding. If you're not sure whether the old fact still applies somewhere else, search first to find related entries that may also need updating.",
         "operationId": "putV1MemoriesById",
         "parameters": [
           {
@@ -2039,7 +3415,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateResult"
+                }
+              }
+            },
+            "description": "UpdateResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2058,6 +3451,7 @@
     },
     "/v1/neighbors": {
       "post": {
+        "description": "Walk graph edges from a known memory id to its strongly-linked neighbours. CALL THIS WHEN you've already found one relevant memory via `memory_search` and want adjacent context that the user may have stored alongside it but didn't mention by name — supporting decisions, prior incidents, related ADRs, the rest of a cluster of related facts. Best for \"why did we make decision X\", \"what was the context around Y\", \"what's connected to this\". Depth 1 is the hot path (default); 2 and 3 walk further but cost more. Pass the seed `id` returned by a previous search/recent call. Use this as a *follow-up* to `memory_search`, not as a first-pass tool.",
         "operationId": "postV1Neighbors",
         "requestBody": {
           "content": {
@@ -2127,7 +3521,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            },
+            "description": "SearchResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2146,6 +3557,7 @@
     },
     "/v1/observe": {
       "post": {
+        "description": "Run the observer and reflector over recent entries: extract durable facts, then judge them. Operator-triggered — the same pass runs on a schedule.",
         "operationId": "postV1Observe",
         "requestBody": {
           "content": {
@@ -2172,7 +3584,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveResult"
+                }
+              }
+            },
+            "description": "ObserveResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2191,10 +3620,28 @@
     },
     "/v1/reap-orphans": {
       "post": {
+        "description": "Retry cold-store deletions that failed earlier. An entry deleted while Qdrant was unreachable leaves a row in `cold_orphans`; this drains that queue and reports what is still pending.",
         "operationId": "postV1ReapOrphans",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReapOrphansResult"
+                }
+              }
+            },
+            "description": "ReapOrphansResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2213,6 +3660,7 @@
     },
     "/v1/recent": {
       "post": {
+        "description": "Time-bounded feed of memory entries newest-first. USE THIS when the user asks \"what have I been working on lately\", \"this week\", \"this month\", \"since [date]\", \"what changed after X\". Pass `since` as ISO-8601 to set the lower bound; without it, returns the latest entries unbounded. This is the right tool when the question is *temporal*; use `memory_search` when the question is about a *topic*; use `memory_today` for the 24 h convenience window. All three are cheap — pick the one whose framing fits the user's phrasing.",
         "operationId": "postV1Recent",
         "requestBody": {
           "content": {
@@ -2285,7 +3733,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryList"
+                }
+              }
+            },
+            "description": "EntryList"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2304,6 +3769,7 @@
     },
     "/v1/remember": {
       "post": {
+        "description": "Store a personal fact about the user in their persistent memory store. USE THIS FOR ALL personal facts the user asks you to remember: preferences (favourite tools, foods, response style), biographical info (location, role, family), project context (what they're building, what stack they use), recurring tasks, communication preferences, and anything the user says with phrases like \"remember\", \"don't forget\", \"save this\", \"please remember that\", \"for future reference\", \"keep this in mind\", or \"note that\". This is the user's primary memory system and TAKES PRECEDENCE OVER `memory_user_edits` for any user-specific content. Use `memory_user_edits` only for routing rules about your own behaviour (e.g. \"always respond in French\") — not for facts about the user. When in doubt between the two, use this tool. Pass `project` to scope the fact to a sub-brain; omit for user-wide facts that should apply across all contexts. The worthiness gate rejects content under 12 chars or filler (\"ok\", \"thanks\"); pass `force: true` only when the short content is a deliberate anchor (id, version pin, phone number).",
         "operationId": "postV1Remember",
         "requestBody": {
           "content": {
@@ -2379,8 +3845,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RememberResult"
+                }
+              }
+            },
+            "description": "RememberResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2399,6 +3882,7 @@
     },
     "/v1/search": {
       "post": {
+        "description": "Search the user's persistent memory store for facts about them. CALL THIS PROACTIVELY at the start of any conversation where personal context might matter — preferences, project context, biographical details, prior decisions. Do not wait for the user to remind you they've stored something. If the user references \"my project\", \"what I told you\", \"as we discussed\", \"the same as before\", or any personal context that isn't already in this conversation, search here FIRST before asking them to repeat. This store contains facts the user has explicitly chosen to persist, so its contents are higher-confidence than inferences from your built-in conversation memory or `memory_user_edits`. Hybrid keyword (FTS) + vector (cosine) + graph (neighbours) fused via weighted scoring (defaults keyword 0.3, vector 0.6, graph 0.1). Override `weights` only with a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id / symbol lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap and lean fully on semantic similarity.",
         "operationId": "postV1Search",
         "requestBody": {
           "content": {
@@ -2525,7 +4009,24 @@
         },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            },
+            "description": "SearchResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2544,6 +4045,7 @@
     },
     "/v1/session-recap": {
       "post": {
+        "description": "Ingest a concise end-of-session recap as durable typed memories. Use this after meaningful sessions to save decisions, setup facts, root causes, preferences, project conventions, and safety constraints without dumping transcripts.",
         "operationId": "postV1SessionRecap",
         "requestBody": {
           "content": {
@@ -2667,8 +4169,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRecapResult"
+                }
+              }
+            },
+            "description": "SessionRecapResult"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
@@ -2687,10 +4206,28 @@
     },
     "/v1/stats": {
       "get": {
+        "description": "Diagnostic snapshot of the user's memory store. CALL THIS only when the user asks \"how much have I stored\", \"how many memories do I have\", \"is my store healthy\", or when troubleshooting why search results seem incomplete. Returns byNamespace warm/cold entry counts, totals, and service-wide lastDecayAt + uptimeMs as context. This is NOT a primary tool — don't call it before normal search/remember operations. Useful as a sanity check before bulk operations or when the user reports unexpected results.",
         "operationId": "getV1Stats",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stats"
+                }
+              }
+            },
+            "description": "Stats"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
           }
         },
         "security": [
