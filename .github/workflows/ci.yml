@@ -197,12 +197,13 @@ jobs:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
         with:
-          # The in-cluster Zot cache registry serves a self-signed cert;
-          # BuildKit runs in its own container and doesn't inherit the
-          # host's trust store, so cache-from/cache-to need this or they
-          # die with "x509: certificate signed by unknown authority".
+          # The in-cluster Nexus cache registry serves a cert from the
+          # kw-cluster-internal CA; BuildKit runs in its own container and
+          # doesn't inherit the host's trust store, so cache-from/cache-to
+          # need this or they die with "x509: certificate signed by
+          # unknown authority".
           buildkitd-config-inline: |
-            [registry."192.168.10.123"]
+            [registry."192.168.10.131"]
               insecure = true
       - name: Compute short SHA
         id: sha
@@ -230,14 +231,17 @@ jobs:
           push: false
           load: true
           tags: novamem:ci-${{ matrix.arch }}
-          # Registry cache on the in-cluster Zot: the gha cache backend
+          # Registry cache on the in-cluster Nexus: the gha cache backend
           # round-trips to GitHub over the internet from these LAN runners
-          # and evicts at 10GB; Zot is one switch-hop away.
+          # and evicts at 10GB; Nexus is one switch-hop away.
           # Read-only for PR builds: no cache-to here, so an untrusted
           # pull_request build can never write to (poison) the shared
           # cache tag that main/tag builds consume. Only the trusted
           # push-event step below seeds the cache.
-          cache-from: type=registry,ref=192.168.10.123/azrtydxb/novamem-buildcache:${{ matrix.arch }}
+          # No login either: Nexus serves this repository to anonymous
+          # readers, so a fork PR — which gets no secrets — still gets a
+          # warm cache instead of failing on an empty credential.
+          cache-from: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }}
       - name: Trivy scan local PR image (HIGH+CRITICAL, fail on findings)
         if: github.event_name != 'push' || (github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0
@@ -260,6 +264,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Writing the cache needs a credential; reading it does not. Scoped
+      # to the push path for the same reason cache-to is: a pull_request
+      # build must never be able to write to the shared cache.
+      - name: Login to the Nexus cache registry
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: docker/login-action@v4
+        with:
+          registry: 192.168.10.131
+          username: ${{ secrets.NEXUS_USER }}
+          password: ${{ secrets.NEXUS_PASSWORD }}
       - name: Build and push per-arch image to GHCR
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: docker/build-push-action@v7
@@ -272,11 +286,11 @@ jobs:
             ${{ github.ref == 'refs/heads/main' && format('{0}:main-{1}', env.REGISTRY_IMAGE, matrix.arch) || '' }}
             ${{ steps.semver.outputs.v && format('{0}:{1}-{2}', env.REGISTRY_IMAGE, steps.semver.outputs.v, matrix.arch) || '' }}
             ${{ steps.semver.outputs.bare && format('{0}:{1}-{2}', env.REGISTRY_IMAGE, steps.semver.outputs.bare, matrix.arch) || '' }}
-          # Registry cache on the in-cluster Zot: the gha cache backend
+          # Registry cache on the in-cluster Nexus: the gha cache backend
           # round-trips to GitHub over the internet from these LAN runners
-          # and evicts at 10GB; Zot is one switch-hop away.
-          cache-from: type=registry,ref=192.168.10.123/azrtydxb/novamem-buildcache:${{ matrix.arch }}
-          cache-to: type=registry,ref=192.168.10.123/azrtydxb/novamem-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true
+          # and evicts at 10GB; Nexus is one switch-hop away.
+          cache-from: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }}
+          cache-to: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true
       - name: Trivy scan pushed image (HIGH+CRITICAL, fail on findings)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0

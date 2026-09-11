@@ -464,3 +464,40 @@ Options:
   reaching the real directory (or a generator), and restore or delete
   `snapshot-tools.mjs` so the conformance snapshot is regenerable.
 - Leave it; record the gaps as issues and move on.
+
+## How should CI's BuildKit cache be fixed now that the Zot registry is gone?
+
+Main's CI is red on `docker (amd64)` and `docker (arm64)` — infrastructure,
+not code. The registry cache at `192.168.10.123` (Zot) no longer exists: no
+Service holds that IP, and it is unreachable from both the ARC runners
+(`dial tcp 192.168.10.123:443: i/o timeout`) and a workstation on the LAN.
+A `nexus` namespace (192.168.10.131, ports 443/5000/8443) and a `buildkit`
+namespace (192.168.10.130) were created the same day, so a migration
+appears to be in flight.
+
+The asymmetry matters: `cache-from` failures are tolerated, so **PR builds
+pass**. Only main and tag builds run `cache-to`, and that export is fatal —
+so main goes red _after_ the per-arch images are already pushed, which
+skips the `manifest (multi-arch)` job (`needs: [docker]`) and leaves no
+combined `sha-<short>` tag. That is why `sha-a368505` and `sha-11f976a`
+404 while `sha-11f976a-arm64` exists and runs.
+
+Verified on 2026-09-11 for #285 and #286: both were deployed to kw by
+pointing the Deployment at `sha-<short>-arm64` directly, and conformance
+passed 139/0/1. So this blocks the normal deploy path and leaves main
+permanently red, but it is not blocking releases outright.
+
+Options:
+
+- Add `ignore-error=true` to the `cache-to` in `.github/workflows/ci.yml`.
+  An optional build cache then cannot block publishing an image: a dead
+  cache degrades to a slow build (~13 min cold vs ~2 min warm) instead of
+  a red main and a missing manifest. Correct regardless of where the cache
+  ultimately lives, and independent of the migration.
+- Repoint `cache-from`/`cache-to` (and the `buildkitd-config-inline`
+  insecure-registry entry) at the new Nexus registry at 192.168.10.131.
+  Needs the intended repository path, whether it is reachable from the ARC
+  runners, and its TLS posture.
+- Both: repoint at Nexus _and_ make the export non-fatal, so the next
+  registry move does not turn main red again.
+- Drop the registry cache entirely and rely on cold builds.
