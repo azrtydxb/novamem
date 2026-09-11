@@ -64,6 +64,13 @@
       "when": 1786611692270,
       "tag": "0008_minor_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786611693270,
+      "tag": "0009_shared_rate_limits",
+      "breakpoints": true
     }
   ]
 }

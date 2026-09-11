@@ -2,14 +2,25 @@ package httpapi
 
 import "testing"
 
-// Pins the verbatim transcription of mcp-instructions.ts: the hash was
-// computed from the TS source (sha256 of NOVAMEM_INSTRUCTIONS) at port
-// time — if either side edits the instructions, this fails and the two
-// servers must be re-synced together (feature-freeze rule, design §7).
-func TestInstructionsHashMatchesTS(t *testing.T) {
-	const tsHash = "52f29c1a8ee13eea344366f08b2c5c2737e1539239cf42c04aa5268518a72d56"
-	if got := sha256HexStr(novamemInstructions); got != tsHash {
-		t.Fatalf("instructions hash drifted from the TS server: %s", got)
+// The instructions are rendered from the marked regions of
+// skills/novamem/SKILL.md, so an edit there changes what every MCP
+// client is told on connect and changes the adoption report's
+// instructionsHash, which clients use to decide whether to reload.
+// That should always be a deliberate, reviewed change — so it is
+// pinned, and updating the skill means updating this hash in the same
+// commit.
+//
+// The pin used to hold the retired TypeScript server's hash, to keep
+// the two implementations byte-identical during the port. That server
+// no longer exists; the pin's job now is to make an accidental edit
+// impossible to merge unnoticed.
+func TestInstructionsHashIsPinned(t *testing.T) {
+	const want = "db5d4cebefeb04a91091fd156d0e15974b8674b1edb849c7e7df4147254d5bc9"
+	got := sha256HexStr(novamemInstructions)
+	if got != want {
+		t.Fatalf("instructions changed.\n got  %s\n want %s\n"+
+			"If you edited skills/novamem/SKILL.md inside an mcp-instructions region, "+
+			"that is expected — update this pin in the same commit.", got, want)
 	}
 }
 

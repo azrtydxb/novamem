@@ -15,25 +15,36 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-const rateLimitWindow = time.Minute
+const (
+	rateLimitWindow = time.Minute
+	// How often the opportunistic sweep runs, in requests.
+	rateLimitSweepEvery = 2048
+)
+
+// lastDegradeWarn throttles the "fell back to the local counter"
+// warning; unix seconds of the last one emitted.
+var lastDegradeWarn atomic.Int64
 
 type rateEntry struct {
 	count   int
 	resetAt time.Time
 }
 
-// rateLimiter is a fixed-window counter per key.
+// rateLimiter is a fixed-window counter per key, held in this process.
 //
-// ponytail: in-memory and per-replica, exactly like the existing quota
-// limiter and like @fastify/rate-limit's default LocalStore — N replicas
-// means an effective ceiling of N × max. A shared store (Redis, or a
-// Postgres counter) is the upgrade path if that ever matters.
+// It is the fallback path only. Per-replica counters grant N replicas N
+// times the configured budget, which weakens a protection rather than
+// just skewing a header, so the limiter prefers the shared Postgres
+// counter (warmstore.TakeRateLimit) and falls back here only when there
+// is no warm store to reach.
 type rateLimiter struct {
 	mu  sync.Mutex
 	m   map[string]rateEntry
@@ -81,6 +92,7 @@ func (s *server) rateLimit(next http.Handler) http.Handler {
 		return next
 	}
 	l := newRateLimiter(s.limitPerMinute)
+	var sweepTick atomic.Uint64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/health", "/live", "/ready":
@@ -92,7 +104,25 @@ func (s *server) rateLimit(next http.Handler) http.Handler {
 		// one bucket). ponytail: XFF is client-settable, so a determined
 		// caller can evade the limit; a trusted-proxy allow-list is the
 		// upgrade path.
-		remaining, reset, exceeded := l.take(clientIP(r))
+		key := clientIP(r)
+		remaining, reset, exceeded, ok := s.takeShared(r.Context(), key, &sweepTick)
+		if !ok {
+			// Degrade to the in-process counter rather than to no
+			// limiting at all: per-replica budgets are weaker than a
+			// shared one but far better than an unlimited window while
+			// the database is unreachable. Warn at most once a minute —
+			// during an outage this path runs on every request, and the
+			// downgrade must not be silent.
+			if s.warm != nil {
+				now := time.Now().Unix()
+				if last := lastDegradeWarn.Load(); now-last >= 60 &&
+					lastDegradeWarn.CompareAndSwap(last, now) {
+					s.log.Warn("ratelimit: shared counter unavailable, " +
+						"falling back to this replica's own counter")
+				}
+			}
+			remaining, reset, exceeded = l.take(key)
+		}
 		resetSec := int(reset.Seconds())
 		if reset > 0 && reset%time.Second != 0 {
 			resetSec++ // Math.ceil, as @fastify/rate-limit does
@@ -110,6 +140,37 @@ func (s *server) rateLimit(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// takeShared records the request against the shared Postgres counter.
+// ok is false when there is no warm store or the query failed, which is
+// what selects the caller's fallback.
+func (s *server) takeShared(ctx context.Context, key string, sweepTick *atomic.Uint64) (
+	remaining int, reset time.Duration, exceeded bool, ok bool) {
+
+	if s.warm == nil {
+		return 0, 0, false, false
+	}
+	count, reset, err := s.warm.TakeRateLimit(ctx, key, rateLimitWindow)
+	if err != nil {
+		return 0, 0, false, false
+	}
+	// Opportunistic cleanup, so closed windows cannot accumulate without
+	// a background goroutine to own and shut down.
+	if sweepTick.Add(1)%rateLimitSweepEvery == 0 {
+		go func() {
+			c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			if err := s.warm.SweepRateLimits(c, time.Hour); err != nil {
+				s.log.Warn("ratelimit: sweep failed", "err", err)
+			}
+		}()
+	}
+	remaining = s.limitPerMinute - count
+	if remaining < 0 {
+		remaining = 0
+	}
+	return remaining, reset, count > s.limitPerMinute, true
 }
 
 // humanSeconds reproduces @lukeed/ms `format(ms, true)` over the range
