@@ -27,10 +27,10 @@ Machine-readable: [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/
 `openapi.json` is the generated artefact, owned by the Go server. To refresh it after adding a route or editing a schema:
 
 ```bash
-cd go && go run ./cmd/gen-openapi
+cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs
 ```
 
-The generator walks the route table in `go/internal/httpapi/openapi_routes.go` (schemas and the document skeleton live in `openapi.go` beside it) and writes JSON to `docs/api/openapi.json`. CI re-runs it and fails on a dirty tree.
+The contract is authored in [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and everything else derives from it: this document, the bytes the server embeds and serves, the MCP tool surface, the route list the mux is checked against, and the tool catalogue. CI re-runs both generators and fails on a dirty tree, so an output can never be edited into disagreeing with the source.
 
 ## Routes by purpose
 

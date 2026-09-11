@@ -18,10 +18,15 @@ outside the module directory:
 | ---------------------------- | ------------------------ | ---------------------------- |
 | `internal/httpapi/admin-ui/` | `packages/admin-ui/dist` | `./scripts/sync-admin-ui.sh` |
 
-The OpenAPI document is no longer an embedded copy of a TypeScript
-artefact: `internal/httpapi/openapi.go` _is_ the source, and
-`cmd/gen-openapi` writes `docs/api/openapi.json` from it. A CI drift
-gate re-runs the generator and fails on a dirty tree.
+The contract is authored once, in `api/openapi.yaml` at the repo root.
+`cmd/gen-contract` renders every artifact from it — the served document
+(`internal/httpapi/openapi.json`, embedded), the published copy
+(`docs/api/openapi.json`), the MCP tool surface
+(`internal/mcp/tooldefs.json`) and the route list the mux is checked
+against (`internal/httpapi/routes_gen.go`) — and `cmd/gen-tool-docs`
+renders the tool catalogue in `docs/api/mcp-tools.md`. A CI drift gate
+re-runs both and fails on a dirty tree. Nothing in this list is
+hand-edited.
 
 ### Admin dashboard
 

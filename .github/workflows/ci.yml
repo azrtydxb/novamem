@@ -111,16 +111,13 @@ jobs:
       # import-boundary check that keeps it independent of go/.
       - run: go build ./... && go vet ./... && go test ./...
         working-directory: conformance
-      # Guard against API-surface drift: docs/api/openapi.json is the
-      # committed snapshot of what the server actually serves, and the
-      # clients (TS, Go, MCP) are hand-synced against it. The Go server
-      # renders it from its own route table, so regenerating and diffing
-      # fails if a route/schema changed without the snapshot (and
-      # therefore a conscious client/docs decision) changing with it.
-      # Caught real drift on day one: the snapshot was missing
-      # /v1/admin/users.
-      - run: cd go && go run ./cmd/gen-openapi
-      - run: git diff --exit-code docs/api/openapi.json
+      # api/openapi.yaml is the contract. Everything else — the served
+      # document, the MCP tool surface, the route list the mux is checked
+      # against, and the tool catalogue in the docs — is generated from
+      # it. Regenerate and diff: an edit to any output without an edit to
+      # the source fails here.
+      - run: cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs
+      - run: git diff --exit-code api/ docs/api/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:

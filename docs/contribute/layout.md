@@ -35,7 +35,7 @@ the migrations and the OpenAPI document.
 
 ```
 cmd/novamem-server/      — bootstrap: load config, migrate, serve
-cmd/gen-openapi/         — writes docs/api/openapi.json from the route table
+cmd/gen-contract/        — renders every contract artifact from api/openapi.yaml
 internal/
 ├── config/              — env schema, validated at startup
 ├── httpapi/             — routing, auth, CORS, rate limiting, /v1 + /api/auth

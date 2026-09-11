@@ -121,7 +121,7 @@ cd go && go test ./...
 cd go && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
 
 # Regenerate the OpenAPI document — CI fails on a dirty tree afterwards
-cd go && go run ./cmd/gen-openapi
+cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs
 
 # Conformance suite against a running target
 pnpm conformance

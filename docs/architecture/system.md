@@ -204,7 +204,7 @@ Co-occurrence edges live in the bitemporal `memory_relations` table (`valid_from
 
 ## Transports
 
-- **HTTP/JSON** — Go `net/http`. OpenAPI 3.0 is generated from the server's own route table (`internal/httpapi/openapi_routes.go`) by `cmd/gen-openapi`, written to `docs/api/openapi.json`, and served raw at `/openapi.json`. A drift test fails the build if the checked-in document and the registered routes disagree. The same document is rendered for reading at `/api-docs`, from a renderer embedded in the binary.
+- **HTTP/JSON** — Go `net/http`. The contract is authored once in [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and everything else is generated from it by `cmd/gen-contract`: the served document (`/openapi.json`), the MCP tool surface (`tooldefs.json`), and the route list the mux is checked against. A CI drift gate regenerates and fails on a dirty tree, and a test compares the generated route list against the routes actually registered, in both directions. The same document is rendered for reading at `/api-docs`, from a renderer embedded in the binary.
 - **MCP Streamable HTTP** — one endpoint, `/mcp`, serving both protocol eras (ADR 0006): modern `2026-07-28` requests are stateless and self-describing, legacy `initialize` mints a signed session id any replica can adopt (ADR 0005). The HTTP+SSE pair it replaced was removed in ADR 0007.
 - **MCP stdio (legacy shim)** — `packages/mcp/src/index.ts` is a thin stdio↔HTTP bridge for clients that don't speak remote MCP yet. The shim talks to the same `/v1/*` and `/api/auth/*` endpoints any other client uses.
 
@@ -263,6 +263,6 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - No OpenTelemetry exporter (Prometheus exposition is at `/v1/admin/metrics/prom`).
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
-- The OpenAPI spec is generated from the Go route table by `cmd/gen-openapi`; a CI drift gate re-runs it and fails on a dirty tree, so adding a route means regenerating in the same commit.
+- Adding a route means editing `api/openapi.yaml` and regenerating in the same commit: a CI drift gate re-runs `cmd/gen-contract` and fails on a dirty tree.
 
 See [CHANGELOG.md](https://github.com/azrtydxb/novamem/blob/main/CHANGELOG.md) for behaviour shifts and [the hardening guide](../ops/hardening.md) for the production hardening checklist.

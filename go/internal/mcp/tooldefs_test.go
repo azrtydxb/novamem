@@ -70,3 +70,48 @@ func TestToolDefsMatchConformanceSnapshot(t *testing.T) {
 		}
 	}
 }
+
+// Every tool carries MCP `annotations` — readOnlyHint, idempotentHint,
+// openWorldHint and a human title — and they are part of what a host
+// shows and how it decides whether a call is safe to repeat.
+//
+// They are also the thing a generator loses first. The contract now
+// flows from api/openapi.yaml through cmd/gen-contract, and the first
+// version of that generator decoded each tool into a struct of
+// name/description/inputSchema — which silently dropped annotations from
+// all 21 tools and regenerated a file that looked fine. Nothing in the
+// suite noticed, because nothing pinned them.
+//
+// This pins them. A future regression to field-by-field decoding fails
+// here rather than shipping a quietly thinner surface.
+func TestEveryToolKeepsItsAnnotations(t *testing.T) {
+	var defs []struct {
+		Name        string `json:"name"`
+		Annotations *struct {
+			Title         string `json:"title"`
+			ReadOnlyHint  *bool  `json:"readOnlyHint"`
+			OpenWorldHint *bool  `json:"openWorldHint"`
+		} `json:"annotations"`
+	}
+	if err := json.Unmarshal(toolDefsRaw, &defs); err != nil {
+		t.Fatalf("tooldefs.json: %v", err)
+	}
+	if len(defs) == 0 {
+		t.Fatal("no tools")
+	}
+	for _, d := range defs {
+		if d.Annotations == nil {
+			t.Errorf("%s has no annotations — a generator that drops them ships a thinner surface silently", d.Name)
+			continue
+		}
+		if d.Annotations.Title == "" {
+			t.Errorf("%s has no annotations.title", d.Name)
+		}
+		if d.Annotations.ReadOnlyHint == nil {
+			t.Errorf("%s has no annotations.readOnlyHint — hosts use it to decide whether a call is safe to repeat", d.Name)
+		}
+		if d.Annotations.OpenWorldHint == nil {
+			t.Errorf("%s has no annotations.openWorldHint", d.Name)
+		}
+	}
+}
