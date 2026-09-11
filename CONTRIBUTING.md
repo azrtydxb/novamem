@@ -5,13 +5,18 @@
 ```bash
 git clone https://github.com/azrtydxb/novamem
 cd novamem
-corepack enable && corepack prepare pnpm@9 --activate
-pnpm install
-pnpm -r build
-pnpm test    # 178 tests across server (122) + init (56)
+cd go && go build ./... && go test ./...
 ```
 
-For local development against a real Postgres / Qdrant / FalkorDB, the easiest path is `docker compose up -d` from the repo root and then `pnpm --filter @azrtydxb/novamem-server dev`.
+The dashboard SPA and the docs site are the only JavaScript left:
+
+```bash
+corepack enable && corepack prepare pnpm@9 --activate
+pnpm install
+pnpm build && pnpm test
+```
+
+For local development against a real Postgres / Qdrant, the easiest path is `docker compose up -d` from the repo root and then `cd go && go run ./cmd/novamem-server`.
 
 ## Schema changes
 

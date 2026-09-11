@@ -65,7 +65,7 @@ Against a live target:
     NOVAMEM_ADMIN_TOKEN=nm_... \
     NOVAMEM_ADMIN_EMAIL=admin@bench.local \
     NOVAMEM_ADMIN_PASSWORD=... \
-    NOVAMEM_ADMIN_DASHBOARD=0 \
+    NOVAMEM_ADMIN_DASHBOARD=1 \
     NOVAMEM_LLM_SUBSYSTEMS=1 \
     pnpm conformance          # or: cd conformance && go test -v ./...
 

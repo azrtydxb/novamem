@@ -4,125 +4,131 @@ title: Testing
 
 # Testing
 
-novamem uses **vitest** across the workspace. ~200 unit + integration tests at the time of writing; CI gates every PR on green.
+The server, the CLIs and the conformance oracle are Go, and tested with
+the standard `testing` package — ~190 tests at the time of writing. The
+dashboard SPA is the one JavaScript suite, on vitest. CI gates every PR
+on green.
 
 ## Run
 
 ```bash
-# Everything
-pnpm test
+# The server and everything under it
+cd go && go test ./...
 
-# A single package
-pnpm --filter @azrtydxb/novamem-server test
+# One package
+cd go && go test ./internal/engine/
 
-# A single file (watch mode)
-pnpm --filter @azrtydxb/novamem-server test -- --watch engine.test.ts
+# One test, with output
+cd go && go test ./internal/engine/ -run TestHybrid -v
 
-# Pattern
-pnpm --filter @azrtydxb/novamem-server test -- "neighbors|search"
+# Re-run without the cache
+cd go && go test -count=1 ./internal/engine/
 ```
+
+The dashboard SPA: `pnpm test`.
 
 ## Layout
 
-Tests live next to the source they test:
+Tests live beside the source they test, in the same package, so they can
+reach unexported functions:
 
 ```
-src/
-├── engine/index.ts
-├── engine/engine.test.ts        — engine logic
-├── http.ts
-├── http.test.ts                 — Fastify route tests via inject()
-├── routes/mcp-sse.ts
-├── routes/mcp-sse.test.ts       — real SSE handshake via fetch
-├── ...
-└── test-fakes.ts                — in-memory FakeWarmStore / FakeColdStore / FakeEmbedder
+go/internal/
+├── engine/engine.go
+├── engine/hybrid_test.go        — signal fusion and contradiction detection
+├── engine/gate_test.go          — the worthiness gate
+├── httpapi/server.go
+├── httpapi/server_test.go       — routes via httptest.NewRecorder
+├── httpapi/parity_test.go       — the HTTP surface against its OpenAPI document
+├── mcp/transport.go
+└── mcp/transport_test.go        — the MCP handshake, both protocol eras
 ```
-
-The fakes implement the same interfaces as the real stores. Tests usually wire them into a `MemoryEngine` and exercise the full call path without a database.
 
 ## Fakes vs real datastores
 
-Almost every test uses fakes — fast, hermetic. A handful do real-network tests:
+Most tests never reach a database. The pattern is a pool pointed at a
+dead address plus `httptest`, which is enough for health probes, the
+auth middleware and the validation layer:
 
-- `routes/mcp-sse.test.ts` — Fastify `listen()` + real `fetch()` with `AbortController` per session, because `app.inject()` buffers SSE indefinitely
-- `warm-store/integration.test.ts` (when present) — gated on `RUN_DB_TESTS=1`, requires a live Postgres
+```go
+func newTestServer(t *testing.T, authMode, authToken string) http.Handler {
+	t.Helper()
+	pool := deadPool(t) // pgxpool at 127.0.0.1:1, connect_timeout=1
+	log := slog.New(slog.DiscardHandler)
+	warm := warmstore.New(pool)
+	// ...
+}
+```
+
+Engine tests wire in-memory stores into a `MemoryEngine` and exercise
+the whole call path without Postgres or Qdrant.
 
 ## Patterns
 
-### Engine test
+### Table test
 
-```ts
-import { describe, expect, it } from "vitest";
-import { bench } from "./test-bench";
+The default shape. One case per row, named, so a failure says which:
 
-describe("engine.search", () => {
-  it("fuses keyword + vector signals", async () => {
-    const b = bench();
-    const a = await b.engine.remember("public", {
-      content: "Pascal likes coffee",
-      force: true,
-    });
-    const r = await b.engine.search("public", {
-      query: "coffee preference",
-      k: 5,
-    });
-    expect(r.results[0].id).toBe(a.id);
-  });
-});
+```go
+func TestSensitivity(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"credential in prose", "my database password is hunter2", true},
+		{"plain prose", "Pascal likes coffee", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsSensitive(tc.in); got != tc.want {
+				t.Errorf("IsSensitive(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
 ```
 
-`bench()` constructs an engine wired to in-memory fakes — see `test-bench.ts`.
+### Route test
 
-### Route test (Fastify inject)
-
-```ts
-import { describe, expect, it } from "vitest";
-
-describe("POST /v1/search", () => {
-  it("rejects requests without a token", async () => {
-    const { app } = await makeApp();
-    const r = await app.inject({
-      method: "POST",
-      url: "/v1/search",
-      payload: {},
-    });
-    expect(r.statusCode).toBe(401);
-  });
-});
+```go
+func TestSearchRejectsAnonymous(t *testing.T) {
+	h := newTestServer(t, "user", "")
+	req := httptest.NewRequest("POST", "/v1/search", strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
 ```
 
-`makeApp()` builds a Fastify instance against the fakes and skips the rate limit.
+### Conformance, not unit tests
 
-### Real-network test (SSE)
+Anything that depends on a running deployment — every transport, the
+auth modes, the dashboard contract — belongs in
+[`conformance/`](https://github.com/azrtydxb/novamem/tree/main/conformance),
+not in a unit test. It runs against a real target:
 
-For tests that need actual TCP (SSE concurrency caps, keepalive frames):
-
-```ts
-const port = await listen();
-const ctrl = new AbortController();
-const res = await fetch(`http://127.0.0.1:${port}/mcp/sse`, {
-  signal: ctrl.signal,
-});
-// drain reader → assert frames → ctrl.abort() in afterAll
+```bash
+./scripts/conformance-local.sh   # docker compose up/down included
 ```
 
-Use sparingly. The fakes-backed inject path is faster and covers most logic.
-
-## Coverage
-
-`pnpm test -- --coverage` (vitest-v8). Targets are not strictly enforced — focus on covering the failure modes instead of the percentage.
+The conformance suite is the only oracle for behaviour the server
+promises over the wire. A hand probe with `curl` is not a substitute —
+it misses whole transports.
 
 ## Adding a regression test
 
-When a bug is fixed, add a test that fails on the bad version and passes on the fix. Keep the test commented to point at the bug:
+When a bug is fixed, add a test that fails on the bad version and passes
+on the fix, and say in a comment which break it catches:
 
-```ts
-// Regression for the cold-tier error path. The engine catches the
-// throw and surfaces it as a degraded result instead of failing
-// the whole search.
-it("degrades when the cold store throws", async () => {
-  // ...
-});
+```go
+// Regression for the cold-tier error path: the engine catches the
+// failure and surfaces a degraded result instead of failing the whole
+// search.
+func TestSearchDegradesWhenColdStoreFails(t *testing.T) {
+	// ...
+}
 ```
 
 The comment plus the assertion together document why the test exists.
@@ -131,11 +137,17 @@ The comment plus the assertion together document why the test exists.
 
 `.github/workflows/ci.yml` runs:
 
-1. `pnpm test` per package
-2. `pnpm typecheck`
-3. `pnpm lint`
-4. `pnpm audit --audit-level=moderate`
-5. Docker build + Trivy scan
-6. CodeQL static analysis
+1. `cd go && go build ./... && go vet ./... && go test ./...` — the same
+   for `clients/go` and `conformance`
+2. `golangci-lint run ./...` at the pinned version
+3. `cd go && go run ./cmd/gen-openapi` followed by
+   `git diff --exit-code docs/api/openapi.json` — the OpenAPI drift gate
+4. `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` for the SPA
+   and this site
+5. `pnpm docs:smoke` — documentation invariants
+6. `pnpm audit --prod --audit-level=high`
+7. Docker build (amd64 + arm64) + Trivy scan
+8. CodeQL static analysis
 
-Branch protection requires all checks green + branch up-to-date with main before merge.
+Branch protection requires all checks green and the branch up to date
+with main before merge.
