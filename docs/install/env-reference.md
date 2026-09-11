@@ -163,6 +163,24 @@ The e5 and bge families are trained with _different_ prefixes on the query and d
 This is a quirk inherited from the TypeScript server's `z.coerce.boolean()` and kept deliberately: the config surface is a frozen contract, so a deployment that relied on the old behaviour keeps working. Every other boolean on this page (`NOVAMEM_RERANK_ENABLED`, `NOVAMEM_INSECURE_COOKIES`) uses the ordinary `1`/`true`/`yes`/`on` spellings.
 :::
 
+::: info Variables that are not server config
+This page lists what the **server** reads, so a few names you will meet
+elsewhere are deliberately absent:
+
+- `POSTGRES_PASSWORD` is consumed by the Postgres container and
+  substituted into `NOVAMEM_WARM_URL` — see the
+  [Docker Compose](./docker-compose.md) and
+  [Kubernetes](./kubernetes.md) guides.
+- The client tools read their own: `novamem-mcp` takes `NOVAMEM_TOKEN`,
+  and `novamem-init` also takes `NOVAMEM_PASSWORD` and
+  `NOVAMEM_MCP_BIN`.
+- `NOVAMEM_URL` is the conformance suite's target, not a server setting.
+
+`NOVAMEM_BASE_URL` is the one name that means something on both sides:
+to the server it is the origin it advertises, and to the client tools it
+is the server to connect to. Pointing them at each other is the intent.
+:::
+
 ::: info No OpenTelemetry
 The Go server emits no OTLP traces, and reads no `OTEL_*` variables — setting `OTEL_EXPORTER_OTLP_ENDPOINT` does nothing. This page listed them until the reference was generated from the loader, which is exactly the kind of claim a hand-written table can make and a generated one cannot. Prometheus metrics are available at `/v1/admin/metrics/prom` (see `NOVAMEM_ADMIN_DASHBOARD`); OTLP export is tracked in [#277](https://github.com/azrtydxb/novamem/issues/277).
 :::
