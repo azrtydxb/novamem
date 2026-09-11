@@ -104,7 +104,7 @@ func (s *server) resolveCaller(w http.ResponseWriter, r *http.Request) (*caller,
 	token := bearerOf(r)
 	if s.authMode == "bearer" {
 		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.authToken)) != 1 {
-			s.sendError(w, http.StatusUnauthorized, "unauthorized")
+			s.sendUnauthorized(w, r)
 			return nil, false
 		}
 		return &caller{userID: warmstore.SystemUser}, true
@@ -147,7 +147,7 @@ func (s *server) resolveCaller(w http.ResponseWriter, r *http.Request) (*caller,
 	}
 	if strings.HasPrefix(path, "/v1/auth/") || strings.HasPrefix(path, "/v1/me/") {
 		if c.dash == nil {
-			s.sendError(w, http.StatusUnauthorized, "unauthorized")
+			s.sendUnauthorized(w, r)
 			return nil, false
 		}
 		c.userID = c.dash.ID
@@ -166,7 +166,7 @@ func (s *server) resolveCaller(w http.ResponseWriter, r *http.Request) (*caller,
 		return c, true
 	}
 	if token == "" {
-		s.sendError(w, http.StatusUnauthorized, "unauthorized")
+		s.sendUnauthorized(w, r)
 		return nil, false
 	}
 	resolved, err := s.warm.ResolveUserToken(ctx, token)
@@ -175,7 +175,7 @@ func (s *server) resolveCaller(w http.ResponseWriter, r *http.Request) (*caller,
 		return nil, false
 	}
 	if resolved == nil {
-		s.sendError(w, http.StatusUnauthorized, "unauthorized")
+		s.sendUnauthorized(w, r)
 		return nil, false
 	}
 	c.userID = resolved.UserID

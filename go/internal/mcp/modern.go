@@ -23,8 +23,9 @@ import (
 const (
 	// _meta keys defined by the spec. The prefix is mandatory and
 	// reserved for the protocol itself.
-	metaProtocolVersion = "io.modelcontextprotocol/protocolVersion"
-	metaServerInfo      = "io.modelcontextprotocol/serverInfo"
+	metaProtocolVersion    = "io.modelcontextprotocol/protocolVersion"
+	metaClientCapabilities = "io.modelcontextprotocol/clientCapabilities"
+	metaServerInfo         = "io.modelcontextprotocol/serverInfo"
 
 	// Error codes from the range the spec reserves for itself
 	// (-32020..-32099); -32000..-32019 stays implementation-defined.
@@ -34,6 +35,9 @@ const (
 	// stay on the implementation-defined -32000.
 	codeHeaderMismatch             = -32020
 	codeUnsupportedProtocolVersion = -32022
+	// JSON-RPC's own Invalid params, which the spec names for a request
+	// whose `_meta` is missing a required field.
+	codeInvalidParams = -32602
 
 	discoverMethod = "server/discover"
 
@@ -134,6 +138,26 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 		return
 	}
 
+	// `io.modelcontextprotocol/clientCapabilities` is a REQUIRED _meta
+	// field in this revision, and "a request missing any required field
+	// is malformed; the server MUST reject it with -32602 … On HTTP, the
+	// response status MUST be 400 Bad Request."
+	//
+	// It is required even though this server needs nothing from it: the
+	// point is that a stateless server can read every request's
+	// capabilities without a handshake, so a request that omits them is
+	// not a request this revision defines.
+	//
+	// Checked below the notification branch on purpose: the rule binds
+	// requests, and a notification is not one — the spec says outright
+	// that header requirements for notification POSTs are undefined in
+	// this revision.
+	if _, ok := p.Meta[metaClientCapabilities]; !ok {
+		writeModernErr(w, http.StatusBadRequest, req.ID, codeInvalidParams,
+			"missing required _meta field "+metaClientCapabilities, nil)
+		return
+	}
+
 	switch req.Method {
 	case discoverMethod:
 		writeJSON(w, http.StatusOK, okResponse(req.ID, s.discoverResult()))
@@ -147,7 +171,21 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 		}))
 	case "tools/call":
 		if p.Name == "" {
-			writeJSON(w, http.StatusOK, errResponse(req.ID, -32602, "Invalid params"))
+			writeJSON(w, http.StatusOK, errResponse(req.ID, codeInvalidParams, "Invalid params"))
+			return
+		}
+		// The spec splits tool failures in two, and puts "unknown tool"
+		// on the protocol side: a JSON-RPC error, not `isError` content.
+		// The distinction is about who can act on it — a model can retry
+		// a tool that rejected its arguments, but cannot conjure a tool
+		// the server does not have, so telling it "unknown tool" as
+		// ordinary content invites a retry loop over a name that will
+		// never exist.
+		//
+		// The legacy era keeps the transcribed `isError` shape: earlier
+		// revisions specified it that way and its clients expect it.
+		if !HasTool(p.Name) {
+			writeJSON(w, http.StatusOK, errResponse(req.ID, codeInvalidParams, "Unknown tool: "+p.Name))
 			return
 		}
 		res := s.callTool(r.Context(), userID, p.Name, p.Arguments)

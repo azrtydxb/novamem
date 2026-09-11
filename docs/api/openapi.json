@@ -2396,6 +2396,48 @@
         }
       }
     },
+    "/.well-known/oauth-protected-resource": {
+      "get": {
+        "summary": "OAuth 2.0 Protected Resource Metadata (RFC 9728)",
+        "tags": [
+          "auth"
+        ],
+        "description": "Discovery document the MCP authorization flow starts from: an unauthenticated request to a protected route answers 401 with `WWW-Authenticate: Bearer resource_metadata=\"…\"` pointing here. Public — discovery has to work before the caller holds a credential.\n\nnovamem is an OAuth 2.1 *resource* server in shape but not in issuance: it mints its own `nm_…` bearers from the dashboard rather than delegating to an authorization server, so `authorization_servers` is deliberately absent. Naming one that cannot issue tokens for this resource would send clients into a flow that dead-ends.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resource": {
+                      "type": "string"
+                    },
+                    "bearer_methods_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "resource_name": {
+                      "type": "string"
+                    },
+                    "resource_documentation": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "resource"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Readiness probe — dependency checks, boolean only",
@@ -2652,7 +2694,7 @@
     },
     {
       "name": "mcp",
-      "description": "Model Context Protocol transports (Streamable HTTP + legacy SSE)"
+      "description": "Model Context Protocol transport (Streamable HTTP, dual-era)"
     },
     {
       "name": "liveness",

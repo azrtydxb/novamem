@@ -27,8 +27,13 @@ func modernPost(t *testing.T, h http.Handler, method, body string, over map[stri
 	return post(t, h, body, hdr)
 }
 
+// modernBody builds a CONFORMING modern request: this revision makes
+// both protocolVersion and clientCapabilities required `_meta` fields,
+// so a helper that omitted either would be testing a request the spec
+// says servers must reject.
 func modernBody(id, method, extra string) string {
-	meta := `"_meta":{"` + metaProtocolVersion + `":"` + modernVer + `"}`
+	meta := `"_meta":{"` + metaProtocolVersion + `":"` + modernVer +
+		`","` + metaClientCapabilities + `":{}}`
 	params := "{" + meta
 	if extra != "" {
 		params += "," + extra
@@ -312,5 +317,90 @@ func TestLegacyInitializeNeverFallsBackToModern(t *testing.T) {
 		if got != latestLegacyVersion() {
 			t.Errorf("asked %s, got %s, want %s", asked, got, latestLegacyVersion())
 		}
+	}
+}
+
+// `io.modelcontextprotocol/clientCapabilities` is REQUIRED on every
+// modern request: "A request missing any required field is malformed;
+// the server MUST reject it with JSON-RPC error code -32602 (Invalid
+// params). On HTTP, the response status MUST be 400 Bad Request."
+//
+// The server needs nothing from the field. The point is that a
+// stateless server reads every request's capabilities without a
+// handshake, so a request omitting them is not one this revision
+// defines — and accepting it teaches clients a shape no other server
+// has to honour.
+//
+// proved by: every modern test in this file passed before the check
+// existed, because the helper above never sent the field.
+func TestModernRejectsAMissingClientCapabilities(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"` +
+		metaProtocolVersion + `":"` + modernVer + `"}}}`
+	rec := modernPost(t, h, "tools/list", body, nil)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400\n%s", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		Error struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Error.Code != codeInvalidParams {
+		t.Errorf("code = %d, want %d", env.Error.Code, codeInvalidParams)
+	}
+	if !strings.Contains(env.Error.Message, metaClientCapabilities) {
+		t.Errorf("message %q does not name the missing field", env.Error.Message)
+	}
+}
+
+// The spec splits tool failures in two and puts "unknown tool" on the
+// protocol side — a JSON-RPC error, not `isError` content. The
+// distinction is about who can act on it: a model can retry a tool that
+// rejected its arguments, but cannot conjure a tool the server does not
+// have.
+//
+// The legacy era keeps the transcribed isError shape; this is the modern
+// era only.
+//
+// proved by: removed the HasTool guard — the call falls through to the
+// dispatcher and comes back 200 with isError content, and the error
+// assertions below fail.
+func TestModernUnknownToolIsAProtocolError(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	body := modernBody("1", "tools/call", `"name":"memory_nonexistent","arguments":{}`)
+	rec := modernPost(t, h, "tools/call", body, map[string]string{"Mcp-Name": "memory_nonexistent"})
+
+	var env struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body is not JSON-RPC: %s", rec.Body)
+	}
+	if env.Error == nil {
+		t.Fatalf("unknown tool came back as a result, not a protocol error: %s", rec.Body)
+	}
+	if env.Error.Code != codeInvalidParams {
+		t.Errorf("code = %d, want %d", env.Error.Code, codeInvalidParams)
+	}
+	if !strings.Contains(env.Error.Message, "memory_nonexistent") {
+		t.Errorf("message %q does not name the tool", env.Error.Message)
+	}
+
+	// A tool that DOES exist but fails still reports as tool content, so
+	// the model can act on it.
+	ok := modernBody("2", "tools/call", `"name":"memory_search","arguments":{}`)
+	okRec := modernPost(t, h, "tools/call", ok, map[string]string{"Mcp-Name": "memory_search"})
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("an advertised tool should dispatch: %d %s", okRec.Code, okRec.Body)
 	}
 }

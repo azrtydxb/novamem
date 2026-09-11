@@ -41,6 +41,10 @@ var toolDefsRaw json.RawMessage
 // toolNames indexes the advertised tool names for tests and callers.
 var toolNames []string
 
+// toolNameSet is the same set, for the membership check the modern era
+// needs before dispatching.
+var toolNameSet = map[string]bool{}
+
 func init() {
 	var defs []struct {
 		Name string `json:"name"`
@@ -50,6 +54,7 @@ func init() {
 	}
 	for _, d := range defs {
 		toolNames = append(toolNames, d.Name)
+		toolNameSet[d.Name] = true
 	}
 	// Compact so the wire payload carries no indentation.
 	var buf bytes.Buffer
@@ -64,6 +69,11 @@ func ToolNames() []string { return append([]string{}, toolNames...) }
 
 // ToolDefinitions returns the raw tools/list array.
 func ToolDefinitions() json.RawMessage { return toolDefsRaw }
+
+// HasTool reports whether name is on the advertised surface. The modern
+// era answers a call for anything else with a JSON-RPC error rather than
+// dispatching and rendering the failure as tool content.
+func HasTool(name string) bool { return toolNameSet[name] }
 
 // ErrUnknownTool signals a tools/call for a name outside the surface;
 // the JSON-RPC layer renders it as the TS dispatcher's

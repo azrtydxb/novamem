@@ -48,6 +48,16 @@ func (s *server) sendError(w http.ResponseWriter, status int, msg string) {
 	writeJSONValue(w, status, map[string]any{"error": msg})
 }
 
+// sendUnauthorized is sendError(401) plus the RFC 6750 challenge that
+// MCP's discovery flow begins with: a 401 carrying `WWW-Authenticate`
+// with a `resource_metadata` pointer. Without it a conforming client
+// cannot tell "present a token" from "this endpoint is broken", and has
+// nowhere to look for how to get one.
+func (s *server) sendUnauthorized(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("WWW-Authenticate", s.challengeHeader(r))
+	s.sendError(w, http.StatusUnauthorized, "unauthorized")
+}
+
 func (s *server) sendIssues(w http.ResponseWriter, issues []issue) {
 	writeJSONValue(w, http.StatusBadRequest, map[string]any{
 		"error":  "invalid request body",

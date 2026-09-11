@@ -151,6 +151,7 @@ func newHandler(opts Options) (http.Handler, []string) {
 	})
 
 	s.registerAPIDocs(mux)
+	s.registerOAuthMetadata(mux)
 
 	// Browsers request /favicon.ico from the page origin (http.ts: 204).
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
