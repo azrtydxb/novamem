@@ -10,7 +10,10 @@ import (
 // drift silently is a bug waiting to ship, so this fails the build the
 // moment they diverge — re-sync with:
 //
-//	rsync -a --delete integrations/claude-code/commands/ go/internal/initcli/assets/commands/
+//	cd go && go run ./cmd/gen-contract
+//
+// It used to say `rsync -a --delete …`, which worked exactly as long as
+// whoever edited the source remembered to run it.
 func TestEmbeddedAssetsMatchRepoSources(t *testing.T) {
 	repo := filepath.Join("..", "..", "..")
 	for _, pair := range []struct{ source, embedded string }{

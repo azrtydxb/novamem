@@ -12,9 +12,14 @@ import (
 func repoRoot() string { return filepath.Join("..", "..", "..") }
 
 // The embedded skill is a copy of the repo's skills/novamem/, which is
-// what an installer ships and what docs link to. Re-sync with:
+// what an installer ships and what docs link to. go:embed cannot reach
+// outside the module, so the copy exists; cmd/gen-contract writes it, and
+// the CI drift gate diffs it. Re-sync with:
 //
-//	rsync -a --delete skills/novamem/ go/internal/agentskill/skill/
+//	cd go && go run ./cmd/gen-contract
+//
+// It used to be a hand-run `rsync -a --delete` that this test caught you
+// forgetting — a single source kept single by remembering to copy it.
 func TestEmbeddedSkillMatchesRepoSource(t *testing.T) {
 	src := filepath.Join(repoRoot(), "skills", "novamem")
 	if _, err := os.Stat(src); err != nil {
