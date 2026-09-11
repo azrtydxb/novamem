@@ -10,12 +10,14 @@
     "inputSchema": {
       "properties": {
         "includeNamespaces": {
+          "description": "Union results across these shelves. Takes precedence over `namespace`.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "includeProjects": {
+          "description": "Active-project mode: union user-global with each listed project (id or name).",
           "items": {
             "type": "string"
           },
@@ -40,6 +42,7 @@
           "type": "string"
         },
         "namespace": {
+          "description": "Namespace shelf to write to / read from. Omit for the caller's default shelf.",
           "type": "string"
         },
         "project": {
@@ -47,6 +50,7 @@
           "type": "string"
         },
         "weights": {
+          "description": "Per-signal weight overrides. Omit to use defaults.",
           "properties": {
             "graph": {
               "type": "number"
@@ -66,7 +70,57 @@
       ],
       "type": "object"
     },
-    "name": "memory_context"
+    "name": "memory_context",
+    "outputSchema": {
+      "properties": {
+        "results": {
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "project": {
+                "nullable": true,
+                "type": "string"
+              },
+              "score": {
+                "type": "number"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tier": {
+                "enum": [
+                  "warm",
+                  "cold"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "content"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -80,6 +134,7 @@
     "inputSchema": {
       "properties": {
         "capturedFrom": {
+          "description": "Agent name, conversation id, or other channel ref.",
           "type": "string"
         },
         "confidence": {
@@ -87,6 +142,7 @@
           "type": "number"
         },
         "content": {
+          "description": "The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.",
           "type": "string"
         },
         "expiresAt": {
@@ -94,12 +150,15 @@
           "type": "string"
         },
         "force": {
+          "description": "Bypass the worthiness gate. Default false.",
           "type": "boolean"
         },
         "metadata": {
+          "description": "Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.",
           "type": "object"
         },
         "namespace": {
+          "description": "Namespace shelf to write to / read from. Omit for the caller's default shelf.",
           "type": "string"
         },
         "project": {
@@ -107,6 +166,7 @@
           "type": "string"
         },
         "sensitivity": {
+          "description": "public | internal | private | sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise.",
           "enum": [
             "public",
             "internal",
@@ -116,9 +176,11 @@
           "type": "string"
         },
         "source": {
+          "description": "Free-text origin label stored with the entry (e.g. an app or surface name).",
           "type": "string"
         },
         "sourceType": {
+          "description": "chat | email | code-review | doc | inference | observation | system | manual",
           "type": "string"
         }
       },
@@ -127,7 +189,37 @@
       ],
       "type": "object"
     },
-    "name": "memory_capture"
+    "name": "memory_capture",
+    "outputSchema": {
+      "properties": {
+        "deduplicated": {
+          "type": "boolean"
+        },
+        "embedded": {
+          "type": "boolean"
+        },
+        "id": {
+          "nullable": true,
+          "type": "string"
+        },
+        "rejected": {
+          "type": "string"
+        },
+        "superseded": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -141,6 +233,7 @@
     "inputSchema": {
       "properties": {
         "capturedFrom": {
+          "description": "Agent name, conversation id, or other channel ref.",
           "type": "string"
         },
         "confidence": {
@@ -148,27 +241,33 @@
           "type": "number"
         },
         "decisions": {
+          "description": "Decisions reached this session, one self-contained sentence each.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "force": {
+          "description": "Bypass the worthiness gate. Default false.",
           "type": "boolean"
         },
         "metadata": {
+          "description": "Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.",
           "type": "object"
         },
         "namespace": {
+          "description": "Namespace shelf to write to / read from. Omit for the caller's default shelf.",
           "type": "string"
         },
         "other": {
+          "description": "Durable items that fit none of the typed buckets above.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "preferences": {
+          "description": "Preferences the user expressed, one per item.",
           "items": {
             "type": "string"
           },
@@ -179,24 +278,28 @@
           "type": "string"
         },
         "projectConventions": {
+          "description": "Conventions this project follows, one per item.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "rootCauses": {
+          "description": "Root causes established this session — what actually went wrong, not what was tried.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "safetyConstraints": {
+          "description": "Constraints that must not be violated later (destructive operations, approval boundaries).",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "sensitivity": {
+          "description": "public | internal | private | sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise.",
           "enum": [
             "public",
             "internal",
@@ -206,21 +309,69 @@
           "type": "string"
         },
         "setupFacts": {
+          "description": "Verified environment facts: hosts, paths, versions, credentials' locations (never the credentials).",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "source": {
+          "description": "Free-text origin label stored with the entry (e.g. an app or surface name).",
           "type": "string"
         },
         "sourceType": {
+          "description": "chat | email | code-review | doc | inference | observation | system | manual",
           "type": "string"
         }
       },
       "type": "object"
     },
-    "name": "memory_session_recap"
+    "name": "memory_session_recap",
+    "outputSchema": {
+      "properties": {
+        "results": {
+          "items": {
+            "properties": {
+              "deduplicated": {
+                "type": "boolean"
+              },
+              "embedded": {
+                "type": "boolean"
+              },
+              "id": {
+                "nullable": true,
+                "type": "string"
+              },
+              "rejected": {
+                "type": "string"
+              },
+              "superseded": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "updated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "saved": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "saved",
+        "results"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -239,7 +390,58 @@
       },
       "type": "object"
     },
-    "name": "memory_hygiene"
+    "name": "memory_hygiene",
+    "outputSchema": {
+      "properties": {
+        "contradictionCandidates": {
+          "items": {},
+          "type": "array"
+        },
+        "duplicateClusters": {
+          "items": {},
+          "type": "array"
+        },
+        "lowValue": {
+          "items": {},
+          "type": "array"
+        },
+        "orphanCandidates": {
+          "items": {},
+          "type": "array"
+        },
+        "stale": {
+          "items": {},
+          "type": "array"
+        },
+        "summary": {
+          "properties": {
+            "contradictionCandidates": {
+              "type": "number"
+            },
+            "duplicateClusters": {
+              "type": "number"
+            },
+            "lowValue": {
+              "type": "number"
+            },
+            "orphanCandidates": {
+              "type": "number"
+            },
+            "scanned": {
+              "type": "number"
+            },
+            "stale": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -258,7 +460,52 @@
       },
       "type": "object"
     },
-    "name": "memory_evaluate"
+    "name": "memory_evaluate",
+    "outputSchema": {
+      "properties": {
+        "cases": {
+          "items": {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "passed": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "suite": {
+          "type": "string"
+        },
+        "summary": {
+          "properties": {
+            "failed": {
+              "type": "number"
+            },
+            "passed": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "suite",
+        "passed",
+        "summary",
+        "cases"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -288,7 +535,50 @@
       },
       "type": "object"
     },
-    "name": "memory_adoption"
+    "name": "memory_adoption",
+    "outputSchema": {
+      "properties": {
+        "diagnostics": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "features": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "mcp": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "refresh": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "requestedClient": {
+          "type": "string"
+        },
+        "requiredTools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "server": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "required": [
+        "requestedClient",
+        "server",
+        "mcp",
+        "diagnostics"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -336,6 +626,7 @@
           "type": "string"
         },
         "query": {
+          "description": "What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.",
           "type": "string"
         },
         "weights": {
@@ -362,7 +653,57 @@
       ],
       "type": "object"
     },
-    "name": "memory_search"
+    "name": "memory_search",
+    "outputSchema": {
+      "properties": {
+        "results": {
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "project": {
+                "nullable": true,
+                "type": "string"
+              },
+              "score": {
+                "type": "number"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tier": {
+                "enum": [
+                  "warm",
+                  "cold"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "content"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -384,6 +725,7 @@
           "type": "number"
         },
         "content": {
+          "description": "The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.",
           "type": "string"
         },
         "expiresAt": {
@@ -395,6 +737,7 @@
           "type": "boolean"
         },
         "namespace": {
+          "description": "Namespace shelf to write to / read from. Omit for the caller's default shelf.",
           "type": "string"
         },
         "project": {
@@ -402,6 +745,7 @@
           "type": "string"
         },
         "source": {
+          "description": "Free-text origin label stored with the entry (e.g. an app or surface name).",
           "type": "string"
         },
         "sourceType": {
@@ -414,7 +758,28 @@
       ],
       "type": "object"
     },
-    "name": "memory_remember"
+    "name": "memory_remember",
+    "outputSchema": {
+      "properties": {
+        "deduplicated": {
+          "type": "boolean"
+        },
+        "embedded": {
+          "type": "boolean"
+        },
+        "id": {
+          "nullable": true,
+          "type": "string"
+        },
+        "rejected": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -436,21 +801,25 @@
           "type": "string"
         },
         "includeNamespaces": {
+          "description": "Union results across these shelves. Takes precedence over `namespace`.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "includeProjects": {
+          "description": "Active-project mode: union user-global with each listed project (id or name).",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "k": {
+          "description": "How many entries to return.",
           "type": "number"
         },
         "maxSensitivity": {
+          "description": "Maximum sensitivity to return; defaults to private, excluding sensitive.",
           "enum": [
             "public",
             "internal",
@@ -460,6 +829,7 @@
           "type": "string"
         },
         "namespace": {
+          "description": "Namespace shelf to write to / read from. Omit for the caller's default shelf.",
           "type": "string"
         },
         "project": {
@@ -469,7 +839,42 @@
       },
       "type": "object"
     },
-    "name": "memory_today"
+    "name": "memory_today",
+    "outputSchema": {
+      "properties": {
+        "events": {
+          "items": {
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "remember",
+                  "token",
+                  "project",
+                  "audit"
+                ],
+                "type": "string"
+              },
+              "project": {
+                "nullable": true,
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "events"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -498,15 +903,18 @@
           "type": "array"
         },
         "includeProjects": {
+          "description": "Active-project mode: union user-global with each listed project (id or name).",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "k": {
+          "description": "How many entries to return.",
           "type": "number"
         },
         "namespace": {
+          "description": "Namespace shelf to write to / read from. Omit for the caller's default shelf.",
           "type": "string"
         },
         "project": {
@@ -520,7 +928,57 @@
       },
       "type": "object"
     },
-    "name": "memory_recent"
+    "name": "memory_recent",
+    "outputSchema": {
+      "properties": {
+        "results": {
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "project": {
+                "nullable": true,
+                "type": "string"
+              },
+              "score": {
+                "type": "number"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tier": {
+                "enum": [
+                  "warm",
+                  "cold"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "content"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -537,15 +995,18 @@
           "type": "number"
         },
         "id": {
+          "description": "Seed memory id (ULID) to walk out from.",
           "type": "string"
         },
         "includeProjects": {
+          "description": "Active-project mode: union user-global with each listed project (id or name).",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "k": {
+          "description": "How many entries to return.",
           "type": "number"
         },
         "project": {
@@ -558,7 +1019,57 @@
       ],
       "type": "object"
     },
-    "name": "memory_neighbors"
+    "name": "memory_neighbors",
+    "outputSchema": {
+      "properties": {
+        "results": {
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "project": {
+                "nullable": true,
+                "type": "string"
+              },
+              "score": {
+                "type": "number"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tier": {
+                "enum": [
+                  "warm",
+                  "cold"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "content"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -572,6 +1083,7 @@
     "inputSchema": {
       "properties": {
         "id": {
+          "description": "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200.",
           "type": "string"
         },
         "project": {
@@ -584,7 +1096,21 @@
       ],
       "type": "object"
     },
-    "name": "memory_forget"
+    "name": "memory_forget",
+    "outputSchema": {
+      "properties": {
+        "coldDeleteOk": {
+          "type": "boolean"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -598,6 +1124,7 @@
     "inputSchema": {
       "properties": {
         "capturedFrom": {
+          "description": "Agent name, conversation id, or other channel ref.",
           "type": "string"
         },
         "confidence": {
@@ -605,6 +1132,7 @@
           "type": "number"
         },
         "content": {
+          "description": "Replacement text. The id, its graph edges and its hit count survive the rewrite.",
           "type": "string"
         },
         "id": {
@@ -612,9 +1140,11 @@
           "type": "string"
         },
         "metadata": {
+          "description": "Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.",
           "type": "object"
         },
         "namespace": {
+          "description": "Namespace shelf to write to / read from. Omit for the caller's default shelf.",
           "type": "string"
         },
         "project": {
@@ -622,6 +1152,7 @@
           "type": "string"
         },
         "sensitivity": {
+          "description": "public | internal | private | sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise.",
           "enum": [
             "public",
             "internal",
@@ -631,6 +1162,7 @@
           "type": "string"
         },
         "sourceType": {
+          "description": "chat | email | code-review | doc | inference | observation | system | manual",
           "type": "string"
         }
       },
@@ -639,7 +1171,26 @@
       ],
       "type": "object"
     },
-    "name": "memory_update"
+    "name": "memory_update",
+    "outputSchema": {
+      "properties": {
+        "embeddingChanged": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "updated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "updated",
+        "embeddingChanged"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -654,7 +1205,44 @@
       "properties": {},
       "type": "object"
     },
-    "name": "memory_stats"
+    "name": "memory_stats",
+    "outputSchema": {
+      "properties": {
+        "byNamespace": {
+          "additionalProperties": {
+            "properties": {
+              "cold": {
+                "type": "number"
+              },
+              "warm": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "lastDecayAt": {
+          "nullable": true,
+          "type": "string"
+        },
+        "totalCold": {
+          "type": "number"
+        },
+        "totalWarm": {
+          "type": "number"
+        },
+        "uptimeMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "byNamespace",
+        "totalWarm",
+        "totalCold"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -669,7 +1257,36 @@
       "properties": {},
       "type": "object"
     },
-    "name": "project_list"
+    "name": "project_list",
+    "outputSchema": {
+      "properties": {
+        "projects": {
+          "items": {
+            "properties": {
+              "createdAt": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ownerUserId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -692,7 +1309,28 @@
       ],
       "type": "object"
     },
-    "name": "project_create"
+    "name": "project_create",
+    "outputSchema": {
+      "properties": {
+        "createdAt": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerUserId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -715,7 +1353,28 @@
       ],
       "type": "object"
     },
-    "name": "project_delete"
+    "name": "project_delete",
+    "outputSchema": {
+      "properties": {
+        "coldCollectionsDropped": {
+          "nullable": true,
+          "type": "number"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "entriesRemoved": {
+          "type": "number"
+        },
+        "graphCleared": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -738,7 +1397,27 @@
       ],
       "type": "object"
     },
-    "name": "project_activate"
+    "name": "project_activate",
+    "outputSchema": {
+      "properties": {
+        "active": {
+          "nullable": true,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "active"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -782,7 +1461,35 @@
       ],
       "type": "object"
     },
-    "name": "project_share"
+    "name": "project_share",
+    "outputSchema": {
+      "properties": {
+        "members": {
+          "items": {
+            "properties": {
+              "joinedAt": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "members"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {

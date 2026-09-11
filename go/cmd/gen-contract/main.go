@@ -79,7 +79,7 @@ func main() {
 		fail("%s declares no paths", specPath)
 	}
 
-	tools, routes := collect(paths)
+	tools, routes := collect(paths, doc)
 	if len(tools) == 0 {
 		fail("%s binds no MCP tools — every tool is an operation carrying x-mcp-tool", specPath)
 	}
@@ -107,7 +107,69 @@ type route struct {
 // collect walks the spec once, pulling out the tool surface and the
 // route list in declaration-independent (sorted) order so the output is
 // byte-stable.
-func collect(paths map[string]any) ([]mcpTool, []route) {
+// responseSchema pulls an operation's 200 application/json schema and
+// resolves a top-level $ref against components, because an MCP client
+// reads inputSchema/outputSchema as standalone JSON Schema and has no
+// document to resolve a local pointer inside.
+func responseSchema(op, doc map[string]any) map[string]any {
+	resp, _ := op["responses"].(map[string]any)
+	ok200, _ := resp["200"].(map[string]any)
+	content, _ := ok200["content"].(map[string]any)
+	appjson, _ := content["application/json"].(map[string]any)
+	schema, _ := appjson["schema"].(map[string]any)
+	if schema == nil {
+		return nil
+	}
+	return resolve(schema, doc, 0)
+}
+
+// resolve inlines local $refs. Depth-bounded: a schema that refers to
+// itself would otherwise expand forever, and a cycle is a real thing to
+// write by accident.
+func resolve(node any, doc map[string]any, depth int) map[string]any {
+	if depth > 8 {
+		fail("schema $ref nesting deeper than 8 — is there a cycle?")
+	}
+	m, ok := node.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if ref, isRef := m["$ref"].(string); isRef {
+		const prefix = "#/components/schemas/"
+		if !strings.HasPrefix(ref, prefix) {
+			fail("unsupported $ref %q — only local component schemas resolve", ref)
+		}
+		comps, _ := doc["components"].(map[string]any)
+		schemas, _ := comps["schemas"].(map[string]any)
+		target, found := schemas[strings.TrimPrefix(ref, prefix)]
+		if !found {
+			fail("$ref %q points at a schema that does not exist", ref)
+		}
+		return resolve(target, doc, depth+1)
+	}
+	out := map[string]any{}
+	for k, v := range m {
+		switch vv := v.(type) {
+		case map[string]any:
+			out[k] = resolve(vv, doc, depth+1)
+		case []any:
+			list := make([]any, 0, len(vv))
+			for _, e := range vv {
+				if em, isMap := e.(map[string]any); isMap {
+					list = append(list, resolve(em, doc, depth+1))
+				} else {
+					list = append(list, e)
+				}
+			}
+			out[k] = list
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func collect(paths, doc map[string]any) ([]mcpTool, []route) {
 	var tools []mcpTool
 	var routes []route
 
@@ -127,6 +189,26 @@ func collect(paths map[string]any) ([]mcpTool, []route) {
 			if x, ok := op["x-mcp-tool"]; ok {
 				t := toTool(x, m, p)
 				r.Tool = t.name()
+				// The tool's outputSchema is the operation's own 200
+				// response, resolved. Authored once, in the place the HTTP
+				// contract already needed it — so a tool cannot describe a
+				// result shape its route does not return, and adding a
+				// response type gives the MCP surface one for free.
+				if out := responseSchema(op, doc); out != nil {
+					t["outputSchema"] = out
+				}
+				// An operation that backs a tool gets the tool's own
+				// description unless it has written its own. The tool text
+				// is the richest thing anyone wrote about what this
+				// operation does and when to reach for it; leaving the
+				// HTTP reader with only a one-line summary while agents
+				// get a paragraph is an arbitrary difference, and copying
+				// it by hand would be a second copy to keep in step.
+				if _, has := op["description"]; !has {
+					if d, ok := t["description"].(string); ok {
+						op["description"] = d
+					}
+				}
 				tools = append(tools, t)
 			}
 			routes = append(routes, r)
