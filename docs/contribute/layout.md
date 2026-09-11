@@ -36,16 +36,19 @@ the migrations and the OpenAPI document.
 ```
 cmd/novamem-server/      — bootstrap: load config, migrate, serve
 cmd/gen-contract/        — renders every contract artifact from api/openapi.yaml
+cmd/gen-tool-docs/       — renders the MCP tool catalogue from the tool surface
+cmd/gen-env-docs/        — renders the env reference from internal/config/registry.go
 internal/
 ├── config/              — env schema, validated at startup
+│   └── registry.go      — every variable the server reads, declared once
 ├── httpapi/             — routing, auth, CORS, rate limiting, /v1 + /api/auth
-│   ├── openapi.go       — the OpenAPI source of truth
+│   ├── openapi.go       — serves the document generated from api/openapi.yaml
 │   └── admin-ui/        — the embedded dashboard build
 ├── engine/              — search, remember, neighbors, decay, dream, facts
 ├── warmstore/           — Postgres layer
 │   └── migrations/      — embedded SQL + drizzle-format journal
 ├── coldstore/           — pgvector and Qdrant backends
-├── mcp/                 — MCP server: 21 tools over Streamable HTTP + SSE
+├── mcp/                 — MCP server: 21 tools over Streamable HTTP
 └── auth/                — Better Auth-compatible hashing, cookies, JWKS
 ```
 

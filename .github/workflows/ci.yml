@@ -116,8 +116,15 @@ jobs:
       # against, and the tool catalogue in the docs — is generated from
       # it. Regenerate and diff: an edit to any output without an edit to
       # the source fails here.
-      - run: cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs
-      - run: git diff --exit-code api/ docs/api/ conformance/reference/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go go/internal/agentskill/skill go/internal/initcli/assets
+      #
+      # go/internal/config/registry.go is the same thing for the
+      # environment surface: it declares every variable the server reads,
+      # the loader takes its defaults from it, and the reference page in
+      # docs/install/ is rendered from it. The page carried a
+      # hand-written table until then, and it had drifted far enough to
+      # be undeployable.
+      - run: cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs && go run ./cmd/gen-env-docs
+      - run: git diff --exit-code api/ docs/api/ docs/install/env-reference.md .env.example conformance/reference/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go go/internal/agentskill/skill go/internal/initcli/assets
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
