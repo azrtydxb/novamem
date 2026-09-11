@@ -2311,11 +2311,11 @@
     },
     "/mcp": {
       "post": {
-        "summary": "MCP Streamable HTTP transport (2025-03-26+)",
+        "summary": "MCP Streamable HTTP transport (dual-era)",
         "tags": [
           "mcp"
         ],
-        "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
+        "description": "Single-endpoint MCP transport serving both protocol eras (ADR 0006). Modern (2026-07-28): stateless — every POST declares its version in `params._meta` and mirrors `Mcp-Method` (plus `Mcp-Name` on `tools/call`) into headers, which are validated against the body; `server/discover` reports the supported versions. No session is minted or echoed. Legacy (2025-11-25 and earlier): `initialize` returns a session id in the `Mcp-Session-Id` response header which must be echoed on subsequent calls; GET opens a server→client SSE channel and DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request; an unsupported version answers -32022 with the list to retry from.",
         "responses": {
           "200": {
             "description": "Default Response"
@@ -2323,11 +2323,11 @@
         }
       },
       "get": {
-        "summary": "MCP Streamable HTTP transport (2025-03-26+)",
+        "summary": "MCP Streamable HTTP transport (dual-era)",
         "tags": [
           "mcp"
         ],
-        "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
+        "description": "Single-endpoint MCP transport serving both protocol eras (ADR 0006). Modern (2026-07-28): stateless — every POST declares its version in `params._meta` and mirrors `Mcp-Method` (plus `Mcp-Name` on `tools/call`) into headers, which are validated against the body; `server/discover` reports the supported versions. No session is minted or echoed. Legacy (2025-11-25 and earlier): `initialize` returns a session id in the `Mcp-Session-Id` response header which must be echoed on subsequent calls; GET opens a server→client SSE channel and DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request; an unsupported version answers -32022 with the list to retry from.",
         "responses": {
           "200": {
             "description": "Default Response"
@@ -2335,11 +2335,11 @@
         }
       },
       "delete": {
-        "summary": "MCP Streamable HTTP transport (2025-03-26+)",
+        "summary": "MCP Streamable HTTP transport (dual-era)",
         "tags": [
           "mcp"
         ],
-        "description": "Single-endpoint MCP transport. POST a JSON-RPC request; the response is either a JSON document or a `text/event-stream` upgrade. The session id is returned in the `Mcp-Session-Id` response header on `initialize` and must be echoed on subsequent calls. GET opens a server→client SSE channel; DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request.",
+        "description": "Single-endpoint MCP transport serving both protocol eras (ADR 0006). Modern (2026-07-28): stateless — every POST declares its version in `params._meta` and mirrors `Mcp-Method` (plus `Mcp-Name` on `tools/call`) into headers, which are validated against the body; `server/discover` reports the supported versions. No session is minted or echoed. Legacy (2025-11-25 and earlier): `initialize` returns a session id in the `Mcp-Session-Id` response header which must be echoed on subsequent calls; GET opens a server→client SSE channel and DELETE closes the session. Origin and MCP-Protocol-Version are validated on every request; an unsupported version answers -32022 with the list to retry from.",
         "responses": {
           "200": {
             "description": "Default Response"

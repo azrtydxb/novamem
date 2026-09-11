@@ -141,6 +141,36 @@ kubectl -n novamem exec sts/postgres -- pg_dump -U novamem -d novamem -Fc > nova
 # Qdrant: kubectl exec into the pod and POST /collections/<name>/snapshots
 ```
 
+## Scaling out
+
+`novamem.yaml` ships `replicas: 1`. Raising it is safe for the API and
+for the streamable MCP endpoint (`POST /mcp`), on two conditions:
+
+- **`NOVAMEM_COOKIE_SECRET` must be set and identical on every pod.** MCP
+  session ids are signed with a key derived from it, which is how a pod
+  that never saw a client's `initialize` can still verify and serve that
+  client's session. Without the secret (`NOVAMEM_AUTH_MODE=none`), ids
+  are unsigned and confined to the pod that minted them — clients then
+  fail with `404 {"error":"unknown sessionId"}` on roughly `1 - 1/N` of
+  their calls, which looks like a client bug but is a scaling one.
+- **`strategy: Recreate` and the ReadWriteOnce data volume assume one pod
+  at a time.** Switch the strategy and provision RWX (or node-pin)
+  before scaling the pods that mount them.
+
+The legacy SSE transport (`GET /mcp/sse` plus `POST /mcp/messages`) stays
+pod-local by nature: a message POST has to reach the goroutine holding
+that session's open stream. If any client still uses it, pin each client
+to one pod. With ingress-nginx that means a dedicated Service for the MCP
+paths plus, on its own Ingress:
+
+```yaml
+nginx.ingress.kubernetes.io/upstream-hash-by: "$http_authorization"
+```
+
+The separate Service matters: two Ingresses pointing at the same Service
+collapse onto one nginx upstream, and the annotation is then silently
+ignored.
+
 ## Updates
 
 `:main` is mutable, so CI publishing a new image + a rollout restart is enough:

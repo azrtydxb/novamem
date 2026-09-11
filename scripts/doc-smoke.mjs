@@ -293,6 +293,101 @@ function checkNoReviewMarkers(file, lines) {
 
 // ── Run ──────────────────────────────────────────────────────────────
 
+// 9. Every server endpoint a doc names must exist in the generated
+//    OpenAPI spec.
+//
+//    The invariants above are each a reaction to one past drift, so they
+//    only catch drift somebody already predicted. This one is derived
+//    from the route table itself, so it catches endpoints renamed or
+//    removed in future without anyone adding a rule here. Retroactively
+//    it is what would have caught `/api-docs` surviving the Fastify
+//    server's deletion (issue #264).
+//
+//    Deliberately conservative: only paths written as a code span, with
+//    our API's shape, are considered. A noisy invariant gets switched
+//    off, which is worse than not having one.
+let specMatchers = null;
+async function loadSpecMatchers() {
+  if (specMatchers) return specMatchers;
+  const spec = JSON.parse(
+    await readFile(join(ROOT, "docs/api/openapi.json"), "utf8")
+  );
+  // `/v1/memories/{id}` -> matcher that accepts any single segment there.
+  specMatchers = Object.keys(spec.paths ?? {}).map((p) => ({
+    path: p,
+    re: new RegExp(
+      "^" +
+        p
+          .split("/")
+          .map((seg) =>
+            seg.startsWith("{") && seg.endsWith("}")
+              ? "[^/]+"
+              : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+          )
+          .join("/") +
+        "$"
+    ),
+  }));
+  return specMatchers;
+}
+
+// Served, but deliberately not an OpenAPI operation. Each entry states
+// why, so this cannot quietly become a place to silence real failures.
+const NON_OPERATION_PATHS = new Map([
+  ["/openapi.json", "the spec does not describe itself"],
+  ["/metrics", "Prometheus exposition, not a JSON API operation"],
+  ["/admin", "dashboard SPA shell"],
+  ["/favicon.ico", "static asset"],
+  ["/v1/rerank", "upstream LiteLLM gateway route, not served by novamem"],
+]);
+
+// Docs that describe history or a past audit rather than today's server.
+const HISTORICAL_DOCS = [
+  /(^|\/)CHANGELOG\.md$/i,
+  /(^|\/)changelog\.md$/i,
+  /(^|\/)adr\//i,
+  /go-parity-audit\.md$/,
+];
+
+async function checkEndpointsExist(file, lines) {
+  if (HISTORICAL_DOCS.some((re) => re.test(file))) return;
+  const matchers = await loadSpecMatchers();
+  for (let i = 0; i < lines.length; i++) {
+    // Only code spans — prose mentions are too loose to judge.
+    for (const span of lines[i].matchAll(/`([^`]+)`/g)) {
+      const text = span[1].trim();
+      // A bare path, optionally prefixed by an HTTP method.
+      const m = text.match(
+        /^(?:(?:GET|PUT|POST|PATCH|DELETE)\s+)?(\/[A-Za-z0-9._/{}-]*)$/
+      );
+      if (!m) continue;
+      const p = m[1];
+      // Prefixes like `/v1/` describe a family, not an endpoint.
+      if (p.endsWith("/")) continue;
+      if (NON_OPERATION_PATHS.has(p)) continue;
+      // Only judge paths that look like this server's surface.
+      if (!/^\/(v1|mcp|api-docs|health|live|ready)\b/.test(p)) continue;
+      if (matchers.some((mm) => mm.re.test(p))) continue;
+      // A route the docs explicitly present as future work is an honest
+      // reference, not a false claim — but the marker has to be on the
+      // line, so it cannot be used to wave through a stale endpoint.
+      if (
+        /\b(?:planned|proposed|not yet implemented|does not exist yet)\b/i.test(
+          lines[i]
+        )
+      ) {
+        continue;
+      }
+      fail(
+        file,
+        i + 1,
+        `documents endpoint ${p}, which is not in docs/api/openapi.json — ` +
+          `remove the claim, or add the route and regenerate the spec`
+      );
+    }
+  }
+}
+
 async function main() {
   // Doc-content invariants on doc files only.
   const docFiles = new Set();
@@ -309,6 +404,7 @@ async function main() {
     checkLifecycleAdminOnly(file, lines);
     checkNoStaleTenantAdminDocs(file, lines);
     checkNoReviewMarkers(file, lines);
+    await checkEndpointsExist(file, lines);
   }
 
   // Whole-tree sweep for stale Co-Authored-By trailers (excluding .git,

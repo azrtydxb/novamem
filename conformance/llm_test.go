@@ -133,6 +133,170 @@ func sortedKeys(m map[string]any) string {
 	return strings.Join(keys, ",")
 }
 
+// A correction has to actually take. Facts derived from the OLD wording
+// keep asserting the old claim, and they routinely outrank their own
+// source in search, so an agent reads the value the user just fixed.
+// The same applies to a delete: an orphaned fact answers for an entry
+// that no longer exists. Both were live defects (issue #261).
+func TestLLMDerivedFactsFollowTheirSource(t *testing.T) {
+	e := Target(t)
+	skipUnlessLLM(t, e)
+
+	// derivedOf polls until extraction produces facts back-linked to id,
+	// returning them plus every entry seen (so the test can clean up).
+	derivedOf := func(t *testing.T, namespace, id string, seen map[string]bool) []map[string]any {
+		t.Helper()
+		deadline := time.Now().Add(120 * time.Second)
+		for time.Now().Before(deadline) {
+			recent := API(t, "/v1/recent", Opts{Body: map[string]any{
+				"namespace": namespace, "k": 200,
+			}})
+			var out []map[string]any
+			if recent.Status == 200 {
+				for _, ea := range recent.MustValidate(t, RecentResponse)["results"].([]any) {
+					entry := ea.(map[string]any)
+					seen[entry["id"].(string)] = true
+					meta, _ := entry["metadata"].(map[string]any)
+					if src, _ := meta["source_chunk_id"].(string); src == id {
+						out = append(out, entry)
+					}
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+			time.Sleep(3 * time.Second)
+		}
+		return nil
+	}
+
+	t.Run("updating a source leaves no fact asserting the old value", func(t *testing.T) {
+		namespace := NS()
+		seen := map[string]bool{}
+		t.Cleanup(func() {
+			for id := range seen {
+				_, _ = apiE("/v1/forget", Opts{Body: map[string]any{"id": id}})
+			}
+		})
+		// Invented subject for the same reason as the extraction probe:
+		// exact-duplicate suppression ignores namespace, so a generic
+		// subject can collide with an earlier run's derived fact.
+		subject := fmt.Sprintf("Vandrelex-%s", namespace)
+		created := API(t, "/v1/remember", Opts{Body: map[string]any{
+			"namespace": namespace,
+			"content":   subject + " replaces its water filter every 30 days without exception.",
+		}})
+		if created.Status != 201 {
+			t.Fatalf("remember status = %d, want 201", created.Status)
+		}
+		id, _ := created.MustValidate(t, RememberResponse)["id"].(string)
+		if id == "" {
+			t.Fatal("worthiness gate rejected the probe chunk")
+		}
+		seen[id] = true
+		if derivedOf(t, namespace, id, seen) == nil {
+			t.Fatal("no derived facts appeared within 120s — extraction is off on this target")
+		}
+
+		upd := API(t, "/v1/memories/"+id, Opts{
+			Method: "PUT",
+			Body: map[string]any{
+				"content": subject + " replaces its water filter every 14 days without exception.",
+			},
+		})
+		if upd.Status != 200 {
+			t.Fatalf("update status = %d, want 200", upd.Status)
+		}
+
+		// Re-extraction is fire-and-forget like the original write, so
+		// poll for the old claim to disappear rather than assuming it is
+		// already gone.
+		deadline := time.Now().Add(120 * time.Second)
+		var stale []string
+		for time.Now().Before(deadline) {
+			stale = nil
+			recent := API(t, "/v1/recent", Opts{Body: map[string]any{
+				"namespace": namespace, "k": 200,
+			}})
+			if recent.Status == 200 {
+				for _, ea := range recent.MustValidate(t, RecentResponse)["results"].([]any) {
+					entry := ea.(map[string]any)
+					seen[entry["id"].(string)] = true
+					if strings.Contains(entry["content"].(string), "30 days") {
+						stale = append(stale, entry["id"].(string))
+					}
+				}
+			}
+			if len(stale) == 0 {
+				break
+			}
+			time.Sleep(3 * time.Second)
+		}
+		if len(stale) > 0 {
+			t.Fatalf("%d entr(ies) still assert the superseded value: %v", len(stale), stale)
+		}
+
+		// And the corrected value must be what search returns.
+		hits := API(t, "/v1/search", Opts{Body: map[string]any{
+			"namespace": namespace,
+			"query":     "how often does " + subject + " replace its water filter",
+		}})
+		if hits.Status != 200 {
+			t.Fatalf("search status = %d, want 200", hits.Status)
+		}
+		for _, entry := range searchResults(t, hits) {
+			if c := entry["content"].(string); strings.Contains(c, "30 days") {
+				t.Fatalf("search still returns the superseded claim: %q", c)
+			}
+		}
+	})
+
+	t.Run("forgetting a source leaves no fact behind", func(t *testing.T) {
+		namespace := NS()
+		seen := map[string]bool{}
+		t.Cleanup(func() {
+			for id := range seen {
+				_, _ = apiE("/v1/forget", Opts{Body: map[string]any{"id": id}})
+			}
+		})
+		subject := fmt.Sprintf("Threnody-%s", namespace)
+		created := API(t, "/v1/remember", Opts{Body: map[string]any{
+			"namespace": namespace,
+			"content":   subject + " services its boiler every 90 days and logs each service.",
+		}})
+		if created.Status != 201 {
+			t.Fatalf("remember status = %d, want 201", created.Status)
+		}
+		id, _ := created.MustValidate(t, RememberResponse)["id"].(string)
+		if id == "" {
+			t.Fatal("worthiness gate rejected the probe chunk")
+		}
+		seen[id] = true
+		derived := derivedOf(t, namespace, id, seen)
+		if derived == nil {
+			t.Fatal("no derived facts appeared within 120s — extraction is off on this target")
+		}
+
+		forget := API(t, "/v1/forget", Opts{Body: map[string]any{"id": id}})
+		if forget.Status != 200 {
+			t.Fatalf("forget status = %d, want 200", forget.Status)
+		}
+
+		left := API(t, "/v1/recent", Opts{Body: map[string]any{"namespace": namespace, "k": 200}})
+		if left.Status != 200 {
+			t.Fatalf("recent status = %d, want 200", left.Status)
+		}
+		for _, ea := range left.MustValidate(t, RecentResponse)["results"].([]any) {
+			entry := ea.(map[string]any)
+			seen[entry["id"].(string)] = true
+			meta, _ := entry["metadata"].(map[string]any)
+			if src, _ := meta["source_chunk_id"].(string); src == id {
+				t.Errorf("derived fact %v outlived the source it came from", entry["id"])
+			}
+		}
+	})
+}
+
 func TestLLMFactExtraction(t *testing.T) {
 	e := Target(t)
 	skipUnlessLLM(t, e)

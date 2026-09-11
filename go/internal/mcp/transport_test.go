@@ -55,7 +55,7 @@ func post(t *testing.T, h http.Handler, body string, headers map[string]string) 
 	return rec
 }
 
-const initBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`
+const initBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`
 
 func openSession(t *testing.T, h http.Handler) string {
 	t.Helper()
@@ -91,7 +91,7 @@ func TestStreamableInitializeAndToolsList(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &initResp); err != nil {
 		t.Fatal(err)
 	}
-	if initResp.Result.ProtocolVersion != "2025-03-26" {
+	if initResp.Result.ProtocolVersion != "2025-06-18" {
 		t.Fatalf("requested supported version must be echoed, got %q", initResp.Result.ProtocolVersion)
 	}
 	if initResp.Result.ServerInfo.Name != "novamem" {
@@ -222,8 +222,14 @@ func TestStreamableGuards(t *testing.T) {
 	if rec.Code != http.StatusForbidden || !bytes.Contains(rec.Body.Bytes(), []byte("Forbidden:")) {
 		t.Fatalf("origin guard: %d %s", rec.Code, rec.Body)
 	}
+	// An unsupported version answers with the spec's
+	// UnsupportedProtocolVersionError, listing what to retry with: a
+	// dual-era client keys its retry-vs-downgrade decision off this code.
 	rec = post(t, h, initBody, map[string]string{"Mcp-Protocol-Version": "1999-01-01"})
-	if rec.Code != http.StatusBadRequest || !bytes.Contains(rec.Body.Bytes(), []byte("unsupported MCP-Protocol-Version")) {
+	if rec.Code != http.StatusBadRequest ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"code":-32022`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"requested":"1999-01-01"`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"supported":["2024-11-05"`)) {
 		t.Fatalf("version guard: %d %s", rec.Code, rec.Body)
 	}
 	// Allowlisted origin + supported version pass.
