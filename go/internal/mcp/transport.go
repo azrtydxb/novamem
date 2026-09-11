@@ -135,6 +135,30 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 	if !s.applyGuards(w, r) {
 		return
 	}
+
+	// Dual-era routing (ADR 0006). The body is read once here and handed
+	// to whichever era claims it; GET and DELETE are legacy-only and
+	// carry none.
+	var body []byte
+	if r.Method == http.MethodPost {
+		var ok bool
+		if body, ok = readBody(w, r); !ok {
+			return
+		}
+		if req, p, modern := classifyEra(r.Header.Get("Mcp-Protocol-Version"), body); modern {
+			s.serveModern(w, r, userID, req, p)
+			return
+		}
+	}
+	s.serveLegacyStreamable(w, r, userID, body)
+}
+
+// serveLegacyStreamable is the initialize-handshake era: a session is
+// minted by `initialize`, carried in Mcp-Session-Id, and torn down by
+// DELETE. body is the already-read POST body, nil for GET/DELETE.
+func (s *Server) serveLegacyStreamable(w http.ResponseWriter, r *http.Request,
+	userID string, body []byte) {
+
 	sessionID := r.Header.Get("Mcp-Session-Id")
 
 	if sessionID == "" {
@@ -143,22 +167,19 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 			s.missingSession(w)
 			return
 		}
-		body, ok := readBody(w, r)
-		if !ok {
-			return
-		}
 		if !isInitializeRequest(body) {
 			s.missingSession(w)
 			return
 		}
-		if s.streamable.countForUser(userID) >= s.maxPerUser {
+		sess, ok := s.streamable.addOrGet(&session{
+			id:     mintSessionID(s.sessionKey, userID, time.Now()),
+			userID: userID, done: make(chan struct{})}, s.maxPerUser)
+		if !ok {
 			s.log.Warn("mcp-streamable: per-user session cap exceeded", "userId", userID, "cap", s.maxPerUser)
 			writeJSON(w, http.StatusTooManyRequests, map[string]any{
 				"error": "too many concurrent MCP sessions for this user"})
 			return
 		}
-		sess := &session{id: newSessionID(), userID: userID, done: make(chan struct{})}
-		s.streamable.add(sess)
 		s.log.Info("mcp-streamable: session opened", "sessionId", sess.id, "userId", userID)
 		resp := s.handleMessage(r.Context(), sess, body)
 		w.Header().Set("Mcp-Session-Id", sess.id)
@@ -168,8 +189,26 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 
 	sess := s.streamable.get(sessionID)
 	if sess == nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown sessionId"})
-		return
+		// A session this replica never minted may still be one this
+		// deployment issued to this caller — that is what the signature
+		// proves (ADR 0005). Adopting it is what lets any replica serve
+		// any request; an id that does not verify for the caller gets
+		// the same 404 as before, so it can never displace anyone.
+		if !verifySessionID(s.sessionKey, userID, sessionID, time.Now()) {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown sessionId"})
+			return
+		}
+		adopted, ok := s.streamable.addOrGet(
+			&session{id: sessionID, userID: userID, done: make(chan struct{})}, s.maxPerUser)
+		if !ok {
+			s.log.Warn("mcp-streamable: per-user session cap exceeded on adopt",
+				"userId", userID, "cap", s.maxPerUser)
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{
+				"error": "too many concurrent MCP sessions for this user"})
+			return
+		}
+		sess = adopted
+		s.log.Info("mcp-streamable: session adopted", "sessionId", sessionID, "userId", userID)
 	}
 	if sess.userID != userID {
 		s.log.Warn("mcp-streamable: rejected request from non-owner",
@@ -181,10 +220,6 @@ func (s *Server) ServeStreamable(w http.ResponseWriter, r *http.Request, userID 
 
 	switch r.Method {
 	case http.MethodPost:
-		body, ok := readBody(w, r)
-		if !ok {
-			return
-		}
 		resp := s.handleMessage(r.Context(), sess, body)
 		if resp == nil {
 			// Notification: acknowledged, nothing to return.
@@ -222,19 +257,18 @@ func (s *Server) ServeSSE(w http.ResponseWriter, r *http.Request, userID string)
 	if !s.applyGuards(w, r) {
 		return
 	}
-	if s.sse.countForUser(userID) >= s.maxPerUser {
+	sess, ok := s.sse.addOrGet(&session{
+		id:     newSessionID(),
+		userID: userID,
+		out:    make(chan []byte, 64),
+		done:   make(chan struct{}),
+	}, s.maxPerUser)
+	if !ok {
 		s.log.Warn("mcp-sse: per-user session cap exceeded", "userId", userID, "cap", s.maxPerUser)
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
 			"error": "too many concurrent SSE sessions for this user"})
 		return
 	}
-	sess := &session{
-		id:     newSessionID(),
-		userID: userID,
-		out:    make(chan []byte, 64),
-		done:   make(chan struct{}),
-	}
-	s.sse.add(sess)
 	s.log.Info("mcp-sse: session opened", "sessionId", sess.id, "userId", userID)
 
 	sseHeaders(w)

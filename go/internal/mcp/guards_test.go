@@ -45,15 +45,31 @@ func TestCheckProtocolVersion(t *testing.T) {
 	if reason == "" {
 		t.Fatal("unsupported version must be rejected")
 	}
-	// The message enumerates the supported surface (mcp-spec-guards.ts).
-	want := "unsupported MCP-Protocol-Version '1999-01-01' — server speaks 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25"
+	// The message enumerates the supported surface, both eras.
+	want := "unsupported MCP-Protocol-Version '1999-01-01' — server speaks 2024-11-05, 2025-06-18, 2025-11-25, 2026-07-28"
 	if reason != want {
 		t.Fatalf("message drifted:\n got  %s\n want %s", reason, want)
 	}
 }
 
+// The advertised surface is a promise, so pin it: every entry has to be
+// a revision this server actually implements.
 func TestSupportedVersionListPinned(t *testing.T) {
-	if len(SupportedProtocolVersions) != 4 {
-		t.Fatalf("supported version surface changed: %v — update mcp-spec-guards.ts in lockstep", SupportedProtocolVersions)
+	if got := strings.Join(SupportedProtocolVersions, ", "); got != "2024-11-05, 2025-06-18, 2025-11-25, 2026-07-28" {
+		t.Fatalf("advertised version surface changed: %s", got)
+	}
+	// 2025-03-26 is the one revision requiring receipt of JSON-RPC
+	// batches, which this server does not implement. Advertising it
+	// would be a false claim (ADR 0006).
+	if supportedProtocolVersion("2025-03-26") {
+		t.Error("2025-03-26 must not be advertised while batches are unsupported")
+	}
+	for _, v := range LegacyProtocolVersions {
+		if isModernVersion(v) {
+			t.Errorf("%s is in both era lists", v)
+		}
+	}
+	if latestLegacyVersion() != "2025-11-25" {
+		t.Errorf("latestLegacyVersion() = %s", latestLegacyVersion())
 	}
 }

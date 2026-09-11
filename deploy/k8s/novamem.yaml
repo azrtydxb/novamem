@@ -13,7 +13,47 @@ data:
   # browser's `Origin:` header exactly. Set to your TLS-terminated origin
   # (the Ingress hostname, not the Service IP).
   NOVAMEM_BASE_URL: "https://novamem.example.com"
-  NOVAMEM_EMBEDDINGS_PROVIDER: "local-transformers"
+  # The Go server NEVER embeds a model in process — `local-transformers`
+  # is refused at startup by design (it would cost the single static
+  # binary). Point these at any OpenAI-compatible endpoint: vLLM, TEI,
+  # llama.cpp, LiteLLM, or a hosted API.
+  NOVAMEM_EMBEDDINGS_PROVIDER: "openai-compatible"
+  NOVAMEM_EMBEDDINGS_ENDPOINT: "http://your-inference-host/v1"
+  NOVAMEM_EMBEDDINGS_MODEL: "bge-m3"
+  # MUST match the model's output width, and MUST equal
+  # NOVAMEM_COLD_VECTOR_SIZE below — bge-m3 is 1024, the default is 384.
+  # A mismatch is not caught until the first write, which then fails with
+  # `expected N dimensions, not M` once per entry.
+  NOVAMEM_EMBEDDINGS_DIM: "1024"
+  NOVAMEM_COLD_VECTOR_SIZE: "1024"
+  # Optional subsystems. Each refuses to start without both an endpoint
+  # and a model. Rerank was worth +21.2pp on LongMemEval, so it is the
+  # one to turn on first.
+  #
+  # TWO TRAPS, both inherited from the TypeScript config surface, which
+  # is a frozen contract:
+  #
+  #  1. The rerank endpoint is a FULL URL — no path is appended, unlike
+  #     the others (which get /embeddings and /chat/completions).
+  #     Pointing it at a bare /v1 yields 404 on every call.
+  #
+  #  2. The THREE LLM flags below (extraction, observer, query decomp)
+  #     use JS truthiness: ANY non-empty value enables them, so "0" and
+  #     "false" both mean ON. To disable one, give it an EMPTY value (as
+  #     below) or delete the key entirely. Only NOVAMEM_RERANK_ENABLED
+  #     parses like a normal boolean, where "0" really is off.
+  NOVAMEM_RERANK_ENABLED: "0"
+  NOVAMEM_RERANK_ENDPOINT: "http://your-inference-host/v1/rerank"
+  NOVAMEM_RERANK_MODEL: "bge-reranker-v2-m3"
+  NOVAMEM_EXTRACTION_ENABLED: "" # empty = off; "0" would switch it ON
+  NOVAMEM_EXTRACTION_ENDPOINT: "http://your-inference-host/v1"
+  NOVAMEM_EXTRACTION_MODEL: "your-llm"
+  NOVAMEM_OBSERVER_ENABLED: "" # empty = off; "0" would switch it ON
+  NOVAMEM_OBSERVER_ENDPOINT: "http://your-inference-host/v1"
+  NOVAMEM_OBSERVER_MODEL: "your-llm"
+  NOVAMEM_QUERY_DECOMP_ENABLED: "" # empty = off; "0" would switch it ON
+  NOVAMEM_QUERY_DECOMP_ENDPOINT: "http://your-inference-host/v1"
+  NOVAMEM_QUERY_DECOMP_MODEL: "your-llm"
   # NOVAMEM_WARM_URL has moved to the Secret (it embeds the Postgres
   # password). See secrets.yaml.
   # Vector backend. Default: qdrant (below). To run pgvector instead:
@@ -35,6 +75,12 @@ metadata:
   name: novamem
   namespace: novamem
 spec:
+  # Streamable MCP is replica-safe (ADR 0005: session ids are signed and
+  # any replica adopts them), provided NOVAMEM_COOKIE_SECRET is set and
+  # identical across pods. Two caveats before raising this: the legacy
+  # SSE transport (/mcp/sse) stays pod-local and needs per-client
+  # load-balancer affinity, and `strategy: Recreate` below plus a
+  # ReadWriteOnce data volume assumes one pod at a time.
   replicas: 1
   selector:
     matchLabels: { app: novamem }

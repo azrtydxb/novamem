@@ -179,25 +179,41 @@ func TestRateLimiting(t *testing.T) {
 	})
 
 	t.Run("consecutive calls decrement the remaining budget", func(t *testing.T) {
-		first := API(t, "/v1/adoption", Opts{Body: map[string]any{}})
-		second := API(t, "/v1/adoption", Opts{Body: map[string]any{}})
-		if first.Status != 200 {
-			t.Fatalf("first status = %d, want 200", first.Status)
+		// `Connection: close` on every call is load-bearing, not tidiness.
+		// The shared http.Client otherwise reuses one keepalive
+		// connection, which a load balancer pins to a single upstream —
+		// so against a multi-replica target this test would pass even
+		// with per-replica counters, which is exactly the defect it is
+		// supposed to catch. A fresh connection per call may land on any
+		// replica, so a decrement here means the budget is genuinely
+		// shared.
+		noReuse := Opts{Body: map[string]any{}, Headers: map[string]string{"connection": "close"}}
+
+		const calls = 6
+		remaining := make([]float64, calls)
+		for i := 0; i < calls; i++ {
+			r := API(t, "/v1/adoption", noReuse)
+			if r.Status != 200 {
+				t.Fatalf("call %d status = %d, want 200", i+1, r.Status)
+			}
+			v, err := strconv.ParseFloat(r.Headers.Get("X-Ratelimit-Remaining"), 64)
+			if err != nil {
+				t.Fatalf("call %d: x-ratelimit-remaining %q is not numeric",
+					i+1, r.Headers.Get("X-Ratelimit-Remaining"))
+			}
+			remaining[i] = v
 		}
-		if second.Status != 200 {
-			t.Fatalf("second status = %d, want 200", second.Status)
-		}
-		a, errA := strconv.ParseFloat(first.Headers.Get("X-Ratelimit-Remaining"), 64)
-		b, errB := strconv.ParseFloat(second.Headers.Get("X-Ratelimit-Remaining"), 64)
-		if errA != nil || errB != nil {
-			t.Fatalf("x-ratelimit-remaining not numeric: %q, %q",
-				first.Headers.Get("X-Ratelimit-Remaining"), second.Headers.Get("X-Ratelimit-Remaining"))
-		}
-		// Strictly less unless the 1-minute window rolled between the two
-		// calls (in which case the budget resets upward) — accept either, but
-		// never "unchanged", which would mean the limiter isn't counting.
-		if !(b == a-1 || b > a) {
-			t.Fatalf("remaining went %v -> %v, want a decrement or a window roll upward", a, b)
+		// Each call decrements by one, unless the 1-minute window rolled
+		// between two calls (the budget then resets upward). Never
+		// unchanged, and never a wobble — remaining going down, up and
+		// down again is the signature of independent per-replica
+		// counters.
+		for i := 1; i < calls; i++ {
+			a, b := remaining[i-1], remaining[i]
+			if !(b == a-1 || b > a) {
+				t.Fatalf("remaining went %v -> %v at call %d (sequence %v), want a decrement or a window roll upward",
+					a, b, i+1, remaining)
+			}
 		}
 	})
 
