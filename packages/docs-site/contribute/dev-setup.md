@@ -4,11 +4,12 @@ title: Local development
 
 # Local development
 
-Hack on novamem with a hot-reloading dev loop.
+Hack on novamem: datastores in Compose, the server from source.
 
 ## Prereqs
 
-- **Node ≥ 20.19** (22 LTS recommended) and **pnpm 9+**: `corepack enable && corepack prepare pnpm@9 --activate`
+- **Go ≥ 1.23** — the server, the CLIs and the conformance suite are all Go
+- **Node ≥ 20.19** (22 LTS recommended) and **pnpm 9+**: `corepack enable && corepack prepare pnpm@9 --activate` — only the dashboard SPA and this docs site are JavaScript
 - **Docker** (for the datastores)
 - A few GB of free RAM for the local embedder
 
@@ -36,13 +37,15 @@ export NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 12)
 export NOVAMEM_BOOTSTRAP_ADMIN_EMAIL=dev@local
 ```
 
-## Run the server (tsx + hot reload)
+## Run the server
 
 ```bash
-pnpm --filter @azrtydxb/novamem-server dev
+cd go && go run ./cmd/novamem-server
 # Listens on :7778
-# Edit src/*.ts → restarts automatically
 ```
+
+Go has no watcher built in; re-run the command after an edit, or put
+your own (`air`, `watchexec`) in front of it.
 
 ## Run the dashboard (Vite dev)
 
@@ -59,27 +62,29 @@ Open [http://localhost:5173/admin](http://localhost:5173/admin).
 ## Run tests
 
 ```bash
-# All tests
-pnpm test
+# The server and everything under it
+cd go && go test ./...
 
-# A specific package
-pnpm --filter @azrtydxb/novamem-server test
+# One package
+cd go && go test ./internal/engine/
 
-# A specific file (vitest watch)
-pnpm --filter @azrtydxb/novamem-server test -- --watch engine.test.ts
+# One test, with output
+cd go && go test ./internal/engine/ -run TestHybrid -v
 ```
+
+The dashboard SPA has its own suite: `pnpm test`.
 
 ## Type-check
 
 ```bash
-pnpm typecheck
-# or per-package
-pnpm --filter @azrtydxb/novamem-server typecheck
+cd go && go vet ./...   # Go
+pnpm typecheck          # the SPA and this site
 ```
 
 ## Build everything
 
 ```bash
+cd go && go build ./cmd/novamem-server
 pnpm build
 ```
 
@@ -87,7 +92,6 @@ Outputs:
 
 - `go/novamem-server` — the compiled server binary
 - `packages/admin-ui/dist/` — the SPA bundle, synced into `go/internal/httpapi/admin-ui/` by `go/scripts/sync-admin-ui.sh` and embedded in the binary
-- `packages/client/dist/`, `packages/mcp/dist/`, `packages/init/dist/` — published packages
 
 ## Build the docker image locally
 
@@ -111,23 +115,28 @@ docker buildx build --platform linux/amd64 -f go/Dockerfile -t novamem:dev --loa
 
 ```bash
 # Full server test suite
-pnpm --filter @azrtydxb/novamem-server test
+cd go && go test ./...
 
-# Lint (server)
-pnpm --filter @azrtydxb/novamem-server lint
+# Lint (the version CI pins)
+cd go && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
 
-# Format check
-pnpm format:check
+# Regenerate the OpenAPI document — CI fails on a dirty tree afterwards
+cd go && go run ./cmd/gen-openapi
 
-# Regenerate OpenAPI doc
-pnpm --filter @azrtydxb/novamem-server openapi:gen
+# Conformance suite against a running target
+pnpm conformance
 
-# Migrate the dev database (drizzle-kit)
-pnpm --filter @azrtydxb/novamem-server migrate
+# Documentation invariants
+pnpm docs:smoke
 ```
+
+There is no migrate command: the server embeds its migrations and
+applies them on boot. See
+[CONTRIBUTING.md](https://github.com/azrtydxb/novamem/blob/main/CONTRIBUTING.md#schema-changes)
+for how to add one.
 
 ## See also
 
 - [Project layout](./layout.md) — what lives where
-- [Testing](./testing.md) — vitest patterns, fakes, integration tests
+- [Testing](./testing.md) — test layout, fakes, the conformance oracle
 - [Filing bugs](./bugs.md)

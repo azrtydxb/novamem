@@ -4,28 +4,28 @@ title: Project layout
 
 # Project layout
 
-novamem is a pnpm monorepo. Top-level:
+novamem is Go, with a pnpm workspace for the two JavaScript surfaces
+(the dashboard SPA and this site). Top-level:
 
 ```
 novamem/
+├── go/                         — the server, the CLIs, the engine
+├── clients/go/                 — standalone Go client module
+├── conformance/                — the behavioural oracle, run against a live target
 ├── packages/
-│   ├── server/        @azrtydxb/novamem-server   — the Fastify service
-│   ├── client/        @azrtydxb/novamem          — TypeScript HTTP client
-│   ├── mcp/           @azrtydxb/novamem-mcp      — stdio MCP shim
-│   ├── init/          @azrtydxb/novamem-init     — interactive installer CLI
-│   ├── admin-ui/      @azrtydxb/novamem-admin-ui — React 19 dashboard
-│   └── docs-site/     @azrtydxb/novamem-docs-site — VitePress (this site)
-├── docs/                       — markdown docs (legacy, mostly migrated to docs-site)
+│   ├── admin-ui/      @azrtydxb/novamem-admin-ui  — React 19 dashboard
+│   ├── docs-site/     @azrtydxb/novamem-docs-site — VitePress (this site)
+│   └── benchmarks/                                — retrieval eval fixtures
+├── bench/                      — Python retrieval benchmarks
+├── docs/                       — markdown docs (see below)
 ├── deploy/k8s/                 — Kubernetes manifests
 ├── site/                       — landing-page index.html + Pages output target
 ├── skills/                     — Agent Skills bundle
 ├── integrations/               — drop-in CLAUDE.md / commands for AI hosts
-├── .changeset/                 — pending version bumps for the npm packages
-├── .github/workflows/          — CI, Release, Pages
+├── .github/workflows/          — CI, Pages, release binaries
 ├── docker-compose.yaml         — single-host stack
 ├── go/Dockerfile               — multi-arch server image
-├── pnpm-workspace.yaml
-└── tsconfig.base.json          — root tsconfig with workspace path mappings
+└── pnpm-workspace.yaml
 ```
 
 ## go/
@@ -51,8 +51,11 @@ internal/
 
 The TypeScript server this replaced (`packages/server`) was removed once
 the Go server became the novamem-bench default and the conformance suite
-was green against it there. There is no fallback and no legacy mode —
-the git history is the archive.
+was green against it there. The TypeScript client, the stdio MCP shim and
+the installer CLI followed it, superseded by `clients/go/`,
+`go/cmd/novamem-mcp` and `go/cmd/novamem-init`, which ship as binaries
+from GitHub Releases rather than npm. There is no fallback and no legacy
+mode — the git history is the archive.
 
 ## packages/admin-ui
 
@@ -60,17 +63,22 @@ React 19 + Vite + Tailwind v4. Pages live under `src/pages/`. Shared components 
 
 The build outputs to `dist/`, then `go/scripts/sync-admin-ui.sh` copies it into `go/internal/httpapi/admin-ui/`, where `go:embed` bakes it into the binary. The server serves the SPA from there at `/admin/*`.
 
-## packages/init
+## go/cmd/novamem-init
 
-`npx @azrtydxb/novamem-init`. The CLI is `src/main.ts`, host adapters under `src/install/`. State persisted at `$XDG_CONFIG_HOME/novamem/init.json`.
+The installer CLI. Host adapters under `go/internal/initcli/`, state
+persisted at `$XDG_CONFIG_HOME/novamem/init.json`. Ships as a
+per-platform binary from GitHub Releases.
 
-## packages/mcp
+## go/cmd/novamem-mcp
 
-Tiny wrapper that proxies stdio JSON-RPC ↔ SSE. Why it exists: many MCP hosts (Claude Desktop, VSCode extensions) don't support remote MCP yet.
+Tiny stdio ↔ HTTP MCP shim. Why it exists: some MCP hosts (Claude
+Desktop, several editor extensions) still cannot speak remote MCP.
 
-## packages/client
+## clients/go/
 
-Hand-written typed TypeScript client. Its types are kept in step with `docs/api/openapi.json`, which the Go server generates from its own route table.
+A standalone Go module, so it can be imported without pulling in the
+server. Its surface tracks `docs/api/openapi.json`, which the server
+generates from its own route table.
 
 ## packages/docs-site
 
@@ -78,7 +86,10 @@ This site. VitePress + markdown. Builds into `site/docs/` so the Pages workflow 
 
 ## What lives in `docs/` vs `packages/docs-site/`
 
-`docs/` is the legacy markdown — left intact for now so existing links keep working. New docs go into `packages/docs-site/`. The two will converge over time.
+Two partially overlapping sets today, both hand-maintained, which is how
+they drifted in both directions. They are being consolidated onto one
+source — `docs/` canonical, this site built from it — tracked in
+[#270](https://github.com/azrtydxb/novamem/issues/270).
 
 ## How to find things
 
@@ -86,8 +97,8 @@ This site. VitePress + markdown. Builds into `site/docs/` so the Pages workflow 
 | -------------------------- | ----------------------------------------------------------------------------------------------- |
 | Add a new memory operation | `go/internal/engine/` + `go/internal/mcp/tooldefs.json`                                         |
 | Change the dashboard       | `packages/admin-ui/src/pages/`                                                                  |
-| Tweak the install CLI      | `packages/init/src/`                                                                            |
+| Tweak the install CLI      | `go/internal/initcli/`                                                                          |
 | Update a doc               | `packages/docs-site/<section>/`                                                                 |
 | Add an env var             | `.env.example` + `go/internal/config/config.go` + `packages/docs-site/install/env-reference.md` |
 | Fix a CI failure           | `.github/workflows/`                                                                            |
-| Bump a package version     | `pnpm changeset` (npm packages) or manual `chore(release):` PR (server)                         |
+| Cut a release              | a `vX.Y.Z` tag — CI builds the image and the CLI binaries                                       |

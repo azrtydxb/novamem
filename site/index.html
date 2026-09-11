@@ -757,15 +757,15 @@ docker compose up -d
 
       <div class="qs-block">
         <div class="qs-head"><span class="dot" style="background: var(--cold)"></span> Manual</div>
-<pre class="qs-pre"><span class="c"># bring your own Postgres + Qdrant + FalkorDB</span>
-<span class="c"># prereqs: Node 20+, pnpm 9+</span>
+<pre class="qs-pre"><span class="c"># bring your own Postgres + Qdrant</span>
+<span class="c"># prereqs: Go 1.23+</span>
 git clone https://github.com/azrtydxb/novamem.git
-<span class="k">cd</span> novamem
-pnpm install &amp;&amp; pnpm build
+<span class="k">cd</span> novamem/go
+go build ./cmd/novamem-server
 
-cp .env.example .env
+cp ../.env.example ../.env
 <span class="c"># point at your existing datastores</span>
-pnpm --filter @azrtydxb/novamem-server start</pre>
+./novamem-server</pre>
         <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">Local dev / custom stack. <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/install/manual.md">Full walkthrough →</a></div>
       </div>
 

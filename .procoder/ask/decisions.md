@@ -284,6 +284,10 @@ artifacts — catch drift nobody predicted.
   byte-identical, which may fight VitePress-specific needs.
 - **Leave it** — out of scope for this pass.
 
+**Decision (2026-09-11, owner):** one source — `docs/` is canonical, the
+site builds from it, and the duplicated pages under
+`packages/docs-site/` are deleted.
+
 ## The commit gate blocks on a vuln in a gitignored agent install
 
 Every commit in this repo currently fails:
@@ -310,3 +314,16 @@ Options:
   untracked agent installs) and let them be recreated if needed.
 - Leave it and use `--no-verify` for this commit, accepting that the
   next commit hits the same wall.
+
+**Decision (2026-09-11, owner):** scope the scan to the repository — the
+gate reports on what this repo ships, not on what agents installed into
+the working tree.
+
+**Outcome (2026-09-11):** the knob did not exist, so the fix went
+upstream as azrtydxb/procoder#285. `manifestsIn` walked the whole tree;
+it now runs over the gate's own file set (tracked plus
+untracked-but-not-ignored), which is the scope `procoder audit` already
+states out loud, with the walk kept as the fallback for a directory git
+cannot answer for. Regression test builds a real git repo with a
+gitignored lockfile beside tracked ones; mutation-checked. Until that
+ships in a release, commits here need `--no-verify`.
