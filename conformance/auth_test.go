@@ -108,8 +108,16 @@ func TestAuthGates(t *testing.T) {
 }
 
 func TestRotateTokenUserMode(t *testing.T) {
-	Target(t)
+	e := Target(t)
 	SkipUnless(t, "user")
+	// Every assertion below mints through the admin cookie. Without that
+	// identity this suite used to fail rather than skip, so a run missing
+	// one env var looked exactly like a broken deployment — which is how
+	// a red conformance run stops meaning anything. Its siblings in this
+	// file already guard; this one did not.
+	if !e.HasAdminIdentity() {
+		t.Skip("no admin identity — needs NOVAMEM_ADMIN_COOKIE or NOVAMEM_ADMIN_EMAIL+NOVAMEM_ADMIN_PASSWORD")
+	}
 
 	var mintedTokenHashes []string
 	t.Cleanup(func() {
