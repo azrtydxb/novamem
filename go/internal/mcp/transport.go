@@ -14,26 +14,25 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
-	"strconv"
 	"time"
+
+	"github.com/azrtydxb/novamem/go/internal/config"
 )
 
 // maxBodyBytes matches the TS server's global 2MB body limit.
 const maxBodyBytes = 2 * 1024 * 1024
 
-// defaultKeepalive — mcp-sse.ts DEFAULT_KEEPALIVE_INTERVAL_MS (25 s,
-// comfortably under undici's 5-minute body-read timeout). Overridable
-// per-process via NOVAMEM_SSE_KEEPALIVE_MS, read at session-open time
-// like the TS resolveKeepaliveMs.
-const defaultKeepalive = 25 * time.Second
-
+// keepaliveInterval — the comment-frame cadence on the streamable GET
+// stream, comfortably under undici's 5-minute body-read timeout.
+// Overridable per-process via NOVAMEM_SSE_KEEPALIVE_MS, read at
+// session-open time like the TS resolveKeepaliveMs.
+//
+// The default and the parse rule come from the config registry rather
+// than living here: a bare os.Getenv would be a variable with no
+// declared default and no row in the generated environment reference,
+// which is how a knob ends up undocumented.
 func keepaliveInterval() time.Duration {
-	raw := os.Getenv("NOVAMEM_SSE_KEEPALIVE_MS")
-	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-		return time.Duration(n) * time.Millisecond
-	}
-	return defaultKeepalive
+	return time.Duration(config.KeepaliveInterval()) * time.Millisecond
 }
 
 // rpcObj preserves key order the way a TS object literal does;

@@ -41,7 +41,9 @@ Without this check, any incidental match would promote — defeating the decay m
 
 ## Dream cycle
 
-A nightly compaction job (cron-style, configurable via `NOVAMEM_DREAM_INTERVAL_MS`) runs two passes:
+A daily compaction job runs two passes. The interval is fixed at 24 hours and
+is deliberately not configurable: the heavy work is a per-entry vector lookup,
+and running it more often than once per cold-write batch buys nothing.
 
 ### Dedup (cosine + Jaccard)
 

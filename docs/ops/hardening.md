@@ -40,10 +40,13 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 
 ## Observability
 
-- [ ] Pino log level set appropriately (`info` for prod, `debug` for staging).
+- [ ] `LOG_LEVEL` set appropriately (`info` for prod, `debug` for staging).
 - [ ] Logs shipped somewhere durable (Loki / Cloudwatch / Datadog) — not just stdout in a pod.
-- [ ] OTLP enabled (`OTEL_EXPORTER_OTLP_ENDPOINT`) and traces routed to your existing collector.
+- [ ] Prometheus scraping `/v1/admin/metrics/prom` (needs `NOVAMEM_ADMIN_DASHBOARD` left on).
 - [ ] `/health` polled by your load balancer + monitoring (alert when degraded).
+
+There is no OTLP export to enable: the Go server reads no `OTEL_*` variable
+and emits no traces. Tracked in [#277](https://github.com/azrtydxb/novamem/issues/277).
 
 ## Audit
 
