@@ -458,6 +458,84 @@ async function checkApiReferenceVersionsAgree() {
   }
 }
 
+// The tool catalogue in docs/api/mcp-tools.md is GENERATED from
+// tooldefs.json (`go run ./cmd/gen-tool-docs`, with a CI drift gate), so
+// it cannot disagree with the surface and needs no check here.
+//
+// The skill reference pages cannot be generated — they are deep-dives
+// with worked examples, which is prose by nature. What they must never
+// do is name a tool that does not exist: a reader following a reference
+// to a removed tool gets a call that fails with no clue why. So this
+// checks one direction only, which is the direction prose can get wrong
+// without anyone noticing.
+const TOOL_PROSE_DOCS = [
+  "skills/novamem/references/search.md",
+  "skills/novamem/references/remember.md",
+  "skills/novamem/references/projects.md",
+];
+
+const TOOL_MENTION = /`((?:memory|project)_[a-z_]+)`/g;
+
+// Identifiers that share the tools' naming shape without being tools.
+// There is no generated source to derive these from — `memoryType`
+// values exist only in stored metadata and prose — so they are declared
+// here with their reason, and the check below fails if one of them ever
+// becomes a real tool, which would make the exemption a blindfold.
+const NON_TOOL_IDENTIFIERS = new Map([
+  [
+    "project_convention",
+    "a memoryType value (references/remember.md), not a tool",
+  ],
+]);
+
+async function checkToolProseNamesNoPhantomTools() {
+  const defsPath = "go/internal/mcp/tooldefs.json";
+  let advertised;
+  try {
+    const defs = JSON.parse(await readFile(join(ROOT, defsPath), "utf8"));
+    advertised = new Set(defs.map((d) => d.name));
+  } catch (err) {
+    return fail(
+      defsPath,
+      1,
+      `unreadable, so the tool docs cannot be checked: ${err.message}`
+    );
+  }
+
+  for (const [name, why] of NON_TOOL_IDENTIFIERS) {
+    if (advertised.has(name)) {
+      fail(
+        "scripts/doc-smoke.mjs",
+        1,
+        `NON_TOOL_IDENTIFIERS exempts \`${name}\` as "${why}", but it is now an advertised ` +
+          `tool — remove the exemption or the docs stop being checked for it`
+      );
+    }
+  }
+
+  for (const file of TOOL_PROSE_DOCS) {
+    let text;
+    try {
+      text = await readFile(join(ROOT, file), "utf8");
+    } catch {
+      fail(file, 1, "missing — it is part of the skill bundle and is required");
+      continue;
+    }
+    const lines = text.split("\n");
+    const named = new Set();
+    for (const m of text.matchAll(TOOL_MENTION)) named.add(m[1]);
+    for (const name of [...named].sort()) {
+      if (advertised.has(name) || NON_TOOL_IDENTIFIERS.has(name)) continue;
+      const line = lines.findIndex((l) => l.includes("`" + name + "`")) + 1;
+      fail(
+        file,
+        line || 1,
+        `documents \`${name}\`, which is not an advertised MCP tool`
+      );
+    }
+  }
+}
+
 async function main() {
   // Doc-content invariants on doc files only.
   const docFiles = new Set();
@@ -468,6 +546,7 @@ async function main() {
 
   await checkNoSecondCopyOfDocs();
   await checkApiReferenceVersionsAgree();
+  await checkToolProseNamesNoPhantomTools();
 
   for (const file of docFiles) {
     const lines = await readLines(file);

@@ -52,7 +52,7 @@ func TestOpenAPIDocumentMatchesCheckedInFile(t *testing.T) {
 		t.Skipf("docs/api/openapi.json not reachable: %v", err)
 	}
 	if got := OpenAPIDocument(); string(got) != string(want) {
-		t.Errorf("docs/api/openapi.json is stale — run `go run ./cmd/gen-openapi` (len got=%d want=%d)",
+		t.Errorf("docs/api/openapi.json is stale — run `go run ./cmd/gen-contract` (len got=%d want=%d)",
 			len(got), len(want))
 	}
 }

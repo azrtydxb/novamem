@@ -119,8 +119,13 @@ jobs:
       # therefore a conscious client/docs decision) changing with it.
       # Caught real drift on day one: the snapshot was missing
       # /v1/admin/users.
-      - run: cd go && go run ./cmd/gen-openapi
-      - run: git diff --exit-code docs/api/openapi.json
+      # api/openapi.yaml is the contract. Everything else — the served
+      # document, the MCP tool surface, the route list the mux is checked
+      # against, and the tool catalogue in the docs — is generated from
+      # it. Regenerate and diff: an edit to any output without an edit to
+      # the source fails here.
+      - run: cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs
+      - run: git diff --exit-code api/ docs/api/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:

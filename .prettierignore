@@ -1,7 +1,12 @@
 # Generated files — never hand-formatted.
-# docs/api/openapi.json is written by `go run ./cmd/gen-openapi` and a Go
-# test pins the checked-in bytes against the generator's output.
+# Everything below is written by `go run ./cmd/gen-contract` from
+# api/openapi.yaml, which IS formatted because it is the authored source.
+# Formatting an output would put prettier and the generator in a loop:
+# each run would undo the other and the CI drift gate would report a
+# change on every build.
 docs/api/openapi.json
+go/internal/httpapi/openapi.json
+go/internal/mcp/tooldefs.json
 # Vite build output synced from packages/admin-ui and embedded in the Go
 # binary (go/scripts/sync-admin-ui.sh).
 go/internal/httpapi/admin-ui/

@@ -20,7 +20,8 @@ outside the module directory:
 
 The OpenAPI document is no longer an embedded copy of a TypeScript
 artefact: `internal/httpapi/openapi.go` _is_ the source, and
-`cmd/gen-openapi` writes `docs/api/openapi.json` from it. A CI drift
+`cmd/gen-contract` writes it, and every other contract artifact, from
+`api/openapi.yaml`. A CI drift
 gate re-runs the generator and fails on a dirty tree.
 
 ### Admin dashboard
