@@ -345,3 +345,93 @@ func TestMCPStreamableTransport(t *testing.T) {
 		}
 	})
 }
+
+// TestMCPProjectActivateShape pins the result shape of project_activate
+// over MCP against the HTTP route that does the same thing.
+//
+// The two used to disagree: PUT /v1/me/active-project answered
+// {"active":{"id":…}} while the MCP tool returned the bare id string, so
+// one logical operation had two result shapes depending on which door
+// the caller came through, and the generated tool schema had to describe
+// the difference instead of the operation. #285 converged them.
+//
+// It is a live test because the success branch cannot be reached
+// anywhere else: it needs a real project row, a real user, and the warm
+// store to write the pointer. The unit tests in internal/httpapi run
+// against a nil store by construction and stop at validation, which is
+// exactly how the divergence survived.
+func TestMCPProjectActivateShape(t *testing.T) {
+	// Creating a project needs the dashboard session; the MCP session
+	// authenticates with the bearer for the SAME account, which is what
+	// makes the pointer set by one visible to the other.
+	e := meSkipGuard(t)
+	cookie := AdminCookie(t)
+	ns := NS()
+	create := AdminCookieAPI(t, "/v1/me/projects", Opts{
+		Body: map[string]any{"name": "conf-mcp-activate-" + ns},
+	})
+	if create.Status != 201 {
+		t.Fatalf("create project status = %d, want 201", create.Status)
+	}
+	projectID := create.Field(t, "id").(string)
+
+	t.Cleanup(func() {
+		// Clear the pointer before deleting the project: leaving it
+		// dangling would break every later test that writes unscoped.
+		if _, err := meCookieE(e, cookie, "/v1/me/active-project", "DELETE"); err != nil {
+			t.Logf("cleanup: clear active-project failed: %v", err)
+		}
+		if _, err := meCookieE(e, cookie, "/v1/me/projects/"+projectID, "DELETE"); err != nil {
+			t.Logf("cleanup: delete project failed: %v", err)
+		}
+	})
+
+	s := connect(t)
+	defer s.disconnect(t)
+
+	res, rpcErr := s.callTool(t, "project_activate", map[string]any{"project": projectID})
+	if rpcErr != nil {
+		t.Fatalf("project_activate: %v", rpcErr)
+	}
+	if isErr, _ := res["isError"].(bool); isErr {
+		t.Fatalf("project_activate reported a tool error: %v", res)
+	}
+	got := toolJSON(t, res)
+
+	// The shape itself. A bare string here, or a missing `active`, is
+	// the regression this test exists for.
+	active, ok := got["active"].(map[string]any)
+	if !ok {
+		t.Fatalf("active is %T (%v), want an object — the MCP result must "+
+			"match PUT /v1/me/active-project, not return a bare id", got["active"], got["active"])
+	}
+	if active["id"] != projectID {
+		t.Errorf("active.id = %v, want %q", active["id"], projectID)
+	}
+
+	// And the same operation over HTTP answers the same thing — the
+	// point of the convergence, asserted rather than assumed.
+	httpRes := AdminCookieAPI(t, "/v1/me/active-project", Opts{
+		Method: "PUT",
+		Body:   map[string]any{"project": projectID},
+	})
+	if httpRes.Status != 200 {
+		t.Fatalf("PUT active-project status = %d, want 200", httpRes.Status)
+	}
+	httpActive, _ := httpRes.Field(t, "active").(map[string]any)
+	if httpActive == nil || httpActive["id"] != active["id"] {
+		t.Errorf("HTTP active = %v but MCP active = %v — the two doors still disagree",
+			httpActive, active)
+	}
+
+	// Deactivate answers the same shape with a null, so a caller can
+	// read `active` the same way in both directions.
+	res, rpcErr = s.callTool(t, "project_deactivate", map[string]any{})
+	if rpcErr != nil {
+		t.Fatalf("project_deactivate: %v", rpcErr)
+	}
+	got = toolJSON(t, res)
+	if v, present := got["active"]; !present || v != nil {
+		t.Errorf("deactivate active = %v (present=%v), want an explicit null", v, present)
+	}
+}
