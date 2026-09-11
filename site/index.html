@@ -553,7 +553,7 @@
     </div>
 
     <p class="section-lede" style="margin-top: 36px;">
-      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/usage.md">Full usage guide →</a> covers worthiness gates, decay maths, dream cycle, namespaces, and weight tuning.
+      <a style="color:var(--accent)" href="https://azrtydxb.github.io/novamem/docs/concepts/mental-model">Full usage guide →</a> covers worthiness gates, decay maths, dream cycle, namespaces, and weight tuning.
     </p>
   </div>
 </section>
@@ -752,7 +752,7 @@ git clone https://github.com/azrtydxb/novamem.git
 
 docker compose up -d
 <span class="c"># http://localhost:7778/admin</span></pre>
-        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">Single-host. ~30 s. <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/install/docker.md">Full walkthrough →</a></div>
+        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">Single-host. ~30 s. <a style="color:var(--accent)" href="https://azrtydxb.github.io/novamem/docs/install/docker-compose">Full walkthrough →</a></div>
       </div>
 
       <div class="qs-block">
@@ -766,7 +766,7 @@ go build ./cmd/novamem-server
 cp ../.env.example ../.env
 <span class="c"># point at your existing datastores</span>
 ./novamem-server</pre>
-        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">Local dev / custom stack. <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/install/manual.md">Full walkthrough →</a></div>
+        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">Local dev / custom stack. <a style="color:var(--accent)" href="https://azrtydxb.github.io/novamem/docs/install/manual">Full walkthrough →</a></div>
       </div>
 
       <div class="qs-block">
@@ -780,7 +780,7 @@ git clone https://github.com/azrtydxb/novamem.git
 <span class="c"># then:</span>
 kubectl apply <span class="k">-k</span> .
 kubectl <span class="k">-n</span> novamem rollout status deploy/novamem</pre>
-        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">HA · multi-tenant · enterprise. <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/install/kubernetes.md">Full walkthrough →</a></div>
+        <div style="padding: 14px 18px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--rule);">HA · multi-tenant · enterprise. <a style="color:var(--accent)" href="https://azrtydxb.github.io/novamem/docs/install/kubernetes">Full walkthrough →</a></div>
       </div>
     </div>
   </div>
@@ -810,7 +810,7 @@ kubectl <span class="k">-n</span> novamem rollout status deploy/novamem</pre>
       <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/claude-desktop.md">Claude Desktop</a> ·
       <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/cursor.md">Cursor</a> ·
       <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/kilo-code.md">Kilo Code</a> ·
-      <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/connect/others-and-skills.md">Other hosts &amp; skills</a>
+      <a style="color:var(--accent)" href="https://azrtydxb.github.io/novamem/docs/connect/others">Other hosts &amp; skills</a>
     </p>
   </div>
 </section>
@@ -861,14 +861,14 @@ kubectl <span class="k">-n</span> novamem rollout status deploy/novamem</pre>
         <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div>
           <div class="t">OpenAPI 3.0</div>
-          <div class="d">Generated spec at <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json">docs/api/openapi.json</a> + <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/tree/main/docs/api">human-readable reference</a>. Live Swagger UI at <code>/api-docs</code> on your deployment.</div>
+          <div class="d">Generated spec at <a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json">docs/api/openapi.json</a> + <a style="color:var(--accent)" href="https://azrtydxb.github.io/novamem/docs/api/">human-readable reference</a>. Every deployment serves the spec at <code>/openapi.json</code>.</div>
         </div>
       </div>
       <div class="why-row">
         <div class="why-check"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div>
           <div class="t">Architecture diagrams</div>
-          <div class="d"><a style="color:var(--accent)" href="https://github.com/azrtydxb/novamem/blob/main/docs/architecture.md">docs/architecture.md</a> — system shape, data flow, the engine layer, mermaid diagrams of search and remember paths.</div>
+          <div class="d"><a style="color:var(--accent)" href="https://azrtydxb.github.io/novamem/docs/architecture/system">the architecture guide</a> — system shape, data flow, the engine layer, mermaid diagrams of search and remember paths.</div>
         </div>
       </div>
       <div class="why-row">

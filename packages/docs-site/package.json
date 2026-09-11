@@ -2,7 +2,7 @@
   "name": "@azrtydxb/novamem-docs-site",
   "version": "0.0.0",
   "private": true,
-  "description": "VitePress docs site — built into site/docs/ for GitHub Pages",
+  "description": "VitePress configuration for the docs site — the pages live in docs/, built into site/docs/ for GitHub Pages",
   "type": "module",
   "scripts": {
     "dev": "vitepress dev .",

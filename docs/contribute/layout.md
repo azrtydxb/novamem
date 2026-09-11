@@ -14,10 +14,10 @@ novamem/
 ├── conformance/                — the behavioural oracle, run against a live target
 ├── packages/
 │   ├── admin-ui/      @azrtydxb/novamem-admin-ui  — React 19 dashboard
-│   ├── docs-site/     @azrtydxb/novamem-docs-site — VitePress (this site)
+│   ├── docs-site/     @azrtydxb/novamem-docs-site — VitePress config for this site
 │   └── benchmarks/                                — retrieval eval fixtures
 ├── bench/                      — Python retrieval benchmarks
-├── docs/                       — markdown docs (see below)
+├── docs/                       — every documentation page; this site is built from it
 ├── deploy/k8s/                 — Kubernetes manifests
 ├── site/                       — landing-page index.html + Pages output target
 ├── skills/                     — Agent Skills bundle
@@ -82,23 +82,31 @@ generates from its own route table.
 
 ## packages/docs-site
 
-This site. VitePress + markdown. Builds into `site/docs/` so the Pages workflow picks both up.
+The VitePress configuration for this site — nav, sidebar, theme, the
+mermaid plugin — plus `public/`. It builds `docs/` into `site/docs/`, so
+the Pages workflow picks up the landing page and the docs as one
+artifact.
 
 ## What lives in `docs/` vs `packages/docs-site/`
 
-Two partially overlapping sets today, both hand-maintained, which is how
-they drifted in both directions. They are being consolidated onto one
-source — `docs/` canonical, this site built from it — tracked in
-[#270](https://github.com/azrtydxb/novamem/issues/270).
+`docs/` holds every page. `packages/docs-site/` holds only the VitePress
+configuration (`.vitepress/config.mts`, whose `srcDir` points at
+`../../docs`) and the static assets — no readable content at all, and
+`pnpm docs:smoke` fails if a page reappears there.
+
+Editing a doc in the repo IS editing the site. A handful of internal
+working documents — the migration specs under `superpowers/`, the parity
+audits, the benchmark write-ups — stay in `docs/` but are kept out of the
+published navigation via `srcExclude`.
 
 ## How to find things
 
-| I want to…                 | Look in                                                                                         |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| Add a new memory operation | `go/internal/engine/` + `go/internal/mcp/tooldefs.json`                                         |
-| Change the dashboard       | `packages/admin-ui/src/pages/`                                                                  |
-| Tweak the install CLI      | `go/internal/initcli/`                                                                          |
-| Update a doc               | `packages/docs-site/<section>/`                                                                 |
-| Add an env var             | `.env.example` + `go/internal/config/config.go` + `packages/docs-site/install/env-reference.md` |
-| Fix a CI failure           | `.github/workflows/`                                                                            |
-| Cut a release              | a `vX.Y.Z` tag — CI builds the image and the CLI binaries                                       |
+| I want to…                 | Look in                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| Add a new memory operation | `go/internal/engine/` + `go/internal/mcp/tooldefs.json`                           |
+| Change the dashboard       | `packages/admin-ui/src/pages/`                                                    |
+| Tweak the install CLI      | `go/internal/initcli/`                                                            |
+| Update a doc               | `docs/<section>/`                                                                 |
+| Add an env var             | `.env.example` + `go/internal/config/config.go` + `docs/install/env-reference.md` |
+| Fix a CI failure           | `.github/workflows/`                                                              |
+| Cut a release              | a `vX.Y.Z` tag — CI builds the image and the CLI binaries                         |

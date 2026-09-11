@@ -34,7 +34,7 @@ For a global default, put the same `mcpServers` block in `~/.claude/settings.jso
 
 ## Bundled drop-in
 
-This repo ships a ready-to-copy bundle at [`integrations/claude-code/`](../../integrations/claude-code) with:
+This repo ships a ready-to-copy bundle at [`integrations/claude-code/`](https://github.com/azrtydxb/novamem/tree/main/integrations/claude-code) with:
 
 - `commands/` — slash commands like `/remember`, `/recall`, `/today`, `/forget`
 - `CLAUDE.md` — behaviour rules describing when to call each MCP tool
@@ -72,4 +72,4 @@ Claude should call `memory_context` before answering, then `memory_capture` to s
 
 ## Stdio fallback
 
-If you need to point Claude Code at a host that can't reach the SSE endpoint directly, the stdio shim still works — see [Other clients + Skills](others-and-skills.md) for the shim config.
+If you need to point Claude Code at a host that can't reach the SSE endpoint directly, the stdio shim still works — see [Other clients + Skills](./others.md) for the shim config.

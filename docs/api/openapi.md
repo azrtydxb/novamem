@@ -4,17 +4,7 @@ title: OpenAPI spec
 
 # OpenAPI spec
 
-novamem's HTTP surface is fully described by an OpenAPI 3.0 document, generated from the same Zod schemas that validate requests at runtime.
-
-## Browse interactively
-
-Every running deployment exposes Swagger UI at:
-
-```
-GET  /api-docs
-```
-
-Try requests with a real bearer token. The "Authorize" button accepts both `nm_…` (user API token) and `ns_…` (session) bearers.
+novamem's HTTP surface is fully described by an OpenAPI 3.0 document, generated from the Go server's own route table.
 
 ## Machine-readable
 
@@ -25,7 +15,7 @@ Try requests with a real bearer token. The "Authorize" button accepts both `nm_�
 
 ## Generate clients
 
-The TypeScript client at [`@azrtydxb/novamem`](https://www.npmjs.com/package/@azrtydxb/novamem) is hand-written for ergonomics. For other languages, generate from the OpenAPI spec:
+The Go client at [`clients/go`](https://github.com/azrtydxb/novamem/tree/main/clients/go) is hand-written for ergonomics. For other languages, generate from the OpenAPI spec:
 
 ```bash
 # Python (openapi-python-client)

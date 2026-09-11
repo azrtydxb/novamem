@@ -388,6 +388,30 @@ async function checkEndpointsExist(file, lines) {
   }
 }
 
+// `docs/` is the single source the VitePress site builds from (srcDir in
+// packages/docs-site/.vitepress/config.mts). Before that, the same pages
+// were maintained by hand in both places and drifted in both directions —
+// the site knew about pgvector and memory_relations while docs/ still
+// described FalkorDB, and docs/ had a whole pgvector Kubernetes section
+// the site had never seen. Nobody predicted either drift, because a
+// second copy drifts silently by construction.
+//
+// So: no page may exist under packages/docs-site/ at all. The package
+// holds the config and the static assets, nothing readable.
+async function checkNoSecondCopyOfDocs() {
+  const strays = (await walkFiles("packages/docs-site")).filter(
+    (f) => f.endsWith(".md") && !f.includes("node_modules")
+  );
+  for (const f of strays) {
+    fail(
+      f,
+      1,
+      "a page under packages/docs-site/ — docs/ is the only source the " +
+        "site builds from; move it to docs/ so there is one copy"
+    );
+  }
+}
+
 async function main() {
   // Doc-content invariants on doc files only.
   const docFiles = new Set();
@@ -395,6 +419,8 @@ async function main() {
     for (const f of await walkFiles(t)) docFiles.add(f);
   }
   for (const r of await expandPackageReadmes()) docFiles.add(r);
+
+  await checkNoSecondCopyOfDocs();
 
   for (const file of docFiles) {
     const lines = await readLines(file);
