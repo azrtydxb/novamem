@@ -31,10 +31,10 @@ jobs:
   # CI tests run once on the amd64 ARC scale set (novanas). ARM64
   # validation happens in the Docker build job below on KW ARC, where the
   # native ARM64 image is built without QEMU/cross-compile.
-  # Node versions: 22 is the `engines` floor declared in package.json; 24
-  # is what the release workflow publishes from and what the runtime image
-  # is closest to. Testing only on the floor left a skew where code could
-  # pass CI and break on the version we actually ship.
+  # Node versions: 20 is the `engines` floor declared in package.json; 24
+  # is what release.yml publishes from and what the runtime image is
+  # closest to. Testing only on 20 left a skew where code could pass CI
+  # and break on the version we actually ship.
   test:
     name: test (${{ matrix.arch }}, node ${{ matrix.node }})
     timeout-minutes: 15
