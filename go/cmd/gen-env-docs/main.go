@@ -453,7 +453,9 @@ func writeEnvExample() {
 			b.WriteString("\n" + comment(desc(v)) + "# " + v.Name + "=" + v.ShellDefault() + "\n")
 		}
 	}
-	if err := os.WriteFile(envExamplePath, []byte(b.String()), 0o644); err != nil {
+	out := b.String()
+	checkNoAmbiguousLines(out)
+	if err := os.WriteFile(envExamplePath, []byte(out), 0o644); err != nil {
 		fail("writing %s: %v", envExamplePath, err)
 	}
 	fmt.Printf("wrote %s\n", envExamplePath)
@@ -468,16 +470,23 @@ func comment(s string) string {
 	// name, and removing them turned NOVAMEM_AUTH_MODE into
 	// NOVAMEMAUTHMODE in the first generated template.
 	s = strings.NewReplacer("`", "", "**", "").Replace(s)
+	// Description lines are indented past the comment marker so they can
+	// never be mistaken for a commented-out assignment. Unindented, a
+	// wrapped sentence ending in "Required when NOVAMEM_AUTH_MODE=bearer."
+	// begins its last line with `# NOVAMEM_AUTH_MODE=bearer.` — which is
+	// exactly the shape of a setting waiting to be uncommented, trailing
+	// full stop and all.
+	const prefix = "#  "
 	var b strings.Builder
-	line := "#"
+	line := prefix
 	for _, word := range strings.Fields(s) {
-		if len(line)+1+len(word) > 74 && line != "#" {
+		if len(line)+1+len(word) > 74 && line != prefix {
 			b.WriteString(line + "\n")
-			line = "#"
+			line = prefix
 		}
 		line += " " + word
 	}
-	if line != "#" {
+	if line != prefix {
 		b.WriteString(line + "\n")
 	}
 	return b.String()
@@ -490,4 +499,39 @@ func requiredClause(v config.Var) string {
 		return "Always required."
 	}
 	return "Required when " + v.Required + "."
+}
+
+// assignmentLine matches a line that reads as a setting, commented out
+// or not — which is exactly what a reader scans for when deciding what
+// to uncomment.
+var assignmentLine = regexp.MustCompile(`(?m)^(?:# )?([A-Z][A-Z0-9_]*)=`)
+
+// checkNoAmbiguousLines refuses to write a template in which the same
+// variable appears to be assigned twice.
+//
+// The failure it caught: descriptions were wrapped at column 74 with no
+// indent, so a sentence ending "Required when NOVAMEM_AUTH_MODE=bearer."
+// put `# NOVAMEM_AUTH_MODE=bearer.` on its own line — indistinguishable
+// from a setting waiting to be uncommented, and one that would have
+// been rejected at startup with a baffling message about a trailing full
+// stop. Indenting the prose fixed it; this makes sure it stays fixed,
+// including for a description not yet written.
+func checkNoAmbiguousLines(out string) {
+	seen := map[string]bool{}
+	var dupes []string
+	for _, m := range assignmentLine.FindAllStringSubmatch(out, -1) {
+		if seen[m[1]] {
+			dupes = append(dupes, m[1])
+			continue
+		}
+		seen[m[1]] = true
+	}
+	if len(dupes) > 0 {
+		sort.Strings(dupes)
+		fail("%s would assign these twice: %s\n\n"+
+			"Almost certainly a description wrapped so that a line begins with "+
+			"NAME=, which reads as a second setting. Prose lines are indented "+
+			"past the comment marker to prevent exactly this.",
+			envExamplePath, strings.Join(dupes, ", "))
+	}
 }
