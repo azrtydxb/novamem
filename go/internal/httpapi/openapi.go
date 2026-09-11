@@ -39,6 +39,7 @@ const defaultResponses = `{"200":{"description":"Default Response"}}`
 func undocumented(pattern string) bool {
 	switch pattern {
 	case "GET /openapi.json", // the document doesn't describe itself
+		"GET /api-docs", "GET /api-docs/{version}/standalone.js", // the rendered view of it, and its bundle
 		"GET /favicon.ico",
 		"GET /admin", "GET /admin/",
 		"/": // 404 catch-all

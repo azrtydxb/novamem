@@ -335,6 +335,7 @@ async function loadSpecMatchers() {
 // why, so this cannot quietly become a place to silence real failures.
 const NON_OPERATION_PATHS = new Map([
   ["/openapi.json", "the spec does not describe itself"],
+  ["/api-docs", "the rendered view of the spec, not an operation in it"],
   ["/metrics", "Prometheus exposition, not a JSON API operation"],
   ["/admin", "dashboard SPA shell"],
   ["/favicon.ico", "static asset"],
@@ -412,6 +413,42 @@ async function checkNoSecondCopyOfDocs() {
   }
 }
 
+// The API reference renders on two surfaces: the site bundles Scalar
+// through packages/docs-site, and the server embeds its own copy and
+// serves it at /api-docs so an air-gapped deployment still has a
+// reference. Two copies of a version number is exactly the shape that
+// drifts, and a reader landing on one surface would silently get a
+// different renderer than the other. The embedded VERSION is the source;
+// the site must depend on the same one.
+async function checkApiReferenceVersionsAgree() {
+  const file = "go/internal/httpapi/apidocs/VERSION";
+  const pkg = "packages/docs-site/package.json";
+  let embedded;
+  try {
+    embedded = (await readFile(join(ROOT, file), "utf8")).trim();
+  } catch {
+    return fail(file, 1, "missing — run go/scripts/sync-api-reference.sh");
+  }
+  const lines = await readLines(pkg);
+  const i = lines.findIndex((l) => l.includes('"@scalar/api-reference"'));
+  if (i < 0) {
+    return fail(
+      pkg,
+      1,
+      "does not depend on @scalar/api-reference — the interactive reference page cannot render"
+    );
+  }
+  const pinned = /"@scalar\/api-reference":\s*"([^"]+)"/.exec(lines[i])?.[1];
+  if (pinned !== embedded) {
+    fail(
+      pkg,
+      i + 1,
+      `pins @scalar/api-reference ${pinned} but the server embeds ${embedded} ` +
+        `(${file}) — the site and /api-docs must render with the same version`
+    );
+  }
+}
+
 async function main() {
   // Doc-content invariants on doc files only.
   const docFiles = new Set();
@@ -421,6 +458,7 @@ async function main() {
   for (const r of await expandPackageReadmes()) docFiles.add(r);
 
   await checkNoSecondCopyOfDocs();
+  await checkApiReferenceVersionsAgree();
 
   for (const file of docFiles) {
     const lines = await readLines(file);

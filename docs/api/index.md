@@ -6,6 +6,18 @@ title: API reference
 
 novamem exposes one HTTP surface that every transport (REST, MCP, dashboard SPA) drives. The OpenAPI document is generated from the Go server's own route table — it is the source of truth, and a CI drift gate fails if the committed copy falls behind it.
 
+## Browse it
+
+Two surfaces, one document:
+
+- **[Interactive reference](./reference.md)** — this site, rendered from the
+  spec on `main`.
+- **`GET /api-docs` on any deployment** — the same renderer, embedded in the
+  binary and pointed at that server's own `/openapi.json`. It documents the
+  server in front of you rather than whatever shipped last, and it works with
+  no internet: the bundle is vendored, not fetched from a CDN. Public, like
+  the spec itself.
+
 ## OpenAPI spec
 
 Machine-readable: [`docs/api/openapi.json`](https://github.com/azrtydxb/novamem/blob/main/docs/api/openapi.json) on GitHub, or `/openapi.json` on a live server.
