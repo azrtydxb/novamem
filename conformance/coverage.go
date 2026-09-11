@@ -112,6 +112,10 @@ var Coverage = map[string]string{
 	"DELETE /v1/admin/users/{id}":    "60-admin",
 	"PUT /v1/admin/users/{id}/quota": "60-admin",
 
+	// 72-oauth-metadata — RFC 9728 discovery, the start of the MCP
+	// authorization flow
+	"GET /.well-known/oauth-protected-resource": "72-oauth-metadata",
+
 	// 70-mcp-streamable — single /mcp endpoint, session lifecycle
 	"GET /mcp":    "70-mcp-streamable",
 	"POST /mcp":   "70-mcp-streamable",
