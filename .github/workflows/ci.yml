@@ -42,9 +42,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 22, not 20: Node 20 reached end of life in April 2026, and
+          # @scalar/api-reference (the API-reference renderer the docs site
+          # bundles) declares engines.node >= 22. The repo's own floor moved
+          # with it.
           - arch: amd64
             runner: arc-azrtydxb-amd64
-            node: 20
+            node: 22
           - arch: amd64
             runner: arc-azrtydxb-amd64
             node: 24
@@ -122,7 +126,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
       # `pnpm audit` reads pnpm-lock.yaml directly — no install needed.
       # `--prod` so dev-only CVEs (e.g. in build tooling) don't block PRs.
       - run: pnpm audit --prod --audit-level=high

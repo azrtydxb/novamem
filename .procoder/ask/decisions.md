@@ -327,3 +327,25 @@ states out loud, with the walk kept as the fallback for a directory git
 cannot answer for. Regression test builds a real git repo with a
 gitignored lockfile beside tracked ones; mutation-checked. Until that
 ships in a release, commits here need `--no-verify`.
+
+## Getting the rendered API reference onto kw
+
+`http://novamem.kw.local/api-docs` is a 404 today — probed 2026-09-11.
+kw runs the current image, which is exactly the #264 gap: the route
+exists only in #275, unmerged and stacked behind #274 and #273. The raw
+spec at `http://novamem.kw.local/openapi.json` does answer (200, 74,185
+bytes), so what kw is missing is the rendering, not the contract.
+
+Deploying is not a rollout-restart: the image has to be built for amd64
+with buildx and piped over ssh into the k3s containerd.
+
+Options:
+
+- Merge the stack (#273 → #274 → #275) first, then build and deploy the
+  merged `main` to kw.
+- Build and deploy the `feat/api-reference` branch image to kw now, to
+  look at it live before merging.
+- Leave kw alone; it picks the route up with the next ordinary release.
+
+**Decision (2026-09-11, owner):** merge the stack first, then build and
+deploy the merged `main` to kw and verify `/api-docs` there.

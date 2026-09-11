@@ -12,7 +12,7 @@ flowchart TB
         CLI["HTTP CLI / SDK"]
     end
 
-    subgraph server["@azrtydxb/novamem-server (Fastify · :7778 · HTTP + SSE)"]
+    subgraph server["novamem-server (Go · :7778 · HTTP + MCP)"]
         ROUTES["/admin · /api-docs · /openapi.json · /api/auth/* · /v1/* · /mcp/sse"]
         ENGINE["MemoryEngine"]
         BA["Better Auth<br/>sessions · admin RBAC · JWT"]
@@ -204,7 +204,7 @@ Co-occurrence edges live in the bitemporal `memory_relations` table (`valid_from
 
 ## Transports
 
-- **HTTP/JSON** — Go `net/http`. OpenAPI 3.0 is generated from the server's own route table (`internal/httpapi/openapi_routes.go`) by `cmd/gen-openapi`, written to `docs/api/openapi.json`, and served raw at `/openapi.json`. A drift test fails the build if the checked-in document and the registered routes disagree. There is no bundled HTML API browser.
+- **HTTP/JSON** — Go `net/http`. OpenAPI 3.0 is generated from the server's own route table (`internal/httpapi/openapi_routes.go`) by `cmd/gen-openapi`, written to `docs/api/openapi.json`, and served raw at `/openapi.json`. A drift test fails the build if the checked-in document and the registered routes disagree. The same document is rendered for reading at `/api-docs`, from a renderer embedded in the binary.
 - **MCP SSE (recommended)** — `GET /mcp/sse` opens an event stream; `POST /mcp/messages?sessionId=…` sends JSON-RPC. User identity is captured at handshake from the auth hook. Direct-SSE clients connect without a shim.
 - **MCP stdio (legacy shim)** — `packages/mcp/src/index.ts` is a thin stdio↔HTTP bridge for clients that don't speak remote MCP yet. The shim talks to the same `/v1/*` and `/api/auth/*` endpoints any other client uses.
 
@@ -263,6 +263,6 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 - No OpenTelemetry exporter (Prometheus exposition is at `/v1/admin/metrics/prom`).
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
-- The OpenAPI spec is generated from the Fastify route tree and route Zod schemas via `@fastify/swagger`; `/openapi.json` should be smoke-checked after adding routes.
+- The OpenAPI spec is generated from the Go route table by `cmd/gen-openapi`; a CI drift gate re-runs it and fails on a dirty tree, so adding a route means regenerating in the same commit.
 
 See [CHANGELOG.md](https://github.com/azrtydxb/novamem/blob/main/CHANGELOG.md) for behaviour shifts and [the hardening guide](../ops/hardening.md) for the production hardening checklist.

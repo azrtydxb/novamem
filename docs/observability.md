@@ -1,5 +1,23 @@
 # Observability
 
+::: danger Not implemented in the Go server
+
+Everything below describes the retired TypeScript server. The Go server
+ships **no OpenTelemetry exporter** — setting `OTEL_ENABLED` or
+`OTEL_EXPORTER_OTLP_ENDPOINT` on it does nothing at all, silently. The
+architecture page lists this under "things that aren't here yet".
+
+What the Go server does expose today: Prometheus exposition at
+`/v1/admin/metrics/prom`, JSON metrics at `/v1/admin/metrics` with 24h
+history, and `net/http/pprof` on its own listener when
+`NOVAMEM_PPROF_ADDR` is set.
+
+Kept as the specification for reinstating tracing — see
+[#277](https://github.com/azrtydxb/novamem/issues/277) — not as
+instructions to follow.
+
+:::
+
 NovaMem can export OpenTelemetry traces to any OTLP/HTTP collector, including Jaeger. Tracing is disabled by default and becomes active when either `OTEL_ENABLED=1` or `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 ## Configuration
