@@ -334,6 +334,25 @@
         ],
         "type": "object"
       },
+      "MemberAdded": {
+        "properties": {
+          "added": {
+            "type": "boolean"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "added",
+          "userId",
+          "username"
+        ],
+        "type": "object"
+      },
       "MemberList": {
         "properties": {
           "members": {
@@ -359,6 +378,17 @@
         },
         "required": [
           "members"
+        ],
+        "type": "object"
+      },
+      "MemberRemoved": {
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
         ],
         "type": "object"
       },
@@ -516,8 +546,12 @@
       "ProjectDeleted": {
         "properties": {
           "coldCollectionsDropped": {
+            "description": "Per-scope report from the cold vector store; null when it dropped nothing.",
+            "items": {
+              "type": "string"
+            },
             "nullable": true,
-            "type": "number"
+            "type": "array"
           },
           "deleted": {
             "type": "boolean"
@@ -538,11 +572,40 @@
         "properties": {
           "projects": {
             "items": {
-              "$ref": "#/components/schemas/Project"
+              "$ref": "#/components/schemas/ProjectListItem"
             },
             "type": "array"
           }
         },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "ProjectListItem": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "role": {
+            "description": "The caller's role on this project: owner or member.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
         "type": "object"
       },
       "ReapOrphansResult": {
@@ -583,6 +646,24 @@
         },
         "required": [
           "id"
+        ],
+        "type": "object"
+      },
+      "SearchResult": {
+        "properties": {
+          "degraded": {
+            "description": "True when a tier (cold store or graph) was unreachable, so these hits may be partial.",
+            "type": "boolean"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
         ],
         "type": "object"
       },
@@ -1700,7 +1781,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1846,11 +1927,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntryList"
+                  "$ref": "#/components/schemas/SearchResult"
                 }
               }
             },
-            "description": "EntryList"
+            "description": "SearchResult"
           },
           "401": {
             "content": {
@@ -2749,7 +2830,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2930,15 +3011,15 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemberList"
+                  "$ref": "#/components/schemas/MemberAdded"
                 }
               }
             },
-            "description": "MemberList"
+            "description": "MemberAdded"
           },
           "401": {
             "content": {
@@ -2992,8 +3073,15 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "No content — the change is the whole result"
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRemoved"
+                }
+              }
+            },
+            "description": "MemberRemoved"
           },
           "401": {
             "content": {
@@ -3137,7 +3225,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3436,11 +3524,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntryList"
+                  "$ref": "#/components/schemas/SearchResult"
                 }
               }
             },
-            "description": "EntryList"
+            "description": "SearchResult"
           },
           "401": {
             "content": {
@@ -3757,7 +3845,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3924,11 +4012,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntryList"
+                  "$ref": "#/components/schemas/SearchResult"
                 }
               }
             },
-            "description": "EntryList"
+            "description": "SearchResult"
           },
           "401": {
             "content": {
@@ -4081,7 +4169,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {

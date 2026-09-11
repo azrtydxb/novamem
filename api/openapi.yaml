@@ -272,7 +272,9 @@ components:
         projects:
           type: array
           items:
-            $ref: "#/components/schemas/Project"
+            $ref: "#/components/schemas/ProjectListItem"
+      required:
+        - projects
     ActiveProject:
       type: object
       properties:
@@ -427,8 +429,11 @@ components:
         entriesRemoved:
           type: number
         coldCollectionsDropped:
-          type: number
+          type: array
+          items: &id006
+            type: string
           nullable: true
+          description: Per-scope report from the cold vector store; null when it dropped nothing.
         graphCleared: *id004
       required:
         - deleted
@@ -462,6 +467,49 @@ components:
         - server
         - mcp
         - diagnostics
+    SearchResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryEntry"
+        degraded:
+          type: boolean
+          description: True when a tier (cold store or graph) was unreachable, so these hits may be partial.
+      required:
+        - results
+    ProjectListItem:
+      type: object
+      properties:
+        id: *id001
+        name: *id001
+        ownerUserId: *id001
+        createdAt: *id001
+        role:
+          type: string
+          description: "The caller's role on this project: owner or member."
+      required:
+        - id
+        - name
+        - role
+    MemberAdded:
+      type: object
+      properties:
+        added: &id007
+          type: boolean
+        userId: *id006
+        username: *id006
+      required:
+        - added
+        - userId
+        - username
+    MemberRemoved:
+      type: object
+      properties:
+        removed: *id007
+      required:
+        - removed
 paths:
   /v1/auth/rotate-token:
     post:
@@ -760,18 +808,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: EntryList
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EntryList"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "200":
+          description: SearchResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
       x-mcp-tool:
         name: memory_search
         description:
@@ -934,18 +982,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: EntryList
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EntryList"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "200":
+          description: SearchResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
       x-mcp-tool:
         name: memory_context
         description:
@@ -1067,18 +1115,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: CaptureResult
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CaptureResult"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "201":
+          description: CaptureResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureResult"
       x-mcp-tool:
         name: memory_capture
         description:
@@ -1244,18 +1292,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: SessionRecapResult
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SessionRecapResult"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "201":
+          description: SessionRecapResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionRecapResult"
       x-mcp-tool:
         name: memory_session_recap
         description:
@@ -1413,18 +1461,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: RememberResult
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RememberResult"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "201":
+          description: RememberResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RememberResult"
       x-mcp-tool:
         name: memory_remember
         description:
@@ -1951,18 +1999,18 @@ paths:
         - UserBearer: []
         - SessionCookie: []
       responses:
-        "200":
-          description: EntryList
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EntryList"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "200":
+          description: SearchResult
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
       x-mcp-tool:
         name: memory_neighbors
         description:
@@ -2219,18 +2267,18 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: MintedToken
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MintedToken"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "201":
+          description: MintedToken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MintedToken"
       operationId: postV1MeTokens
       description:
         Mint an additional bearer for the caller, optionally scoped to one project or read-only.
@@ -2323,18 +2371,18 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: Project
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Project"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "201":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
       x-mcp-tool:
         name: project_create
         description:
@@ -2482,18 +2530,18 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: MemberList
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MemberList"
         "401":
           description: Missing or invalid credentials
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "201":
+          description: MemberAdded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberAdded"
       x-mcp-tool:
         name: project_share
         description:
@@ -2554,8 +2602,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "204":
-          description: No content — the change is the whole result
+        "200":
+          description: MemberRemoved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberRemoved"
       x-mcp-tool:
         name: project_unshare
         description:
@@ -2665,6 +2717,18 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 17
+        outputSchema:
+          type: object
+          description:
+            'Over MCP this tool answers `{"active": "<project id>"}` — a bare id string, where
+            the HTTP route answers an object. The two were written separately; the difference is real
+            and is recorded here rather than papered over.'
+          properties:
+            active:
+              type: string
+              description: The activated project id.
+          required:
+            - active
       operationId: putV1MeActiveProject
     delete:
       summary: Clear the caller's active project
@@ -2701,6 +2765,18 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 18
+        outputSchema:
+          type: object
+          description:
+            'Over MCP this tool answers `{"active": null}`, where the HTTP route answers 204
+            with no body.'
+          properties:
+            active:
+              type: string
+              nullable: true
+              description: Always null — the active project has been cleared.
+          required:
+            - active
       operationId: deleteV1MeActiveProject
   /v1/me/export:
     get:

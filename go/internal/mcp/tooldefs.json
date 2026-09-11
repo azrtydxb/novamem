@@ -73,6 +73,10 @@
     "name": "memory_context",
     "outputSchema": {
       "properties": {
+        "degraded": {
+          "description": "True when a tier (cold store or graph) was unreachable, so these hits may be partial.",
+          "type": "boolean"
+        },
         "results": {
           "items": {
             "properties": {
@@ -656,6 +660,10 @@
     "name": "memory_search",
     "outputSchema": {
       "properties": {
+        "degraded": {
+          "description": "True when a tier (cold store or graph) was unreachable, so these hits may be partial.",
+          "type": "boolean"
+        },
         "results": {
           "items": {
             "properties": {
@@ -1022,6 +1030,10 @@
     "name": "memory_neighbors",
     "outputSchema": {
       "properties": {
+        "degraded": {
+          "description": "True when a tier (cold store or graph) was unreachable, so these hits may be partial.",
+          "type": "boolean"
+        },
         "results": {
           "items": {
             "properties": {
@@ -1274,17 +1286,25 @@
               },
               "ownerUserId": {
                 "type": "string"
+              },
+              "role": {
+                "description": "The caller's role on this project: owner or member.",
+                "type": "string"
               }
             },
             "required": [
               "id",
-              "name"
+              "name",
+              "role"
             ],
             "type": "object"
           },
           "type": "array"
         }
       },
+      "required": [
+        "projects"
+      ],
       "type": "object"
     }
   },
@@ -1357,8 +1377,12 @@
     "outputSchema": {
       "properties": {
         "coldCollectionsDropped": {
+          "description": "Per-scope report from the cold vector store; null when it dropped nothing.",
+          "items": {
+            "type": "string"
+          },
           "nullable": true,
-          "type": "number"
+          "type": "array"
         },
         "deleted": {
           "type": "boolean"
@@ -1399,18 +1423,11 @@
     },
     "name": "project_activate",
     "outputSchema": {
+      "description": "Over MCP this tool answers `{\"active\": \"\u003cproject id\u003e\"}` — a bare id string, where the HTTP route answers an object. The two were written separately; the difference is real and is recorded here rather than papered over.",
       "properties": {
         "active": {
-          "nullable": true,
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            }
-          },
-          "type": "object"
+          "description": "The activated project id.",
+          "type": "string"
         }
       },
       "required": [
@@ -1433,7 +1450,21 @@
       "properties": {},
       "type": "object"
     },
-    "name": "project_deactivate"
+    "name": "project_deactivate",
+    "outputSchema": {
+      "description": "Over MCP this tool answers `{\"active\": null}`, where the HTTP route answers 204 with no body.",
+      "properties": {
+        "active": {
+          "description": "Always null — the active project has been cleared.",
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "required": [
+        "active"
+      ],
+      "type": "object"
+    }
   },
   {
     "annotations": {
@@ -1464,29 +1495,20 @@
     "name": "project_share",
     "outputSchema": {
       "properties": {
-        "members": {
-          "items": {
-            "properties": {
-              "joinedAt": {
-                "type": "string"
-              },
-              "role": {
-                "type": "string"
-              },
-              "userId": {
-                "type": "string"
-              },
-              "username": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "type": "array"
+        "added": {
+          "type": "boolean"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
         }
       },
       "required": [
-        "members"
+        "added",
+        "userId",
+        "username"
       ],
       "type": "object"
     }
@@ -1517,6 +1539,17 @@
       ],
       "type": "object"
     },
-    "name": "project_unshare"
+    "name": "project_unshare",
+    "outputSchema": {
+      "properties": {
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "removed"
+      ],
+      "type": "object"
+    }
   }
 ]
