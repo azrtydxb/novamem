@@ -269,6 +269,13 @@ jobs:
       # build must never be able to write to the shared cache.
       - name: Login to the Nexus cache registry
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        # Non-blocking. The build cache is an optimisation; publishing the
+        # image is the job's purpose, and the two must not share a fate.
+        # When this step was allowed to fail the job, a rejected Nexus
+        # credential aborted main BEFORE the build ran, so main published
+        # nothing at all — strictly worse than the broken cache it was
+        # meant to fix.
+        continue-on-error: true
         uses: docker/login-action@v4
         with:
           registry: 192.168.10.131
@@ -290,7 +297,14 @@ jobs:
           # round-trips to GitHub over the internet from these LAN runners
           # and evicts at 10GB; Nexus is one switch-hop away.
           cache-from: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }}
-          cache-to: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true
+          # ignore-error: an unreachable, unwritable or unauthenticated
+          # cache degrades this to a cold build (~13 min per arch instead
+          # of ~2 min warm). Without it the export is FATAL, which is how
+          # a retired cache registry left main red for two commits while
+          # the per-arch images sat published and the manifest job — which
+          # `needs: [docker]` — never ran, so no multi-arch tag existed to
+          # deploy.
+          cache-to: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
       - name: Trivy scan pushed image (HIGH+CRITICAL, fail on findings)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0
