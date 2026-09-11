@@ -150,6 +150,8 @@ func newHandler(opts Options) (http.Handler, []string) {
 		writeJSON(w, http.StatusOK, openapiDoc)
 	})
 
+	s.registerAPIDocs(mux)
+
 	// Browsers request /favicon.ico from the page origin (http.ts: 204).
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
 		setHardeningHeaders(w)

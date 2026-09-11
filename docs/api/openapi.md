@@ -6,6 +6,21 @@ title: OpenAPI spec
 
 novamem's HTTP surface is fully described by an OpenAPI 3.0 document, generated from the Go server's own route table.
 
+## Browse interactively
+
+Every running deployment serves a rendered reference at:
+
+```
+GET  /api-docs
+```
+
+It reads that deployment's own `/openapi.json`, so it describes the server you
+are pointed at. Requests you fire from the page are your browser's own, with
+whatever bearer you supply — `nm_…` (user API token) or a Better Auth session.
+
+The same renderer, against the spec on `main`, is on this site:
+[interactive reference](./reference.md).
+
 ## Machine-readable
 
 | Source                | URL                                                                                            |

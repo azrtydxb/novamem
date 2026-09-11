@@ -13,7 +13,7 @@ flowchart TB
     end
 
     subgraph server["@azrtydxb/novamem-server (Fastify · :7778 · HTTP + SSE)"]
-        ROUTES["/admin · /openapi.json · /api/auth/* · /v1/* · /mcp/sse"]
+        ROUTES["/admin · /api-docs · /openapi.json · /api/auth/* · /v1/* · /mcp/sse"]
         ENGINE["MemoryEngine"]
         BA["Better Auth<br/>sessions · admin RBAC · JWT"]
         ROUTES --> ENGINE

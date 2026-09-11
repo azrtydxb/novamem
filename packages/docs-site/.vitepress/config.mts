@@ -132,6 +132,7 @@ export default withMermaid(
           collapsed: false,
           items: [
             { text: "Overview", link: "/api/" },
+            { text: "Interactive reference", link: "/api/reference" },
             { text: "Authentication", link: "/api/auth" },
             { text: "Data plane", link: "/api/data-plane" },
             { text: "Admin & users", link: "/api/admin" },

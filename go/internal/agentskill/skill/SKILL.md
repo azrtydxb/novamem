@@ -137,6 +137,26 @@ Use `project_activate({ project })` when the user signals they're working on a s
 
 Entries decay if not accessed: `effectiveDays = 7 · log₂(hits + 1)`. Searching counts as access — re-finding important memories keeps them warm. You don't need to manage this.
 
+<!-- mcp-instructions:start -->
+
+## The full API contract
+
+Every operation you can reach over MCP also exists as an HTTP route, and the
+whole surface is described by one OpenAPI document. When you need a field you
+do not know, an exact response shape, or a route that has no MCP tool, read it
+rather than guessing:
+
+- `GET /openapi.json` on the server you are connected to — the machine-readable
+  contract for that exact deployment.
+- `GET /api-docs` on the same server — the same document rendered for reading,
+  grouped by purpose, with the auth rules per route.
+- [The published reference](https://azrtydxb.github.io/novamem/docs/api/reference)
+  — the same thing for the current release, if you cannot reach a deployment.
+
+Both server routes are public: no bearer needed to read the contract.
+
+<!-- mcp-instructions:end -->
+
 ## Errors
 
 - `401` — bearer missing or revoked; surface to the user, don't retry

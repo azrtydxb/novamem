@@ -10,6 +10,7 @@
     "preview": "vitepress preview ."
   },
   "devDependencies": {
+    "@scalar/api-reference": "1.68.0",
     "@types/node": "^26.4",
     "mermaid": "^11.17.2",
     "vitepress": "^1.6.4",
