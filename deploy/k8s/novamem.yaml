@@ -77,10 +77,10 @@ metadata:
 spec:
   # Streamable MCP is replica-safe (ADR 0005: session ids are signed and
   # any replica adopts them), provided NOVAMEM_COOKIE_SECRET is set and
-  # identical across pods. Two caveats before raising this: the legacy
-  # SSE transport (/mcp/sse) stays pod-local and needs per-client
-  # load-balancer affinity, and `strategy: Recreate` below plus a
-  # ReadWriteOnce data volume assumes one pod at a time.
+  # identical across pods. The legacy SSE transport that needed per-client
+  # affinity is gone (ADR 0007), so the one caveat left before raising
+  # this is `strategy: Recreate` below plus a ReadWriteOnce data volume,
+  # which assumes one pod at a time.
   replicas: 1
   selector:
     matchLabels: { app: novamem }

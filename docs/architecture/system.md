@@ -13,7 +13,7 @@ flowchart TB
     end
 
     subgraph server["novamem-server (Go · :7778 · HTTP + MCP)"]
-        ROUTES["/admin · /api-docs · /openapi.json · /api/auth/* · /v1/* · /mcp/sse"]
+        ROUTES["/admin · /api-docs · /openapi.json · /api/auth/* · /v1/* · /mcp"]
         ENGINE["MemoryEngine"]
         BA["Better Auth<br/>sessions · admin RBAC · JWT"]
         ROUTES --> ENGINE
@@ -205,7 +205,7 @@ Co-occurrence edges live in the bitemporal `memory_relations` table (`valid_from
 ## Transports
 
 - **HTTP/JSON** — Go `net/http`. OpenAPI 3.0 is generated from the server's own route table (`internal/httpapi/openapi_routes.go`) by `cmd/gen-openapi`, written to `docs/api/openapi.json`, and served raw at `/openapi.json`. A drift test fails the build if the checked-in document and the registered routes disagree. The same document is rendered for reading at `/api-docs`, from a renderer embedded in the binary.
-- **MCP SSE (recommended)** — `GET /mcp/sse` opens an event stream; `POST /mcp/messages?sessionId=…` sends JSON-RPC. User identity is captured at handshake from the auth hook. Direct-SSE clients connect without a shim.
+- **MCP Streamable HTTP** — one endpoint, `/mcp`, serving both protocol eras (ADR 0006): modern `2026-07-28` requests are stateless and self-describing, legacy `initialize` mints a signed session id any replica can adopt (ADR 0005). The HTTP+SSE pair it replaced was removed in ADR 0007.
 - **MCP stdio (legacy shim)** — `packages/mcp/src/index.ts` is a thin stdio↔HTTP bridge for clients that don't speak remote MCP yet. The shim talks to the same `/v1/*` and `/api/auth/*` endpoints any other client uses.
 
 ## Dashboard

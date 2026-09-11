@@ -351,3 +351,79 @@ Options:
 
 **Decision (2026-09-11, owner):** merge the stack first, then build and
 deploy the merged `main` to kw and verify `/api-docs` there.
+
+## The local docker volume left behind, now that Docker is off-limits
+
+Verifying the API reference before it was deployed meant starting the
+compose datastores locally. That was before the owner ruled Docker
+Desktop out (2026-09-11). The containers are stopped, but two things
+remain on disk:
+
+- `novamem-1-postgres-1` and `novamem-1-qdrant-1`, both `Exited`, plus
+  the `novamem_pg` volume holding whatever local data predates today.
+- The `novamem` role's password inside that volume was changed to
+  `devlocal`. The volume predated the compose password and auth was
+  failing; the old password is gone.
+
+Nothing outstanding needs any of it — kw is the verification target now.
+
+Options:
+
+- Leave it stopped and untouched; it costs nothing and the data survives
+  if the local stack is ever wanted again.
+- Remove the two containers but keep the `novamem_pg` volume.
+- Remove the containers and the volume, reclaiming the disk and
+  accepting that the local data goes with it.
+
+**Decision (2026-09-11, owner):** remove the containers and the volume.
+
+**Outcome (2026-09-11):** removed `novamem-1-postgres-1`,
+`novamem-1-qdrant-1`, and the volumes `novamem-1_novamem_pg` and
+`novamem-1_novamem_qdrant` — the stack this session started. Deliberately
+left alone: `novamem-1_novamem_falkor` (FalkorDB, retired, never touched
+here) and the entire `novamem_*` volume set, which belongs to a
+differently-named checkout this session never ran.
+
+## The shim smoke test runs a binary resolved from PATH
+
+`verifyShimBinary` (`go/internal/initcli/mcp.go`) executes the
+`novamem-mcp` path before writing it into a host config, to check it can
+start. Semgrep flags the non-literal `exec.CommandContext(ctx, path)`
+as `dangerous-exec-command`; it blocks the gate for anyone who touches
+that file.
+
+Traced 2026-09-11. `path` comes from `ResolveShimBinary`, in order:
+`--mcp-bin`/`NOVAMEM_MCP_BIN`, then a binary beside the running
+executable, then `exec.LookPath`. Nothing remote or server-controlled.
+For sources 2 and 3 to be an attack, the attacker must already be able
+to write next to the installer or into a PATH directory — at which point
+they can replace `novamem-init` itself, so no privilege boundary is
+crossed.
+
+Against that: the code does not merely _name_ the binary in a config
+file, it _runs_ it, and PATH is influenceable in ways an explicit flag
+is not.
+
+Options:
+
+- Keep the targeted `// nosemgrep: dangerous-exec-command` with the
+  trace recorded in a comment, and keep the smoke test as it is.
+- Drop the execution: keep the stat checks (exists, regular file,
+  executable bit) and stop running the binary. The gate goes quiet
+  honestly, and a shim that is present but broken is no longer caught
+  before it lands in a host config.
+- Narrow the resolution instead: only run the smoke test when the path
+  came from an explicit flag or from beside the executable, never from
+  `exec.LookPath`.
+
+**Decision (2026-09-11, owner):** stop trusting PATH for the smoke test.
+
+**Outcome (2026-09-11):** `ResolveShimBinary` now returns a `ShimSource`
+(`ShimFromFlag`, `ShimBesideExecutable`, `ShimFromPath`) and
+`VerifyShimBinary` executes the binary only when `src.Chosen()`. A
+PATH-resolved shim is stat-checked and named, never run, and the CLI
+says so rather than silently doing less. The targeted
+`// nosemgrep: dangerous-exec-command` stays on the call that remains,
+which is now reachable only from an operator's explicit choice.
+Mutation-checked: dropping the guard makes the PATH-resolved binary
+execute and fails the test on both assertions.

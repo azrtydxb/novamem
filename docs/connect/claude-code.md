@@ -1,6 +1,6 @@
 # Connect Claude Code
 
-Claude Code speaks remote MCP natively, so you point it at `/mcp/sse` directly — no shim, no `npx` for the runtime.
+Claude Code speaks remote MCP natively, so you point it at `/mcp` directly — no shim, no `npx` for the runtime.
 
 ## One-shot installer (recommended)
 
@@ -20,8 +20,8 @@ Drop a `.mcp.json` at your project root:
 {
   "mcpServers": {
     "novamem": {
-      "type": "sse",
-      "url": "http://localhost:7778/mcp/sse",
+      "type": "http",
+      "url": "http://localhost:7778/mcp",
       "headers": { "Authorization": "Bearer nm_..." }
     }
   }

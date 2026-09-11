@@ -1,10 +1,11 @@
-// The two HTTP transports. Wire behavior transcribed from
-// routes/mcp-streamable.ts (single-endpoint Streamable HTTP: POST new
-// sessions on initialize, session header Mcp-Session-Id, GET SSE
-// channel, DELETE terminate) and routes/mcp-sse.ts (legacy pair:
-// GET /mcp/sse endpoint-frame handshake, POST /mcp/messages?sessionId=
-// answering 202 with responses on the stream, keepalive pings, idle
-// reaper). Status codes and error-body strings are contract.
+// The Streamable HTTP transport: one endpoint, POST to open a session on
+// initialize, `Mcp-Session-Id` on subsequent requests, a GET stream held
+// open with keepalives, DELETE to terminate, and an idle reaper behind
+// all of it. Status codes and error-body strings are contract.
+//
+// The HTTP+SSE pair from revision 2024-11-05 (`GET /mcp/sse` +
+// `POST /mcp/messages?sessionId=`) used to live here too. It is
+// Deprecated in the spec and removed — see ADR 0007.
 package mcp
 
 import (
@@ -233,7 +234,7 @@ func (s *Server) serveLegacyStreamable(w http.ResponseWriter, r *http.Request,
 		sseHeaders(w)
 		w.WriteHeader(http.StatusOK)
 		flush(w)
-		s.keepaliveLoop(w, r, sess, nil)
+		s.keepaliveLoop(w, r, sess)
 	case http.MethodDelete:
 		s.streamable.remove(sessionID)
 		s.log.Info("mcp-streamable: session closed", "sessionId", sessionID)
@@ -248,41 +249,16 @@ func (s *Server) missingSession(w http.ResponseWriter) {
 		"Bad Request: missing Mcp-Session-Id (only POST initialize may omit it)"))
 }
 
-// ─── Legacy SSE (/mcp/sse + /mcp/messages) ─────────────────────────────
-
-// ServeSSE handles GET /mcp/sse: opens the stream, sends the `endpoint`
-// frame carrying the sessionId, then relays JSON-RPC responses (posted
-// via /mcp/messages) as `message` frames, with keepalive comment pings.
-func (s *Server) ServeSSE(w http.ResponseWriter, r *http.Request, userID string) {
-	if !s.applyGuards(w, r) {
-		return
-	}
-	sess, ok := s.sse.addOrGet(&session{
-		id:     newSessionID(),
-		userID: userID,
-		out:    make(chan []byte, 64),
-		done:   make(chan struct{}),
-	}, s.maxPerUser)
-	if !ok {
-		s.log.Warn("mcp-sse: per-user session cap exceeded", "userId", userID, "cap", s.maxPerUser)
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"error": "too many concurrent SSE sessions for this user"})
-		return
-	}
-	s.log.Info("mcp-sse: session opened", "sessionId", sess.id, "userId", userID)
-
-	sseHeaders(w)
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, "event: endpoint\ndata: /mcp/messages?sessionId="+sess.id+"\n\n")
-	flush(w)
-	s.keepaliveLoop(w, r, sess, sess.out)
-	s.sse.remove(sess.id)
-	s.log.Info("mcp-sse: session closed", "sessionId", sess.id)
-}
-
-// keepaliveLoop pumps outgoing frames + `: ping` keepalives until the
-// client disconnects or the session is closed (reaper / shutdown).
-func (s *Server) keepaliveLoop(w http.ResponseWriter, r *http.Request, sess *session, out <-chan []byte) {
+// keepaliveLoop holds the streamable GET stream open with `: ping`
+// comment frames until the client disconnects or the session is closed
+// (reaper / shutdown).
+//
+// It used to relay outgoing frames too, for the legacy HTTP+SSE
+// transport. That transport is gone (ADR 0007) and the streamable GET
+// stream carries no server-initiated messages — the server emits no
+// notifications and declares `listChanged: false` — so the loop is
+// keepalive only.
+func (s *Server) keepaliveLoop(w http.ResponseWriter, r *http.Request, sess *session) {
 	ticker := time.NewTicker(keepaliveInterval())
 	defer ticker.Stop()
 	for {
@@ -291,12 +267,6 @@ func (s *Server) keepaliveLoop(w http.ResponseWriter, r *http.Request, sess *ses
 			return
 		case <-sess.done:
 			return
-		case msg, ok := <-out:
-			if !ok {
-				return
-			}
-			_, _ = io.WriteString(w, "event: message\ndata: "+string(msg)+"\n\n")
-			flush(w)
 		case <-ticker.C:
 			// `: ping` — the canonical SSE comment frame; clients ignore it
 			// but the bytes reset their body-read timers.
@@ -304,54 +274,6 @@ func (s *Server) keepaliveLoop(w http.ResponseWriter, r *http.Request, sess *ses
 			flush(w)
 		}
 	}
-}
-
-// ServeMessages handles POST /mcp/messages?sessionId=…: authenticates
-// the caller against the session owner, processes the JSON-RPC message,
-// queues any response onto the SSE stream, and acks with 202.
-func (s *Server) ServeMessages(w http.ResponseWriter, r *http.Request, userID string) {
-	if !s.applyGuards(w, r) {
-		return
-	}
-	sessionID := r.URL.Query().Get("sessionId")
-	if sessionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing sessionId"})
-		return
-	}
-	sess := s.sse.get(sessionID)
-	if sess == nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown sessionId"})
-		return
-	}
-	// Bind message posts to the session owner (issue #57): the sessionId
-	// travels in the query string and leaks far more easily than an
-	// Authorization header.
-	if sess.userID != userID {
-		s.log.Warn("mcp-sse: rejected POST /mcp/messages from non-owner",
-			"sessionId", sessionID, "sessionOwner", sess.userID, "caller", userID)
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": "session belongs to another user"})
-		return
-	}
-	s.sse.touch(sessionID)
-	body, ok := readBody(w, r)
-	if !ok {
-		return
-	}
-	resp := s.handleMessage(r.Context(), sess, body)
-	if resp != nil {
-		if b, err := json.Marshal(resp); err == nil {
-			select {
-			case sess.out <- b:
-			default:
-				// ponytail: bounded queue, drop-on-stall — a client that
-				// stopped reading its stream for 64 responses is gone; block
-				// here and a dead consumer wedges the POST path instead.
-				s.log.Warn("mcp-sse: outgoing queue full, response dropped", "sessionId", sessionID)
-			}
-		}
-	}
-	w.WriteHeader(http.StatusAccepted)
-	_, _ = io.WriteString(w, "Accepted")
 }
 
 func flush(w http.ResponseWriter) {

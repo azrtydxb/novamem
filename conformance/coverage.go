@@ -116,10 +116,6 @@ var Coverage = map[string]string{
 	"GET /mcp":    "70-mcp-streamable",
 	"POST /mcp":   "70-mcp-streamable",
 	"DELETE /mcp": "70-mcp-streamable",
-
-	// 71-mcp-sse — legacy MCP HTTP+SSE transport
-	"GET /mcp/sse":       "71-mcp-sse",
-	"POST /mcp/messages": "71-mcp-sse",
 }
 
 // Exempt lists endpoints deliberately not conformance-tested; each

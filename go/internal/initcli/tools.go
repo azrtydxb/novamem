@@ -27,7 +27,7 @@ var Tools = []ToolEntry{
 		Scope:           ScopeProject,
 		SkillsBase:      ".claude",
 		Detect:          []string{".claude", ".mcp.json"},
-		Mcp:             &McpAdapter{Path: ".mcp.json", Format: "json", Transport: "sse"},
+		Mcp:             &McpAdapter{Path: ".mcp.json", Format: "json", Transport: "http"},
 		Commands:        &CommandAdapter{Dir: ".claude/commands", Format: "claude-md"},
 		PostInstallHint: "Restart Claude Code to pick up the new MCP server and skill.",
 	},
@@ -46,10 +46,10 @@ var Tools = []ToolEntry{
 			Path:   "Library/Application Support/Claude/claude_desktop_config.json",
 			Format: "json",
 			// Claude Desktop's MCP loader only accepts stdio entries
-			// (`command`/`args`). Writing {type: "sse", url, headers} makes
-			// it pop up "not valid MCP server configurations and were
-			// skipped". Use the stdio shim — it bridges to /mcp/sse on the
-			// server with the bearer in env.
+			// (`command`/`args`). Writing a remote entry makes it pop up
+			// "not valid MCP server configurations and were skipped". Use
+			// the stdio shim — it bridges to /mcp on the server with the
+			// bearer in env.
 			Transport: "stdio",
 		},
 		PostInstallHint: "Quit Claude Desktop fully (Cmd-Q on macOS) and reopen — it doesn't hot-reload MCP config.",
@@ -60,7 +60,7 @@ var Tools = []ToolEntry{
 		Scope:           ScopeProject,
 		SkillsBase:      ".cursor",
 		Detect:          []string{".cursor", ".cursor/mcp.json"},
-		Mcp:             &McpAdapter{Path: ".cursor/mcp.json", Format: "json", Transport: "sse"},
+		Mcp:             &McpAdapter{Path: ".cursor/mcp.json", Format: "json", Transport: "http"},
 		Commands:        &CommandAdapter{Dir: ".cursor/commands", Format: "claude-md"},
 		PostInstallHint: "Open Cursor → Settings → MCP and toggle 'novamem' on if it isn't already.",
 	},
@@ -70,7 +70,7 @@ var Tools = []ToolEntry{
 		Scope:      ScopeProject,
 		SkillsBase: ".kilocode",
 		Detect:     []string{".kilocode"},
-		Mcp:        &McpAdapter{Path: ".kilocode/mcp.json", Format: "json", Transport: "sse"},
+		Mcp:        &McpAdapter{Path: ".kilocode/mcp.json", Format: "json", Transport: "http"},
 		Commands:   &CommandAdapter{Dir: ".kilocode/workflows", Format: "claude-md"},
 	},
 	{
@@ -131,7 +131,7 @@ var Tools = []ToolEntry{
 			".github/skills",
 			".mcp.json",
 		},
-		Mcp:      &McpAdapter{Path: ".mcp.json", Format: "json", Transport: "sse"},
+		Mcp:      &McpAdapter{Path: ".mcp.json", Format: "json", Transport: "http"},
 		Commands: &CommandAdapter{Dir: ".github/prompts", Format: "github-prompt-md"},
 	},
 	{
@@ -163,13 +163,10 @@ var Tools = []ToolEntry{
 			Path:    ".codex/config.toml",
 			Format:  "toml",
 			RootKey: "mcp_servers",
-			// Codex CLI's MCP client speaks Streamable-HTTP, not the legacy
-			// SSE transport novamem currently exposes at /mcp/sse. Pointing
-			// it at the SSE URL produces a cryptic handshake failure:
-			//   "Deserialize error: data did not match any variant of
-			//    untagged enum JsonRpcMessage"
-			// Use the stdio shim — it bridges to /mcp/sse internally and is
-			// protocol-agnostic to the host.
+			// Codex CLI's MCP client speaks Streamable HTTP but expects it
+			// under its own config shape rather than the `type`/`url` entry
+			// written here. Use the stdio shim — it bridges to /mcp
+			// internally and is protocol-agnostic to the host.
 			Transport: "stdio",
 		},
 		Commands: &CommandAdapter{Dir: ".codex/prompts", Format: "claude-md", Prefix: "memory-"},

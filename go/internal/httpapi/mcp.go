@@ -36,12 +36,9 @@ func (s *server) registerMCP(mux *routeMux) *mcp.Server {
 	mux.HandleFunc("POST /mcp", streamable)
 	mux.HandleFunc("GET /mcp", streamable)
 	mux.HandleFunc("DELETE /mcp", streamable)
-	mux.HandleFunc("GET /mcp/sse", s.withAuth(func(w http.ResponseWriter, r *http.Request) {
-		srv.ServeSSE(w, r, s.userID(r))
-	}))
-	mux.HandleFunc("POST /mcp/messages", s.withAuth(func(w http.ResponseWriter, r *http.Request) {
-		srv.ServeMessages(w, r, s.userID(r))
-	}))
+	// No /mcp/sse + /mcp/messages: the HTTP+SSE transport from revision
+	// 2024-11-05 is Deprecated in the spec's registry and removed here
+	// (ADR 0007). Everything it served is served by /mcp.
 	return srv
 }
 

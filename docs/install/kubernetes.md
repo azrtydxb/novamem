@@ -157,19 +157,18 @@ for the streamable MCP endpoint (`POST /mcp`), on two conditions:
   at a time.** Switch the strategy and provision RWX (or node-pin)
   before scaling the pods that mount them.
 
-The legacy SSE transport (`GET /mcp/sse` plus `POST /mcp/messages`) stays
-pod-local by nature: a message POST has to reach the goroutine holding
-that session's open stream. If any client still uses it, pin each client
-to one pod. With ingress-nginx that means a dedicated Service for the MCP
-paths plus, on its own Ingress:
+No MCP transport needs load-balancer affinity any more. The legacy
+HTTP+SSE pair did — a message POST had to reach the goroutine holding
+that session's open stream, which no amount of signing can make portable
+— and it was kept alive on multi-replica deployments by a dedicated
+Service plus an Ingress annotated
+`nginx.ingress.kubernetes.io/upstream-hash-by: "$http_authorization"`.
 
-```yaml
-nginx.ingress.kubernetes.io/upstream-hash-by: "$http_authorization"
-```
-
-The separate Service matters: two Ingresses pointing at the same Service
-collapse onto one nginx upstream, and the annotation is then silently
-ignored.
+That transport is removed (ADR 0007), so those objects can go with it.
+If you are running them, delete the extra Service and Ingress together:
+two Ingresses pointing at one Service collapse onto a single nginx
+upstream and the annotation is silently ignored, so a half-deletion
+looks like it still works.
 
 ## Updates
 

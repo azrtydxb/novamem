@@ -388,20 +388,6 @@ var apiRoutes = []apiRoute{
 		Security: []string{"SessionCookie", "UserBearer"},
 	},
 	{
-		Method:      "GET",
-		Path:        "/mcp/sse",
-		Summary:     "Legacy MCP SSE transport (2024-11-05) — open the event stream",
-		Tags:        []string{"mcp"},
-		Description: "Opens the long-lived SSE event stream for the legacy two-endpoint MCP transport. Clients then POST JSON-RPC requests to `/mcp/messages?sessionId=<id>`. New integrations should prefer `/mcp` (Streamable HTTP).",
-	},
-	{
-		Method:      "POST",
-		Path:        "/mcp/messages",
-		Summary:     "Legacy MCP SSE transport — submit a JSON-RPC request",
-		Tags:        []string{"mcp"},
-		Description: "Submit a JSON-RPC request on a session opened via `/mcp/sse`. The JSON-RPC response is delivered on the SSE channel, not in this response body.",
-	},
-	{
 		Method:      "POST",
 		Path:        "/mcp",
 		Summary:     "MCP Streamable HTTP transport (dual-era)",

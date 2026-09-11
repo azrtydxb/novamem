@@ -39,7 +39,7 @@ The generator walks the route table in `go/internal/httpapi/openapi_routes.go` (
 | **[Authentication](./auth.md)**   | `/api/auth/*`, `POST /v1/me/tokens`                                                                               | mixed          |
 | **[Data plane](./data-plane.md)** | `/v1/search`, `/v1/remember`, `/v1/capture`, `/v1/recent`, `/v1/neighbors`, `/v1/forget`, `PUT /v1/memories/{id}` | user API token |
 | **[Admin & users](./admin.md)**   | `/v1/admin/*`, `/api/auth/admin/*`                                                                                | session admin  |
-| **[MCP tools](./mcp-tools.md)**   | `/mcp`, `/mcp/sse`, `/mcp/messages`                                                                               | user API token |
+| **[MCP tools](./mcp-tools.md)**   | `/mcp`                                                                                                            | user API token |
 
 ## Per-user (cookie-auth) variants
 
@@ -88,7 +88,7 @@ For Go, [`clients/go`](https://github.com/azrtydxb/novamem/tree/main/clients/go)
 Most MCP tools map to the same engine operations as HTTP routes. Reach for HTTP when:
 
 - You're scripting against the server from a non-MCP runtime (CI job, cron, custom CLI)
-- You need streaming — `/mcp/sse` is the only streaming transport; HTTP is request/response
+- You need streaming — `/mcp` holds a GET stream open; the JSON routes are request/response
 - You want fine-grained control over headers, retries, timeouts
 
 Reach for MCP when:

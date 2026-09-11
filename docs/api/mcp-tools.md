@@ -55,24 +55,15 @@ Connect with `Authorization: Bearer nm_…`. Session id is returned in the `Mcp-
 
 What clients speak this transport: OpenAI Codex CLI, recent Cursor / Kilo Code (auto-detect with SSE fallback), GitHub Copilot in VS Code, anything built on the Rust `rmcp` crate.
 
-### Legacy SSE — still supported
+### Legacy HTTP+SSE — removed
 
-The pre-2025 MCP spec, two-endpoint dance. Kept indefinitely for clients that haven't migrated.
+`GET /mcp/sse` + `POST /mcp/messages?sessionId=…` was the two-endpoint transport from protocol revision `2024-11-05`. The spec [Deprecated it](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in `2025-03-26`, and novamem removed it (ADR 0007). Both paths now answer the 404 envelope.
 
-```
-GET  /mcp/sse                    — opens the event stream
-POST /mcp/messages?sessionId=…   — sends JSON-RPC requests
-```
-
-The route enforces:
-
-- `MAX_SESSIONS_PER_USER = 10` — concurrency cap, returns 429
-- 30 min idle timeout — sessions with no `POST /mcp/messages` activity are reaped
-- `: ping\n\n` keepalive every 25 s — prevents undici 5-min body timeout
+Everything it served is served by `/mcp`, which speaks both protocol eras. A client still configured for the old pair needs its `url` changed to `/mcp` and its `type` to `http`; `novamem-init` writes that shape now.
 
 ### stdio shim
 
-The `@azrtydxb/novamem-mcp` package proxies stdio JSON-RPC ↔ remote SSE. Used by hosts that don't support remote MCP at all (Claude Desktop) or whose remote-MCP implementation is broken (OpenCode pre-Streamable-HTTP).
+`novamem-mcp` proxies stdio JSON-RPC ↔ Streamable HTTP. Used by hosts that don't support remote MCP at all (Claude Desktop) or whose remote-MCP implementation is broken.
 
 ```bash
 NOVAMEM_BASE_URL=https://novamem.example.com \

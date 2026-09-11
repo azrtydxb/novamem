@@ -17,7 +17,7 @@ import (
 // protocol-level failure.
 type CallFunc func(ctx context.Context, userID, name string, args map[string]any) (any, error)
 
-// Defaults mirroring routes/mcp-streamable.ts + mcp-sse.ts.
+// Defaults mirroring routes/mcp-streamable.ts.
 // serverInfo, reported by both eras: the legacy initialize result and
 // the modern _meta serverInfo key.
 const (
@@ -61,7 +61,6 @@ type Server struct {
 	sessionKey     []byte
 
 	streamable *registry
-	sse        *registry
 	stop       chan struct{}
 	stopOnce   sync.Once
 }
@@ -86,7 +85,6 @@ func NewServer(opts Options) *Server {
 		maxPerUser:     opts.MaxSessionsPerUser,
 		sessionKey:     deriveSessionKey(opts.CookieSecret),
 		streamable:     newRegistry(opts.IdleTimeout),
-		sse:            newRegistry(opts.IdleTimeout),
 		stop:           make(chan struct{}),
 	}
 	if s.sessionKey == nil && s.log != nil {
@@ -103,7 +101,6 @@ func NewServer(opts Options) *Server {
 func (s *Server) Close() {
 	s.stopOnce.Do(func() { close(s.stop) })
 	s.streamable.closeAll()
-	s.sse.closeAll()
 }
 
 func (s *Server) reapLoop(interval time.Duration) {
@@ -117,9 +114,6 @@ func (s *Server) reapLoop(interval time.Duration) {
 			for _, sess := range s.streamable.reapIdle() {
 				s.log.Info("mcp-streamable: idle session reaped", "sessionId", sess.id, "userId", sess.userID)
 			}
-			for _, sess := range s.sse.reapIdle() {
-				s.log.Info("mcp-sse: idle session reaped", "sessionId", sess.id, "userId", sess.userID)
-			}
 		}
 	}
 }
@@ -131,10 +125,6 @@ type session struct {
 	userID string
 	// lastActivity is unix ms, guarded by the registry mutex.
 	lastActivity time.Time
-	// out carries SSE `message` frames from POST /mcp/messages to the
-	// stream goroutine. Nil for streamable sessions (responses are
-	// synchronous there).
-	out chan []byte
 	// done closes when the session is removed (reaper / DELETE / server
 	// shutdown) so a blocked stream goroutine exits.
 	done      chan struct{}
