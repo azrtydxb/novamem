@@ -11,10 +11,7 @@
 Full documentation, install paths, MCP host setup, architecture diagrams, API spec, and security model live on the project page above.
 
 [![CI](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/azrtydxb/novamem/actions/workflows/ci.yml)
-[![Release](https://github.com/azrtydxb/novamem/actions/workflows/release.yml/badge.svg)](https://github.com/azrtydxb/novamem/actions/workflows/release.yml)
-[![npm: client](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem.svg?label=%40azrtydxb%2Fnovamem&cacheSeconds=300)](https://www.npmjs.com/package/@azrtydxb/novamem)
-[![npm: mcp](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-mcp.svg?label=%40azrtydxb%2Fnovamem-mcp&cacheSeconds=300)](https://www.npmjs.com/package/@azrtydxb/novamem-mcp)
-[![npm: init](https://img.shields.io/npm/v/%40azrtydxb%2Fnovamem-init.svg?label=%40azrtydxb%2Fnovamem-init&cacheSeconds=300)](https://www.npmjs.com/package/@azrtydxb/novamem-init)
+[![Release](https://github.com/azrtydxb/novamem/actions/workflows/release-binaries.yml/badge.svg)](https://github.com/azrtydxb/novamem/actions/workflows/release-binaries.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 <br />

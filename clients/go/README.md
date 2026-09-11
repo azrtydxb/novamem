@@ -1,6 +1,6 @@
 # novamem — Go client
 
-Go client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service with 5-signal hybrid retrieval (keyword + vector + graph + recency + entity), per-user isolation, project (sub-brain) scoping, sensitivity auto-detection, content-hash dedup, and async background enrichment. It targets the same HTTP API as the TypeScript client in `packages/client`, and is a standalone Go module so it can be imported without pulling in the server.
+Go client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service with 5-signal hybrid retrieval (keyword + vector + graph + recency + entity), per-user isolation, project (sub-brain) scoping, sensitivity auto-detection, content-hash dedup, and async background enrichment. It is a standalone Go module so it can be imported without pulling in the server.
 
 ```bash
 go get github.com/azrtydxb/novamem/clients/go

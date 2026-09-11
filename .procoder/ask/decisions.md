@@ -283,3 +283,30 @@ artifacts — catch drift nobody predicted.
 - **Keep both, add an equality check** — forces the two to stay
   byte-identical, which may fight VitePress-specific needs.
 - **Leave it** — out of scope for this pass.
+
+## The commit gate blocks on a vuln in a gitignored agent install
+
+Every commit in this repo currently fails:
+
+    BLOCKING toml 4.1.1 has 2 known vulnerability(s), max severity 8.2 — upgrade it (security)
+
+Tracked down 2026-09-11: the package is
+`.kilocode/node_modules/toml@4.1.1` — a Kilo Code install sitting in the
+working tree. It is gitignored (`.gitignore:17`), untracked, and nothing
+in the project depends on it: `pnpm audit` is clean, `pnpm-lock.yaml`
+has no `toml` at all, and the only TOML the project ships is
+`github.com/pelletier/go-toml/v2 v2.4.3`. `.kilo/` carries its own copy
+at 4.3.0 which the scanner does not flag.
+
+So the finding is real about the file on disk and false about the
+repository — and it blocks every commit until something changes.
+
+Options:
+
+- Exclude gitignored paths (or `.kilo*/` specifically) from the gate's
+  dependency scan, so the gate reports on the repo and not on whatever
+  agents have installed locally.
+- Delete `.kilocode/` and `.kilo/` from the working tree (~118 MB of
+  untracked agent installs) and let them be recreated if needed.
+- Leave it and use `--no-verify` for this commit, accepting that the
+  next commit hits the same wall.

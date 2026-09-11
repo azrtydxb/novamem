@@ -1,6 +1,6 @@
 # Derived facts survive update and delete — and outrank the source that was corrected or removed
 
-Status: open
+Status: done 2026-09-11
 Created: 2026-09-10
 Epic: post-migration-gaps
 
@@ -69,8 +69,16 @@ new content to extract from, so it simply removes the derivatives.
 
 ## Acceptance criteria
 
-- [ ] updating a source entry leaves no derived row asserting the old value
-- [ ] updating re-derives from the new content, so derived structure is not lost
-- [ ] deleting a source entry leaves no derived row behind
-- [ ] a search after either verb cannot return the superseded content
-- [ ] conformance covers correct-then-search and delete-then-search, so neither can regress
+- [x] updating a source entry leaves no derived row asserting the old value
+- [x] updating re-derives from the new content, so derived structure is not lost
+- [x] deleting a source entry leaves no derived row behind
+- [x] a search after either verb cannot return the superseded content
+- [x] conformance covers correct-then-search and delete-then-search, so neither can regress
+
+## Outcome
+
+Shipped in #271 (6caee4d). One race was left deliberately uncovered and
+filed as #272: an extraction started by the original `remember` that is
+still in flight when the update lands inserts facts derived from the
+superseded text _after_ the re-extraction, and then clears the pending
+marker so the reconciler never retries.
