@@ -1423,11 +1423,18 @@
     },
     "name": "project_activate",
     "outputSchema": {
-      "description": "Over MCP this tool answers `{\"active\": \"\u003cproject id\u003e\"}` — a bare id string, where the HTTP route answers an object. The two were written separately; the difference is real and is recorded here rather than papered over.",
       "properties": {
         "active": {
-          "description": "The activated project id.",
-          "type": "string"
+          "nullable": true,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "type": "object"
         }
       },
       "required": [
@@ -1452,7 +1459,7 @@
     },
     "name": "project_deactivate",
     "outputSchema": {
-      "description": "Over MCP this tool answers `{\"active\": null}`, where the HTTP route answers 204 with no body.",
+      "description": "MCP has no status codes, so this tool answers `{\"active\": null}` where the HTTP route answers 204 with no body. Same result, said in a transport that has to say it in the body.",
       "properties": {
         "active": {
           "description": "Always null — the active project has been cleared.",

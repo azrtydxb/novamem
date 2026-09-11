@@ -2717,18 +2717,6 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 17
-        outputSchema:
-          type: object
-          description:
-            'Over MCP this tool answers `{"active": "<project id>"}` — a bare id string, where
-            the HTTP route answers an object. The two were written separately; the difference is real
-            and is recorded here rather than papered over.'
-          properties:
-            active:
-              type: string
-              description: The activated project id.
-          required:
-            - active
       operationId: putV1MeActiveProject
     delete:
       summary: Clear the caller's active project
@@ -2768,8 +2756,9 @@ paths:
         outputSchema:
           type: object
           description:
-            'Over MCP this tool answers `{"active": null}`, where the HTTP route answers 204
-            with no body.'
+            'MCP has no status codes, so this tool answers `{"active": null}` where the HTTP
+            route answers 204 with no body. Same result, said in a transport that has to say it in the
+            body.'
           properties:
             active:
               type: string

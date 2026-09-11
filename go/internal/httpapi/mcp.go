@@ -545,7 +545,12 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		if err := s.warm.SetActiveProject(ctx, userID, project); err != nil {
 			return nil, err
 		}
-		return map[string]any{"active": *project}, nil
+		// Same shape as PUT /v1/me/active-project, which answers
+		// {"active":{"id":…}}. This used to return the bare id string,
+		// so one logical operation had two result shapes depending on
+		// which door you came through — and the generated tool schema
+		// had to describe the difference instead of the operation.
+		return map[string]any{"active": map[string]any{"id": *project}}, nil
 
 	case "project_deactivate":
 		checkStrict(c)

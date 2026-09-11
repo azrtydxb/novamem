@@ -27,7 +27,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -49,6 +51,15 @@ const (
 	// named a script nobody could run. It is generated here now, from the
 	// same source as the surface it pins.
 	snapshotPath = "../conformance/reference/tools.snapshot.json"
+	// The agent contract, copied into the module for the same reason the
+	// OpenAPI document is: go:embed cannot reach outside it. This used to
+	// be a hand-run `rsync -a --delete` that a test caught you forgetting
+	// — a single source maintained by remembering to copy it.
+	skillSrc = "../skills/novamem"
+	skillDst = "internal/agentskill/skill"
+	// The installer's slash-command bundle, same story.
+	commandsSrc = "../integrations/claude-code/commands"
+	commandsDst = "internal/initcli/assets/commands"
 )
 
 // A tool definition is passed through whole rather than parsed into a
@@ -101,9 +112,11 @@ func main() {
 	writeJSON(toolDefsPath, tools)
 	writeSnapshot(snapshotPath, tools)
 	writeRoutes(routesGoPath, routes)
+	syncTree(skillSrc, skillDst)
+	syncTree(commandsSrc, commandsDst)
 
-	fmt.Printf("wrote %s, %s, %s, %s and %s (%d operations, %d tools)\n",
-		docJSONPath, embedJSONPath, toolDefsPath, snapshotPath, routesGoPath, len(routes), len(tools))
+	fmt.Printf("synced %s and %s; wrote %s, %s, %s, %s and %s (%d operations, %d tools)\n",
+		skillDst, commandsDst, docJSONPath, embedJSONPath, toolDefsPath, snapshotPath, routesGoPath, len(routes), len(tools))
 }
 
 type route struct {
@@ -356,6 +369,55 @@ func writeSnapshot(path string, tools []mcpTool) {
 	}
 	sort.Strings(names)
 	writeJSON(path, map[string]any{"names": names, "schemas": schemas})
+}
+
+// syncTree mirrors src onto dst exactly: every file copied, anything dst
+// has that src does not removed. The --delete half matters — without it a
+// skill file deleted upstream lives on inside the binary and keeps being
+// shipped to clients.
+func syncTree(src, dst string) {
+	want := map[string]bool{}
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		want[rel] = true
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		out := filepath.Join(dst, rel)
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			return err
+		}
+		if old, readErr := os.ReadFile(out); readErr == nil && bytes.Equal(old, body) {
+			return nil // unchanged; do not churn the mtime
+		}
+		return os.WriteFile(out, body, 0o644)
+	})
+	if err != nil {
+		fail("syncing %s to %s: %v", src, dst, err)
+	}
+	err = filepath.WalkDir(dst, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, relErr := filepath.Rel(dst, p)
+		if relErr != nil {
+			return relErr
+		}
+		if !want[rel] {
+			return os.Remove(p)
+		}
+		return nil
+	})
+	if err != nil {
+		fail("pruning %s: %v", dst, err)
+	}
 }
 
 func writeJSON(path string, v any) {
