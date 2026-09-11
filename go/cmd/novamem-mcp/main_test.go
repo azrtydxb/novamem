@@ -216,7 +216,9 @@ func TestStdoutIsAlwaysOneJSONMessagePerLine(t *testing.T) {
 
 	// A pretty-printed JSON-RPC response, as a proxy or a differently
 	// configured server might return it.
-	b.writeLine([]byte("{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"result\": {}\n}"))
+	if !b.writeMessage([]byte("{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"result\": {}\n}")) {
+		t.Fatal("a pretty-printed JSON-RPC response should still be forwarded")
+	}
 	got := out.String()
 	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
 		t.Fatalf("not exactly one framed line:\n%q", got)
@@ -228,8 +230,59 @@ func TestStdoutIsAlwaysOneJSONMessagePerLine(t *testing.T) {
 
 	// An HTML error page must never reach stdout at all.
 	out.Reset()
-	b.writeLine([]byte("<html>\n<body>502 Bad Gateway</body>\n</html>"))
+	if b.writeMessage([]byte("<html>\n<body>502 Bad Gateway</body>\n</html>")) {
+		t.Error("an HTML body was accepted as a message")
+	}
 	if out.Len() != 0 {
 		t.Errorf("non-JSON body reached stdout: %q", out.String())
+	}
+
+	// Valid JSON is not enough: novamem answers an unauthenticated
+	// request with {"error":"unauthorized"}, which parses cleanly and is
+	// still not an MCP message. Forwarding it would hand the host
+	// something it cannot correlate to any request.
+	out.Reset()
+	if b.writeMessage([]byte(`{"error":"unauthorized"}`)) {
+		t.Error("a non-JSON-RPC JSON body was accepted as a message")
+	}
+	if out.Len() != 0 {
+		t.Errorf("non-JSON-RPC body reached stdout: %q", out.String())
+	}
+}
+
+// A rejected upstream body must still produce an answer on the request
+// id. Dropping it silently leaves the host waiting forever — the exact
+// failure the shim's pre-flight check exists to prevent, reintroduced at
+// the other end of the pipe.
+func TestRejectedUpstreamBodyStillAnswersTheRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
+	}))
+	defer srv.Close()
+
+	var out bytes.Buffer
+	b := &bridge{endpoint: srv.URL, client: srv.Client(), out: &out}
+	b.relay([]byte(`{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{}}`))
+
+	var env struct {
+		ID    int `json:"id"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	line := strings.TrimSpace(out.String())
+	if line == "" {
+		t.Fatal("the host got nothing back — it waits on id 7 forever")
+	}
+	if err := json.Unmarshal([]byte(line), &env); err != nil {
+		t.Fatalf("answer is not JSON-RPC: %q", line)
+	}
+	if env.ID != 7 || env.Error == nil {
+		t.Fatalf("want a JSON-RPC error on id 7, got %q", line)
+	}
+	if !strings.Contains(env.Error.Message, "401") {
+		t.Errorf("error %q does not say what upstream did", env.Error.Message)
 	}
 }

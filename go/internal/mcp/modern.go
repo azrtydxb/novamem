@@ -64,6 +64,14 @@ type modernParams struct {
 	Arguments map[string]any             `json:"arguments"`
 	Cursor    *string                    `json:"cursor"`
 	Meta      map[string]json.RawMessage `json:"_meta"`
+
+	// decodeErr records a params body that did not fit this shape —
+	// `cursor: 123`, say. Discarding it meant such a request arrived
+	// with every field at its zero value and was served as though it had
+	// asked for nothing: a bad cursor became "no cursor" and the client
+	// got page one again, which is the very loop the cursor check exists
+	// to break.
+	decodeErr error
 }
 
 // declaredVersion is the protocol version this request declares, or ""
@@ -97,7 +105,7 @@ func classifyEra(headerVersion string, body []byte) (*rpcRequest, modernParams, 
 		return nil, p, false
 	}
 	if len(req.Params) > 0 {
-		_ = json.Unmarshal(req.Params, &p)
+		p.decodeErr = json.Unmarshal(req.Params, &p)
 	}
 	switch {
 	case req.Method == "initialize":
@@ -153,9 +161,25 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 	// requests, and a notification is not one — the spec says outright
 	// that header requirements for notification POSTs are undefined in
 	// this revision.
-	if _, ok := p.Meta[metaClientCapabilities]; !ok {
+	if p.decodeErr != nil {
+		writeModernErr(w, http.StatusBadRequest, req.ID, codeInvalidParams,
+			"Invalid params: "+p.decodeErr.Error(), nil)
+		return
+	}
+	raw, ok := p.Meta[metaClientCapabilities]
+	if !ok {
 		writeModernErr(w, http.StatusBadRequest, req.ID, codeInvalidParams,
 			"missing required _meta field "+metaClientCapabilities, nil)
+		return
+	}
+	// Present is not enough: the field is typed `ClientCapabilities`, so
+	// `null`, an array or a string is a malformed request, not a
+	// capabilities declaration. `_meta` holds raw JSON, so nothing else
+	// would have noticed.
+	var caps map[string]json.RawMessage
+	if json.Unmarshal(raw, &caps) != nil || caps == nil {
+		writeModernErr(w, http.StatusBadRequest, req.ID, codeInvalidParams,
+			"_meta field "+metaClientCapabilities+" must be an object", nil)
 		return
 	}
 

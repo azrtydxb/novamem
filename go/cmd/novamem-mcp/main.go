@@ -191,14 +191,41 @@ func (b *bridge) relay(msg []byte) {
 	}
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		for _, data := range sseData(body) {
-			b.writeLine(data)
+			if !b.writeMessage(data) {
+				b.writeErr(msg, fmt.Errorf("upstream sent a frame that is not a JSON-RPC message (HTTP %d)", resp.StatusCode))
+			}
 		}
 		return
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
+		// An empty body on an error status leaves the host waiting on an
+		// id forever unless we answer it ourselves.
+		if resp.StatusCode >= 400 {
+			b.writeErr(msg, fmt.Errorf("upstream returned HTTP %d with an empty body", resp.StatusCode))
+		}
 		return
 	}
-	b.writeLine(body)
+	if !b.writeMessage(body) {
+		// Valid JSON or not, it is not an MCP message: novamem's own
+		// `{"error":"unauthorized"}` 401 lands here, as does an HTML
+		// error page from a proxy. Either way the host gets an answer
+		// carrying the reason instead of silence on a request id.
+		b.writeErr(msg, fmt.Errorf("upstream returned HTTP %d with a body that is not a JSON-RPC message: %s",
+			resp.StatusCode, firstLine(body)))
+	}
+}
+
+// firstLine trims an upstream body to something safe to embed in a
+// JSON-RPC error message.
+func firstLine(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
 }
 
 // sseData extracts the data payload of each SSE event frame.
@@ -244,28 +271,46 @@ func (b *bridge) writeErr(msg []byte, cause error) {
 	b.writeLine(env)
 }
 
-// writeLine emits one framed stdio message.
+// writeMessage emits one framed stdio message, or reports why it could
+// not.
 //
 // The stdio transport is strict about what may appear here: "Messages
 // are delimited by newlines, and MUST NOT contain embedded newlines",
 // and "the server MUST NOT write anything to its stdout that is not a
 // valid MCP message". This bridge forwards bytes it did not produce —
 // from whatever NOVAMEM_BASE_URL points at, possibly through a proxy
-// that can interpose an HTML error page — so it compacts every payload
-// and refuses to emit anything that is not JSON. One multi-line body
-// written straight through would desynchronise the host's parser for
-// the rest of the process's life.
-func (b *bridge) writeLine(p []byte) {
+// that can interpose an HTML error page, or from novamem itself
+// answering a 401 with `{"error":"unauthorized"}`. Neither is an MCP
+// message. The first would desynchronise the host's parser for the rest
+// of the process's life; the second is syntactically fine JSON that
+// still means nothing to an MCP host.
+//
+// So the check is the JSON-RPC envelope, not merely JSON syntax: a
+// `jsonrpc` member is the cheapest thing that separates a message from
+// a body that happens to parse.
+func (b *bridge) writeMessage(p []byte) bool {
 	var buf bytes.Buffer
 	if err := json.Compact(&buf, p); err != nil {
-		// Not a JSON message: stderr is explicitly allowed for anything,
-		// stdout is not.
-		fmt.Fprintf(os.Stderr, "novamem-mcp: refusing to forward a non-JSON response body (%d bytes): %v\n", len(p), err)
-		return
+		return false
+	}
+	var probe struct {
+		JSONRPC string `json:"jsonrpc"`
+	}
+	if json.Unmarshal(buf.Bytes(), &probe) != nil || probe.JSONRPC == "" {
+		return false
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	_, _ = b.out.Write(append(buf.Bytes(), '\n'))
+	return true
+}
+
+// writeLine frames a message this bridge produced itself, which is a
+// JSON-RPC envelope by construction.
+func (b *bridge) writeLine(p []byte) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, _ = b.out.Write(append(p, '\n'))
 }
 
 // closeSession tells the server the session is done (DELETE /mcp), the

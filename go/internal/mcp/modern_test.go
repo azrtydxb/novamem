@@ -434,3 +434,56 @@ func TestModernToolsListRejectsAnUnknownCursor(t *testing.T) {
 		t.Error("nextCursor present on a single-page list")
 	}
 }
+
+// Two ways a malformed modern request used to slip past validation and
+// be served as though it had asked for something valid. Both were found
+// by review, not by the suite.
+func TestModernRejectsMalformedParams(t *testing.T) {
+	h := streamableHandler(testServer(t, Options{CookieSecret: testCookieSecret}), "user-a")
+	meta := `"_meta":{"` + metaProtocolVersion + `":"` + modernVer +
+		`","` + metaClientCapabilities + `":{}}`
+
+	errCode := func(t *testing.T, rec *httptest.ResponseRecorder) int {
+		t.Helper()
+		var env struct {
+			Error *struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatalf("body is not JSON-RPC: %s", rec.Body)
+		}
+		if env.Error == nil {
+			t.Fatalf("wanted an error, got: %s", rec.Body)
+		}
+		return env.Error.Code
+	}
+
+	// A cursor of the wrong type made the whole params decode fail. The
+	// error was discarded, so `cursor` read as absent and the client was
+	// served page one — the loop the cursor check exists to break.
+	t.Run("a cursor of the wrong type is not silently no cursor", func(t *testing.T) {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{` + meta + `,"cursor":123}}`
+		rec := modernPost(t, h, "tools/list", body, nil)
+		if got := errCode(t, rec); got != codeInvalidParams {
+			t.Errorf("code = %d, want %d", got, codeInvalidParams)
+		}
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", rec.Code)
+		}
+	})
+
+	// The field is typed ClientCapabilities. `_meta` holds raw JSON, so a
+	// presence check alone accepted null, arrays and strings.
+	for _, bad := range []string{`null`, `[]`, `"tools"`, `42`} {
+		t.Run("clientCapabilities is not an object: "+bad, func(t *testing.T) {
+			body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"` +
+				metaProtocolVersion + `":"` + modernVer + `","` +
+				metaClientCapabilities + `":` + bad + `}}}`
+			rec := modernPost(t, h, "tools/list", body, nil)
+			if got := errCode(t, rec); got != codeInvalidParams {
+				t.Errorf("code = %d, want %d", got, codeInvalidParams)
+			}
+		})
+	}
+}
