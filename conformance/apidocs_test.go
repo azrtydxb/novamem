@@ -16,9 +16,16 @@ package conformance
 // assertion here runs with no Authorization header at all.
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// bundleSrc is the renderer URL the page actually asks for. Reading it
+// out of the page rather than hardcoding it is the point: it proves the
+// page and the route agree, on a deployment whose renderer version this
+// suite does not know.
+var bundleSrc = regexp.MustCompile(`src="(api-docs/[^"]+/standalone\.js)"`)
 
 func TestAPIReference(t *testing.T) {
 	_ = Target(t)
@@ -45,9 +52,14 @@ func TestAPIReference(t *testing.T) {
 	t.Run("the renderer is served from the binary, not a CDN", func(t *testing.T) {
 		// novamem is deployed air-gapped; a reference page that renders
 		// blank without egress is worse than none.
-		r := API(t, "/api-docs/standalone.js", Opts{Token: NoAuth})
+		page := API(t, "/api-docs", Opts{Token: NoAuth}).Str()
+		m := bundleSrc.FindStringSubmatch(page)
+		if m == nil {
+			t.Fatalf("the page asks for no renderer bundle:\n%s", page)
+		}
+		r := API(t, "/"+m[1], Opts{Token: NoAuth})
 		if r.Status != 200 {
-			t.Fatalf("GET /api-docs/standalone.js: status = %d, want 200", r.Status)
+			t.Fatalf("GET /%s (the URL the page asks for): status = %d, want 200", m[1], r.Status)
 		}
 		// Go's transport requests and transparently decodes gzip, so what
 		// lands here is the decompressed bundle.
@@ -66,4 +78,15 @@ func TestAPIReference(t *testing.T) {
 			t.Fatal("/openapi.json has no paths — the reference would render empty")
 		}
 	})
+}
+
+// The bundle URL carries its version and is served `immutable`, which is
+// only safe while a version it does not have is a 404 rather than the
+// current renderer wearing the old version's URL.
+func TestAPIReferenceBundleVersionIsNotInterchangeable(t *testing.T) {
+	_ = Target(t)
+	r := API(t, "/api-docs/0.0.1-not-a-real-version/standalone.js", Opts{Token: NoAuth})
+	if r.Status != 404 {
+		t.Fatalf("status = %d, want 404 — an immutable URL must not serve a different bundle", r.Status)
+	}
 }

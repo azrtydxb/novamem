@@ -34,7 +34,10 @@ import (
 var apiReferenceJS []byte
 
 //go:embed apidocs/VERSION
-var apiReferenceVersion string
+var apiReferenceVersionRaw string
+
+// The file ends with a newline; the value goes into a URL and an ETag.
+var apiReferenceVersion = strings.TrimSpace(apiReferenceVersionRaw)
 
 // apiDocsCSP is the dashboard policy with one addition: Scalar injects
 // its stylesheet at runtime, so style-src needs 'unsafe-inline'. Scripts
@@ -52,7 +55,7 @@ const apiDocsPage = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>novamem API reference</title>
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" href="favicon.ico" />
   </head>
   <body>
     <div id="app"></div>
@@ -60,38 +63,74 @@ const apiDocsPage = `<!doctype html>
       id="api-reference"
       data-url="openapi.json"
       data-configuration='{"theme":"deepSpace","darkMode":true,"hideDownloadButton":false}'
-      src="api-docs/standalone.js"
+      src="api-docs/{{.Version}}/standalone.js"
     ></script>
   </body>
 </html>
 `
 
+// acceptsGzip reads Accept-Encoding properly. `strings.Contains` is the
+// tempting one-liner and it is wrong: "gzip;q=0" contains "gzip" and
+// means precisely the opposite — do not send me gzip. Same for a token
+// like "x-gzip-ish" in a header a proxy rewrote.
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		token, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(strings.TrimSpace(token), "gzip") &&
+			strings.TrimSpace(token) != "*" {
+			continue
+		}
+		q, ok := strings.CutPrefix(strings.TrimSpace(strings.ToLower(params)), "q=")
+		if ok && (q == "0" || strings.HasPrefix(q, "0.0") || q == "0.") {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
 func (s *server) registerAPIDocs(mux *routeMux) {
+	page := strings.ReplaceAll(apiDocsPage, "{{.Version}}", apiReferenceVersion)
+
 	mux.HandleFunc("GET /api-docs", func(w http.ResponseWriter, _ *http.Request) {
 		setHardeningHeaders(w)
 		w.Header().Set("Content-Security-Policy", apiDocsCSP)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(apiDocsPage))
+		_, _ = w.Write([]byte(page))
 	})
 
-	mux.HandleFunc("GET /api-docs/standalone.js", func(w http.ResponseWriter, r *http.Request) {
+	// The bundle's URL carries its version as its own path segment —
+	// net/http wildcards match whole segments, never part of a filename —
+	// so `immutable` is a promise this can keep: a new renderer is a new
+	// URL, and no cache anywhere has to be persuaded to let go of the old
+	// one.
+	mux.HandleFunc("GET /api-docs/{version}/standalone.js", func(w http.ResponseWriter, r *http.Request) {
 		setHardeningHeaders(w)
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		// Pinned bundle, so it can be cached hard; the version is in the
-		// ETag rather than the URL to keep the page's src stable.
-		w.Header().Set("ETag", `"scalar-`+strings.TrimSpace(apiReferenceVersion)+`"`)
-		w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
-		// A client that cannot take gzip cannot run a 3.7 MB ES2022
-		// bundle either, but say so rather than handing it bytes it did
-		// not ask for.
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		// Vary before any branch: every response from here depends on
+		// Accept-Encoding, including the 406, and a cache that stored the
+		// 406 without it would serve it to clients that do accept gzip.
+		w.Header().Set("Vary", "Accept-Encoding")
+
+		if r.PathValue("version") != apiReferenceVersion {
+			// An old page held in a browser tab asking for a bundle this
+			// binary no longer has. Send it back to the page rather than
+			// serving the wrong renderer under the wrong URL.
+			http.NotFound(w, r)
+			return
+		}
+		if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
+			// Deliberately uncached: the next client on the same URL may
+			// well accept gzip, and this refusal is about the request.
+			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "the API reference bundle is served gzip-encoded", http.StatusNotAcceptable)
 			return
 		}
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		w.Header().Set("Content-Encoding", "gzip")
-		w.Header().Set("Vary", "Accept-Encoding")
+		w.Header().Set("ETag", `"scalar-`+apiReferenceVersion+`"`)
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(apiReferenceJS)
 	})

@@ -26,14 +26,12 @@ const configuration = {
   theme: "deepSpace",
   darkMode: true,
   hideDownloadButton: false,
-  // The site documents the current release; a deployment documents
-  // itself. Name both so a reader knows which one they are reading.
-  servers: [
-    {
-      url: "https://novamem.example.com",
-      description: "your deployment — replace with its base URL",
-    },
-  ],
+  // No `servers` override. Naming a placeholder host here would aim the
+  // "Test Request" button at a domain reserved by RFC 2606 that answers
+  // nothing, so the first thing a reader tried would fail for a reason
+  // that has nothing to do with novamem. The spec's own servers stand,
+  // and a reader who wants to fire real requests has /api-docs on their
+  // deployment, which is pointed at itself.
 };
 </script>
 

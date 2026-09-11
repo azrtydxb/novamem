@@ -29,8 +29,8 @@ func TestAPIReferenceIsServedAnonymously(t *testing.T) {
 	if !strings.Contains(body, `data-url="openapi.json"`) {
 		t.Error("the page does not point at this deployment's openapi.json")
 	}
-	if !strings.Contains(body, `src="api-docs/standalone.js"`) {
-		t.Error("the page does not load the vendored bundle")
+	if !strings.Contains(body, `src="api-docs/`+apiReferenceVersion+`/standalone.js"`) {
+		t.Errorf("the page does not load the vendored bundle at its versioned URL:\n%s", body)
 	}
 }
 
@@ -39,13 +39,13 @@ func TestAPIReferenceIsServedAnonymously(t *testing.T) {
 // serving a few hundred bytes, the bundle went missing from the binary.
 func TestAPIReferenceBundleIsEmbeddedAndDecompresses(t *testing.T) {
 	h := newTestServer(t, "user", "")
-	req := httptest.NewRequest("GET", "/api-docs/standalone.js", nil)
+	req := httptest.NewRequest("GET", "/api-docs/"+apiReferenceVersion+"/standalone.js", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /api-docs/standalone.js = %d, want 200", rec.Code)
+		t.Fatalf("GET the bundle = %d, want 200", rec.Code)
 	}
 	if enc := rec.Header().Get("Content-Encoding"); enc != "gzip" {
 		t.Fatalf("Content-Encoding = %q, want gzip", enc)
@@ -85,5 +85,66 @@ func TestAPIReferenceCSPAllowsInlineStylesButNotInlineScripts(t *testing.T) {
 	}
 	if !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "script-src 'self' 'unsafe-inline'") {
 		t.Errorf("CSP %q must keep script-src at 'self'", csp)
+	}
+}
+
+// "gzip;q=0" contains the substring "gzip" and means the exact opposite.
+// The tempting strings.Contains check would hand such a client a
+// gzip-encoded body it told us it cannot read.
+func TestAcceptEncodingIsParsedNotSubstringMatched(t *testing.T) {
+	for _, tc := range []struct {
+		header string
+		want   bool
+	}{
+		{"gzip", true},
+		{"gzip, deflate, br", true},
+		{"deflate, gzip;q=1.0", true},
+		{"*", true},
+		{"gzip;q=0", false},
+		{"gzip;q=0.0", false},
+		{"deflate, gzip;q=0", false},
+		{"identity", false},
+		{"", false},
+	} {
+		if got := acceptsGzip(tc.header); got != tc.want {
+			t.Errorf("acceptsGzip(%q) = %v, want %v", tc.header, got, tc.want)
+		}
+	}
+}
+
+// A 406 is about this request, not this URL: the next client may well
+// accept gzip. Caching it — or omitting Vary on it — poisons the URL for
+// everyone behind the same shared cache.
+func TestBundleRefusalIsNotCacheable(t *testing.T) {
+	h := newTestServer(t, "user", "")
+	req := httptest.NewRequest("GET", "/api-docs/"+apiReferenceVersion+"/standalone.js", nil)
+	req.Header.Set("Accept-Encoding", "identity")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotAcceptable {
+		t.Fatalf("status = %d, want 406", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Errorf("Cache-Control = %q, want no-store on a 406", cc)
+	}
+	if v := rec.Header().Get("Vary"); !strings.Contains(v, "Accept-Encoding") {
+		t.Errorf("Vary = %q — a 406 without it poisons the URL in shared caches", v)
+	}
+}
+
+// A stale tab asking for a bundle this binary no longer carries must not
+// be handed the current one under the old version's URL — that is the
+// whole point of putting the version in the path and calling it
+// immutable.
+func TestAnOldBundleURLIs404NotTheNewBundle(t *testing.T) {
+	h := newTestServer(t, "user", "")
+	req := httptest.NewRequest("GET", "/api-docs/0.0.1-ancient/standalone.js", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }

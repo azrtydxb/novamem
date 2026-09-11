@@ -4,7 +4,7 @@ title: OpenAPI spec
 
 # OpenAPI spec
 
-novamem's HTTP surface is fully described by an OpenAPI 3.0 document, generated from the Go server's own route table.
+novamem's own HTTP surface is described by an OpenAPI 3.0 document, generated from the Go server's own route table. Better Auth's own routes under `/api/auth/*` are deliberately outside it — they are that library's contract, not novamem's, and documenting a copy of them here would be one more thing to drift.
 
 ## Browse interactively
 
