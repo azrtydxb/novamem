@@ -198,3 +198,38 @@ func TestSentinelLookalikeIsEncoded(t *testing.T) {
 		t.Fatalf("not sentinel-encoded: %q", got)
 	}
 }
+
+// stdio framing is one JSON-RPC message per line, and messages "MUST
+// NOT contain embedded newlines"; a server "MUST NOT write anything to
+// its stdout that is not a valid MCP message". This bridge forwards
+// bytes it did not produce — from whatever NOVAMEM_BASE_URL points at,
+// possibly through a proxy that can interpose an HTML error page — so
+// one multi-line body written straight through would desynchronise the
+// host's parser for the rest of the process's life.
+//
+// proved by: restored the raw `b.out.Write(append(p, '\n'))` — the
+// pretty-printed body goes out as five lines and the single-line
+// assertion fails.
+func TestStdoutIsAlwaysOneJSONMessagePerLine(t *testing.T) {
+	var out bytes.Buffer
+	b := &bridge{out: &out}
+
+	// A pretty-printed JSON-RPC response, as a proxy or a differently
+	// configured server might return it.
+	b.writeLine([]byte("{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"result\": {}\n}"))
+	got := out.String()
+	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("not exactly one framed line:\n%q", got)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(got)), &decoded); err != nil {
+		t.Fatalf("emitted line is not valid JSON: %v", err)
+	}
+
+	// An HTML error page must never reach stdout at all.
+	out.Reset()
+	b.writeLine([]byte("<html>\n<body>502 Bad Gateway</body>\n</html>"))
+	if out.Len() != 0 {
+		t.Errorf("non-JSON body reached stdout: %q", out.String())
+	}
+}

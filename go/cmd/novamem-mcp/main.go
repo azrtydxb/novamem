@@ -244,10 +244,28 @@ func (b *bridge) writeErr(msg []byte, cause error) {
 	b.writeLine(env)
 }
 
+// writeLine emits one framed stdio message.
+//
+// The stdio transport is strict about what may appear here: "Messages
+// are delimited by newlines, and MUST NOT contain embedded newlines",
+// and "the server MUST NOT write anything to its stdout that is not a
+// valid MCP message". This bridge forwards bytes it did not produce —
+// from whatever NOVAMEM_BASE_URL points at, possibly through a proxy
+// that can interpose an HTML error page — so it compacts every payload
+// and refuses to emit anything that is not JSON. One multi-line body
+// written straight through would desynchronise the host's parser for
+// the rest of the process's life.
 func (b *bridge) writeLine(p []byte) {
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, p); err != nil {
+		// Not a JSON message: stderr is explicitly allowed for anything,
+		// stdout is not.
+		fmt.Fprintf(os.Stderr, "novamem-mcp: refusing to forward a non-JSON response body (%d bytes): %v\n", len(p), err)
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	_, _ = b.out.Write(append(p, '\n'))
+	_, _ = b.out.Write(append(buf.Bytes(), '\n'))
 }
 
 // closeSession tells the server the session is done (DELETE /mcp), the
