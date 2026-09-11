@@ -20,8 +20,8 @@ The rest of this page is the manual path.
 {
   "mcpServers": {
     "novamem": {
-      "type": "sse",
-      "url": "http://localhost:7778/mcp/sse",
+      "type": "http",
+      "url": "http://localhost:7778/mcp",
       "headers": { "Authorization": "Bearer nm_..." }
     }
   }

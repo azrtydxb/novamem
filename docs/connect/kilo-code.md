@@ -20,8 +20,8 @@ Either drop a `.mcp.json` at the project root (Kilo honours the same file Claude
 {
   "mcpServers": {
     "novamem": {
-      "type": "sse",
-      "url": "http://localhost:7778/mcp/sse",
+      "type": "http",
+      "url": "http://localhost:7778/mcp",
       "headers": { "Authorization": "Bearer nm_..." }
     }
   }

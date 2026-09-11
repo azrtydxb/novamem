@@ -98,8 +98,8 @@ If your host isn't in the supported list, the CLI prints the JSON snippet you'd 
 {
   "mcpServers": {
     "novamem": {
-      "type": "sse",
-      "url": "https://your.novamem/mcp/sse",
+      "type": "http",
+      "url": "https://your.novamem/mcp",
       "headers": { "Authorization": "Bearer nm_..." }
     }
   }

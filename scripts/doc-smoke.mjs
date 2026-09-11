@@ -340,6 +340,12 @@ const NON_OPERATION_PATHS = new Map([
   ["/admin", "dashboard SPA shell"],
   ["/favicon.ico", "static asset"],
   ["/v1/rerank", "upstream LiteLLM gateway route, not served by novamem"],
+  // Removed in ADR 0007 — the HTTP+SSE transport from revision
+  // 2024-11-05, Deprecated by the MCP spec. Docs may still name these
+  // paths, but only to say they are gone and what replaced them; a doc
+  // that tells a reader to USE one is caught by the reviewer, not here.
+  ["/mcp/sse", "removed in ADR 0007; docs name it only to say so"],
+  ["/mcp/messages", "removed in ADR 0007; docs name it only to say so"],
 ]);
 
 // Docs that describe history or a past audit rather than today's server.
@@ -348,6 +354,9 @@ const HISTORICAL_DOCS = [
   /(^|\/)changelog\.md$/i,
   /(^|\/)adr\//i,
   /go-parity-audit\.md$/,
+  // Superpowers plans and specs record what was designed at a point in
+  // time. They are not instructions to follow and go stale on purpose.
+  /(^|\/)superpowers\//,
 ];
 
 async function checkEndpointsExist(file, lines) {

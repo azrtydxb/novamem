@@ -68,16 +68,21 @@ type McpInstallResult struct {
 // what the golden fixtures pin.
 func BuildMcpEntry(adapter *McpAdapter, p McpInstallParams) *Doc {
 	entry := NewDoc()
-	if adapter.TransportOrDefault() == "sse" {
+	if adapter.TransportOrDefault() == "http" {
 		headers := NewDoc()
 		headers.Set("Authorization", "Bearer "+p.Bearer)
-		entry.Set("type", "sse")
-		entry.Set("url", trimTrailingSlash(p.BaseURL)+"/mcp/sse")
+		// Streamable HTTP at /mcp. This used to write
+		// {type: "sse", url: …/mcp/sse}: the HTTP+SSE transport from
+		// revision 2024-11-05, Deprecated in the spec and now removed from
+		// the server (ADR 0007). Every install the old value produced
+		// pointed at a transport on its way out (#267).
+		entry.Set("type", "http")
+		entry.Set("url", trimTrailingSlash(p.BaseURL)+"/mcp")
 		entry.Set("headers", headers)
 		return entry
 	}
 
-	// stdio fallback for hosts that cannot speak SSE. Per ADR 0001 the
+	// stdio fallback for hosts that cannot speak remote MCP. Per ADR 0001 the
 	// command is the shipped binary rather than `npx -y
 	// @azrtydxb/novamem-mcp@<version>`, so there is no `args` key.
 	env := NewDoc()
@@ -108,6 +113,29 @@ func shimBinaryName() string {
 // the "next to the running binary" probe at a temp directory.
 var executablePath = os.Executable
 
+// ShimSource records how ResolveShimBinary arrived at a path.
+//
+// It exists because the pre-flight check *executes* the binary, and
+// running something is a bigger act of trust than naming it in a config
+// file. A path the operator typed, or one shipped in the same release
+// archive as this executable, is a deliberate choice. A PATH lookup is
+// whatever the environment happened to offer — and PATH is influenced by
+// anything that can write to a directory on it.
+type ShimSource int
+
+const (
+	// ShimFromFlag: --mcp-bin or NOVAMEM_MCP_BIN.
+	ShimFromFlag ShimSource = iota
+	// ShimBesideExecutable: found next to the running installer.
+	ShimBesideExecutable
+	// ShimFromPath: found via exec.LookPath. Named, never executed.
+	ShimFromPath
+)
+
+// Chosen reports whether the operator (or the release archive) picked
+// this binary, as opposed to PATH offering it.
+func (s ShimSource) Chosen() bool { return s == ShimFromFlag || s == ShimBesideExecutable }
+
 // ResolveShimBinary finds the `novamem-mcp` stdio shim to name in stdio
 // MCP entries, in this order:
 //
@@ -124,13 +152,13 @@ var executablePath = os.Executable
 // The returned path is absolute: host config files are read by processes
 // with a different working directory than ours, so a relative command
 // would resolve to nothing.
-func ResolveShimBinary(explicit string) (string, error) {
+func ResolveShimBinary(explicit string) (string, ShimSource, error) {
 	if explicit != "" {
 		abs, err := filepath.Abs(explicit)
 		if err != nil {
-			return "", fmt.Errorf("resolving novamem-mcp override %q: %w", explicit, err)
+			return "", ShimFromFlag, fmt.Errorf("resolving novamem-mcp override %q: %w", explicit, err)
 		}
-		return abs, nil
+		return abs, ShimFromFlag, nil
 	}
 
 	name := shimBinaryName()
@@ -140,7 +168,7 @@ func ResolveShimBinary(explicit string) (string, error) {
 		if isExecutableFile(candidate) {
 			abs, err := filepath.Abs(candidate)
 			if err == nil {
-				return abs, nil
+				return abs, ShimBesideExecutable, nil
 			}
 		}
 	}
@@ -148,11 +176,11 @@ func ResolveShimBinary(explicit string) (string, error) {
 	if found, err := exec.LookPath(name); err == nil {
 		abs, err := filepath.Abs(found)
 		if err == nil {
-			return abs, nil
+			return abs, ShimFromPath, nil
 		}
 	}
 
-	return "", fmt.Errorf(
+	return "", ShimFromPath, fmt.Errorf(
 		"cannot find the %s binary: pass an explicit path (--mcp-bin / NOVAMEM_MCP_BIN), "+
 			"keep it next to this executable as the release archive ships it, or put it on PATH",
 		name)
@@ -190,11 +218,19 @@ func isExecutableFile(path string) bool {
 // Its stdin is closed immediately: the shim is a stdio MCP server, so
 // EOF makes it exit cleanly. Surviving to the timeout means it reached
 // its read loop, which is equally healthy.
-func VerifyShimBinary(path string) error {
-	return verifyShimBinary(path, 10*time.Second)
+//
+// The binary is only RUN when the operator chose it — an explicit
+// --mcp-bin/NOVAMEM_MCP_BIN, or the shim shipped beside this executable.
+// A path that came from PATH is stat-checked and named, never executed:
+// PATH is influenced by anything that can write to a directory on it,
+// and executing whatever answers to a name there is a different act of
+// trust from writing that name into a config file. Owner decision,
+// 2026-09-11.
+func VerifyShimBinary(path string, src ShimSource) error {
+	return verifyShimBinary(path, src, 10*time.Second)
 }
 
-func verifyShimBinary(path string, timeout time.Duration) error {
+func verifyShimBinary(path string, src ShimSource, timeout time.Duration) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("novamem-mcp shim %q is not usable: %w", path, err)
@@ -206,9 +242,19 @@ func verifyShimBinary(path string, timeout time.Duration) error {
 		return fmt.Errorf("novamem-mcp shim %q is not executable (mode %s)", path, info.Mode().Perm())
 	}
 
+	if !src.Chosen() {
+		// Resolved from PATH. The checks above are all it gets.
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	// `path` reached here only via Chosen(): an operator-supplied flag or
+	// the sibling of this executable. It is stat-checked immediately above
+	// for existence, regular-file and the executable bit, there is no
+	// argument vector, and the environment is fixed.
+	// nosemgrep: dangerous-exec-command
 	cmd := exec.CommandContext(ctx, path)
 	// Bogus values are fine — we only check that it starts; any tool
 	// call would fail auth, which is expected in a smoke test.

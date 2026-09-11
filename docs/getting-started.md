@@ -60,8 +60,8 @@ Each guide has the exact JSON block. The short version, for any host that speaks
 {
   "mcpServers": {
     "novamem": {
-      "type": "sse",
-      "url": "http://localhost:7778/mcp/sse",
+      "type": "http",
+      "url": "http://localhost:7778/mcp",
       "headers": { "Authorization": "Bearer nm_..." }
     }
   }

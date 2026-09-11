@@ -1,6 +1,6 @@
 # Connect Claude Desktop
 
-Claude Desktop's MCP loader only accepts **stdio** entries (`command` + `args`). Writing `{"type": "sse", "url": …}` produces "not valid MCP server configurations and were skipped: novamem" on launch — even on the most recent builds. Use the stdio shim, which runs locally and bridges to the server's `/mcp/sse` endpoint with your bearer.
+Claude Desktop's MCP loader only accepts **stdio** entries (`command` + `args`). Writing a remote entry (`{"type": "http", "url": …}`) produces "not valid MCP server configurations and were skipped: novamem" on launch — even on the most recent builds. Use the stdio shim, which runs locally and bridges to the server's `/mcp` endpoint with your bearer.
 
 ## One-shot installer (recommended)
 

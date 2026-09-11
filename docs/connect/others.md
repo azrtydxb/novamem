@@ -23,8 +23,8 @@ For any host that supports remote MCP over SSE:
 {
   "mcpServers": {
     "novamem": {
-      "type": "sse",
-      "url": "http://localhost:7778/mcp/sse",
+      "type": "http",
+      "url": "http://localhost:7778/mcp",
       "headers": { "Authorization": "Bearer nm_..." }
     }
   }

@@ -109,13 +109,20 @@ func run(argv []string, stdin *os.File, stdout, stderr *os.File) int {
 	// because the shim never starts) is identical.
 	shim := ""
 	if needsShim(tools) {
-		shim, err = initcli.ResolveShimBinary(o.mcpBin)
+		var shimSrc initcli.ShimSource
+		shim, shimSrc, err = initcli.ResolveShimBinary(o.mcpBin)
 		if err != nil {
 			return fail(stderr, err)
 		}
 		if !o.skipShimCheck && !o.dryRun {
-			_, _ = fmt.Fprintf(stdout, "→ Pre-flight: verifying %s runs…\n", shim)
-			if err := initcli.VerifyShimBinary(shim); err != nil {
+			if shimSrc.Chosen() {
+				_, _ = fmt.Fprintf(stdout, "→ Pre-flight: verifying %s runs…\n", shim)
+			} else {
+				// Say it rather than silently doing less: the operator can
+				// pass --mcp-bin to get the full check on a PATH binary.
+				_, _ = fmt.Fprintf(stdout, "→ Pre-flight: checking %s (found on PATH — not executed; pass --mcp-bin to verify it runs)\n", shim)
+			}
+			if err := initcli.VerifyShimBinary(shim, shimSrc); err != nil {
 				_, _ = fmt.Fprintf(stderr, "✗ Pre-flight failed: %v\n  Refusing to write a stdio config that would silently fail.\n  Pass --skip-shim-check to override at your own risk.\n", err)
 				return 1
 			}

@@ -18,22 +18,26 @@ func testParams() McpInstallParams {
 	return McpInstallParams{BaseURL: testBaseURL, Bearer: testBearer, ShimBinary: testShim}
 }
 
-func TestBuildMcpEntrySSE(t *testing.T) {
-	// A trailing slash on the base URL must not produce "//mcp/sse".
+func TestBuildMcpEntryStreamableHTTP(t *testing.T) {
+	// The default remote entry is Streamable HTTP at /mcp (ADR 0007). It
+	// used to be {type: "sse", url: …/mcp/sse} — the transport the spec
+	// Deprecated and the server no longer serves (#267).
+	//
+	// A trailing slash on the base URL must not produce "//mcp".
 	got := StringifyJSON(BuildMcpEntry(&McpAdapter{Path: ".mcp.json"}, McpInstallParams{
 		BaseURL: testBaseURL + "/",
 		Bearer:  testBearer,
 	}))
 	want := `{
-  "type": "sse",
-  "url": "https://memory.example.com/mcp/sse",
+  "type": "http",
+  "url": "https://memory.example.com/mcp",
   "headers": {
     "Authorization": "Bearer nm_GOLDENFIXTURETOKEN"
   }
 }
 `
 	if got != want {
-		t.Fatalf("sse entry mismatch:\ngot:\n%s\nwant:\n%s", got, want)
+		t.Fatalf("remote entry mismatch:\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }
 
@@ -91,8 +95,9 @@ func TestInstallMcpNoAdapterIsSkipped(t *testing.T) {
 	}
 }
 
-// sseTool is a minimal project-scoped host writing .mcp.json over SSE.
-func sseTool() ToolEntry {
+// remoteTool is a minimal project-scoped host writing .mcp.json over the
+// remote (Streamable HTTP) transport.
+func remoteTool() ToolEntry {
 	return ToolEntry{
 		ID:    "fake-host",
 		Scope: ScopeProject,
@@ -120,7 +125,7 @@ func TestInstallMcpMergePreservesForeignKeysInOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := InstallMcp(sseTool(), Context{ProjectRoot: root}, testParams(), false)
+	res, err := InstallMcp(remoteTool(), Context{ProjectRoot: root}, testParams(), false)
 	if err != nil {
 		t.Fatalf("InstallMcp: %v", err)
 	}
@@ -139,8 +144,8 @@ func TestInstallMcpMergePreservesForeignKeysInOrder(t *testing.T) {
       "url": "https://other"
     },
     "novamem": {
-      "type": "sse",
-      "url": "https://memory.example.com/mcp/sse",
+      "type": "http",
+      "url": "https://memory.example.com/mcp",
       "headers": {
         "Authorization": "Bearer nm_GOLDENFIXTURETOKEN"
       }
@@ -156,7 +161,7 @@ func TestInstallMcpMergePreservesForeignKeysInOrder(t *testing.T) {
 
 func TestInstallMcpIsIdempotent(t *testing.T) {
 	root := t.TempDir()
-	tool := sseTool()
+	tool := remoteTool()
 	ctx := Context{ProjectRoot: root}
 
 	first, err := InstallMcp(tool, ctx, testParams(), false)
@@ -182,7 +187,7 @@ func TestInstallMcpIsIdempotent(t *testing.T) {
 
 func TestInstallMcpDryRunWritesNothing(t *testing.T) {
 	root := t.TempDir()
-	res, err := InstallMcp(sseTool(), Context{ProjectRoot: root}, testParams(), true)
+	res, err := InstallMcp(remoteTool(), Context{ProjectRoot: root}, testParams(), true)
 	if err != nil {
 		t.Fatalf("InstallMcp: %v", err)
 	}
@@ -264,40 +269,50 @@ func TestResolveShimBinaryPrecedence(t *testing.T) {
 
 	// 1. An explicit override wins over both.
 	explicit := filepath.Join(t.TempDir(), "custom-shim")
-	got, err := ResolveShimBinary(explicit)
+	got, src, err := ResolveShimBinary(explicit)
 	if err != nil {
 		t.Fatalf("explicit: %v", err)
 	}
 	if got != explicit {
 		t.Errorf("explicit override = %q, want %q", got, explicit)
 	}
+	if src != ShimFromFlag || !src.Chosen() {
+		t.Errorf("explicit override source = %v, want ShimFromFlag (chosen)", src)
+	}
 
 	// 2. With no override, the sibling of the running binary wins over PATH.
-	got, err = ResolveShimBinary("")
+	got, src, err = ResolveShimBinary("")
 	if err != nil {
 		t.Fatalf("sibling: %v", err)
 	}
 	if got != sibling {
 		t.Errorf("sibling lookup = %q, want %q", got, sibling)
 	}
+	if src != ShimBesideExecutable || !src.Chosen() {
+		t.Errorf("sibling source = %v, want ShimBesideExecutable (chosen)", src)
+	}
 
 	// 3. With no sibling, PATH is the last resort.
 	if err := os.Remove(sibling); err != nil {
 		t.Fatal(err)
 	}
-	got, err = ResolveShimBinary("")
+	got, src, err = ResolveShimBinary("")
 	if err != nil {
 		t.Fatalf("PATH: %v", err)
 	}
 	if got != onPath {
 		t.Errorf("PATH lookup = %q, want %q", got, onPath)
 	}
+	// The distinction that matters: a PATH result is named, never run.
+	if src != ShimFromPath || src.Chosen() {
+		t.Errorf("PATH source = %v, want ShimFromPath (not chosen)", src)
+	}
 
 	// 4. Nothing anywhere is a clear error naming all three routes.
 	if err := os.Remove(onPath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveShimBinary(""); err == nil {
+	if _, _, err := ResolveShimBinary(""); err == nil {
 		t.Fatal("expected an error when the shim is nowhere to be found")
 	} else {
 		for _, frag := range []string{"NOVAMEM_MCP_BIN", "next to this executable", "PATH"} {
@@ -323,7 +338,7 @@ func TestResolveShimBinaryIgnoresNonExecutableSibling(t *testing.T) {
 	executablePath = func() (string, error) { return filepath.Join(sibDir, "novamem-init"), nil }
 	t.Setenv("PATH", t.TempDir())
 
-	if got, err := ResolveShimBinary(""); err == nil {
+	if got, _, err := ResolveShimBinary(""); err == nil {
 		t.Fatalf("selected a non-executable sibling: %q", got)
 	}
 }
@@ -335,7 +350,7 @@ func TestVerifyShimBinary(t *testing.T) {
 	dir := t.TempDir()
 
 	missing := filepath.Join(dir, "absent")
-	if err := VerifyShimBinary(missing); err == nil {
+	if err := VerifyShimBinary(missing, ShimFromFlag); err == nil {
 		t.Error("a missing shim should not verify")
 	}
 
@@ -343,21 +358,21 @@ func TestVerifyShimBinary(t *testing.T) {
 	if err := os.WriteFile(dud, []byte("#!/bin/sh\nexit 0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyShimBinary(dud); err == nil {
+	if err := VerifyShimBinary(dud, ShimFromFlag); err == nil {
 		t.Error("a non-executable shim should not verify")
 	}
 
 	// A script that exits cleanly on stdin EOF — the healthy shape.
 	ok := filepath.Join(dir, "ok")
 	writeScript(t, ok, "#!/bin/sh\ncat >/dev/null\nexit 0\n")
-	if err := VerifyShimBinary(ok); err != nil {
+	if err := VerifyShimBinary(ok, ShimFromFlag); err != nil {
 		t.Errorf("a clean-exiting shim should verify: %v", err)
 	}
 
 	// A script that crashes on startup — the bug class this guards.
 	crash := filepath.Join(dir, "crash")
 	writeScript(t, crash, "#!/bin/sh\necho 'boom: cannot load module' >&2\nexit 3\n")
-	err := VerifyShimBinary(crash)
+	err := VerifyShimBinary(crash, ShimFromFlag)
 	if err == nil {
 		t.Fatal("a crashing shim should not verify")
 	}
@@ -385,4 +400,40 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// A binary that only PATH vouches for is named in the config but never
+// run. PATH is influenced by anything that can write to a directory on
+// it, and executing whatever answers to a name there is a different act
+// of trust from writing that name into a config file.
+//
+// proved by: dropped the src.Chosen() guard — the crashing script runs,
+// the error surfaces its stderr, and the test fails on the nil check.
+func TestVerifyShimBinaryDoesNotExecuteAPathResolvedBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fakes are POSIX-only")
+	}
+	dir := t.TempDir()
+
+	// A script that would fail loudly IF it were executed, and proves it
+	// ran by leaving a file behind.
+	marker := filepath.Join(dir, "it-ran")
+	crash := filepath.Join(dir, "crash")
+	writeScript(t, crash, "#!/bin/sh\ntouch "+marker+"\necho 'boom' >&2\nexit 3\n")
+
+	if err := VerifyShimBinary(crash, ShimFromPath); err != nil {
+		t.Errorf("a PATH-resolved binary should pass the stat checks without running: %v", err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the binary was executed — a PATH-resolved shim must only be stat-checked")
+	}
+
+	// The same binary, chosen deliberately, is still executed and still
+	// caught: narrowing the trust boundary must not blunt the check.
+	if err := VerifyShimBinary(crash, ShimFromFlag); err == nil {
+		t.Error("an operator-chosen crashing shim should still fail verification")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Error("an operator-chosen shim should have been executed")
+	}
 }

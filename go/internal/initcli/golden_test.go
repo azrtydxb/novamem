@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -51,9 +52,14 @@ func priorConfig(rootKey string) string {
 	return StringifyJSON(doc)
 }
 
-// expectedJSON takes the TypeScript fixture and applies only the
-// ADR-0001 substitution, failing loudly if a stdio fixture no longer
-// looks like the npx form it is supposed to replace.
+// expectedJSON takes the TypeScript fixture and applies the two
+// documented substitutions, failing loudly if a fixture no longer looks
+// like the form it is supposed to replace.
+//
+// The fixtures are frozen: they record what the retired TypeScript
+// installer wrote and cannot be regenerated. So a deliberate divergence
+// is applied here, to the expectation, rather than by rewriting history
+// in testdata/.
 func expectedJSON(t *testing.T, tool ToolEntry, fixture string) string {
 	t.Helper()
 	doc := ParseJSONLoose(fixture)
@@ -62,8 +68,24 @@ func expectedJSON(t *testing.T, tool ToolEntry, fixture string) string {
 		t.Fatalf("%s: fixture has no %s.%s entry", tool.ID,
 			tool.Mcp.RootKeyOrDefault(), tool.Mcp.ServerKeyOrDefault())
 	}
+	if tool.Mcp.TransportOrDefault() == "http" {
+		// ADR 0007: the fixtures write {type: "sse", url: …/mcp/sse}, the
+		// HTTP+SSE transport from revision 2024-11-05. The spec Deprecated
+		// it and the server no longer serves it, so a remote entry is now
+		// Streamable HTTP at /mcp (#267).
+		if typ, _ := entry.Get("type"); typ != "sse" {
+			t.Fatalf("%s: remote fixture type is %v, expected the sse form ADR 0007 replaces", tool.ID, typ)
+		}
+		url, _ := entry.Get("url")
+		if s, _ := url.(string); !strings.HasSuffix(s, "/mcp/sse") {
+			t.Fatalf("%s: remote fixture url is %v, expected the /mcp/sse form ADR 0007 replaces", tool.ID, url)
+		}
+		entry.Set("type", "http") // Set keeps the key's original position
+		entry.Set("url", goldenBaseURL+"/mcp")
+		return StringifyJSON(doc)
+	}
 	if tool.Mcp.TransportOrDefault() != "stdio" {
-		return StringifyJSON(doc) // sse entries are unchanged by the ADR
+		return StringifyJSON(doc)
 	}
 	if cmd, _ := entry.Get("command"); cmd != "npx" {
 		t.Fatalf("%s: stdio fixture command is %v, expected the npx form the ADR replaces", tool.ID, cmd)

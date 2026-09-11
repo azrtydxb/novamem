@@ -86,7 +86,7 @@ A Better Auth session — HttpOnly cookie + DB-backed token. Carries the user id
 
 ## SSE
 
-Server-Sent Events. The transport for the live MCP path (`/mcp/sse`). One long-lived connection from the client; server pushes JSON-RPC frames. Keepalive frames (`: ping`) every 25 s prevent client body-read timeout.
+Server-Sent Events. Used by the `GET /mcp` stream, which the server holds open with `: ping` keepalive frames every 25 s so a client body-read timeout does not close it. The standalone HTTP+SSE _transport_ (`/mcp/sse` + `/mcp/messages`) was a different thing, and was removed in ADR 0007.
 
 ## stdio shim
 

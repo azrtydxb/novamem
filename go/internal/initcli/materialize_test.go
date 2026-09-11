@@ -51,14 +51,16 @@ func TestMaterializeAssetsStagesBothTrees(t *testing.T) {
 // visible edit to this table rather than a silent change in what every
 // new install connects to.
 //
-// NOTE: these currently say "sse", which is the deprecated HTTP+SSE
-// transport — see issue #267. This test pins today's behaviour so that
-// fixing #267 is a deliberate, reviewed change to both places.
+// They said "sse" until ADR 0007 — the HTTP+SSE transport from revision
+// 2024-11-05, which the spec Deprecated and the server no longer serves.
+// Every install the old value produced pointed at a transport on its way
+// out (#267). "sse" is no longer an accepted value below, so it cannot
+// come back by copy-paste.
 func TestMcpTransportPerTarget(t *testing.T) {
 	want := map[string]string{
-		"claude-code": "sse",
-		"cursor":      "sse",
-		"kilocode":    "sse",
+		"claude-code": "http",
+		"cursor":      "http",
+		"kilocode":    "http",
 	}
 	got := map[string]string{}
 	for _, tool := range Tools {
@@ -75,7 +77,7 @@ func TestMcpTransportPerTarget(t *testing.T) {
 	}
 	for id, transport := range got {
 		switch transport {
-		case "sse", "http", "stdio":
+		case "http", "stdio":
 		default:
 			t.Errorf("%s has unknown MCP transport %q", id, transport)
 		}

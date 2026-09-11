@@ -98,7 +98,10 @@ func (a *McpAdapter) TransportOrDefault() string {
 	if a.Transport != "" {
 		return a.Transport
 	}
-	return "sse"
+	// Streamable HTTP is the default a host gets unless it declares
+	// otherwise. The default used to be "sse" — the transport the spec
+	// Deprecated and ADR 0007 removed.
+	return "http"
 }
 
 func (a *McpAdapter) StdioEnvKeyOrDefault() string {
