@@ -222,8 +222,14 @@ export function MetricsPage() {
         }
         subtitle={
           isAdmin
-            ? "Operational counters, gauges, and rates. In-memory; resets on restart."
-            : "Activity for you only. In-memory; resets on restart."
+            ? metricsInstanceNote(
+                "Operational counters, gauges, and rates. Summed across every replica and persisted.",
+                snap
+              )
+            : metricsInstanceNote(
+                "Activity for you only. Summed across every replica and persisted.",
+                snap
+              )
         }
         actions={
           <>
@@ -754,4 +760,20 @@ function PersistentThroughputChart() {
       </CardContent>
     </Card>
   );
+}
+
+/** Names the replica that answered.
+ *
+ *  The numbers themselves are now deployment-wide — counters are summed
+ *  in Postgres, the rate reads the same per-minute buckets the 24h chart
+ *  does, and last-decay comes from decay_runs. What remains per-process
+ *  is uptime, and knowing which pod served a read is still worth having
+ *  when one of them is misbehaving.
+ */
+function metricsInstanceNote(
+  base: string,
+  snap: AnySnapshot | undefined
+): string {
+  const instance = snap?.data.instance;
+  return instance ? `${base} Served by ${instance}.` : base;
 }

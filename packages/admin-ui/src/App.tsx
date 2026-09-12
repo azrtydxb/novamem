@@ -81,8 +81,13 @@ function Authed() {
 
   if (!user) return <SignIn />;
 
+  // A server-forced change would still short-circuit the shell here, but
+  // nothing sets this today: SignIn always calls login(user, false) and
+  // the server emits no pending-password-change signal. Kept because the
+  // forced path is the one that must bypass navigation; the voluntary
+  // route below is what makes the page reachable at all.
   if (needsPasswordChange) {
-    return <ChangePasswordPage onDone={() => setTab("onboarding")} />;
+    return <ChangePasswordPage forced onDone={() => setTab("onboarding")} />;
   }
 
   return (
@@ -101,6 +106,9 @@ function Authed() {
             onSkip={() => setTab("metrics")}
             onContinue={() => setTab("tokens")}
           />
+        )}
+        {tab === "password" && (
+          <ChangePasswordPage onDone={() => setTab("metrics")} />
         )}
       </Suspense>
     </AppShell>

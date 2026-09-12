@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { api, SearchResult } from "../lib/api";
 import { useActiveProject } from "../lib/active-project";
 import { Card, CardContent } from "../components/Card";
@@ -30,6 +30,7 @@ export function BrowsePage() {
   const isSearching = debounced.trim().length > 0;
   const queryClient = useQueryClient();
   const toast = useToast();
+  const [confirmForget, setConfirmForget] = useState<SearchResult | null>(null);
   const { activeProjectId, activeProjectName } = useActiveProject();
   // Active-project mode: union the user-global view with the selected
   // project so Browse shows both side-by-side. The query key includes
@@ -104,6 +105,51 @@ export function BrowsePage() {
     onError: (err) => toast.error("Failed to remember", (err as Error).message),
   });
 
+  // Deleting a memory was API- and MCP-only: /v1/forget has always
+  // existed, and the dashboard that shows every entry had no way to
+  // remove one. A reader could see a memory they wanted gone and had to
+  // leave the UI to do it.
+  const forget = useMutation({
+    mutationFn: async (entry: SearchResult) => {
+      // The row's OWN project, not the active scope. Browse shows a
+      // union of user-global and active-project entries, so deleting a
+      // project-scoped row while globally scoped would look up an id the
+      // server cannot see and answer `deleted: false` — a success toast
+      // over a memory that is still there.
+      const r = await api<{ deleted: boolean; coldDeleteOk?: boolean }>(
+        "POST",
+        "/v1/forget",
+        { id: entry.id, ...(entry.project ? { project: entry.project } : {}) }
+      );
+      if (!r.ok) throw new Error(r.error ?? `forget ${r.status}`);
+      return r.body;
+    },
+    onSuccess: (body) => {
+      // `deleted: false` is a 200: the row was not found in the caller's
+      // scope. Reporting that as success is how a memory appears to be
+      // deleted and comes back on the next refresh.
+      if (!body?.deleted) {
+        toast.error(
+          "Nothing was deleted",
+          "The entry was not found in your scope — it may already be gone."
+        );
+      } else if (body.coldDeleteOk === false) {
+        // The warm row is gone but the vector or a derived fact survived.
+        // Saying "all gone" here makes a partial cleanup look complete.
+        toast.success(
+          "Memory forgotten, vector left behind",
+          "The entry is deleted; its cold-tier copy could not be removed and will be reaped."
+        );
+      } else {
+        toast.success("Memory forgotten", "The entry and its vector are gone.");
+      }
+      setConfirmForget(null);
+      void queryClient.invalidateQueries({ queryKey: ["browse-recent"] });
+      void queryClient.invalidateQueries({ queryKey: ["browse-search"] });
+    },
+    onError: (err) => toast.error("Failed to forget", (err as Error).message),
+  });
+
   return (
     <>
       <PageHeader
@@ -158,11 +204,50 @@ export function BrowsePage() {
             />
           ) : (
             results.map((r, i, arr) => (
-              <ResultRow key={r.id} r={r} last={i === arr.length - 1} />
+              <ResultRow
+                key={r.id}
+                r={r}
+                last={i === arr.length - 1}
+                onForget={() => setConfirmForget(r)}
+              />
             ))
           )}
         </Card>
       </div>
+
+      <Modal
+        open={confirmForget !== null}
+        onClose={() => setConfirmForget(null)}
+        title="Forget this memory?"
+        description="The entry, its vector and its graph edges are removed. This cannot be undone."
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmForget(null)}
+              disabled={forget.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={forget.isPending}
+              onClick={() => {
+                if (confirmForget) forget.mutate(confirmForget);
+              }}
+            >
+              Forget
+            </Button>
+          </div>
+        }
+      >
+        <div className="text-[13px] text-ink leading-relaxed">
+          {confirmForget?.content}
+        </div>
+        <div className="mt-2 font-mono text-[10px] text-dim">
+          {confirmForget?.id}
+        </div>
+      </Modal>
 
       <Modal
         open={composing}
@@ -202,13 +287,21 @@ export function BrowsePage() {
   );
 }
 
-function ResultRow({ r, last }: { r: SearchResult; last: boolean }) {
+function ResultRow({
+  r,
+  last,
+  onForget,
+}: {
+  r: SearchResult;
+  last: boolean;
+  onForget: () => void;
+}) {
   return (
     <div
       className={`grid items-center gap-3.5 px-[18px] py-3.5 ${
         last ? "" : "border-b border-rule-soft"
       }`}
-      style={{ gridTemplateColumns: "auto 1fr 60px 60px" }}
+      style={{ gridTemplateColumns: "auto 1fr 60px 60px auto" }}
     >
       <Pill tone={r.tier === "warm" ? "warm" : "cold"}>{r.tier}</Pill>
       <div>
@@ -239,6 +332,14 @@ function ResultRow({ r, last }: { r: SearchResult; last: boolean }) {
         </div>
         <div className="font-mono text-[9px] text-faint">signals</div>
       </div>
+      <button
+        onClick={onForget}
+        aria-label={`Forget memory ${r.id.slice(0, 8)}`}
+        title="Forget this memory"
+        className="text-faint hover:text-danger transition-colors p-1 rounded"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

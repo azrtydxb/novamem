@@ -119,7 +119,7 @@ func orderedMetrics(m map[string]any) obj {
 	orderedIn(m, "gauges", "warm_entries", "cold_entries", "graph_edges", "orphans_pending",
 		"pending_embeddings", "pending_facts", "last_decay_run_iso")
 	orderedIn(m, "rates", "queries_per_sec_60s", "remembers_per_sec_60s")
-	return ordered(m, "userId", "counters", "gauges", "rates", "uptime_ms", "tokens", "_hasMyTokens")
+	return ordered(m, "userId", "counters", "gauges", "rates", "uptime_ms", "instance", "tokens", "_hasMyTokens")
 }
 
 func (s *server) handleMeMetricsHistory(w http.ResponseWriter, r *http.Request) {

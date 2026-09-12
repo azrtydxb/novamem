@@ -14,7 +14,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -110,16 +112,48 @@ type Collector struct {
 		rememberErrors int64
 	}
 	lastDecayAt time.Time
+	// flushed is the value each counter had at the last successful flush
+	// to metrics_counters. The delta since is what this replica still
+	// owes the shared total.
+	flushed map[string]int64
 
 	gauges     GaugeSources
 	userGauges UserGaugeSources
+	shared     SharedSources
+}
+
+// SharedSources read the cross-replica values out of Postgres.
+//
+// The collector's own counters are per-process and in-memory, so on a
+// multi-replica deployment the dashboard reported whichever pod answered
+// — six reads of a three-replica cluster returned decay_runs_total of
+// 1/1/1/0/0/0. These make the snapshot a deployment-wide view.
+//
+// All three are optional: a Collector with none bound falls back to its
+// local numbers, which is what the unit tests and a single-process run
+// want.
+type SharedSources struct {
+	// Counters are the flushed lifetime totals from every replica.
+	Counters func(context.Context) (map[string]int64, error)
+	// LastDecayRun is max(finished_at) from decay_runs — the true last
+	// sweep, not the last one this process happened to perform.
+	LastDecayRun func(context.Context) (*time.Time, error)
+	// Throughput sums the per-minute buckets every replica flushes, so
+	// the rate tiles describe the deployment rather than one pod.
+	Throughput func(ctx context.Context, since time.Time) (queries, remembers int64, err error)
 }
 
 func New() *Collector {
-	return &Collector{startedAt: time.Now(), users: map[string]*slot{}, tokens: map[string]*slot{}}
+	return &Collector{
+		startedAt: time.Now(),
+		users:     map[string]*slot{},
+		tokens:    map[string]*slot{},
+		flushed:   map[string]int64{},
+	}
 }
 
 func (c *Collector) BindGauges(g GaugeSources)         { c.gauges = g }
+func (c *Collector) BindShared(s SharedSources)        { c.shared = s }
 func (c *Collector) BindUserGauges(g UserGaugeSources) { c.userGauges = g }
 
 // Record classifies one successful request by route path — the same
@@ -205,6 +239,17 @@ func (c *Collector) RecordOrphansReaped(n int) {
 }
 func (c *Collector) RecordSearchError()   { c.addGlobal(&c.global.searchErrors, 1) }
 func (c *Collector) RecordRememberError() { c.addGlobal(&c.global.rememberErrors, 1) }
+
+// instanceID names the process serving a metrics read. The hostname is
+// the pod name under Kubernetes, which is what an operator greps for;
+// it falls back to the pid so a bare-metal or container run is still
+// distinguishable from its siblings.
+var instanceID = func() string {
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return fmt.Sprintf("pid-%d", os.Getpid())
+}()
 
 func (c *Collector) MarkDecayRun(at time.Time) {
 	c.mu.Lock()
@@ -298,6 +343,14 @@ func (c *Collector) SnapshotForUser(userID string, tokens []TokenMetrics, warmEn
 		},
 		"tokens":    tokens,
 		"uptime_ms": now.Sub(c.startedAt).Milliseconds(),
+		// Which process answered. These counters are per-replica and
+		// in-memory, so with more than one replica behind a load balancer
+		// two consecutive reads legitimately disagree — a decay run shows
+		// on the pod that performed it and nowhere else. Without this a
+		// dashboard reports "never" for a sweep that ran a minute ago on
+		// a sibling, and an operator has no way to tell that apart from a
+		// broken sweep.
+		"instance": instanceID,
 	}
 }
 
@@ -307,23 +360,22 @@ func (c *Collector) SnapshotForUser(userID string, tokens []TokenMetrics, warmEn
 func (c *Collector) Snapshot(ctx context.Context) map[string]any {
 	now := time.Now()
 	c.mu.Lock()
-	agg := Counters{}
+	// The rings drive the local rate; the counters come from
+	// localCounters, which aggregates the same slots. Pruning happens
+	// here because it needs the write lock anyway.
 	var qCount, rCount int
 	for _, s := range c.users {
-		agg.Queries += s.counters.Queries
-		agg.QueriesZeroHit += s.counters.QueriesZeroHit
-		agg.Remembers += s.counters.Remembers
-		agg.Forgets += s.counters.Forgets
-		agg.HitsWarm += s.counters.HitsWarm
-		agg.HitsCold += s.counters.HitsCold
-		agg.HitsGraph += s.counters.HitsGraph
 		s.queries = prune(s.queries, now)
 		s.remember = prune(s.remember, now)
 		qCount += len(s.queries)
 		rCount += len(s.remember)
 	}
-	g := c.global
 	lastDecay := c.lastDecayAt
+	local := c.localCounters()
+	flushedAt := make(map[string]int64, len(c.flushed))
+	for k, v := range c.flushed {
+		flushedAt[k] = v
+	}
 	c.mu.Unlock()
 
 	read := func(f func(context.Context) (int, error)) *int {
@@ -342,21 +394,62 @@ func (c *Collector) Snapshot(ctx context.Context) map[string]any {
 		lastDecayISO = &s
 	}
 	sec := rateWindow.Seconds()
+
+	// Counters: the shared totals plus whatever this replica has counted
+	// since its last flush. The DB holds every replica's flushed work
+	// including ours, so adding our own pending delta cannot double
+	// count — it only closes the up-to-a-minute gap that would otherwise
+	// make an action you just performed appear to do nothing.
+	counters := local
+	if c.shared.Counters != nil {
+		if shared, err := c.shared.Counters(ctx); err == nil {
+			counters = map[string]int64{}
+			for name, v := range local {
+				counters[name] = shared[name] + (v - flushedAt[name])
+			}
+		}
+	}
+
+	// Rates: metrics_samples is already summed across replicas for the
+	// 24h chart, so reading the last completed minute from it makes the
+	// tile a deployment number. Falls back to this process's rolling
+	// window when the read fails or nothing is bound.
+	qps, rps := float64(qCount)/sec, float64(rCount)/sec
+	if c.shared.Throughput != nil {
+		if q, r, err := c.shared.Throughput(ctx, now.Add(-rateWindow)); err == nil {
+			qps, rps = float64(q)/sec, float64(r)/sec
+		}
+	}
+
+	// Last decay: the true most recent sweep, not the last one this pod
+	// performed. An in-memory value reported "never" on every replica
+	// that had not personally run one.
+	if c.shared.LastDecayRun != nil {
+		if at, err := c.shared.LastDecayRun(ctx); err == nil {
+			if at == nil {
+				lastDecayISO = nil
+			} else {
+				s := at.UTC().Format("2006-01-02T15:04:05.000Z")
+				lastDecayISO = &s
+			}
+		}
+	}
+
 	return map[string]any{
 		"counters": map[string]any{
-			"queries_total":         agg.Queries,
-			"queries_zero_hit":      agg.QueriesZeroHit,
-			"remembers_total":       agg.Remembers,
-			"forgets_total":         agg.Forgets,
-			"hits_warm_total":       agg.HitsWarm,
-			"hits_cold_total":       agg.HitsCold,
-			"hits_graph_total":      agg.HitsGraph,
-			"promotions_total":      g.promotions,
-			"demotions_total":       g.demotions,
-			"decay_runs_total":      g.decayRuns,
-			"orphans_reaped_total":  g.orphansReaped,
-			"search_errors_total":   g.searchErrors,
-			"remember_errors_total": g.rememberErrors,
+			"queries_total":         counters["queries_total"],
+			"queries_zero_hit":      counters["queries_zero_hit"],
+			"remembers_total":       counters["remembers_total"],
+			"forgets_total":         counters["forgets_total"],
+			"hits_warm_total":       counters["hits_warm_total"],
+			"hits_cold_total":       counters["hits_cold_total"],
+			"hits_graph_total":      counters["hits_graph_total"],
+			"promotions_total":      counters["promotions_total"],
+			"demotions_total":       counters["demotions_total"],
+			"decay_runs_total":      counters["decay_runs_total"],
+			"orphans_reaped_total":  counters["orphans_reaped_total"],
+			"search_errors_total":   counters["search_errors_total"],
+			"remember_errors_total": counters["remember_errors_total"],
 		},
 		"gauges": map[string]any{
 			"warm_entries":       read(c.gauges.WarmEntries),
@@ -368,10 +461,14 @@ func (c *Collector) Snapshot(ctx context.Context) map[string]any {
 			"last_decay_run_iso": lastDecayISO,
 		},
 		"rates": map[string]any{
-			"queries_per_sec_60s":   float64(qCount) / sec,
-			"remembers_per_sec_60s": float64(rCount) / sec,
+			"queries_per_sec_60s":   qps,
+			"remembers_per_sec_60s": rps,
 		},
 		"uptime_ms": now.Sub(c.startedAt).Milliseconds(),
+		// The admin dashboard reads THIS snapshot, not the per-user one,
+		// so the label has to be on both or the operators who most need
+		// it never see it.
+		"instance": instanceID,
 	}
 }
 
@@ -480,4 +577,75 @@ func formatFloat(f float64) string {
 		return strconv.FormatFloat(f, 'f', -1, 64)
 	}
 	return fmt.Sprintf("%v", f)
+}
+
+// localCounters is this process's lifetime view of every counter the
+// snapshot publishes, keyed by the name it publishes them under.
+//
+// Caller holds c.mu.
+func (c *Collector) localCounters() map[string]int64 {
+	agg := Counters{}
+	for _, s := range c.users {
+		agg.Queries += s.counters.Queries
+		agg.QueriesZeroHit += s.counters.QueriesZeroHit
+		agg.Remembers += s.counters.Remembers
+		agg.Forgets += s.counters.Forgets
+		agg.HitsWarm += s.counters.HitsWarm
+		agg.HitsCold += s.counters.HitsCold
+		agg.HitsGraph += s.counters.HitsGraph
+	}
+	g := c.global
+	return map[string]int64{
+		"queries_total":         agg.Queries,
+		"queries_zero_hit":      agg.QueriesZeroHit,
+		"remembers_total":       agg.Remembers,
+		"forgets_total":         agg.Forgets,
+		"hits_warm_total":       agg.HitsWarm,
+		"hits_cold_total":       agg.HitsCold,
+		"hits_graph_total":      agg.HitsGraph,
+		"promotions_total":      g.promotions,
+		"demotions_total":       g.demotions,
+		"decay_runs_total":      g.decayRuns,
+		"orphans_reaped_total":  g.orphansReaped,
+		"search_errors_total":   g.searchErrors,
+		"remember_errors_total": g.rememberErrors,
+	}
+}
+
+// CounterDelta is one counter's unflushed increment.
+type CounterDelta struct {
+	Name  string
+	Delta int64
+}
+
+// DrainCounters returns what this replica has counted since the last
+// successful flush, and marks it as owed no longer.
+//
+// Computed by diffing against a baseline rather than by incrementing a
+// second set of fields at every call site: the counters are already
+// maintained in two shapes (per-user slots and package globals), and a
+// third would be a third thing to keep in step.
+func (c *Collector) DrainCounters() []CounterDelta {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cur := c.localCounters()
+	var out []CounterDelta
+	for name, v := range cur {
+		if d := v - c.flushed[name]; d != 0 {
+			out = append(out, CounterDelta{Name: name, Delta: d})
+		}
+		c.flushed[name] = v
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// RestoreCounters rolls the baseline back after a failed flush, so the
+// delta is offered again next tick instead of being silently dropped.
+func (c *Collector) RestoreCounters(deltas []CounterDelta) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, d := range deltas {
+		c.flushed[d.Name] -= d.Delta
+	}
 }

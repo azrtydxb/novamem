@@ -467,3 +467,73 @@ func (s *Store) SetEngineState(ctx context.Context, key, value string) error {
 
 // Ping is the warm-tier half of /v1/admin/health/deep.
 func (s *Store) Ping(ctx context.Context) bool { return s.Pool.Ping(ctx) == nil }
+
+// CounterDeltas adds each replica's flushed delta into the shared
+// lifetime counters.
+//
+// Additive upsert, exactly like RecordMetricsSamples: every replica
+// contributes and none overwrites. Without this the dashboard reported
+// whichever pod served the request — decay_runs_total of 1/1/1/0/0/0
+// across six reads of a three-replica deployment.
+func (s *Store) CounterDeltas(ctx context.Context, names []string, deltas []int64) error {
+	if len(names) == 0 {
+		return nil
+	}
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO metrics_counters (name, value)
+		SELECT * FROM unnest($1::text[], $2::bigint[])
+		ON CONFLICT (name) DO UPDATE SET value = metrics_counters.value + EXCLUDED.value`,
+		names, deltas)
+	return err
+}
+
+// Counters reads the shared lifetime totals.
+func (s *Store) Counters(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT name, value FROM metrics_counters`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var name string
+		var v int64
+		if err := rows.Scan(&name, &v); err != nil {
+			return nil, err
+		}
+		out[name] = v
+	}
+	return out, rows.Err()
+}
+
+// LastDecayRun is the finish time of the most recent completed decay
+// sweep, across every replica.
+//
+// Read through to decay_runs rather than held in memory. The in-memory
+// gauge reported "never" on any pod that had not personally run a sweep,
+// which is indistinguishable from a sweep that is not running at all —
+// and it forgot itself on restart, so a redeploy erased the answer.
+func (s *Store) LastDecayRun(ctx context.Context) (*time.Time, error) {
+	var at *time.Time
+	err := s.Pool.QueryRow(ctx,
+		`SELECT max(finished_at) FROM decay_runs WHERE finished_at IS NOT NULL`).Scan(&at)
+	if err != nil {
+		return nil, err
+	}
+	return at, nil
+}
+
+// RecentThroughput sums the per-minute buckets every replica flushes,
+// over the window ending now, and returns queries and remembers per
+// second.
+//
+// The collector's own rate window is per-process, so the "queries/sec"
+// tile showed one replica's share of the traffic. metrics_samples is
+// already summed across replicas for the 24h chart; this reads the same
+// rows, so the rate becomes a deployment-wide number with no new state.
+func (s *Store) RecentThroughput(ctx context.Context, since time.Time) (queries, remembers int64, err error) {
+	err = s.Pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(queries), 0), COALESCE(sum(remembers), 0)
+		  FROM metrics_samples WHERE sampled_at >= $1`, since).Scan(&queries, &remembers)
+	return queries, remembers, err
+}

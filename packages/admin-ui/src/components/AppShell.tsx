@@ -21,7 +21,8 @@ export type Tab =
   | "browse"
   | "graph"
   | "today"
-  | "onboarding";
+  | "onboarding"
+  | "password";
 
 interface NavItem {
   id: Tab;
@@ -44,6 +45,18 @@ const USER_NAV: NavItem[] = [
   { id: "today", label: "Today", glyph: "◷" },
   { id: "projects", label: "Projects", glyph: "▢" },
   { id: "tokens", label: "API Tokens", glyph: "⌘" },
+  // Getting started was unreachable until 2026-09: App only rendered it
+  // after a forced password change that nothing ever triggered, so the
+  // page and the /v1/me/onboarding endpoint behind it were dead.
+  { id: "onboarding", label: "Getting started", glyph: "◈" },
+];
+
+/** Account actions, shown to every role next to the identity block.
+ *  Change password was in the same position as Getting started: a real
+ *  page, a working POST /api/auth/change-password behind it, and no
+ *  route to it. */
+const ACCOUNT_NAV: NavItem[] = [
+  { id: "password", label: "Change password", glyph: "⚿" },
 ];
 
 interface Props {
@@ -205,6 +218,24 @@ export function AppShell({ active, onChange, children }: Props) {
               </div>
             </div>
           ) : null}
+          {ACCOUNT_NAV.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onChange(item.id)}
+              aria-current={active === item.id ? "page" : undefined}
+              className={cn(
+                "w-full flex items-center gap-2.5 px-2.5 h-8 rounded-md text-[12px] transition-colors",
+                active === item.id
+                  ? "bg-subtle text-ink"
+                  : "text-dim hover:bg-subtle/60 hover:text-ink"
+              )}
+            >
+              <span className="font-mono text-[13px] leading-none text-faint w-3.5 text-center">
+                {item.glyph}
+              </span>
+              {item.label}
+            </button>
+          ))}
           <button
             onClick={() => {
               void logout();
