@@ -149,6 +149,20 @@ func Run(ctx context.Context, cfg Config) {
 				return
 			}
 		}
+		// Lifetime counters, same additive upsert and the same
+		// restore-on-failure discipline: a dropped delta is a total that
+		// silently understates for ever, since nothing recomputes it.
+		if deltas := cfg.Metrics.DrainCounters(); len(deltas) > 0 {
+			names := make([]string, len(deltas))
+			values := make([]int64, len(deltas))
+			for i, d := range deltas {
+				names[i], values[i] = d.Name, d.Delta
+			}
+			if err := cfg.Warm.CounterDeltas(ctx, names, values); err != nil {
+				cfg.Metrics.RestoreCounters(deltas)
+				cfg.Log.Error("metrics counter flush error", "err", err)
+			}
+		}
 		if _, err := cfg.Warm.PruneMetricsSamples(ctx, time.Now().Add(-25*time.Hour)); err != nil {
 			cfg.Log.Error("metrics flush error", "err", err)
 		}

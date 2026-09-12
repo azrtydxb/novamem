@@ -71,6 +71,13 @@
       "when": 1786611693270,
       "tag": "0009_shared_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786611694270,
+      "tag": "0010_shared_metrics_counters",
+      "breakpoints": true
     }
   ]
 }

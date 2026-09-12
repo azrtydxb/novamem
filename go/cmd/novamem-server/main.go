@@ -241,6 +241,15 @@ func run() error {
 		PendingEmbeddings: warm.CountPendingEmbedding,
 		PendingFacts:      warm.CountPendingFacts,
 	})
+	// Cross-replica reads. Without these the dashboard reports whichever
+	// pod served the request: on kw's three replicas, six consecutive
+	// reads returned decay_runs_total of 1/1/1/0/0/0 and three different
+	// last-decay timestamps.
+	coll.BindShared(metrics.SharedSources{
+		Counters:     warm.Counters,
+		LastDecayRun: warm.LastDecayRun,
+		Throughput:   warm.RecentThroughput,
+	})
 	coll.BindUserGauges(metrics.UserGaugeSources{
 		WarmEntries: func(ctx context.Context, u string) (int, error) { return warm.CountEntriesFor(ctx, u, false) },
 		ColdEntries: func(ctx context.Context, u string) (int, error) { return warm.CountEntriesFor(ctx, u, true) },

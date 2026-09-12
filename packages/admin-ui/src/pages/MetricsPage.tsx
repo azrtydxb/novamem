@@ -223,11 +223,11 @@ export function MetricsPage() {
         subtitle={
           isAdmin
             ? metricsInstanceNote(
-                "Operational counters, gauges, and rates. In-memory per replica; resets on restart.",
+                "Operational counters, gauges, and rates. Summed across every replica and persisted.",
                 snap
               )
             : metricsInstanceNote(
-                "Activity for you only. In-memory per replica; resets on restart.",
+                "Activity for you only. Summed across every replica and persisted.",
                 snap
               )
         }
@@ -764,13 +764,11 @@ function PersistentThroughputChart() {
 
 /** Names the replica that answered.
  *
- *  These counters live in each process's memory, so with more than one
- *  replica behind a load balancer two consecutive reads disagree by
- *  design: a decay run shows on the pod that performed it and nowhere
- *  else. Without this the page reports "Last decay: never" for a sweep
- *  that ran a minute ago on a sibling, and an operator cannot tell that
- *  apart from a sweep that is not running at all — which is exactly how
- *  it read during the 2026-09 GUI audit.
+ *  The numbers themselves are now deployment-wide — counters are summed
+ *  in Postgres, the rate reads the same per-minute buckets the 24h chart
+ *  does, and last-decay comes from decay_runs. What remains per-process
+ *  is uptime, and knowing which pod served a read is still worth having
+ *  when one of them is misbehaving.
  */
 function metricsInstanceNote(
   base: string,
