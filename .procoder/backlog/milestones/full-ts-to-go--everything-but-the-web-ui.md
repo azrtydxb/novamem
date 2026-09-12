@@ -16,6 +16,12 @@ milestone deliberately supersedes the 2026-08-13 spec's non-goal
 
 ## Accepted exceptions
 
-- scripts/doc-smoke.mjs — zero-dependency build-time CI gate; Node is
-  already in the toolchain for the docs-site and admin-ui builds
-  (recorded by 20260820-repo-scripts-disposition, 2026-08-20).
+- ~~scripts/doc-smoke.mjs~~ — **superseded 2026-09-12; ported to
+  go/cmd/doc-smoke.** The exception rested on the gate being
+  zero-dependency and Node already being in the toolchain. Both premises
+  went: the checks now compare documentation against Go sources of truth
+  (the config registry, tooldefs.json, the generated OpenAPI document),
+  which a Node script can only reach by holding a second copy of them.
+  Wiring the first such check up made `pnpm docs:smoke` shell into Go and
+  broke the Node-only CI job twice. Parity verified across 11 injected
+  violations: byte-identical findings from both implementations.

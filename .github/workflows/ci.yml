@@ -81,8 +81,12 @@ jobs:
       # config switches it on automatically when it does.
       - run: pnpm lint
       - run: pnpm test
-      # Guard against stale prose drift in docs (issue #73). Cheap regex
-      # checks; no extra deps. See scripts/doc-smoke.mjs for invariants.
+      # Guard against stale prose drift in docs (issue #73). See
+      # go/cmd/doc-smoke for the invariants — ported from Node in
+      # 2026-09 because they increasingly compare documentation against
+      # Go sources of truth (the config registry, tooldefs.json, the
+      # generated OpenAPI document) that a script can only reach by
+      # holding a second copy.
       # docs:smoke runs the documentation audit from cmd/gen-env-docs,
       # which needs the Go toolchain in this otherwise Node-only job. One
       # implementation of the rule, in the language that owns the config

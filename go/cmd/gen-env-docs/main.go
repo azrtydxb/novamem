@@ -25,15 +25,14 @@ package main
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/azrtydxb/novamem/go/internal/config"
+	"github.com/azrtydxb/novamem/go/internal/docaudit"
 )
 
 const (
@@ -48,12 +47,6 @@ func main() {
 	// be reachable from the command contributors actually run, and a
 	// generator that rewrites two files as a side effect is not something
 	// a smoke check should invoke.
-	if len(os.Args) > 1 && os.Args[1] == "--check" {
-		auditDocs()
-		fmt.Println("gen-env-docs: documentation audit passed")
-		return
-	}
-
 	page, err := os.ReadFile(docPath)
 	if err != nil {
 		fail("reading %s: %v", docPath, err)
@@ -77,7 +70,15 @@ func main() {
 	// variable leaves its name in the committed env-reference.md, so a
 	// pre-write audit fails on the stale page and exits before it can
 	// regenerate the page that would have removed the name.
-	auditDocs()
+	// Shared with cmd/doc-smoke rather than reimplemented: the same
+	// invariant, and CI runs the other caller.
+	if problems := docaudit.EnvVars("../docs", ".."); len(problems) > 0 {
+		fail("documentation describes variables that do not exist:\n  %s\n\n"+
+			"Either add a row to go/internal/config/registry.go, or correct the page. "+
+			"If the name is real but not server config, list it in docaudit's "+
+			"notServerConfig with a note saying what reads it.",
+			strings.Join(problems, "\n  "))
+	}
 }
 
 func render() string {
@@ -289,117 +290,6 @@ func escape(s string) string {
 func fail(format string, a ...any) {
 	fmt.Fprintf(os.Stderr, "gen-env-docs: "+format+"\n", a...)
 	os.Exit(1)
-}
-
-// ---------------------------------------------------------------------
-// The other direction. Generating the reference page guarantees every
-// DECLARED variable is documented; it says nothing about a page
-// elsewhere in docs/ naming a variable the server does not read.
-//
-// That is not hypothetical. docs/ops/hardening.md asked operators to
-// enable OTLP tracing the Go server has no code for;
-// docs/architecture/decay.md described the dream cycle as configurable
-// via NOVAMEM_DREAM_INTERVAL_MS, a variable that does not exist and
-// never did in Go. Both read as instructions. An operator following
-// them sets a variable, sees nothing happen, and has no way to tell a
-// broken deployment from a documented feature that was never built.
-//
-// So: every NOVAMEM_* name anywhere in docs/ must be a declared server
-// variable or an explicitly listed non-server one.
-// ---------------------------------------------------------------------
-
-const docsRoot = "../docs"
-
-// novamemVar matches a NOVAMEM_* name in prose, including the family
-// form prose uses to refer to a group — `NOVAMEM_RERANK_*`. The two are
-// told apart by the captured suffix: a family is checked against the
-// declared names by prefix, so `NOVAMEM_RERANK_*` still fails once no
-// rerank variable is left.
-var novamemVar = regexp.MustCompile(`NOVAMEM_[A-Z0-9_]*[A-Z0-9](_\*)?`)
-
-// notServerConfig are NOVAMEM_* names that are real, documented, and
-// deliberately not in the registry because the server does not read
-// them. Each says who does, so the list cannot quietly become a
-// dumping ground for whatever the audit happens to trip on.
-var notServerConfig = map[string]string{
-	"NOVAMEM_TOKEN":      "client credential, read by cmd/novamem-mcp",
-	"NOVAMEM_PASSWORD":   "client credential, read by cmd/novamem-init",
-	"NOVAMEM_MCP_BIN":    "client shim path, read by internal/initcli",
-	"NOVAMEM_URL":        "conformance target, read by the conformance module",
-	"NOVAMEM_TEST_TOKEN": "conformance credential, read by the conformance module",
-	"NOVAMEM_BIN_DIR":    "install location, read by the install script",
-	"NOVAMEM_VERSION":    "release tag, read by the install script",
-}
-
-// historical are paths whose job is to record what was true at a point
-// in time. A changelog entry naming a variable that has since been
-// removed is correct as written, and rewriting it would be falsifying
-// the record rather than fixing a document.
-var historical = []string{
-	"docs/reference/changelog.md",
-	"docs/superpowers/",
-	"docs/architecture/go-parity-audit.md",
-}
-
-func auditDocs() {
-	var problems []string
-	err := filepath.WalkDir(docsRoot, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
-			return err
-		}
-		rel := filepath.ToSlash(strings.TrimPrefix(path, "../"))
-		for _, h := range historical {
-			if strings.HasPrefix(rel, h) {
-				return nil
-			}
-		}
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		checkUnimplementedPrefixes(rel, string(src), &problems)
-		seen := map[string]bool{}
-		for _, name := range novamemVar.FindAllString(string(src), -1) {
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-			if prefix, isFamily := strings.CutSuffix(name, "_*"); isFamily {
-				if !anyDeclaredWithPrefix(prefix) {
-					problems = append(problems, fmt.Sprintf(
-						"%s refers to the %s_* family, but no such variable is declared", rel, prefix))
-				}
-				continue
-			}
-			if _, ok := config.Lookup(name); ok {
-				continue
-			}
-			if _, ok := notServerConfig[name]; ok {
-				continue
-			}
-			problems = append(problems, fmt.Sprintf("%s names %s, which the server does not read", rel, name))
-		}
-		return nil
-	})
-	if err != nil {
-		fail("walking %s: %v", docsRoot, err)
-	}
-	if len(problems) > 0 {
-		sort.Strings(problems)
-		fail("documentation describes variables that do not exist:\n  %s\n\n"+
-			"Either add a row to go/internal/config/registry.go, or correct the page. "+
-			"If the name is real but not server config, list it in notServerConfig with "+
-			"a note saying what reads it.", strings.Join(problems, "\n  "))
-	}
-}
-
-func anyDeclaredWithPrefix(prefix string) bool {
-	for _, v := range config.Vars {
-		if strings.HasPrefix(v.Name, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // ---------------------------------------------------------------------
@@ -639,77 +529,5 @@ func checkComposeIsSatisfiable(template string) {
 			"path does) in registry.go, or add it to templateExtras if the server never "+
 			"reads it.",
 			strings.Join(missing, ", "), envExamplePath, strings.Join(missing, " or "))
-	}
-}
-
-// otelVar matches an OpenTelemetry configuration variable.
-//
-// The four the server reads are declared in registry.go like any other,
-// so they pass the ordinary rule. This exists for the ones it does NOT
-// read: OTEL defines dozens — OTEL_METRICS_EXPORTER, OTEL_TRACES_SAMPLER,
-// OTEL_RESOURCE_ATTRIBUTES — and documenting one novamem ignores is the
-// exact failure #277 was opened for. docs/observability.md described
-// OTLP export driven by variables the Go server read none of, so an
-// operator following it got silence, which is the worst failure an
-// observability setting has: indistinguishable from a working exporter
-// with nothing to report.
-//
-// A page may still name an unread OTEL variable — it just has to say so.
-var otelVar = regexp.MustCompile(`OTEL_[A-Z0-9_]*[A-Z0-9]`)
-
-// notImplementedMarker is the page saying so in its own words. Matched
-// loosely on purpose — the requirement is that a reader is told, not
-// that they are told in one blessed phrasing.
-var notImplementedMarker = regexp.MustCompile(`(?i)not implemented|no OpenTelemetry|does nothing|reads no|ignored by novamem`)
-
-// markedNearby reports whether the disclaimer sits close enough to the
-// mention to be read as being about it.
-//
-// Matching the whole page was wrong, and wrong in the dangerous
-// direction: docs/architecture/multi-tenancy.md already says quotas are
-// "not implemented", so adding an OTEL setting anywhere on that page
-// would have passed the check while telling a reader nothing. A reader
-// does not read a page as one undifferentiated blob, and neither should
-// this.
-//
-// The window is the paragraph the mention sits in plus the one on either
-// side, which covers the real shapes: a disclaimer in the sentence, in a
-// preceding banner, or in a note directly underneath a table row.
-func markedNearby(src, name string) bool {
-	paras := strings.Split(src, "\n\n")
-	for i, p := range paras {
-		if !strings.Contains(p, name) {
-			continue
-		}
-		lo, hi := max(0, i-1), min(len(paras), i+2)
-		if notImplementedMarker.MatchString(strings.Join(paras[lo:hi], "\n\n")) {
-			continue
-		}
-		return false // this mention is unmarked
-	}
-	return true
-}
-
-// checkUnimplementedPrefixes requires an OTEL variable to be either
-// declared — and therefore read — or described on the page as something
-// novamem does not act on.
-//
-// Deliberately NOT "never mention it". A page discussing collector setup
-// may reasonably name a variable the collector reads and novamem does
-// not. A SILENT mention is what is not allowed, because it reads as
-// configuration.
-func checkUnimplementedPrefixes(rel, src string, problems *[]string) {
-	for _, name := range otelVar.FindAllString(src, -1) {
-		if _, declared := config.Lookup(name); declared {
-			continue // the exporter exists now; ordinary rules apply
-		}
-		if markedNearby(src, name) {
-			continue
-		}
-		*problems = append(*problems, fmt.Sprintf(
-			"%s names %s, which is not declared in registry.go and is not marked "+
-				"as unimplemented on that page — a reader would set it and get silence",
-			rel, name))
-		break
 	}
 }
