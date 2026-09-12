@@ -268,3 +268,20 @@ export interface OnboardingState {
   remembered: boolean;
   userId: string;
 }
+
+/** One row of `GET /v1/admin/audit-log`.
+ *
+ *  Mirrors `warmstore.AuditEntry`. Note what is *not* here: there is no
+ *  severity field, so the dashboard shows no info/warn/err column —
+ *  deriving one from the action string would be inventing data the
+ *  server never recorded. */
+export interface AuditEntry {
+  id: number;
+  ts: string;
+  actorUserId: string | null;
+  actorLabel: string;
+  action: string;
+  target: string | null;
+  metadata: Record<string, unknown> | null;
+  requestIp: string | null;
+}
