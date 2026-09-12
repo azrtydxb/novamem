@@ -1,5 +1,4 @@
 import { ReactNode, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -12,7 +11,7 @@ import {
 import { cn } from "../lib/utils";
 import { useAuth } from "../lib/auth-context";
 import { useActiveProject } from "../lib/active-project";
-import { api, MetricsSnapshot, UserMetricsSnapshot } from "../lib/api";
+import { useMetricsSnapshot } from "../lib/use-metrics";
 import { KMark } from "./k/KMark";
 import { KKbd } from "./k/KKbd";
 import { CommandPalette } from "./CommandPalette";
@@ -315,26 +314,16 @@ export function AppShell({ active, onChange, children }: Props) {
 
 /** Warm / cold / graph sizes, pinned above the footer.
  *
- *  Shares the `["metrics", endpoint]` query key with the Overview page,
- *  so opening the dashboard costs one request, not two. Gauges are
- *  nullable by contract — a tier that is disabled or unreachable reports
- *  `null`, and "—" says that honestly where a 0 would claim the store is
- *  empty. */
+ *  Uses the same `useMetricsSnapshot` hook the Overview page does, so
+ *  opening the dashboard costs one metrics request rather than two — and,
+ *  more importantly, the two cannot disagree about the cached shape.
+ *
+ *  Gauges are nullable by contract: a tier that is disabled or
+ *  unreachable reports `null`, and "—" says that, where a 0 would claim
+ *  the store is empty. */
 function StoreCounts({ isAdmin }: { isAdmin: boolean }) {
-  const endpoint = isAdmin ? "/v1/admin/metrics" : "/v1/me/metrics";
-  const { data } = useQuery({
-    queryKey: ["metrics", endpoint],
-    queryFn: async () => {
-      const r = await api<MetricsSnapshot | UserMetricsSnapshot>(
-        "GET",
-        endpoint
-      );
-      return r.body;
-    },
-    refetchInterval: 15_000,
-  });
-
-  const g = data?.gauges;
+  const { data } = useMetricsSnapshot();
+  const g = data?.data.gauges;
   const rows: Array<[string, number | null | undefined]> = [
     ["warm", g?.warm_entries],
     ["cold", g?.cold_entries],
@@ -344,6 +333,9 @@ function StoreCounts({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div className="px-2.5 pb-2">
       <div className="rounded-md border border-rule-soft bg-subtle/30 px-2.5 py-2 space-y-1">
+        <div className="pb-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-faint-2">
+          {isAdmin ? "stores" : "your stores"}
+        </div>
         {rows.map(([label, value]) => (
           <div
             key={label}

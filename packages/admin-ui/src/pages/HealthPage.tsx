@@ -1,12 +1,19 @@
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import { api, type HealthSnapshot } from "../lib/api";
-import { Button } from "../components/Button";
-import { Card } from "../components/Card";
-import { PageHeader } from "../components/PageHeader";
-import { Pill } from "../components/Pill";
+import { KCard } from "../components/k/KCard";
+import { KHeader } from "../components/k/KHeader";
+import { KBtn } from "../components/k/KBtn";
+import { KPill } from "../components/k/KPill";
+import { KSpark } from "../components/k/KSpark";
+import { usePalette } from "../lib/theme-colors";
+import { cn } from "../lib/utils";
 
 const POLL_MS = 5_000;
+/** Roughly two minutes of polls. */
+const TRACE_POINTS = 24;
+
+type DepStatus = "ok" | "unreachable" | "disabled" | "failing";
 
 interface Dep {
   key: keyof HealthSnapshot["deps"];
@@ -41,10 +48,14 @@ function depsOf(data: HealthSnapshot | undefined): Dep[] {
   return deps;
 }
 
-/** Health page — Grid 2-col grid of dependency cards. Each card has a
- *  status dot with halo and a pill in the matching tone. We intentionally
- *  do not render latency/trend charts until the API exposes real per-dep
- *  series; decorative fake telemetry misleads operators. */
+/** Health — one card per dependency the server actually reports.
+ *
+ *  The v2 design draws a latency figure and a trend line on each card.
+ *  There is no per-dependency latency in the payload, and inventing one
+ *  is the exact failure this page was fixed for in #238. What the
+ *  sparkline plots instead is real and is labelled for what it is: the
+ *  statuses *this browser* has observed since the page opened, one point
+ *  per poll. It is not server history, and it resets on reload. */
 export function HealthPage() {
   const { data, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ["health"],
@@ -59,96 +70,149 @@ export function HealthPage() {
     refetchInterval: POLL_MS,
   });
 
+  const trace = useObservedTrace(data, dataUpdatedAt);
+  const deps = depsOf(data);
+
   return (
-    <>
-      <PageHeader
-        kicker={`Dependency snapshot · polled ${POLL_MS / 1000}s`}
+    <div className="p-6">
+      <KHeader
+        crumb={`dependency snapshot · polled ${POLL_MS / 1000}s`}
         title="Health"
-        subtitle={
-          dataUpdatedAt
-            ? `Last checked ${new Date(dataUpdatedAt).toLocaleTimeString()}`
-            : "Liveness and dependency status."
-        }
-        actions={
+        right={
           <>
             {data ? (
-              <Pill tone={data.ok ? "graph" : "err"} dot pulse>
+              <KPill tone={data.ok ? "graph" : "err"} dot pulse>
                 {data.ok ? "all systems ok" : "degraded"}
-              </Pill>
+              </KPill>
             ) : null}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => void refetch()}
-              loading={isFetching}
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </Button>
+            <KBtn onClick={() => void refetch()} loading={isFetching}>
+              Refresh
+            </KBtn>
           </>
         }
       />
-      <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {depsOf(data).map((d) => (
-          <DepCard key={d.key} dep={d} status={data?.deps?.[d.key] ?? null} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {deps.map((d) => (
+          <DepCard
+            key={d.key}
+            dep={d}
+            status={data?.deps?.[d.key] ?? null}
+            trace={trace[d.key] ?? []}
+          />
         ))}
       </div>
-    </>
+
+      <div className="mt-3 font-mono text-[10.5px] text-faint">
+        {dataUpdatedAt
+          ? `last checked ${new Date(dataUpdatedAt).toLocaleTimeString()}`
+          : "waiting for the first check…"}
+        {" · "}
+        traces are what this browser has observed since the page opened
+      </div>
+    </div>
   );
+}
+
+/** Rolling per-dependency history of observed statuses.
+ *
+ *  Keyed off `dataUpdatedAt` rather than `data`: a poll that returns an
+ *  identical snapshot gives the same object identity from the cache, and
+ *  an effect on `data` alone would record nothing while the deployment
+ *  was steady — which is exactly when the trace should be a flat line. */
+function useObservedTrace(
+  data: HealthSnapshot | undefined,
+  dataUpdatedAt: number
+): Partial<Record<Dep["key"], number[]>> {
+  const [trace, setTrace] = useState<Partial<Record<Dep["key"], number[]>>>({});
+  const lastAt = useRef(0);
+
+  useEffect(() => {
+    if (!data || !dataUpdatedAt || dataUpdatedAt === lastAt.current) return;
+    lastAt.current = dataUpdatedAt;
+    setTrace((cur) => {
+      const next = { ...cur };
+      for (const key of Object.keys(data.deps) as Array<Dep["key"]>) {
+        const point = data.deps[key] === "ok" ? 1 : 0;
+        next[key] = [...(cur[key] ?? []), point].slice(-TRACE_POINTS);
+      }
+      return next;
+    });
+  }, [data, dataUpdatedAt]);
+
+  return trace;
 }
 
 function DepCard({
   dep,
   status,
+  trace,
 }: {
   dep: Dep;
-  status: "ok" | "unreachable" | "disabled" | "failing" | null;
+  status: DepStatus | null;
+  trace: number[];
 }) {
+  const palette = usePalette();
   const ok = status === "ok";
   const disabled = status === "disabled";
-  const tone: "graph" | "warn" | "neutral" = ok
+  const tone: "graph" | "warn" | "dim" = ok
     ? "graph"
     : disabled
-    ? "neutral"
+    ? "dim"
     : "warn";
-  const colorVar =
+  const color =
     tone === "graph"
-      ? "var(--color-graph)"
+      ? palette.graph
       : tone === "warn"
-      ? "var(--color-warn)"
-      : "var(--color-faint)";
-  const haloClass =
-    tone === "graph"
-      ? "shadow-[0_0_0_3px_var(--color-graph-soft)]"
-      : tone === "warn"
-      ? "shadow-[0_0_0_3px_var(--color-warn-soft)]"
-      : "shadow-[0_0_0_3px_var(--color-subtle)]";
+      ? palette.warn
+      : palette.faint;
+
+  // A trace that has never left "ok" is a flat line at 1; a dip is the
+  // only thing worth looking at, so it is drawn only once there is one.
+  const everFailed = trace.some((p) => p === 0);
 
   return (
-    <Card
-      className="grid items-center gap-3.5 p-[18px]"
-      style={{ gridTemplateColumns: "1fr auto" }}
+    <KCard
+      title={dep.name}
+      right={<KPill tone={tone}>{status ?? "unknown"}</KPill>}
     >
-      <div>
-        <div className="flex items-center gap-2">
-          <span
-            className={`h-2 w-2 rounded-full ${haloClass}`}
-            style={{ background: colorVar }}
-          />
-          <h3 className="text-[15px] font-semibold text-ink">{dep.name}</h3>
-          <span className="font-mono text-[10px] text-dim">{dep.role}</span>
+      <div className="flex items-center gap-4 p-4">
+        <span
+          aria-hidden
+          className={cn(
+            "h-2.5 w-2.5 shrink-0 rounded-full",
+            tone === "graph"
+              ? "shadow-[0_0_0_3px_var(--color-graph-soft)]"
+              : tone === "warn"
+              ? "shadow-[0_0_0_3px_var(--color-warn-soft)]"
+              : "shadow-[0_0_0_3px_var(--color-subtle)]"
+          )}
+          style={{ background: color }}
+        />
+        <div className="min-w-0 flex-1">
+          <div
+            className="font-mono text-[18px] font-bold lowercase tabular-nums"
+            style={{ color }}
+          >
+            {status ?? "—"}
+          </div>
+          <div className="font-mono text-[10.5px] text-faint">{dep.role}</div>
+        </div>
+        <div className="shrink-0 text-right">
+          {trace.length > 1 ? (
+            <>
+              <KSpark data={trace} color={color} fill={everFailed} />
+              <div className="mt-0.5 font-mono text-[9.5px] text-faint-2">
+                {trace.length} polls
+              </div>
+            </>
+          ) : (
+            <span className="font-mono text-[9.5px] text-faint-2">
+              collecting…
+            </span>
+          )}
         </div>
       </div>
-      <div className="text-right">
-        <div
-          className="text-lg font-semibold tabular-nums"
-          style={{ color: colorVar }}
-        >
-          {status ?? "—"}
-        </div>
-        <div className="mt-1 inline-block">
-          <Pill tone={tone}>{status ?? "unknown"}</Pill>
-        </div>
-      </div>
-    </Card>
+    </KCard>
   );
 }
