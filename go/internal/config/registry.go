@@ -454,6 +454,23 @@ var Vars = []Var{
 		Description: "Log level: `debug`, `info`, `warn` or `error`.",
 	},
 	{
+		Name: "OTEL_ENABLED", Kind: KindBool, Default: false, Section: secOps,
+		Description: "Turns on OpenTelemetry trace export. Tracing is also enabled by setting `OTEL_EXPORTER_OTLP_ENDPOINT` alone, so this is only needed when pointing at the default collector address.",
+	},
+	{
+		Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Kind: KindString, Section: secOps,
+		Description: "Base URL of an OTLP/HTTP collector, for example `http://jaeger.observability.svc.cluster.local:4318`. Traces are posted to `${endpoint}/v1/traces`. Setting it enables tracing on its own.",
+	},
+	{
+		Name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", Kind: KindString, Section: secOps,
+		DefaultNote: "`$OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces`",
+		Description: "Full URL of the traces endpoint, for a collector that does not serve the conventional path. Overrides the value derived from the base endpoint.",
+	},
+	{
+		Name: "OTEL_SERVICE_NAME", Kind: KindString, Default: "novamem", Section: secOps,
+		Description: "The `service.name` resource attribute on every emitted span. Set it per deployment when several novamem instances report to one collector.",
+	},
+	{
 		Name: "NOVAMEM_PPROF_ADDR", Kind: KindString, Section: secOps,
 		Description: "When set — `127.0.0.1:6060`, say — serves Go `net/http/pprof` on its own listener. A separate socket rather than an API route, so profiling stays reachable in every auth mode and never rides an exposed port by accident.",
 	},

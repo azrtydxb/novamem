@@ -260,7 +260,6 @@ Each tone has a `*-soft` variant for backgrounds (light: 95% lightness / dark: 2
 
 ## Things that aren't here yet
 
-- No OpenTelemetry exporter (Prometheus exposition is at `/v1/admin/metrics/prom`).
 - Test fakes are SQL-substring shims — solid for engine logic but not for verifying SQL correctness; PGlite migration is a candidate.
 - No social/OIDC providers (Google, GitHub, …) — Better Auth's hooks are configured for future use, not enabled.
 - Adding a route means editing `api/openapi.yaml` and regenerating in the same commit: a CI drift gate re-runs `cmd/gen-contract` and fails on a dirty tree.

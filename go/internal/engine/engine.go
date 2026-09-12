@@ -22,6 +22,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/azrtydxb/novamem/go/internal/coldstore"
 	"github.com/azrtydxb/novamem/go/internal/embeddings"
 	"github.com/azrtydxb/novamem/go/internal/llm"
@@ -337,7 +339,17 @@ func withSensitivityMetadata(req RememberRequest) RememberRequest {
 // check (applies even under force), then dedup, then the insert, then
 // embed + cold upsert + enrichment, then the changelog append.
 func (e *Engine) Remember(ctx context.Context, userID string, req RememberRequest) (RememberResult, error) {
-	return e.remember(ctx, userID, req, nil)
+	// Content LENGTH, not content: a trace backend is an external system
+	// and the text of a memory is the thing this product keeps private.
+	ctx, span := startSpan(ctx, "engine.Remember",
+		attribute.Int("novamem.content.chars", len(req.Content)),
+		attribute.Bool("novamem.scoped", req.Project != nil))
+	res, err := e.remember(ctx, userID, req, nil)
+	if err == nil {
+		span.SetAttributes(attribute.Bool("novamem.embedded", res.Embedded != nil && *res.Embedded))
+	}
+	endSpan(span, err)
+	return res, err
 }
 
 // remember takes an optional pre-computed embedding: capture() already

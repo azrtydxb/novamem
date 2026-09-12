@@ -631,16 +631,19 @@ func checkComposeIsSatisfiable(template string) {
 	}
 }
 
-// otelVar matches a variable in the one configuration namespace this
-// project documents but does not read.
+// otelVar matches an OpenTelemetry configuration variable.
 //
-// docs/observability.md described
-// OTLP trace export driven by OTEL_ENABLED, OTEL_SERVICE_NAME and
-// OTEL_EXPORTER_OTLP_ENDPOINT — a faithful description of the retired
-// TypeScript server. The Go server reads none of them, so an operator
-// following that page got silence, which is the worst failure mode an
+// The four the server reads are declared in registry.go like any other,
+// so they pass the ordinary rule. This exists for the ones it does NOT
+// read: OTEL defines dozens — OTEL_METRICS_EXPORTER, OTEL_TRACES_SAMPLER,
+// OTEL_RESOURCE_ATTRIBUTES — and documenting one novamem ignores is the
+// exact failure #277 was opened for. docs/observability.md described
+// OTLP export driven by variables the Go server read none of, so an
+// operator following it got silence, which is the worst failure an
 // observability setting has: indistinguishable from a working exporter
-// with nothing to report (#277).
+// with nothing to report.
+//
+// A page may still name an unread OTEL variable — it just has to say so.
 var otelVar = regexp.MustCompile(`OTEL_[A-Z0-9_]*[A-Z0-9]`)
 
 // notImplementedMarker is the page saying so in its own words. Matched
@@ -648,18 +651,14 @@ var otelVar = regexp.MustCompile(`OTEL_[A-Z0-9_]*[A-Z0-9]`)
 // that they are told in one blessed phrasing.
 var notImplementedMarker = regexp.MustCompile(`(?i)not implemented|no OpenTelemetry|does nothing|reads no`)
 
-// checkUnimplementedPrefixes requires a page naming an unimplemented
-// setting to say that it is unimplemented.
+// checkUnimplementedPrefixes requires an OTEL variable to be either
+// declared — and therefore read — or described on the page as something
+// novamem does not act on.
 //
-// Deliberately NOT "never mention it": the pages that name these are
-// right to. observability.md is kept as the specification for
-// reinstating tracing, env-reference.md names the variable precisely to
-// say it does nothing, and hardening.md tells operators there is no OTLP
-// to enable. All three are useful; a silent mention is what is not.
-//
-// This lifts on its own if the exporter is ever built: declare the
-// variables in registry.go and they stop being unimplemented, at which
-// point the NOVAMEM_-style declared-or-fail rule is the one that applies.
+// Deliberately NOT "never mention it". A page discussing collector setup
+// may reasonably name a variable the collector reads and novamem does
+// not. A SILENT mention is what is not allowed, because it reads as
+// configuration.
 func checkUnimplementedPrefixes(rel, src string, problems *[]string) {
 	for _, name := range otelVar.FindAllString(src, -1) {
 		if _, declared := config.Lookup(name); declared {
@@ -669,8 +668,8 @@ func checkUnimplementedPrefixes(rel, src string, problems *[]string) {
 			break // the page says so; one marker covers the page
 		}
 		*problems = append(*problems, fmt.Sprintf(
-			"%s names %s without saying anywhere that it is not implemented — "+
-				"the Go server reads no OTEL_* variable, so a reader would set it and get silence",
+			"%s names %s, which is not declared in registry.go and is not marked "+
+				"as unimplemented on that page — a reader would set it and get silence",
 			rel, name))
 		break
 	}

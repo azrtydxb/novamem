@@ -1,60 +1,49 @@
 # Observability
 
-::: danger Not implemented in the Go server
-
-Everything below describes the retired TypeScript server. The Go server
-ships **no OpenTelemetry exporter** — setting `OTEL_ENABLED` or
-`OTEL_EXPORTER_OTLP_ENDPOINT` on it does nothing at all, silently. The
-architecture page lists this under "things that aren't here yet".
-
-What the Go server does expose today: Prometheus exposition at
-`/v1/admin/metrics/prom`, JSON metrics at `/v1/admin/metrics` with 24h
-history, and `net/http/pprof` on its own listener when
-`NOVAMEM_PPROF_ADDR` is set.
-
-Kept as the specification for reinstating tracing — see
-[#277](https://github.com/azrtydxb/novamem/issues/277) — not as
-instructions to follow.
-
-:::
-
-NovaMem can export OpenTelemetry traces to any OTLP/HTTP collector, including Jaeger. Tracing is disabled by default and becomes active when either `OTEL_ENABLED=1` or `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+novamem exports OpenTelemetry traces to any OTLP/**HTTP** collector, including Jaeger. Tracing is off by default.
 
 ## Configuration
 
-Recommended Kubernetes environment:
+Set either switch — the flag, or an endpoint on its own. Configuring where to send traces and getting none because a second flag was missed is a failure mode worth designing out, so an endpoint is taken as intent.
 
 ```yaml
 env:
-  - name: OTEL_ENABLED
-    value: "1"
-  - name: OTEL_SERVICE_NAME
-    value: novamem
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     value: http://jaeger.observability.svc.cluster.local:4318
+  - name: OTEL_SERVICE_NAME
+    value: novamem
 ```
 
-`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` may be set directly when the collector uses a non-standard path. If omitted, NovaMem posts traces to `${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`.
+| Variable                             | Effect                                                                                          |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`        | OTLP/HTTP base URL. Traces go to `${endpoint}/v1/traces`. Enables tracing on its own.           |
+| `OTEL_ENABLED`                       | Enables tracing without naming a collector — exports to `http://localhost:4318/v1/traces`.      |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Full traces URL, for a collector that does not serve the conventional path. Wins over the base. |
+| `OTEL_SERVICE_NAME`                  | The `service.name` on every span. Defaults to `novamem`.                                        |
+
+An `http://` endpoint is dialled without TLS and an `https://` one with it; an endpoint with no scheme is refused at startup rather than guessed at. These rows are generated into the [environment reference](./install/env-reference.md) from the same source the loader reads, so they cannot drift from the server.
+
+::: tip Tracing cannot take the server down
+A collector that is unreachable, slow or misconfigured is an observability problem, not an outage. Export failures are logged and dropped, startup does not block on reaching the collector, and a bad endpoint is reported while the server carries on serving. Traces are the first thing to lose under pressure, never the last.
+:::
 
 ## Span coverage
 
-NovaMem emits automatic HTTP, Fastify, and PostgreSQL spans, plus product spans around the hot memory paths:
+Deliberately few. The value of a trace is showing where the time in a request went, and a span per helper buries that under call-stack noise while costing an allocation on the write path whether or not anyone is collecting.
 
-- `MemoryEngine.remember`
-- `WarmStore.findByContentHash`
-- `WarmStore.insertEntry`
-- `Embedder.embed.remember`
-- `ColdStore.upsert`
-- `MemoryEngine.linkVectorNeighbors`
-- `ColdStore.search.linkVectorNeighbors`
-- `GraphStore.addEdgesBatch`
-- `WarmStore.addRelation.batch`
-- `MemoryEngine.search`
-- `Embedder.embed.search`
-- `WarmStore.ftsSearch`
-- `ColdStore.search`
+| Span              | Where                                                             |
+| ----------------- | ----------------------------------------------------------------- |
+| `GET /v1/…` etc.  | One server span per HTTP request, named for the **route pattern** |
+| `engine.Remember` | The write path                                                    |
+| `engine.Search`   | The read path                                                     |
 
-Useful attributes include namespace, query/content size, requested `k`, graph fanout, embedding dimension, result count, and degraded search status. These spans are intended for benchmark and production diagnosis of API-side CPU or latency bottlenecks without relying on pod-level CPU alone.
+The HTTP span is outermost in the middleware chain, so a request rejected by the rate limiter still appears — those are exactly the ones an operator is accounting for when 429s or latency are the complaint. Incoming `traceparent` headers are honoured, so an agent's request and the work novamem does for it form one trace rather than two.
+
+::: warning Attributes carry shape, never content
+Spans record sizes, counts, namespaces and status — `novamem.content.chars`, `novamem.query.chars`, `novamem.k`, `novamem.results`, `novamem.degraded` — and never the text of a memory or a query. A trace backend is an external system with its own retention and access rules.
+
+Span names use the route pattern (`DELETE /v1/me/projects/{id}`) rather than the resolved URL, for the same reason as much as for aggregation: the raw path carries ids off-box.
+:::
 
 ## Jaeger
 

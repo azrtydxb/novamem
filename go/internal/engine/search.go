@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/azrtydxb/novamem/go/internal/coldstore"
 	"github.com/azrtydxb/novamem/go/internal/embeddings"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
@@ -97,11 +99,25 @@ func (e *Engine) resolveDefaultNamespaces(ctx context.Context, userID string, pr
 // semantics preserved: a failed tier degrades the search (empty tier
 // output, degraded=true) rather than failing the request; the HTTP
 // layer turns degraded-with-zero-results into a 503.
-func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (SearchOutcome, error) {
+func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (out SearchOutcome, err error) {
 	k := req.K
 	if k == 0 {
 		k = 10
 	}
+	// Query length and shape, never the query text.
+	ctx, span := startSpan(ctx, "engine.Search",
+		attribute.Int("novamem.query.chars", len(req.Query)),
+		attribute.Int("novamem.k", k))
+	// Named results so the deferred close sees the error the function
+	// actually returned, from whichever of its many exits it took.
+	defer func() {
+		if err == nil {
+			span.SetAttributes(
+				attribute.Int("novamem.results", len(out.Results)),
+				attribute.Bool("novamem.degraded", out.Degraded))
+		}
+		endSpan(span, err)
+	}()
 	weights := DefaultWeights
 	if w := req.Weights; w != nil {
 		if w.Keyword != nil {

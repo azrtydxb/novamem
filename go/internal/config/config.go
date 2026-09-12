@@ -155,6 +155,24 @@ type Config struct {
 	// unreachable under auth.mode=bearer) and never rides an exposed
 	// port by accident. Default off.
 	PprofAddr string
+
+	// OpenTelemetry. Tracing is off unless OTELEnabled is set or an
+	// endpoint is configured — an endpoint on its own is taken as intent,
+	// which is the contract docs/observability.md has always documented.
+	OTELEnabled        bool   // OTEL_ENABLED
+	OTELEndpoint       string // OTEL_EXPORTER_OTLP_ENDPOINT (OTLP/HTTP base)
+	OTELTracesEndpoint string // OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+	OTELServiceName    string // OTEL_SERVICE_NAME
+}
+
+// TracingEnabled reports whether trace export should be started.
+//
+// Either switch does it: OTEL_ENABLED=1, or an endpoint on its own.
+// Configuring where to send traces and getting none because a second
+// flag was missed is the failure this avoids, and it is the rule the
+// documentation has always described.
+func (c Config) TracingEnabled() bool {
+	return c.OTELEnabled || c.OTELEndpoint != "" || c.OTELTracesEndpoint != ""
 }
 
 // Load reads and validates the environment, returning the first problem
@@ -403,6 +421,11 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("observer.enabled = true requires endpoint + model (NOVAMEM_OBSERVER_ENDPOINT / NOVAMEM_OBSERVER_MODEL)")
 	}
 	c.PprofAddr = strEnv("NOVAMEM_PPROF_ADDR")
+
+	c.OTELEnabled = boolEnv("OTEL_ENABLED")
+	c.OTELEndpoint = strEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	c.OTELTracesEndpoint = strEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	c.OTELServiceName = strEnv("OTEL_SERVICE_NAME")
 	return c, nil
 }
 

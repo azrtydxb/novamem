@@ -635,3 +635,81 @@ Options:
   comment.
 - Close them silently, without a comment.
 - Leave them open and let the next person re-derive it.
+
+## What is left is four decisions, not four bugs
+
+After #289, #290 and #291 the tracker holds nothing that is silently
+wrong. Each remaining item is a choice about scope.
+
+**#277 — OpenTelemetry.** Its third criterion is now enforced (#291) and
+its documentation is honest: observability.md is marked not-implemented
+and excluded from the published nav, env-reference.md and hardening.md
+say there is no OTLP to enable. The first criterion is the choice:
+
+- Build the exporter. Real work: otel-go SDK + OTLP exporter, spans on
+  the HTTP handlers and the engine hot paths, and an env contract that
+  matches the page. Adds dependencies and runtime surface.
+- Delete observability.md and retire the claim. Prometheus at
+  /v1/admin/metrics/prom and pprof already cover the operational need.
+- Leave it as it is: documented, marked, unpublished, guarded.
+
+**#268 — admin/ops surface for agents.** Its acceptance criterion is
+explicitly a decision, and it was blocked on #265, which is now done. The
+question it asks: user creation, token minting, quota changes and metrics
+have no MCP tools and no skill. Options it raises:
+
+- A skill plus the HTTP API, lazy-loaded, so 21 always-resident tool
+  schemas do not grow for verbs used once a month.
+- MCP tools for some subset, accepting the context cost.
+- Neither: admin stays human-operated and agents use curl.
+
+**#140 — backup and restore verification.** Untouched. Postgres is the
+whole durable store, so this is the one with real data-loss exposure.
+
+**#139 — memory telemetry dashboard.** Untouched, and overlaps #277: if
+the exporter is built, some of this is a Grafana board rather than code.
+
+Options:
+
+- Pick them off in that order: #140 first (data loss beats features),
+  then #277, then #268, then #139.
+- Do #277 now, since #291 just touched that area and the context is warm.
+- Do #268 now, since #265 unblocked it and the spec work is fresh.
+- Stop here: the repo is green, deployed, conformance-verified, and
+  nothing left is a defect.
+
+## A vulnerable `toml` in local agent tooling is blocking every commit
+
+The procoder commit gate reports:
+
+    BLOCKING toml 4.1.1 has 2 known vulnerability(s), max severity 8.2 — upgrade it
+
+Traced rather than suppressed. It is not a novamem dependency:
+
+| Where                              | Version   | Tracked?                                       |
+| ---------------------------------- | --------- | ---------------------------------------------- |
+| `.kilocode/package-lock.json`      | **4.1.1** | no — gitignored (`.gitignore:17`)              |
+| `.kilo/package-lock.json`          | 4.3.0     | no — gitignored (added this session)           |
+| `go/go.mod` `pelletier/go-toml/v2` | v2.4.3    | yes — **already the latest published version** |
+
+`govulncheck` over the Go module: _"0 vulnerabilities... 3 in modules you
+require, but your code doesn't appear to call these"_. `procoder security`
+run on its own reports 0 findings; only the commit gate sees it, because
+it scans lockfiles anywhere in the working tree, including directories
+git ignores.
+
+So the finding is real for Kilo Code's own tooling and irrelevant to this
+repository's supply chain. It is blocking the OpenTelemetry work (#277),
+which is otherwise complete and green.
+
+Options:
+
+- Update the tooling: `cd .kilocode && npm update toml`. Fixes it at
+  source; touches your agent tooling rather than the project.
+- Delete `.kilocode/node_modules` and its lockfile so Kilo Code
+  regenerates them on next use.
+- Commit with `--no-verify` for this change only, on the basis that the
+  finding is outside the project. Recorded here rather than done quietly,
+  because bypassing a security gate should leave a trace.
+- Teach procoder to skip git-ignored paths — the right long-term fix, and
+  an upstream change rather than one in this repo.

@@ -182,7 +182,10 @@ func newHandler(opts Options) (http.Handler, []string) {
 	// routes so its headers land on every answered request, and the JSON
 	// body guard sits where Fastify's content-type parser does — after
 	// routing, before the handler.
-	return requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux.ServeMux))))), mux.patterns
+	// traceRequests is outermost: a span that starts inside the rate
+	// limiter cannot show a request the rate limiter rejected, and those
+	// are the ones an operator is trying to account for.
+	return traceRequests(mux.ServeMux, requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux.ServeMux)))))), mux.patterns
 }
 
 // routeMux is http.ServeMux plus the list of patterns registered on it.
