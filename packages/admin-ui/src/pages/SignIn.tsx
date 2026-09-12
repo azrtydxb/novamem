@@ -6,7 +6,15 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 
 interface BetterAuthSignInResp {
-  user?: { id: string; email: string; name: string; role?: string };
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    role?: string;
+    /** Set by the server when the user still owes a password change —
+     *  admin-created accounts and the env-seeded bootstrap admin. */
+    mustChangePassword?: boolean;
+  };
   session?: { id: string; expiresAt: string };
 }
 
@@ -49,7 +57,7 @@ export function SignIn() {
         username: u.email.split("@")[0] ?? u.email,
         role: (u.role ?? "user") as SessionUser["role"],
       };
-      login(sessionUser, false);
+      login(sessionUser, u.mustChangePassword === true);
     } else if (r.status === 401 || r.status === 400) {
       setError("Invalid email or password.");
     } else {

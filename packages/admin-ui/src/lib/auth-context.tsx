@@ -35,7 +35,15 @@ export function useAuth(): AuthContextValue {
 }
 
 interface BetterAuthSessionResp {
-  user?: { id: string; email: string; name: string; role?: string };
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    role?: string;
+    /** Set by the server when the user still owes a password change —
+     *  admin-created accounts and the env-seeded bootstrap admin. */
+    mustChangePassword?: boolean;
+  };
   session?: { id: string; expiresAt: string };
 }
 
@@ -61,7 +69,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         username: u.email.split("@")[0] ?? u.email,
         role: (u.role ?? "user") as SessionUser["role"],
       };
-      setState({ user, loading: false, needsPasswordChange: false });
+      // The server's own answer, not a hardcoded false. Reading it on
+      // every session resolve (not just at sign-in) means a reload while
+      // the obligation stands lands back on the password screen rather
+      // than slipping into the app.
+      setState({
+        user,
+        loading: false,
+        needsPasswordChange: u.mustChangePassword === true,
+      });
     } else {
       setState({ user: null, loading: false, needsPasswordChange: false });
     }

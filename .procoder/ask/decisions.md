@@ -601,3 +601,40 @@ The accepted trade-off is that a cache failure is silent, so a cold build
 is a build-time regression nobody is paged about. The open follow-up is
 the rejected Nexus credential, tracked as a performance matter rather
 than an outage.
+
+## Where do Getting started and Change password live in GUI v2?
+
+The v2 prototype (`v2/nm-shell.jsx`) models both as stages in a linear
+post-login flow: sign-in → change password → onboarding → app. Neither
+appears in its sidebar.
+
+That is exactly where they were stranded until 2026-09-12. `App.tsx`
+renders them only behind `needsPasswordChange`; `SignIn.tsx:52` hardcodes
+`login(sessionUser, false)`; the Go server emits no pending-password-change
+signal. So the flag is permanently false, `ChangePasswordPage` was
+unreachable, and `OnboardingPage` — reachable only _through_ it — was too.
+A working `POST /api/auth/change-password` and `GET /v1/me/onboarding` sat
+behind no route at all. #292 fixed that by putting both in the nav.
+
+Checked before assuming: `login(sessionUser, true)` was never passed in any
+commit, and the routing was identical before the Go migration (#248). This
+is not something the port broke, and the prototype inherits it.
+
+Phase 1 is committed; this decides phase 3 (shell/IA) and phase 6 (auth
+screens), so it wants answering before the shell lands.
+
+Options:
+
+- Keep both in the nav (what #292 shipped, and what phase 3 assumes).
+  Getting started in the workspace list, Change password in the account
+  block beside Sign out. The forced-change branch stays for a server that
+  may one day signal it.
+- Follow the prototype exactly: both become post-login stages only. They
+  are unreachable again unless the server grows a pending-password-change
+  signal, so this only makes sense together with building that signal.
+- Follow the prototype AND build the signal: add a `mustChangePassword`
+  flag to the auth payload, set it for admin-created users and the
+  bootstrap admin, and have the shell short-circuit on it. Onboarding then
+  follows naturally on first login. Largest, and the most faithful to the
+  design's intent.
+- Both: keep the nav entries AND add the forced first-login flow.

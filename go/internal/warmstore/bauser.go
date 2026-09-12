@@ -32,9 +32,12 @@ type BAUser struct {
 	BanReason     *string `json:"banReason"`
 	BanExpires    *string `json:"banExpires"`
 	ID            string  `json:"id"`
+	// MustChangePassword gates the first-login flow. The SPA reads it
+	// straight off /api/auth/get-session, which serialises this struct.
+	MustChangePassword bool `json:"mustChangePassword"`
 }
 
-const baUserCols = `name, email, "emailVerified", image, "createdAt", "updatedAt", role, banned, "banReason", "banExpires", id`
+const baUserCols = `name, email, "emailVerified", image, "createdAt", "updatedAt", role, banned, "banReason", "banExpires", id, "mustChangePassword"`
 
 // readBAUser scans the current row of a query selecting baUserCols.
 func readBAUser(rows pgx.Rows) (*BAUser, error) {
@@ -43,7 +46,7 @@ func readBAUser(rows pgx.Rows) (*BAUser, error) {
 	var banned *bool
 	var banExpires *time.Time
 	if err := rows.Scan(&u.Name, &u.Email, &u.EmailVerified, &u.Image, &created, &updated,
-		&u.Role, &banned, &u.BanReason, &banExpires, &u.ID); err != nil {
+		&u.Role, &banned, &u.BanReason, &banExpires, &u.ID, &u.MustChangePassword); err != nil {
 		return nil, err
 	}
 	u.CreatedAt = jsTime(created)
@@ -144,8 +147,8 @@ func (s *Store) CreateBAUser(ctx context.Context, email, name, password, role st
 		return nil, err
 	}
 	if _, err = tx.Exec(ctx, `
-		INSERT INTO "user" (id, email, name, "emailVerified", role, "createdAt", "updatedAt")
-		VALUES ($1, $2, $3, false, $4, now(), now())`, id, email, name, role); err != nil {
+		INSERT INTO "user" (id, email, name, "emailVerified", role, "createdAt", "updatedAt", "mustChangePassword")
+		VALUES ($1, $2, $3, false, $4, now(), now(), true)`, id, email, name, role); err != nil {
 		return nil, err
 	}
 	if hash != "" {
@@ -221,10 +224,32 @@ func (s *Store) CountAdmins(ctx context.Context) (int, error) {
 // SetCredentialPassword replaces the scrypt hash on the user's
 // credential account row. Returns false when there is no such row.
 func (s *Store) SetCredentialPassword(ctx context.Context, userID, hash string) (bool, error) {
-	tag, err := s.Pool.Exec(ctx, `
+	// One transaction for the hash and the obligation it settles. Split
+	// across two statements, a crash between them leaves a user who HAS
+	// changed their password still being forced to change it, with no
+	// way out of the screen — the failure mode is a locked-out account,
+	// not a cosmetic flag.
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `
 		UPDATE "account" SET password = $2, "updatedAt" = now()
 		 WHERE "userId" = $1 AND "providerId" = 'credential' AND password IS NOT NULL`, userID, hash)
-	return tag.RowsAffected() > 0, err
+	if err != nil {
+		return false, err
+	}
+	changed := tag.RowsAffected() > 0
+	if changed {
+		if _, err := tx.Exec(ctx,
+			`UPDATE "user" SET "mustChangePassword" = false, "updatedAt" = now() WHERE id = $1`,
+			userID); err != nil {
+			return false, err
+		}
+	}
+	return changed, tx.Commit(ctx)
 }
 
 // DeleteUserSessions drops every session a user holds (change-password
