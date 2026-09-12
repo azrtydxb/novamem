@@ -308,19 +308,43 @@ func toTool(x any, method, path string) mcpTool {
 	return t
 }
 
-// stripExtensions removes `x-mcp-tool` from the published document. The
-// binding is real and belongs in the source; the served spec describes
-// the HTTP surface, and repeating the whole tool surface inside it would
-// double every schema on the wire.
+// stripExtensions removes `x-mcp-tool` from the published document, and
+// refuses to publish an operation with no description.
+//
+// The lift that gives MCP-bound operations their description happens in
+// collect(), which runs first — the prose is authored once, in the tool
+// binding, and copied onto the operation there. This is the check that
+// it actually happened for every operation, wherever the text came from.
+//
+// Worth stating because the source reads as though there were a gap:
+// 21 operations in api/openapi.yaml carry a summary and no description,
+// and that is the single-source design rather than an omission. Reading
+// the YAML alone suggests the API reference is thinner than the tool
+// surface. It is not, and this guard is what keeps that true.
 func stripExtensions(doc map[string]any) map[string]any {
 	paths, _ := doc["paths"].(map[string]any)
+	var missing []string
 	for _, p := range sortedKeys(paths) {
 		item, _ := paths[p].(map[string]any)
 		for _, m := range sortedKeys(item) {
-			if op, ok := item[m].(map[string]any); ok {
-				delete(op, "x-mcp-tool")
+			op, ok := item[m].(map[string]any)
+			if !ok || !isMethod(m) {
+				continue
 			}
+			if desc, _ := op["description"].(string); desc == "" {
+				missing = append(missing, strings.ToUpper(m)+" "+p)
+			}
+			delete(op, "x-mcp-tool")
 		}
+	}
+	// A described operation is the contract, not a nicety: this document
+	// is what /api-docs renders and what an agent reads to decide whether
+	// an endpoint is the one it wants. A summary alone is a label.
+	if len(missing) > 0 {
+		fail("%s: %d operation(s) would be published with no description:\n  %s\n\n"+
+			"Give the operation a `description:`, or bind it to an MCP tool — collect() "+
+			"copies the tool's description onto an operation that has none.",
+			specPath, len(missing), strings.Join(missing, "\n  "))
 	}
 	return doc
 }
