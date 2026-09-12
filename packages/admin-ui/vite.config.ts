@@ -29,6 +29,12 @@ export default defineConfig({
       // image. Set NOVAMEM_DEV_TARGET to override the default 7778.
       "/v1": process.env.NOVAMEM_DEV_TARGET ?? "http://localhost:7778",
       "/health": process.env.NOVAMEM_DEV_TARGET ?? "http://localhost:7778",
+      // Better Auth lives under /api/auth — sign-in, the session probe and
+      // the admin user calls all go through it. Without this `pnpm dev`
+      // renders the login form and can never get past it, which is most of
+      // the reason the SPA was historically only tested via a full image
+      // build.
+      "/api": process.env.NOVAMEM_DEV_TARGET ?? "http://localhost:7778",
     },
   },
 });
