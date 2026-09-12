@@ -203,7 +203,13 @@ jobs:
           # need this or they die with "x509: certificate signed by
           # unknown authority".
           buildkitd-config-inline: |
+            # Two entries, because Nexus fronts two things on two ports
+            # and both need the CA exemption: :443 is the read-only group
+            # repository the mirrors below pull through, and :5000 is the
+            # hosted repository, the only one that accepts a cache write.
             [registry."192.168.10.131"]
+              insecure = true
+            [registry."192.168.10.131:5000"]
               insecure = true
             # Base image pulls, not just the cache. BuildKit's
             # docker-container driver runs in its own container and ignores
@@ -251,7 +257,7 @@ jobs:
           # No login either: Nexus serves this repository to anonymous
           # readers, so a fork PR — which gets no secrets — still gets a
           # warm cache instead of failing on an empty credential.
-          cache-from: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }}
+          cache-from: type=registry,ref=192.168.10.131:5000/azrtydxb/novamem-buildcache:${{ matrix.arch }}
       - name: Trivy scan local PR image (HIGH+CRITICAL, fail on findings)
         if: github.event_name != 'push' || (github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0
@@ -288,7 +294,7 @@ jobs:
         continue-on-error: true
         uses: docker/login-action@v4
         with:
-          registry: 192.168.10.131
+          registry: 192.168.10.131:5000
           username: ${{ secrets.NEXUS_USER }}
           password: ${{ secrets.NEXUS_PASSWORD }}
       - name: Build and push per-arch image to GHCR
@@ -306,7 +312,11 @@ jobs:
           # Registry cache on the in-cluster Nexus: the gha cache backend
           # round-trips to GitHub over the internet from these LAN runners
           # and evicts at 10GB; Nexus is one switch-hop away.
-          cache-from: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }}
+          # Port 5000 is the HOSTED repository and the only one that
+          # accepts writes. Port 443 fronts the read-only group repo and
+          # answers a blob upload with 403 no matter how the credential is
+          # privileged — verified both ways against the live registry.
+          cache-from: type=registry,ref=192.168.10.131:5000/azrtydxb/novamem-buildcache:${{ matrix.arch }}
           # ignore-error: an unreachable, unwritable or unauthenticated
           # cache degrades this to a cold build (~13 min per arch instead
           # of ~2 min warm). Without it the export is FATAL, which is how
@@ -314,7 +324,7 @@ jobs:
           # the per-arch images sat published and the manifest job — which
           # `needs: [docker]` — never ran, so no multi-arch tag existed to
           # deploy.
-          cache-to: type=registry,ref=192.168.10.131/azrtydxb/novamem-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
+          cache-to: type=registry,ref=192.168.10.131:5000/azrtydxb/novamem-buildcache:${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
       - name: Trivy scan pushed image (HIGH+CRITICAL, fail on findings)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: aquasecurity/trivy-action@v0.36.0
