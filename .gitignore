@@ -15,6 +15,7 @@ data/
 # editor / agent caches
 .claude/
 .kilocode/
+.kilo/
 bench/ref50-ingest.json
 bench/quick-runs/
 

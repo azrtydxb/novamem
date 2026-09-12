@@ -142,6 +142,7 @@ func TestDefaults(t *testing.T) {
 		ObserverObserveThreshold:   10,
 		ObserverReflectThreshold:   50,
 		ObserverTimeoutMs:          30000,
+		OTELServiceName:            "novamem",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("default config differs from the pinned value:\n got %+v\nwant %+v", got, want)
@@ -831,6 +832,50 @@ func TestShellDefaultsRoundTrip(t *testing.T) {
 				t.Errorf("%s=%q parses back as %v, but the declared default is %v — "+
 					"the generated .env.example would silently change this setting",
 					v.Name, v.ShellDefault(), got, v.Default)
+			}
+		})
+	}
+}
+
+// TestTracingEnablement — an endpoint on its own turns tracing on.
+//
+// The alternative, requiring OTEL_ENABLED as well, means an operator
+// configures where to send traces, sees none, and has nothing to tell
+// them why. docs/observability.md has always documented either switch,
+// and this is the contract that page describes.
+func TestTracingEnablement(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want bool
+	}{
+		{"off by default", nil, false},
+		{"the flag alone", map[string]string{"OTEL_ENABLED": "1"}, true},
+		{
+			"an endpoint alone",
+			map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://jaeger:4318"},
+			true,
+		},
+		{
+			"a traces endpoint alone",
+			map[string]string{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://jaeger:4318/v1/traces"},
+			true,
+		},
+		{
+			"the flag switched off but an endpoint set",
+			// The endpoint is the clearer statement of intent: someone
+			// went to the trouble of naming a collector.
+			map[string]string{"OTEL_ENABLED": "0", "OTEL_EXPORTER_OTLP_ENDPOINT": "http://jaeger:4318"},
+			true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := loadWith(t, tc.env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := c.TracingEnabled(); got != tc.want {
+				t.Errorf("TracingEnabled() = %v, want %v", got, tc.want)
 			}
 		})
 	}

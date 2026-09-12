@@ -23,6 +23,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/jobs"
 	"github.com/azrtydxb/novamem/go/internal/llm"
 	"github.com/azrtydxb/novamem/go/internal/metrics"
+	"github.com/azrtydxb/novamem/go/internal/tracing"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -282,6 +283,31 @@ func run() error {
 			ReconcileInterval: time.Duration(cfg.ReconcileIntervalMs) * time.Millisecond,
 			ReconcileBatch:    cfg.ReconcileBatch,
 		})
+	}()
+
+	// Tracing. Started before the listener so a span from the first
+	// request is exported, and shut down after it so buffered spans from
+	// in-flight requests are flushed rather than dropped.
+	//
+	// A configuration error here is reported and the server carries on:
+	// a bad collector URL is an observability problem, and refusing to
+	// serve memory because of it would be a far worse outage than having
+	// no traces.
+	shutdownTracing, err := tracing.Start(ctx, tracing.Config{
+		Enabled:        cfg.TracingEnabled(),
+		Endpoint:       cfg.OTELEndpoint,
+		TracesEndpoint: cfg.OTELTracesEndpoint,
+		ServiceName:    cfg.OTELServiceName,
+	}, log)
+	if err != nil {
+		log.Error("otel: tracing not started (serving without traces)", "err", err)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(flush); err != nil {
+			log.Warn("otel: shutdown did not flush cleanly", "err", err)
+		}
 	}()
 
 	if cfg.PprofAddr != "" {

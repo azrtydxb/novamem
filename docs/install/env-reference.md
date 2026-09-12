@@ -8,7 +8,7 @@ Every novamem-server config knob lives in an environment variable. The schema is
 
 <!-- env-reference:start -->
 
-_68 variables. This section is generated from [`go/internal/config/registry.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/config/registry.go) by `go run ./cmd/gen-env-docs` — the defaults below are the ones the loader applies, not a second copy of them. Add or change a variable there, not here._
+_72 variables. This section is generated from [`go/internal/config/registry.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/config/registry.go) by `go run ./cmd/gen-env-docs` — the defaults below are the ones the loader applies, not a second copy of them. Add or change a variable there, not here._
 
 ## Required settings
 
@@ -132,10 +132,14 @@ Each of these is required under the condition named, and startup fails fast with
 
 ## Logging and diagnostics
 
-| Variable             | Type   | Default | Description                                                                                                                                                                                                                 |
-| -------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOG_LEVEL`          | string | `info`  | Log level: `debug`, `info`, `warn` or `error`.                                                                                                                                                                              |
-| `NOVAMEM_PPROF_ADDR` | string | —       | When set — `127.0.0.1:6060`, say — serves Go `net/http/pprof` on its own listener. A separate socket rather than an API route, so profiling stays reachable in every auth mode and never rides an exposed port by accident. |
+| Variable                             | Type                    | Default                                  | Description                                                                                                                                                                                                                 |
+| ------------------------------------ | ----------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LOG_LEVEL`                          | string                  | `info`                                   | Log level: `debug`, `info`, `warn` or `error`.                                                                                                                                                                              |
+| `OTEL_ENABLED`                       | boolean (1/true/yes/on) | off                                      | Turns on OpenTelemetry trace export. Tracing is also enabled by setting `OTEL_EXPORTER_OTLP_ENDPOINT` alone, so this is only needed when pointing at the default collector address.                                         |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`        | string                  | —                                        | Base URL of an OTLP/HTTP collector, for example `http://jaeger.observability.svc.cluster.local:4318`. Traces are posted to `${endpoint}/v1/traces`. Setting it enables tracing on its own.                                  |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | string                  | `$OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces` | Full URL of the traces endpoint, for a collector that does not serve the conventional path. Overrides the value derived from the base endpoint.                                                                             |
+| `OTEL_SERVICE_NAME`                  | string                  | `novamem`                                | The `service.name` resource attribute on every emitted span. Set it per deployment when several novamem instances report to one collector.                                                                                  |
+| `NOVAMEM_PPROF_ADDR`                 | string                  | —                                        | When set — `127.0.0.1:6060`, say — serves Go `net/http/pprof` on its own listener. A separate socket rather than an API route, so profiling stays reachable in every auth mode and never rides an exposed port by accident. |
 
 ## Deprecated
 
@@ -181,8 +185,8 @@ to the server it is the origin it advertises, and to the client tools it
 is the server to connect to. Pointing them at each other is the intent.
 :::
 
-::: info No OpenTelemetry
-The Go server emits no OTLP traces, and reads no `OTEL_*` variables — setting `OTEL_EXPORTER_OTLP_ENDPOINT` does nothing. This page listed them until the reference was generated from the loader, which is exactly the kind of claim a hand-written table can make and a generated one cannot. Prometheus metrics are available at `/v1/admin/metrics/prom` (see `NOVAMEM_ADMIN_DASHBOARD`); OTLP export is tracked in [#277](https://github.com/azrtydxb/novamem/issues/277).
+::: info OpenTelemetry
+Tracing is off until one of the `OTEL_*` rows above is set — either `OTEL_ENABLED`, or an endpoint on its own, which is taken as intent. See [Observability](../observability.md) for span coverage and the Jaeger walkthrough. Prometheus metrics at `/v1/admin/metrics/prom` and `net/http/pprof` via `NOVAMEM_PPROF_ADDR` are unaffected and need no collector.
 :::
 
 ## See also
