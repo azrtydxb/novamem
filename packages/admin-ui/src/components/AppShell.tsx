@@ -49,6 +49,16 @@ export interface NavItem {
  *  the palette would have had to re-derive. One list with a `roles` field
  *  means the sidebar and ⌘K cannot disagree about what exists. */
 export const NAV: NavItem[] = [
+  // Home leads the list but not the admin sidebar: admins have no `home`
+  // entry, so their filtered nav still starts with Overview. Users land
+  // on Home, and a landing page listed second reads as the wrong one.
+  {
+    id: "home",
+    label: "Home",
+    glyph: "⌂",
+    roles: ["user"],
+    keywords: "search",
+  },
   // Admin
   { id: "overview", label: "Overview", glyph: "◐", roles: ["admin", "user"] },
   { id: "health", label: "Health", glyph: "◇", roles: ["admin"] },
@@ -61,13 +71,6 @@ export const NAV: NavItem[] = [
     keywords: "history actions who did what",
   },
   // User
-  {
-    id: "home",
-    label: "Home",
-    glyph: "⌂",
-    roles: ["user"],
-    keywords: "search",
-  },
   { id: "browse", label: "Browse", glyph: "≡", roles: ["user"] },
   { id: "graph", label: "Graph", glyph: "✦", roles: ["user"] },
   { id: "today", label: "Today", glyph: "◷", roles: ["user"] },

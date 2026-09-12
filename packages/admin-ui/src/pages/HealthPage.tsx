@@ -172,9 +172,11 @@ function DepCard({
   const everFailed = trace.some((p) => p === 0);
 
   return (
+    // The status is the card's headline, below. Repeating it as a pill in
+    // the title strip put the same word on the card twice.
     <KCard
       title={dep.name}
-      right={<KPill tone={tone}>{status ?? "unknown"}</KPill>}
+      right={<span className="text-faint">{dep.role}</span>}
     >
       <div className="flex items-center gap-4 p-4">
         <span
@@ -196,7 +198,15 @@ function DepCard({
           >
             {status ?? "—"}
           </div>
-          <div className="font-mono text-[10.5px] text-faint">{dep.role}</div>
+          <div className="font-mono text-[10.5px] text-faint">
+            {status === "ok"
+              ? "reachable"
+              : status === "disabled"
+              ? "not configured"
+              : status === null
+              ? "not checked yet"
+              : "not answering"}
+          </div>
         </div>
         <div className="shrink-0 text-right">
           {trace.length > 1 ? (

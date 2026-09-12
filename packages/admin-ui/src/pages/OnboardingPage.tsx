@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, OnboardingState } from "../lib/api";
 import { Card } from "../components/Card";
+import { useAuth } from "../lib/auth-context";
 
 interface Step {
   n: number;
@@ -20,6 +21,7 @@ interface Props {
  *  guide. The "Continue" button on the active step navigates to the
  *  page that completes that step. */
 export function OnboardingPage({ onSkip, onContinue }: Props) {
+  const { user } = useAuth();
   const { data } = useQuery({
     queryKey: ["onboarding"],
     queryFn: async () => {
@@ -40,7 +42,10 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
     {
       n: 2,
       label: "Account ready",
-      hint: data?.userId ? `signed in as ${data.userId}` : "—",
+      // The endpoint returns the opaque user id; showing it to a user
+      // who is being welcomed reads as a bug, not as information. The
+      // auth context already holds the name they signed in with.
+      hint: user?.username ? `signed in as ${user.username}` : "—",
       done: data?.userDone ?? false,
     },
     {
