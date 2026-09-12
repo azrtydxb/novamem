@@ -465,6 +465,10 @@ func (c *Collector) Snapshot(ctx context.Context) map[string]any {
 			"remembers_per_sec_60s": rps,
 		},
 		"uptime_ms": now.Sub(c.startedAt).Milliseconds(),
+		// The admin dashboard reads THIS snapshot, not the per-user one,
+		// so the label has to be on both or the operators who most need
+		// it never see it.
+		"instance": instanceID,
 	}
 }
 

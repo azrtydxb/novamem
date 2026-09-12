@@ -87,7 +87,7 @@ function Authed() {
   // forced path is the one that must bypass navigation; the voluntary
   // route below is what makes the page reachable at all.
   if (needsPasswordChange) {
-    return <ChangePasswordPage onDone={() => setTab("onboarding")} />;
+    return <ChangePasswordPage forced onDone={() => setTab("onboarding")} />;
   }
 
   return (

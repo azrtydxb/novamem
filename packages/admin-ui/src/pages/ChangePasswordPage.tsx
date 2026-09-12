@@ -6,7 +6,18 @@ import { useToast } from "../components/Toast";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 
-export function ChangePasswordPage({ onDone }: { onDone: () => void }) {
+/** `forced` is the first-login path, where the shell renders this page
+ *  instead of the dashboard and the copy is about the shared bootstrap
+ *  password. Reached voluntarily from the account menu it is an ordinary
+ *  password change, and telling those users their password is a shared
+ *  bootstrap credential is simply wrong. */
+export function ChangePasswordPage({
+  onDone,
+  forced = false,
+}: {
+  onDone: () => void;
+  forced?: boolean;
+}) {
   const { markPasswordChanged } = useAuth();
   const { success, error: toastError } = useToast();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -31,24 +42,36 @@ export function ChangePasswordPage({ onDone }: { onDone: () => void }) {
 
     // Better Auth's change-password endpoint. Returns 200 on success and
     // 400 on a wrong current password.
-    const r = await api<{ user: unknown }>(
-      "POST",
-      "/api/auth/change-password",
-      {
-        currentPassword,
-        newPassword,
-        revokeOtherSessions: true,
+    //
+    // try/finally because api() THROWS ApiError on a non-2xx rather than
+    // returning one: without it a wrong current password rejected before
+    // setBusy(false) ever ran, leaving the form spinning with no error
+    // shown and no way to retry. That path was unreachable while this
+    // page was, so making it reachable is what exposed it.
+    try {
+      const r = await api<{ user: unknown }>(
+        "POST",
+        "/api/auth/change-password",
+        {
+          currentPassword,
+          newPassword,
+          revokeOtherSessions: true,
+        }
+      );
+      if (r.ok) {
+        markPasswordChanged();
+        success("Password changed");
+        onDone();
+      } else {
+        toastError("Failed to change password", r.error ?? "Unknown error");
+        setError(r.error ?? "Failed to change password.");
       }
-    );
-
-    setBusy(false);
-    if (r.ok) {
-      markPasswordChanged();
-      success("Password changed");
-      onDone();
-    } else {
-      toastError("Failed to change password", r.error ?? "Unknown error");
-      setError(r.error ?? "Failed to change password.");
+    } catch (err) {
+      const message = (err as Error).message || "Failed to change password.";
+      toastError("Failed to change password", message);
+      setError(message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -64,14 +87,15 @@ export function ChangePasswordPage({ onDone }: { onDone: () => void }) {
               Change password
             </div>
             <div className="font-mono text-[10px] text-dim">
-              First-time login
+              {forced ? "First-time login" : "Account"}
             </div>
           </div>
         </div>
 
         <p className="text-[13px] text-dim mt-1.5 mb-5">
-          The bootstrap password is shared across all first-time installations.
-          Please set a unique password before continuing.
+          {forced
+            ? "The bootstrap password is shared across all first-time installations. Please set a unique password before continuing."
+            : "Set a new password for your account. Other sessions are signed out."}
         </p>
 
         <form onSubmit={submit} className="mt-5 space-y-3.5">

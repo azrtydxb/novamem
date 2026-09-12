@@ -110,13 +110,39 @@ export function BrowsePage() {
   // remove one. A reader could see a memory they wanted gone and had to
   // leave the UI to do it.
   const forget = useMutation({
-    mutationFn: async (id: string) => {
-      const r = await api<{ forgotten: boolean }>("POST", "/v1/forget", { id });
+    mutationFn: async (entry: SearchResult) => {
+      // The row's OWN project, not the active scope. Browse shows a
+      // union of user-global and active-project entries, so deleting a
+      // project-scoped row while globally scoped would look up an id the
+      // server cannot see and answer `deleted: false` — a success toast
+      // over a memory that is still there.
+      const r = await api<{ deleted: boolean; coldDeleteOk?: boolean }>(
+        "POST",
+        "/v1/forget",
+        { id: entry.id, ...(entry.project ? { project: entry.project } : {}) }
+      );
       if (!r.ok) throw new Error(r.error ?? `forget ${r.status}`);
       return r.body;
     },
-    onSuccess: () => {
-      toast.success("Memory forgotten", "The entry and its vector are gone.");
+    onSuccess: (body) => {
+      // `deleted: false` is a 200: the row was not found in the caller's
+      // scope. Reporting that as success is how a memory appears to be
+      // deleted and comes back on the next refresh.
+      if (!body?.deleted) {
+        toast.error(
+          "Nothing was deleted",
+          "The entry was not found in your scope — it may already be gone."
+        );
+      } else if (body.coldDeleteOk === false) {
+        // The warm row is gone but the vector or a derived fact survived.
+        // Saying "all gone" here makes a partial cleanup look complete.
+        toast.success(
+          "Memory forgotten, vector left behind",
+          "The entry is deleted; its cold-tier copy could not be removed and will be reaped."
+        );
+      } else {
+        toast.success("Memory forgotten", "The entry and its vector are gone.");
+      }
       setConfirmForget(null);
       void queryClient.invalidateQueries({ queryKey: ["browse-recent"] });
       void queryClient.invalidateQueries({ queryKey: ["browse-search"] });
@@ -207,7 +233,7 @@ export function BrowsePage() {
               variant="danger"
               loading={forget.isPending}
               onClick={() => {
-                if (confirmForget) forget.mutate(confirmForget.id);
+                if (confirmForget) forget.mutate(confirmForget);
               }}
             >
               Forget
