@@ -176,3 +176,70 @@ func TestFreshExtractionIsNotDiscarded(t *testing.T) {
 		chunkID: "01J", chunkContent: content,
 	})
 }
+
+// TestDebtIsNotSettledWhenContentMovedMidWrite covers the schedule the
+// pre-write check cannot: Update commits AFTER sourceMoved returns false
+// but before the writes finish. Facts from the old wording may already be
+// in; what must not happen is this goroutine reporting the chunk done.
+//
+// The marker is the reconciler's only signal that a chunk still owes
+// facts. Clearing it on a lost race is what turned a transient duplicate
+// into a permanent one, and it is closed here by a precondition in the
+// UPDATE rather than a check in Go — so there is no window between
+// deciding and clearing.
+func TestDebtIsNotSettledWhenContentMovedMidWrite(t *testing.T) {
+	const content = "the espresso machine is descaled monthly"
+	var askedWith string
+	e := &Engine{
+		log: slog.New(slog.DiscardHandler),
+		extractFacts: func(context.Context, string) ([]llm.ExtractedFact, error) {
+			return nil, nil // no facts: goes straight to settling the debt
+		},
+		entryContentHash: func(context.Context, string) (string, bool, error) {
+			return hashOf(content), true, nil // still fresh at check time
+		},
+		clearFactsPending: func(_ context.Context, _, expected string) (bool, error) {
+			askedWith = expected
+			// The row moved between the check and now, so the conditional
+			// UPDATE matches nothing.
+			return false, nil
+		},
+	}
+	if err := e.storeFactsForChunk(context.Background(), storeFactsArgs{
+		chunkID: "01J", chunkContent: content,
+	}); err != nil {
+		t.Fatalf("losing the race is not an error: %v", err)
+	}
+	if askedWith != hashOf(content) {
+		t.Errorf("cleared the marker against %q, want the hash of the content the "+
+			"extraction ran on (%q) — an unconditional clear settles a debt it did not pay",
+			askedWith, hashOf(content))
+	}
+}
+
+// TestDebtIsSettledWhenContentIsUnchanged — the ordinary path still
+// completes. A guard that never lets an extraction finish would leave
+// every chunk pending forever and the reconciler re-running the LLM.
+func TestDebtIsSettledWhenContentIsUnchanged(t *testing.T) {
+	const content = "the espresso machine is descaled monthly"
+	settled := false
+	e := &Engine{
+		log:          slog.New(slog.DiscardHandler),
+		extractFacts: func(context.Context, string) ([]llm.ExtractedFact, error) { return nil, nil },
+		entryContentHash: func(context.Context, string) (string, bool, error) {
+			return hashOf(content), true, nil
+		},
+		clearFactsPending: func(context.Context, string, string) (bool, error) {
+			settled = true
+			return true, nil
+		},
+	}
+	if err := e.storeFactsForChunk(context.Background(), storeFactsArgs{
+		chunkID: "01J", chunkContent: content,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !settled {
+		t.Error("an unchanged chunk was left pending — the reconciler would re-run the LLM on it forever")
+	}
+}

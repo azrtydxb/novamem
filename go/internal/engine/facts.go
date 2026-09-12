@@ -88,7 +88,7 @@ func (e *Engine) storeFactsForChunk(ctx context.Context, args storeFactsArgs) er
 		// A chunk with nothing durable in it is a COMPLETED extraction,
 		// not a failed one — clear the debt or the reconciler would re-run
 		// the LLM against it forever.
-		return e.warm.SetFactsPendingAt(ctx, args.chunkID, nil)
+		return e.settleExtraction(ctx, args)
 	}
 	if len(facts) > e.extractorMaxFacts {
 		facts = facts[:e.extractorMaxFacts]
@@ -193,7 +193,7 @@ func (e *Engine) storeFactsForChunk(ctx context.Context, args storeFactsArgs) er
 	// debt. On any error above the marker survives and the reconciler
 	// retries the chunk; a partial re-run is near-idempotent because each
 	// fact dedups on its content hash.
-	return e.warm.SetFactsPendingAt(ctx, args.chunkID, nil)
+	return e.settleExtraction(ctx, args)
 }
 
 // occurredAtValue keeps the TS `fact.occurredAt ?? null` shape: a fact
@@ -313,4 +313,34 @@ func (e *Engine) sourceMoved(ctx context.Context, args storeFactsArgs) (bool, er
 		return false, nil
 	}
 	return current != sha256Hex(strings.TrimSpace(args.chunkContent)), nil
+}
+
+// settleExtraction clears the pending marker, but only if the row still
+// holds the content this extraction ran against.
+//
+// The check at the top of storeFactsForChunk narrows the race; this
+// closes the half that made it permanent. An Update can still commit
+// between that check and these writes, and if it does, some facts from
+// the old wording may have been inserted — a transient duplicate that
+// Update's own delete-and-re-extract corrects. What must NOT happen is
+// this goroutine reporting the chunk as done, because that is what stops
+// the reconciler ever revisiting it and turns a transient wrong answer
+// into a permanent one.
+//
+// The precondition lives in the UPDATE's WHERE clause, so there is no
+// window between deciding and clearing.
+func (e *Engine) settleExtraction(ctx context.Context, args storeFactsArgs) error {
+	expected := sha256Hex(strings.TrimSpace(args.chunkContent))
+	cleared, err := e.clearFactsPending(ctx, args.chunkID, expected)
+	if err != nil {
+		return err
+	}
+	if !cleared {
+		// Either the content moved or the row is gone. Not an error: the
+		// marker is left standing on purpose, and the reconciler owns it
+		// from here.
+		e.log.Info("extraction finished against superseded content; leaving the chunk pending",
+			"chunkId", args.chunkID)
+	}
+	return nil
 }

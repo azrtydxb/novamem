@@ -116,6 +116,11 @@ type Engine struct {
 	// DURING this call, so a test has to be able to decide what the row
 	// looks like by the time it returns.
 	extractFacts func(ctx context.Context, content string) ([]llm.ExtractedFact, error)
+	// clearFactsPending settles the extraction debt, but only if the row
+	// still holds the content the extraction ran against. Conditional in
+	// SQL rather than checked here, so there is no window between the
+	// check and the clear.
+	clearFactsPending func(ctx context.Context, id, expectedHash string) (bool, error)
 	// entryContentHash backs the staleness check in storeFactsForChunk.
 	// A seam rather than a direct call because the case worth testing —
 	// the row changing mid-extraction — cannot be produced any other way
@@ -210,6 +215,7 @@ func New(o Options) *Engine {
 		getUserQuota:         o.Warm.GetUserQuota,
 		countEntries:         o.Warm.CountEntriesForUser,
 		entryContentHash:     o.Warm.EntryContentHash,
+		clearFactsPending:    o.Warm.ClearFactsPendingIfUnchanged,
 		quotaState:           map[string]*quotaEntry{},
 	}
 	e.pendingEmbeddings.Store(-1)
