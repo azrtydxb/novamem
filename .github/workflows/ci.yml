@@ -65,6 +65,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
+      # For `pnpm docs:smoke`, which shells into cmd/gen-env-docs --check.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go/go.sum
           cache: pnpm
       - run: pnpm install --frozen-lockfile --reporter=append-only
       # Build before typecheck so workspace packages that consume each
@@ -78,6 +83,11 @@ jobs:
       - run: pnpm test
       # Guard against stale prose drift in docs (issue #73). Cheap regex
       # checks; no extra deps. See scripts/doc-smoke.mjs for invariants.
+      # docs:smoke runs the documentation audit from cmd/gen-env-docs,
+      # which needs the Go toolchain in this otherwise Node-only job. One
+      # implementation of the rule, in the language that owns the config
+      # registry it checks against — rather than a second copy in JS that
+      # could disagree with the first.
       - run: pnpm docs:smoke
 
   # ── Go modules (server rewrite + shared client) ───────────────────────
