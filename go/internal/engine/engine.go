@@ -111,6 +111,21 @@ type Engine struct {
 	now          func() time.Time
 	getUserQuota func(ctx context.Context, userID string) (maxEntries, writesPerMinute *int, err error)
 	countEntries func(ctx context.Context, userID string) (int, error)
+	// extractFacts is the LLM call storeFactsForChunk makes. A seam for
+	// the same reason as entryContentHash: the bug being guarded happens
+	// DURING this call, so a test has to be able to decide what the row
+	// looks like by the time it returns.
+	extractFacts func(ctx context.Context, content string) ([]llm.ExtractedFact, error)
+	// clearFactsPending settles the extraction debt, but only if the row
+	// still holds the content the extraction ran against. Conditional in
+	// SQL rather than checked here, so there is no window between the
+	// check and the clear.
+	clearFactsPending func(ctx context.Context, id, expectedHash string) (bool, error)
+	// entryContentHash backs the staleness check in storeFactsForChunk.
+	// A seam rather than a direct call because the case worth testing —
+	// the row changing mid-extraction — cannot be produced any other way
+	// without a live database and a real race.
+	entryContentHash func(ctx context.Context, id string) (string, bool, error)
 
 	// Per-user write-quota state — fixed 60s rate window + 30s-cached
 	// entry count, per replica by design (engine/index.ts quotaState).
@@ -199,9 +214,17 @@ func New(o Options) *Engine {
 		now:                  time.Now,
 		getUserQuota:         o.Warm.GetUserQuota,
 		countEntries:         o.Warm.CountEntriesForUser,
+		entryContentHash:     o.Warm.EntryContentHash,
+		clearFactsPending:    o.Warm.ClearFactsPendingIfUnchanged,
 		quotaState:           map[string]*quotaEntry{},
 	}
 	e.pendingEmbeddings.Store(-1)
+	// Bound only when an extractor exists: a method value on a nil
+	// *FactExtractor would give a non-nil func field that panics on call,
+	// turning "extraction is switched off" into a crash.
+	if o.Extractor != nil {
+		e.extractFacts = o.Extractor.Extract
+	}
 	return e
 }
 

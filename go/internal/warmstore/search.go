@@ -394,6 +394,27 @@ func (s *Store) SetFactsPendingAt(ctx context.Context, id string, at *time.Time)
 	return err
 }
 
+// ClearFactsPendingIfUnchanged settles the fact-extraction debt only if
+// the row still holds the content the extraction ran against.
+//
+// The precondition is the point. An extraction that loses a race to an
+// Update must not report the chunk as done: doing so is what turned a
+// transient duplicate into a permanent one, because the reconciler then
+// never revisited it (#272). Checking the hash in Go and clearing here
+// would leave a window between the two; one conditional UPDATE has none.
+//
+// cleared=false means the content moved and the marker was deliberately
+// left standing for the reconciler.
+func (s *Store) ClearFactsPendingIfUnchanged(ctx context.Context, id, expectedHash string) (cleared bool, err error) {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE memory_entries SET facts_pending_at = NULL
+		 WHERE id = $1 AND content_hash IS NOT DISTINCT FROM $2`, id, expectedHash)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // SetGraphPendingAt clears (or re-arms) the pending-enrichment marker.
 func (s *Store) SetGraphPendingAt(ctx context.Context, id string, at *time.Time) error {
 	_, err := s.Pool.Exec(ctx,
