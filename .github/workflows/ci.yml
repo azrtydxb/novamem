@@ -205,6 +205,16 @@ jobs:
           buildkitd-config-inline: |
             [registry."192.168.10.131"]
               insecure = true
+            # Base image pulls, not just the cache. BuildKit's
+            # docker-container driver runs in its own container and ignores
+            # the node's containerd registries.yaml, so without these the
+            # Dockerfile's node:, golang: and gcr.io/distroless images come
+            # straight from the internet even though Nexus proxies all three.
+            # Keeps the pulls on the LAN and off Docker Hub's rate limits.
+            [registry."docker.io"]
+              mirrors = ["192.168.10.131"]
+            [registry."gcr.io"]
+              mirrors = ["192.168.10.131"]
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
