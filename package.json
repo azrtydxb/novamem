@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "bench:smoke": "cd go && go run ./cmd/novamem-bench --fixture ../packages/benchmarks/fixtures/novamem-recall-smoke.json",
-    "docs:smoke": "node scripts/doc-smoke.mjs",
+    "docs:smoke": "node scripts/doc-smoke.mjs && cd go && go run ./cmd/gen-env-docs --check",
     "conformance": "cd conformance && go test -count=1 -v ./..."
   },
   "devDependencies": {

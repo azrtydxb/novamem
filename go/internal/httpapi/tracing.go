@@ -78,6 +78,19 @@ func traceRequests(mux *http.ServeMux, next http.Handler) http.Handler {
 }
 
 // statusRecorder captures the status code for the span attribute.
+//
+// It deliberately does NOT override Write. It has no reason to — status
+// is seeded to 200, which is what Go sends for a handler that writes
+// without calling WriteHeader, and a WriteHeader after the first is
+// ignored by net/http anyway.
+//
+// It also matters for scanning. Overriding Write puts a repo-owned
+// io.Writer sink on the path every response body already travels, and
+// CodeQL then reports the reflected-XSS flow it can already see —
+// novamem's 404 envelope quotes the requested path — as landing in this
+// file. The flow is unchanged either way and is not exploitable, because
+// those bodies are served as application/json rather than HTML; the only
+// thing the extra method added was a misleading location for it.
 type statusRecorder struct {
 	http.ResponseWriter
 	status  int
@@ -89,11 +102,6 @@ func (s *statusRecorder) WriteHeader(code int) {
 		s.status, s.written = code, true
 	}
 	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	s.written = true
-	return s.ResponseWriter.Write(b)
 }
 
 // Unwrap lets the http package reach the underlying writer for

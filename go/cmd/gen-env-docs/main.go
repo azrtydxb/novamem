@@ -43,6 +43,17 @@ const (
 )
 
 func main() {
+	// --check runs the documentation audit WITHOUT writing anything, so
+	// `pnpm docs:smoke` can enforce it. #277 asked for the invariant to
+	// be reachable from the command contributors actually run, and a
+	// generator that rewrites two files as a side effect is not something
+	// a smoke check should invoke.
+	if len(os.Args) > 1 && os.Args[1] == "--check" {
+		auditDocs()
+		fmt.Println("gen-env-docs: documentation audit passed")
+		return
+	}
+
 	page, err := os.ReadFile(docPath)
 	if err != nil {
 		fail("reading %s: %v", docPath, err)
@@ -649,7 +660,35 @@ var otelVar = regexp.MustCompile(`OTEL_[A-Z0-9_]*[A-Z0-9]`)
 // notImplementedMarker is the page saying so in its own words. Matched
 // loosely on purpose — the requirement is that a reader is told, not
 // that they are told in one blessed phrasing.
-var notImplementedMarker = regexp.MustCompile(`(?i)not implemented|no OpenTelemetry|does nothing|reads no`)
+var notImplementedMarker = regexp.MustCompile(`(?i)not implemented|no OpenTelemetry|does nothing|reads no|ignored by novamem`)
+
+// markedNearby reports whether the disclaimer sits close enough to the
+// mention to be read as being about it.
+//
+// Matching the whole page was wrong, and wrong in the dangerous
+// direction: docs/architecture/multi-tenancy.md already says quotas are
+// "not implemented", so adding an OTEL setting anywhere on that page
+// would have passed the check while telling a reader nothing. A reader
+// does not read a page as one undifferentiated blob, and neither should
+// this.
+//
+// The window is the paragraph the mention sits in plus the one on either
+// side, which covers the real shapes: a disclaimer in the sentence, in a
+// preceding banner, or in a note directly underneath a table row.
+func markedNearby(src, name string) bool {
+	paras := strings.Split(src, "\n\n")
+	for i, p := range paras {
+		if !strings.Contains(p, name) {
+			continue
+		}
+		lo, hi := max(0, i-1), min(len(paras), i+2)
+		if notImplementedMarker.MatchString(strings.Join(paras[lo:hi], "\n\n")) {
+			continue
+		}
+		return false // this mention is unmarked
+	}
+	return true
+}
 
 // checkUnimplementedPrefixes requires an OTEL variable to be either
 // declared — and therefore read — or described on the page as something
@@ -664,8 +703,8 @@ func checkUnimplementedPrefixes(rel, src string, problems *[]string) {
 		if _, declared := config.Lookup(name); declared {
 			continue // the exporter exists now; ordinary rules apply
 		}
-		if notImplementedMarker.MatchString(src) {
-			break // the page says so; one marker covers the page
+		if markedNearby(src, name) {
+			continue
 		}
 		*problems = append(*problems, fmt.Sprintf(
 			"%s names %s, which is not declared in registry.go and is not marked "+
