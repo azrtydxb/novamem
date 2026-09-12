@@ -137,6 +137,35 @@ func (s *Store) GetEntry(ctx context.Context, userID, id string, projectID *stri
 	return e, nil
 }
 
+// EntryContentHash returns the hash of the content a row holds RIGHT NOW,
+// by id alone and with no scope filter.
+//
+// It exists for the fact extractor, which runs detached from the write
+// and so cannot assume the text it was handed is still the text the row
+// holds. Deliberately narrow: one indexed column, no entry scan, because
+// it is read once per extraction on the write path's shadow.
+//
+// found=false means the row is gone — the entry was deleted while the
+// extraction ran, and its facts belong to nothing.
+func (s *Store) EntryContentHash(ctx context.Context, id string) (hash string, found bool, err error) {
+	var h *string
+	err = s.Pool.QueryRow(ctx,
+		`SELECT content_hash FROM memory_entries WHERE id = $1 LIMIT 1`, id).Scan(&h)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if h == nil {
+		// Rows predating content hashing. Reported as found with an empty
+		// hash so the caller can tell "no hash to compare" apart from "no
+		// row", and choose to proceed rather than stall forever.
+		return "", true, nil
+	}
+	return *h, true, nil
+}
+
 // GetEntryScope — by id alone, no scope filter; used by forget/update
 // paths to recheck actual project membership before mutation.
 func (s *Store) GetEntryScope(ctx context.Context, id string) (userID string, projectID *string, found bool, err error) {

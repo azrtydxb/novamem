@@ -56,12 +56,33 @@ func (e *Engine) scheduleFactExtraction(args storeFactsArgs) {
 // in the dream cycle (off the write path, in batch) rather than through a
 // second per-fact LLM call here.
 func (e *Engine) storeFactsForChunk(ctx context.Context, args storeFactsArgs) error {
-	if e.extractor == nil {
+	if e.extractFacts == nil {
 		return nil
 	}
-	facts, err := e.extractor.Extract(ctx, args.chunkContent)
+	facts, err := e.extractFacts(ctx, args.chunkContent)
 	if err != nil {
 		return err
+	}
+	// The source may have moved underneath us. Extraction is an LLM call
+	// plus an embed plus N inserts — seconds — and it runs detached from
+	// the write, so an update can land in the middle of it. Everything
+	// below asserts facts about `args.chunkContent`; if the row no longer
+	// holds that text those assertions are about wording that no longer
+	// exists, and Update has already deleted the derivatives they would
+	// sit beside. Writing them now would resurrect the old content's
+	// facts (#272).
+	if stale, err := e.sourceMoved(ctx, args); err != nil {
+		// Could not tell. Treat as fatal so the marker survives and the
+		// reconciler retries, rather than guessing and writing.
+		return err
+	} else if stale {
+		// Deliberately no SetFactsPendingAt(nil): the debt is NOT settled.
+		// Clearing it here is the second half of the bug — it tells the
+		// reconciler the chunk is done, so the stale facts persist and
+		// the new text never gets extracted if its own run also failed.
+		e.log.Info("discarding facts extracted from superseded content",
+			"chunkId", args.chunkID, "facts", len(facts))
+		return nil
 	}
 	if len(facts) == 0 {
 		// A chunk with nothing durable in it is a COMPLETED extraction,
@@ -262,4 +283,34 @@ func (e *Engine) deleteDerivedFacts(ctx context.Context, userID, sourceID string
 			"sourceId", sourceID, "count", len(derived))
 	}
 	return ok
+}
+
+// sourceMoved reports whether the chunk still holds the content this
+// extraction was run against.
+//
+// Compared by content hash, which the row already stores and which is
+// computed the same way on both write paths (sha256 of the trimmed
+// content), so this is one indexed lookup rather than fetching and
+// diffing the text.
+//
+// Two cases deliberately do NOT count as moved:
+//
+//   - the row has no hash at all, which is possible for rows written
+//     before content hashing. There is nothing to compare, and stalling
+//     extraction forever on those is worse than the race this guards.
+//   - the row is gone. Its facts are about nothing, but there is also no
+//     marker left to settle, and the delete path removes derivatives.
+//     Reported as moved so nothing is written.
+func (e *Engine) sourceMoved(ctx context.Context, args storeFactsArgs) (bool, error) {
+	current, found, err := e.entryContentHash(ctx, args.chunkID)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return true, nil
+	}
+	if current == "" {
+		return false, nil
+	}
+	return current != sha256Hex(strings.TrimSpace(args.chunkContent)), nil
 }
