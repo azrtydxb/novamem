@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, RecentEntry } from "../lib/api";
 import { useActiveProject } from "../lib/active-project";
-import { Card, CardContent } from "../components/Card";
-import { PageHeader } from "../components/PageHeader";
-import { Pill } from "../components/Pill";
+import { KCard } from "../components/k/KCard";
+import { KHeader } from "../components/k/KHeader";
+import { KPill } from "../components/k/KPill";
+import { KEmpty } from "../components/k/KEmpty";
 
 interface RecentResp {
   results: RecentEntry[];
@@ -27,7 +28,6 @@ interface NeighborsResp {
 interface Node {
   id: string;
   label: string;
-  hits: number;
   tier: "warm" | "cold";
   /** Normalised 0..1 layout coords. */
   x: number;
@@ -96,7 +96,6 @@ export function GraphPage() {
       return {
         id: seed,
         label: shortLabel(e?.content ?? seed),
-        hits: e?.hits ?? 0,
         tier: e?.tier ?? "warm",
         x: 0.5,
         y: 0.5,
@@ -110,7 +109,6 @@ export function GraphPage() {
       return {
         id: n.id,
         label: shortLabel(n.content),
-        hits: 1,
         tier: n.tier,
         x: 0.5 + Math.cos(angle) * 0.34,
         y: 0.5 + Math.sin(angle) * 0.34,
@@ -125,44 +123,38 @@ export function GraphPage() {
   }, [seed, recent, neighborsResp]);
 
   return (
-    <>
-      <PageHeader
-        kicker={`Neighbours · seed ${seed?.slice(0, 8) ?? "—"}`}
+    <div className="p-6">
+      <KHeader
+        crumb={`neighbours · seed ${seed?.slice(0, 8) ?? "—"}`}
         title="Memory graph"
-        subtitle="Click any node to recenter the subgraph."
+        right={
+          <span className="font-mono text-[10.5px] text-faint">
+            click a node to recenter
+          </span>
+        }
       />
-      <div className="p-5 grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
-        <Card>
-          <CardContent className="!p-0">
-            {isFetching && nodes.length === 0 ? (
-              <div className="text-center text-dim text-sm py-16">
-                Loading graph…
-              </div>
-            ) : nodes.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="font-mono text-[11px] text-faint mb-1">
-                  empty_graph
-                </div>
-                <div className="text-base font-medium text-ink mb-1">
-                  No memories to graph
-                </div>
-                <div className="text-sm text-dim">
-                  Remember something on the Browse page first.
-                </div>
-              </div>
-            ) : (
-              <GraphSvg
-                nodes={nodes}
-                edges={edges}
-                seed={seed!}
-                onSelect={setSeed}
-              />
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
+        <KCard title="subgraph · depth 1">
+          {isFetching && nodes.length === 0 ? (
+            <KEmpty glyph="◌" title="Loading graph…" />
+          ) : nodes.length === 0 ? (
+            <KEmpty
+              glyph="✦"
+              title="No memories to graph"
+              hint="Remember something on the Browse page first — edges are built from entities entries share."
+            />
+          ) : (
+            <GraphSvg
+              nodes={nodes}
+              edges={edges}
+              seed={seed!}
+              onSelect={setSeed}
+            />
+          )}
+        </KCard>
         <Inspector seed={seed} nodes={nodes} edges={edges} />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -210,7 +202,10 @@ function GraphSvg({
         );
       })}
       {nodes.map((n) => {
-        const r = 12 + Math.min(20, n.hits * 0.4);
+        // Fixed radius. This used to be 12 + hits*0.4, but /v1/recent
+        // returns no hit count, so every node was drawn at 12 anyway and
+        // the sizing only looked like it meant something.
+        const r = 13;
         const isSeed = n.id === seed;
         const fill =
           n.tier === "warm" ? "var(--color-warm)" : "var(--color-cold)";
@@ -278,49 +273,43 @@ function Inspector({
     ? edges.filter((e) => e.from === seed || e.to === seed)
     : [];
   return (
-    <Card>
-      <div className="px-[18px] py-[14px] border-b border-rule-soft">
-        <div className="text-sm font-semibold text-ink">Inspector</div>
-      </div>
-      <CardContent>
+    <KCard title="inspector">
+      <div className="p-4">
         {node ? (
           <>
-            <div className="text-base font-semibold text-ink">{node.label}</div>
-            <div className="font-mono text-[11px] text-dim mt-0.5">
+            <div className="text-[14px] font-medium text-ink">{node.label}</div>
+            <div className="mt-0.5 font-mono text-[10.5px] text-dim">
               {node.id}
             </div>
-            <div className="grid grid-cols-2 gap-3 mt-4">
+            {/* "hits" was here, always reading 0: the endpoint behind
+                this page does not return a hit count. A zero is a claim,
+                not a blank. */}
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <div className="text-lg font-semibold text-ink tabular-nums">
-                  {node.hits}
-                </div>
-                <div className="font-mono text-[9px] text-faint uppercase tracking-[0.06em]">
-                  Hits
-                </div>
-              </div>
-              <div>
-                <div className="text-lg font-semibold text-ink tabular-nums">
+                <div className="font-mono text-[18px] font-bold text-ink tabular-nums">
                   {seedEdges.length}
                 </div>
-                <div className="font-mono text-[9px] text-faint uppercase tracking-[0.06em]">
-                  Edges
+                <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-faint-2">
+                  edges
                 </div>
               </div>
             </div>
-            <div className="mt-4 pt-4 border-t border-rule-soft text-[12px]">
-              <div className="font-mono text-dim mb-1">Tier</div>
-              <Pill tone={node.tier === "warm" ? "warm" : "cold"}>
+            <div className="mt-4 border-t border-rule-soft pt-4">
+              <div className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-faint-2">
+                tier
+              </div>
+              <KPill tone={node.tier === "warm" ? "warm" : "cold"}>
                 {node.tier}
-              </Pill>
+              </KPill>
             </div>
           </>
         ) : (
-          <div className="text-sm text-dim">
+          <div className="text-[12.5px] text-dim">
             Pick a seed to inspect its neighbours.
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </KCard>
   );
 }
 

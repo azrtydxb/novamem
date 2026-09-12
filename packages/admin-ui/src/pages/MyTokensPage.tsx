@@ -21,7 +21,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
-import { PageHeader } from "../components/PageHeader";
+import { KHeader } from "../components/k/KHeader";
 import { useToast } from "../components/Toast";
 import { fmtRelative, fmtTimestamp, shortHash } from "../lib/utils";
 
@@ -61,25 +61,26 @@ export function MyTokensPage() {
   };
 
   return (
-    <>
-      <PageHeader
-        kicker="Per-device · plaintext shown once"
-        title={
-          <div className="flex items-center gap-2">
-            <span>API tokens</span>
+    <div className="p-6">
+      <KHeader
+        crumb="per-device · plaintext shown once"
+        title="API tokens"
+        right={
+          <>
             {user?.username ? (
               <Badge tone="accent">{user.username}</Badge>
             ) : null}
-          </div>
-        }
-        subtitle="One token per device or agent. The plaintext is shown only at creation — store it then; the server keeps just a sha256 hash."
-        actions={
-          <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </Button>
+            <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
+          </>
         }
       />
-      <div className="p-5 space-y-3">
+      <p className="mb-4 max-w-3xl text-xs leading-relaxed text-dim">
+        One token per device or agent. The plaintext is shown only at creation —
+        store it then; the server keeps just a sha256 hash.
+      </p>
+      <div className="space-y-3">
         <CreateCard
           onCreated={(token, label) => {
             setCreatedPlaintext({ token, label });
@@ -239,7 +240,7 @@ export function MyTokensPage() {
           }
         />
       </div>
-    </>
+    </div>
   );
 }
 

@@ -4,8 +4,10 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, SessionUser } from "./api";
 
 interface AuthState {
@@ -35,7 +37,15 @@ export function useAuth(): AuthContextValue {
 }
 
 interface BetterAuthSessionResp {
-  user?: { id: string; email: string; name: string; role?: string };
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    role?: string;
+    /** Set by the server when the user still owes a password change —
+     *  admin-created accounts and the env-seeded bootstrap admin. */
+    mustChangePassword?: boolean;
+  };
   session?: { id: string; expiresAt: string };
 }
 
@@ -49,6 +59,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     needsPasswordChange: false,
   });
 
+  // Every cached query in this SPA is scoped to the signed-in user by the
+  // session cookie, but none of the keys say so — ["browse-recent",
+  // project] is the same key for everyone. The QueryClient is a singleton
+  // that outlives a sign-out, so signing in as someone else on the same
+  // tab renders the previous account's memories, metrics and search hits
+  // from cache until each request comes back.
+  //
+  // Clearing on every identity change fixes all of those at once, and
+  // keeps fixing the next one: a key added later cannot forget to include
+  // a user id it never had to include. `clear()` drops cached data rather
+  // than invalidating it, so nothing stale is rendered while refetching.
+  const queryClient = useQueryClient();
+  const lastUserId = useRef<string | null>(null);
+  useEffect(() => {
+    const id = state.user?.id ?? null;
+    if (id !== lastUserId.current) {
+      lastUserId.current = id;
+      queryClient.clear();
+    }
+  }, [state.user?.id, queryClient]);
+
   const reload = useCallback(async () => {
     const r = await api<BetterAuthSessionResp>("GET", "/api/auth/get-session");
     if (r.ok && r.body?.user) {
@@ -61,7 +92,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         username: u.email.split("@")[0] ?? u.email,
         role: (u.role ?? "user") as SessionUser["role"],
       };
-      setState({ user, loading: false, needsPasswordChange: false });
+      // The server's own answer, not a hardcoded false. Reading it on
+      // every session resolve (not just at sign-in) means a reload while
+      // the obligation stands lands back on the password screen rather
+      // than slipping into the app.
+      setState({
+        user,
+        loading: false,
+        needsPasswordChange: u.mustChangePassword === true,
+      });
     } else {
       setState({ user: null, loading: false, needsPasswordChange: false });
     }

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, OnboardingState } from "../lib/api";
 import { Card } from "../components/Card";
+import { useAuth } from "../lib/auth-context";
 
 interface Step {
   n: number;
@@ -20,6 +21,7 @@ interface Props {
  *  guide. The "Continue" button on the active step navigates to the
  *  page that completes that step. */
 export function OnboardingPage({ onSkip, onContinue }: Props) {
+  const { user } = useAuth();
   const { data } = useQuery({
     queryKey: ["onboarding"],
     queryFn: async () => {
@@ -40,7 +42,10 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
     {
       n: 2,
       label: "Account ready",
-      hint: data?.userId ? `signed in as ${data.userId}` : "—",
+      // The endpoint returns the opaque user id; showing it to a user
+      // who is being welcomed reads as a bug, not as information. The
+      // auth context already holds the name they signed in with.
+      hint: user?.username ? `signed in as ${user.username}` : "—",
       done: data?.userDone ?? false,
     },
     {
@@ -67,12 +72,12 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
   const totalDone = steps.filter((s) => s.done).length;
 
   return (
-    <div className="px-8 pt-12 pb-20 overflow-auto">
+    <div className="grid-bg overflow-auto px-8 pb-20 pt-12">
       <div className="max-w-[880px] mx-auto">
         <span className="kicker bg-accent-soft text-accent rounded-full px-2.5 py-1 inline-block">
           Welcome
         </span>
-        <h1 className="mt-3 text-[36px] font-semibold tracking-[-0.025em] text-ink">
+        <h1 className="mt-3 font-mono text-[32px] font-bold tracking-[-0.025em] text-ink">
           Let's give your agent memory
         </h1>
         <div className="mt-2 text-[15px] text-dim">
@@ -94,7 +99,7 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
                   className={
                     `flex-none w-9 h-9 rounded-full flex items-center justify-center font-semibold ` +
                     (s.done
-                      ? "bg-accent text-white"
+                      ? "bg-accent text-accent-ink"
                       : active
                       ? "bg-panel border-2 border-accent text-accent"
                       : "border-2 border-rule text-faint")
@@ -111,7 +116,7 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
                 {active ? (
                   <button
                     onClick={onContinue}
-                    className="border border-accent bg-accent text-white text-xs font-medium px-3.5 py-1.5 rounded-md hover:bg-accent-hover transition-colors"
+                    className="rounded-md border border-accent bg-accent px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.04em] text-accent-ink transition-colors hover:bg-accent-hover"
                   >
                     Continue →
                   </button>
@@ -126,17 +131,40 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
         </Card>
 
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Named by what each tier DOES, not by a backend product.
+              This block used to say "qdrant · vector cosine" and "falkor ·
+              neighbours": the cold tier is whichever vector backend is
+              configured (this deployment runs pgvector) and there has been
+              no graph service for a long time. That is the same false
+              claim #238 removed from the Health page, and a new user's
+              first screen is the worst place to make it. The real cold
+              provider is only readable from an admin-only endpoint, so the
+              honest fix is to stop naming products here at all. */}
           {[
-            ["Warm tier", "postgres FTS · keyword search", "var(--color-warm)"],
-            ["Cold tier", "qdrant · vector cosine", "var(--color-cold)"],
-            ["Graph", "falkor · neighbours", "var(--color-graph)"],
+            [
+              "Warm tier",
+              "recent entries · keyword search",
+              "var(--color-warm)",
+            ],
+            [
+              "Cold tier",
+              "older entries · vector similarity",
+              "var(--color-cold)",
+            ],
+            [
+              "Graph",
+              "links between entries that share entities",
+              "var(--color-graph)",
+            ],
           ].map(([t, d, color]) => (
             <Card key={t} className="p-4">
               <div
                 className="h-2 w-2 rounded-full"
                 style={{ background: color }}
               />
-              <div className="mt-2.5 text-sm font-semibold text-ink">{t}</div>
+              <div className="mt-2.5 font-mono text-[12px] font-bold text-ink">
+                {t}
+              </div>
               <div className="mt-1 font-mono text-[11px] text-dim">{d}</div>
             </Card>
           ))}

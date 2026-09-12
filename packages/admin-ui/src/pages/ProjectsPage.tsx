@@ -25,7 +25,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
-import { PageHeader } from "../components/PageHeader";
+import { KHeader } from "../components/k/KHeader";
 import { useToast } from "../components/Toast";
 import { fmtRelative } from "../lib/utils";
 
@@ -46,18 +46,21 @@ export function ProjectsPage() {
   }, [queryClient]);
 
   return (
-    <>
-      <PageHeader
-        kicker="Sub-brains · scoped memory"
+    <div className="p-6">
+      <KHeader
+        crumb="sub-brains · scoped memory"
         title="Projects"
-        subtitle="A project is a sub-brain — its memories live separately from your global memory. Share with another user by adding them as a member."
-        actions={
+        right={
           <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
         }
       />
-      <div className="p-5 space-y-3">
+      <p className="mb-4 max-w-3xl text-xs leading-relaxed text-dim">
+        A project is a sub-brain — its memories live separately from your global
+        memory. Share one with another user by adding them as a member.
+      </p>
+      <div className="space-y-3">
         <CreateProjectCard onCreated={refresh} />
 
         {projects === null ? (
@@ -80,7 +83,7 @@ export function ProjectsPage() {
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
 

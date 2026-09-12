@@ -1,36 +1,67 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Trash2 } from "lucide-react";
-import { api, SearchResult } from "../lib/api";
+import { api, RecentEntry, SearchResult } from "../lib/api";
 import { useActiveProject } from "../lib/active-project";
-import { Card, CardContent } from "../components/Card";
-import { PageHeader } from "../components/PageHeader";
-import { Pill } from "../components/Pill";
-import { Button } from "../components/Button";
+import { KCard } from "../components/k/KCard";
+import { KHeader } from "../components/k/KHeader";
+import { KBtn } from "../components/k/KBtn";
+import { KPill } from "../components/k/KPill";
+import { KEmpty } from "../components/k/KEmpty";
+import { KSignals } from "../components/k/KSignals";
 import { Modal } from "../components/Modal";
 import { useToast } from "../components/Toast";
+import { cn } from "../lib/utils";
+
+/** What a row can carry.
+ *
+ *  The two endpoints behind this page return different shapes.
+ *  `/v1/search` ranks, so every hit has `signals`. `/v1/recent` orders
+ *  by recency and computes no ranking at all — no `signals`, and none of
+ *  the `hits` / `age` / `decay` the v2 design draws on a row.
+ *
+ *  So `signals` is optional here and the row renders the bars only when
+ *  they exist. Passing an absent `signals` into KSignals threw; showing
+ *  three empty bars instead would be the other failure — a bar at zero
+ *  claims a signal contributed nothing, not that nothing computed it. */
+type Row = Omit<SearchResult, "signals"> &
+  Partial<Pick<SearchResult, "signals">>;
 
 interface RecentResp {
-  results: SearchResult[];
+  results: RecentEntry[];
 }
 interface SearchResp {
   results: SearchResult[];
   degraded: boolean;
 }
 
-/** Browse memories — combines `/v1/recent` (default view, last
- *  20 entries by created-time) with `/v1/search` (when the user
- *  types a query). The API returns the same SearchResult shape so the
- *  list rendering is identical. */
-export function BrowsePage() {
-  const [query, setQuery] = useState("");
+type TierFilter = "all" | "warm" | "cold";
+
+/** Browse memories — `/v1/recent` by default, `/v1/search` once the user
+ *  types. Both return the same row shape for the fields they share. */
+interface BrowseProps {
+  /** Set when the user arrived by picking a memory in the ⌘K palette:
+   *  the query that found it, and the row to open. */
+  seed?: { query: string; id: string } | null;
+}
+
+export function BrowsePage({ seed }: BrowseProps = {}) {
+  const [query, setQuery] = useState(seed?.query ?? "");
   // Debounce input: render after 300ms of typing inactivity to avoid
   // thrashing the search backend on every keystroke.
   const debounced = useDebounced(query, 300);
   const isSearching = debounced.trim().length > 0;
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [confirmForget, setConfirmForget] = useState<SearchResult | null>(null);
+  const [confirmForget, setConfirmForget] = useState<Row | null>(null);
+  const [tier, setTier] = useState<TierFilter>("all");
+  const [expanded, setExpanded] = useState<string | null>(seed?.id ?? null);
+
+  // A later pick from the palette re-seeds a page that is already open.
+  useEffect(() => {
+    if (!seed) return;
+    setQuery(seed.query);
+    setExpanded(seed.id);
+  }, [seed]);
   const { activeProjectId, activeProjectName } = useActiveProject();
   // Active-project mode: union the user-global view with the selected
   // project so Browse shows both side-by-side. The query key includes
@@ -64,19 +95,22 @@ export function BrowsePage() {
     enabled: isSearching,
   });
 
-  const results = isSearching
+  const all: Row[] = isSearching
     ? searchResp?.results ?? []
     : recent?.results ?? [];
   const loading = isSearching ? searchLoading : recentLoading;
+
   const tierCounts = useMemo(() => {
     let warm = 0;
     let cold = 0;
-    for (const r of results) {
+    for (const r of all) {
       if (r.tier === "warm") warm++;
       else cold++;
     }
     return { warm, cold };
-  }, [results]);
+  }, [all]);
+
+  const results = tier === "all" ? all : all.filter((r) => r.tier === tier);
 
   const [composing, setComposing] = useState(false);
   const [newContent, setNewContent] = useState("");
@@ -110,7 +144,7 @@ export function BrowsePage() {
   // remove one. A reader could see a memory they wanted gone and had to
   // leave the UI to do it.
   const forget = useMutation({
-    mutationFn: async (entry: SearchResult) => {
+    mutationFn: async (entry: Row) => {
       // The row's OWN project, not the active scope. Browse shows a
       // union of user-global and active-project entries, so deleting a
       // project-scoped row while globally scoped would look up an id the
@@ -151,69 +185,113 @@ export function BrowsePage() {
   });
 
   return (
-    <>
-      <PageHeader
-        kicker="Hybrid search · keyword + vector + graph"
-        title="Browse memories"
-        actions={
-          <Button size="sm" onClick={() => setComposing(true)}>
-            <Plus className="h-3.5 w-3.5" /> Remember
-          </Button>
+    <div className="p-6">
+      <KHeader
+        crumb={
+          activeProjectName
+            ? `global ∪ ${activeProjectName} · keyword + vector + graph`
+            : "hybrid search · keyword + vector + graph"
+        }
+        title="Browse"
+        right={
+          <KBtn variant="primary" onClick={() => setComposing(true)}>
+            Remember
+          </KBtn>
         }
       />
-      <div className="p-5">
-        <Card>
-          {/* Search bar */}
-          <div className="flex items-center gap-2.5 px-[18px] py-3.5 border-b border-rule-soft">
-            <Search className="h-4 w-4 text-faint" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search across all memories…"
-              className="flex-1 bg-transparent border-none outline-none text-sm text-ink placeholder:text-faint"
-            />
-            <span className="font-mono text-[10px] text-faint border border-rule rounded px-1.5 py-0.5">
-              k=20
-            </span>
-          </div>
-          {/* Result summary strip */}
-          <div className="flex items-center gap-3.5 px-[18px] py-2.5 border-b border-rule-soft font-mono text-[11px] text-dim">
-            <span>
-              {loading
-                ? "loading…"
-                : `${results.length} hit${results.length === 1 ? "" : "s"}`}
-              {isSearching && searchResp?.degraded ? (
-                <span className="ml-2 text-warn">· graph degraded</span>
-              ) : null}
-            </span>
-            <span className="ml-auto flex items-center gap-3">
-              <span className="text-warm">● warm {tierCounts.warm}</span>
-              <span className="text-cold">● cold {tierCounts.cold}</span>
-            </span>
-          </div>
 
-          {/* Result rows */}
-          {loading && results.length === 0 ? (
-            <div className="px-[18px] py-12 text-center text-dim text-sm">
-              Loading memories…
-            </div>
-          ) : results.length === 0 ? (
-            <EmptyState
-              isSearching={isSearching}
-              onCompose={() => setComposing(true)}
+      <KCard>
+        {/* Search bar */}
+        <div className="flex items-center gap-2.5 border-b border-rule-soft px-4 py-3">
+          <span className="font-mono text-[13px] text-faint">⌕</span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search across all memories…"
+            aria-label="Search memories"
+            className="flex-1 border-none bg-transparent text-[13px] text-ink outline-none placeholder:text-faint"
+          />
+          <span className="rounded border border-rule px-1.5 py-0.5 font-mono text-[10px] text-faint">
+            k=20
+          </span>
+        </div>
+
+        {/* Summary strip + tier filter */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-rule-soft px-4 py-2.5 font-mono text-[11px] text-dim">
+          <span>
+            {loading
+              ? "loading…"
+              : `${results.length} hit${results.length === 1 ? "" : "s"}`}
+            {isSearching && searchResp?.degraded ? (
+              <span className="ml-2 text-warn">· graph degraded</span>
+            ) : null}
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            {(
+              [
+                ["all", all.length],
+                ["warm", tierCounts.warm],
+                ["cold", tierCounts.cold],
+              ] as const
+            ).map(([key, count]) => (
+              <button
+                key={key}
+                onClick={() => setTier(key)}
+                aria-pressed={tier === key}
+                className={cn(
+                  "rounded-sm px-2 py-0.5 lowercase transition-colors",
+                  tier === key
+                    ? "bg-active text-ink"
+                    : "text-faint hover:text-ink",
+                  key === "warm" && tier === key && "text-warm",
+                  key === "cold" && tier === key && "text-cold"
+                )}
+              >
+                {key} {count}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Rows */}
+        {loading && results.length === 0 ? (
+          <KEmpty glyph="◌" title="Loading memories…" />
+        ) : results.length === 0 ? (
+          <KEmpty
+            title={
+              all.length > 0
+                ? `No ${tier} entries`
+                : isSearching
+                ? "No memories matched"
+                : "No memories yet"
+            }
+            hint={
+              all.length > 0
+                ? "The filter is hiding the rest — switch back to all."
+                : isSearching
+                ? "Try a broader query, or remember something new."
+                : "Save your first memory and it will appear here."
+            }
+            action={
+              !isSearching && all.length === 0 ? (
+                <KBtn variant="primary" onClick={() => setComposing(true)}>
+                  Remember something
+                </KBtn>
+              ) : null
+            }
+          />
+        ) : (
+          results.map((r) => (
+            <ResultRow
+              key={r.id}
+              r={r}
+              open={expanded === r.id}
+              onToggle={() => setExpanded((c) => (c === r.id ? null : r.id))}
+              onForget={() => setConfirmForget(r)}
             />
-          ) : (
-            results.map((r, i, arr) => (
-              <ResultRow
-                key={r.id}
-                r={r}
-                last={i === arr.length - 1}
-                onForget={() => setConfirmForget(r)}
-              />
-            ))
-          )}
-        </Card>
-      </div>
+          ))
+        )}
+      </KCard>
 
       <Modal
         open={confirmForget !== null}
@@ -222,14 +300,13 @@ export function BrowsePage() {
         description="The entry, its vector and its graph edges are removed. This cannot be undone."
         footer={
           <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
+            <KBtn
               onClick={() => setConfirmForget(null)}
               disabled={forget.isPending}
             >
               Cancel
-            </Button>
-            <Button
+            </KBtn>
+            <KBtn
               variant="danger"
               loading={forget.isPending}
               onClick={() => {
@@ -237,11 +314,11 @@ export function BrowsePage() {
               }}
             >
               Forget
-            </Button>
+            </KBtn>
           </div>
         }
       >
-        <div className="text-[13px] text-ink leading-relaxed">
+        <div className="text-[13px] leading-relaxed text-ink">
           {confirmForget?.content}
         </div>
         <div className="mt-2 font-mono text-[10px] text-dim">
@@ -256,120 +333,113 @@ export function BrowsePage() {
         description="Store a new memory. It lands in the warm tier and decays as it ages without hits."
         footer={
           <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
+            <KBtn
               onClick={() => setComposing(false)}
               disabled={remember.isPending}
             >
               Cancel
-            </Button>
-            <Button
+            </KBtn>
+            <KBtn
+              variant="primary"
               onClick={() => remember.mutate()}
               loading={remember.isPending}
               disabled={!newContent.trim()}
             >
               Save
-            </Button>
+            </KBtn>
           </div>
         }
       >
-        <label className="text-xs font-medium text-ink">Content</label>
+        <label
+          htmlFor="remember-content"
+          className="font-mono text-[10.5px] lowercase tracking-[0.05em] text-faint"
+        >
+          content
+        </label>
         <textarea
+          id="remember-content"
           value={newContent}
           onChange={(e) => setNewContent(e.target.value)}
           rows={6}
           autoFocus
           placeholder="One memory entry — sentence, decision, fact, fragment."
-          className="mt-1.5 w-full rounded-lg border border-rule bg-bg px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-accent/40 resize-none"
+          className="mt-1.5 w-full resize-none rounded-lg border border-rule bg-input px-3 py-2 text-sm text-ink outline-none focus:border-accent"
         />
       </Modal>
-    </>
+    </div>
   );
 }
 
 function ResultRow({
   r,
-  last,
+  open,
+  onToggle,
   onForget,
 }: {
-  r: SearchResult;
-  last: boolean;
+  r: Row;
+  open: boolean;
+  onToggle: () => void;
   onForget: () => void;
 }) {
   return (
-    <div
-      className={`grid items-center gap-3.5 px-[18px] py-3.5 ${
-        last ? "" : "border-b border-rule-soft"
-      }`}
-      style={{ gridTemplateColumns: "auto 1fr 60px 60px auto" }}
-    >
-      <Pill tone={r.tier === "warm" ? "warm" : "cold"}>{r.tier}</Pill>
-      <div>
-        <div className="text-[13px] text-ink leading-relaxed">{r.content}</div>
-        <div className="mt-1 font-mono text-[10px] text-dim">
-          <span>{r.id.slice(0, 8)}</span>
-          <span className="mx-1.5 text-faint">·</span>
-          <span>project: {r.project ?? "—"}</span>
-          <span className="mx-1.5 text-faint">·</span>
-          <span>ns: {r.namespace}</span>
-          <span className="mx-1.5 text-faint">·</span>
-          <span>{r.source}</span>
-        </div>
-      </div>
-      <div className="text-right">
-        <div className="text-base font-semibold tabular-nums text-accent">
-          {r.score.toFixed(2)}
-        </div>
-        <div className="font-mono text-[9px] text-faint">score</div>
-      </div>
-      <div className="text-right">
-        <div className="text-base font-semibold tabular-nums text-ink">
-          {(
-            (r.signals?.keyword ?? 0) +
-            (r.signals?.vector ?? 0) +
-            (r.signals?.graph ?? 0)
-          ).toFixed(2)}
-        </div>
-        <div className="font-mono text-[9px] text-faint">signals</div>
-      </div>
-      <button
-        onClick={onForget}
-        aria-label={`Forget memory ${r.id.slice(0, 8)}`}
-        title="Forget this memory"
-        className="text-faint hover:text-danger transition-colors p-1 rounded"
+    <div className="border-b border-rule-soft last:border-0">
+      <div
+        className={cn(
+          "flex items-start gap-3 px-4 py-3 transition-colors",
+          open ? "bg-active" : "hover:bg-subtle/50"
+        )}
       >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}
+        <button
+          onClick={onToggle}
+          aria-expanded={open}
+          className="min-w-0 flex-1 text-left"
+        >
+          <div className="flex items-center gap-2">
+            <KPill tone={r.tier === "warm" ? "warm" : "cold"}>{r.tier}</KPill>
+            <span className="truncate text-[13px] leading-relaxed text-ink">
+              {r.content}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 font-mono text-[10px] text-faint">
+            <span>{r.id.slice(0, 8)}</span>
+            <span>· ns {r.namespace}</span>
+            <span>· {r.project ?? "global"}</span>
+            <span>· {r.source}</span>
+          </div>
+        </button>
+        <div className="shrink-0 text-right">
+          <div className="font-mono text-[15px] font-bold tabular-nums text-accent">
+            {r.score.toFixed(2)}
+          </div>
+          <div className="font-mono text-[9px] text-faint">score</div>
+        </div>
+        <button
+          onClick={onForget}
+          aria-label={`Forget memory ${r.id.slice(0, 8)}`}
+          title="Forget this memory"
+          className="shrink-0 rounded p-1 font-mono text-[13px] leading-none text-faint transition-colors hover:text-err"
+        >
+          ⌫
+        </button>
+      </div>
 
-function EmptyState({
-  isSearching,
-  onCompose,
-}: {
-  isSearching: boolean;
-  onCompose: () => void;
-}) {
-  return (
-    <CardContent className="text-center py-14">
-      <div className="font-mono text-[11px] text-faint mb-2">
-        {isSearching ? "no_hits" : "no_memories"}
-      </div>
-      <div className="text-base font-medium text-ink mb-1">
-        {isSearching ? "No memories matched" : "No memories yet"}
-      </div>
-      <div className="text-sm text-dim mb-4">
-        {isSearching
-          ? "Try a broader query, or remember something new."
-          : "Save your first memory and it will appear here."}
-      </div>
-      {!isSearching ? (
-        <Button onClick={onCompose}>
-          <Plus className="h-3.5 w-3.5" /> Remember something
-        </Button>
+      {open ? (
+        <div className="border-t border-rule-soft bg-panel px-4 py-3">
+          <div className="mb-3 text-[13px] leading-relaxed text-ink-2">
+            {r.content}
+          </div>
+          {r.signals ? (
+            <KSignals signals={r.signals} />
+          ) : (
+            // Recency ordering, not fusion: there is no ranking to show.
+            <div className="font-mono text-[10.5px] text-faint">
+              ordered by recency — search to see how the signals fused
+            </div>
+          )}
+          <div className="mt-3 font-mono text-[10px] text-faint">{r.id}</div>
+        </div>
       ) : null}
-    </CardContent>
+    </div>
   );
 }
 

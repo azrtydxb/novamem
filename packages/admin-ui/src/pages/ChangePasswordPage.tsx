@@ -1,10 +1,10 @@
 import { FormEvent, useState } from "react";
-import { KeyRound, Loader2 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { useToast } from "../components/Toast";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { AuthFrame } from "../components/AuthFrame";
 
 /** `forced` is the first-login path, where the shell renders this page
  *  instead of the dashboard and the copy is about the shared bootstrap
@@ -76,73 +76,60 @@ export function ChangePasswordPage({
   };
 
   return (
-    <div className="min-h-full flex items-center justify-center p-6">
-      <div className="w-[440px] max-w-full bg-panel border border-rule rounded-xl p-8 shadow-modal">
-        <div className="flex items-center gap-2.5 mb-6">
-          <div className="h-9 w-9 rounded-[10px] bg-warn flex items-center justify-center">
-            <KeyRound className="h-4 w-4 text-white" />
-          </div>
-          <div>
-            <div className="text-base font-semibold text-ink">
-              Change password
-            </div>
-            <div className="font-mono text-[10px] text-dim">
-              {forced ? "First-time login" : "Account"}
-            </div>
-          </div>
-        </div>
-
-        <p className="text-[13px] text-dim mt-1.5 mb-5">
-          {forced
-            ? "The bootstrap password is shared across all first-time installations. Please set a unique password before continuing."
-            : "Set a new password for your account. Other sessions are signed out."}
-        </p>
-
-        <form onSubmit={submit} className="mt-5 space-y-3.5">
-          <Input
-            type="password"
-            name="currentPassword"
-            label="Current password"
-            placeholder="••••••••"
-            autoComplete="current-password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-          />
-          <Input
-            type="password"
-            name="newPassword"
-            label="New password"
-            placeholder="••••••••"
-            autoComplete="new-password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-          />
-          <Input
-            type="password"
-            name="confirmPassword"
-            label="Confirm new password"
-            placeholder="••••••••"
-            autoComplete="new-password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            error={error ?? undefined}
-          />
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={!currentPassword || !newPassword || !confirmPassword}
-            className="w-full !py-2.5 !text-[13px] !font-semibold"
-          >
-            {busy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <KeyRound className="h-3.5 w-3.5" />
-            )}
-            Change password
-          </Button>
-        </form>
-      </div>
-    </div>
+    <AuthFrame
+      width={440}
+      caption={forced ? "first sign-in" : "account"}
+      title="Change password"
+      blurb={
+        forced
+          ? // Before 2b this copy said the password was "shared across all
+            // first-time installations", which was only ever true of the
+            // env-seeded bootstrap admin. The forced path now also fires
+            // for admin-created accounts, whose password an admin typed
+            // and therefore knows.
+            "This account was created with a temporary password. Set one only you know before continuing."
+          : "Set a new password for your account. Other sessions are signed out."
+      }
+    >
+      <form onSubmit={submit} className="mt-5 space-y-3.5">
+        <Input
+          type="password"
+          name="currentPassword"
+          label="Current password"
+          placeholder="••••••••"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+        />
+        <Input
+          type="password"
+          name="newPassword"
+          label="New password"
+          placeholder="••••••••"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+        />
+        <Input
+          type="password"
+          name="confirmPassword"
+          label="Confirm new password"
+          placeholder="••••••••"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          error={error ?? undefined}
+        />
+        <Button
+          type="submit"
+          variant="primary"
+          loading={busy}
+          disabled={!currentPassword || !newPassword || !confirmPassword}
+          className="w-full !h-10"
+        >
+          Change password
+        </Button>
+      </form>
+    </AuthFrame>
   );
 }

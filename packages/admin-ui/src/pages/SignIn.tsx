@@ -1,12 +1,21 @@
 import { FormEvent, useEffect, useState } from "react";
-import { LogIn, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { api, type SessionUser } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { AuthFrame } from "../components/AuthFrame";
 
 interface BetterAuthSignInResp {
-  user?: { id: string; email: string; name: string; role?: string };
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    role?: string;
+    /** Set by the server when the user still owes a password change —
+     *  admin-created accounts and the env-seeded bootstrap admin. */
+    mustChangePassword?: boolean;
+  };
   session?: { id: string; expiresAt: string };
 }
 
@@ -49,7 +58,7 @@ export function SignIn() {
         username: u.email.split("@")[0] ?? u.email,
         role: (u.role ?? "user") as SessionUser["role"],
       };
-      login(sessionUser, false);
+      login(sessionUser, u.mustChangePassword === true);
     } else if (r.status === 401 || r.status === 400) {
       setError("Invalid email or password.");
     } else {
@@ -58,95 +67,59 @@ export function SignIn() {
   };
 
   return (
-    <div className="min-h-full flex items-center justify-center p-6">
-      <div className="w-[380px] max-w-full bg-panel border border-rule rounded-xl p-8 shadow-modal">
-        {/* Brand row — synapse logo + name + version pill (Grid spec). */}
-        <div className="flex items-center gap-2.5 mb-6">
-          <div className="h-9 w-9 rounded-[10px] bg-accent flex items-center justify-center">
-            {/* novamem mark — 4-node graph traces an 'N'. Reads as graph
-                (the product) and as the letter (the brand). */}
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 32 32"
-              aria-hidden="true"
-              fill="none"
-            >
-              <g stroke="white" strokeWidth="1.7" strokeLinecap="round">
-                <line x1="7" y1="24" x2="7" y2="8" />
-                <line x1="7" y1="8" x2="25" y2="24" />
-                <line x1="25" y1="24" x2="25" y2="8" />
-              </g>
-              <g fill="white">
-                <circle cx="7" cy="24" r="2.6" />
-                <circle cx="7" cy="8" r="2.6" />
-                <circle cx="25" cy="24" r="2.6" />
-                <circle cx="25" cy="8" r="2.6" />
-              </g>
-            </svg>
-          </div>
-          <div className="leading-tight">
-            <div className="text-base font-semibold text-ink">NovaMem</div>
-            <div className="font-mono text-[10px] text-dim">v1.1.2</div>
+    <AuthFrame
+      caption="console"
+      title="Sign in"
+      blurb="Use the email and password your admin set up for you."
+    >
+      {bootstrapNeeded ? (
+        <div className="mt-5 flex items-start gap-2 rounded-lg border border-warn/40 bg-warn-soft/40 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-warn" />
+          <div className="text-xs text-dim">
+            <span className="font-medium text-ink">No admin yet.</span> Set{" "}
+            <code className="text-accent">
+              NOVAMEM_BOOTSTRAP_ADMIN_USERNAME
+            </code>{" "}
+            +{" "}
+            <code className="text-accent">
+              NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD
+            </code>{" "}
+            on the server and restart to seed one.
           </div>
         </div>
+      ) : null}
 
-        <h2 className="text-xl font-semibold text-ink tracking-[-0.015em]">
-          Sign in to your console
-        </h2>
-        <p className="text-[13px] text-dim mt-1.5">
-          Use the email + password your admin set up for you.
-        </p>
-
-        {bootstrapNeeded ? (
-          <div className="mt-5 rounded-lg border border-warn/40 bg-warn-soft/40 p-3 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 text-warn flex-none" />
-            <div className="text-xs text-dim">
-              <span className="text-ink font-medium">No admin yet.</span> Set{" "}
-              <code className="text-accent">
-                NOVAMEM_BOOTSTRAP_ADMIN_USERNAME
-              </code>{" "}
-              +{" "}
-              <code className="text-accent">
-                NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD
-              </code>{" "}
-              on the server and restart to seed one.
-            </div>
-          </div>
-        ) : null}
-
-        <form onSubmit={submit} className="mt-5 space-y-3.5">
-          <Input
-            type="email"
-            name="email"
-            label="Email"
-            placeholder="alice@example.com"
-            autoFocus
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <Input
-            type="password"
-            name="password"
-            label="Password"
-            placeholder="••••••••"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={error ?? undefined}
-          />
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={!email.trim() || !password}
-            className="w-full !py-2.5 !text-[13px] !font-semibold"
-          >
-            <LogIn className="h-3.5 w-3.5" /> Continue
-          </Button>
-        </form>
-      </div>
-    </div>
+      <form onSubmit={submit} className="mt-5 space-y-3.5">
+        <Input
+          type="email"
+          name="email"
+          label="Email"
+          placeholder="alice@example.com"
+          autoFocus
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <Input
+          type="password"
+          name="password"
+          label="Password"
+          placeholder="••••••••"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={error ?? undefined}
+        />
+        <Button
+          type="submit"
+          variant="primary"
+          loading={busy}
+          disabled={!email.trim() || !password}
+          className="w-full !h-10"
+        >
+          Continue
+        </Button>
+      </form>
+    </AuthFrame>
   );
 }

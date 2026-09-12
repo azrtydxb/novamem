@@ -5,6 +5,8 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
 @import "@fontsource/jetbrains-mono/600.css";
+/* 700 — the design sets page titles and stat values in bold mono. */
+@import "@fontsource/jetbrains-mono/700.css";
 
 /* Tailwind v4: a single import replaces the v3 @tailwind base/components/
    utilities trio. */
@@ -19,48 +21,70 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
     monospace;
 
-  /* ── Grid direction palette (dark — default) ──────────────────────
-     Token names mirror the design handoff (bg / panel / subtle / ink /
-     dim / faint / rule / accent / warm / cold / graph / err / warn) so
-     class usage reads identically against the spec. */
-  --color-bg: #0a0d12;
-  --color-panel: #11151c;
-  --color-subtle: #161b24;
-  --color-hover: #1c2230;
+  /* ── Kryton palette (dark — default) ──────────────────────────────
+     Ported from the NovaMem GUI v2 design. Token NAMES are unchanged on
+     purpose: components.test.tsx asserts literal classes (`text-dim`,
+     `bg-accent`), and the existing vocabulary is already semantic and
+     theme-agnostic, so the redesign is a value swap rather than a
+     rename. Levels the design uses that this scale lacked are added
+     (subtle-2, ink-2, faint-2, rule-strong) rather than renumbered. */
+  --color-bg: oklch(0.18 0.012 280);
+  --color-panel: oklch(0.205 0.014 280);
+  --color-subtle: oklch(0.235 0.016 282);
+  --color-subtle-2: oklch(0.27 0.018 282);
+  --color-hover: oklch(0.255 0.018 285 / 0.6);
+  --color-active: oklch(0.32 0.06 285 / 0.35);
+  --color-input: oklch(0.225 0.014 282);
 
-  --color-rule: #1f2530;
-  --color-rule-soft: #171c25;
+  --color-rule: oklch(0.32 0.012 280 / 0.6);
+  --color-rule-strong: oklch(0.4 0.014 280 / 0.7);
+  --color-rule-soft: oklch(0.28 0.012 280 / 0.45);
 
-  --color-ink: #e6ebf2;
-  --color-dim: #8a93a3;
-  --color-faint: #5a6373;
+  --color-ink: oklch(0.96 0.005 280);
+  --color-ink-2: oklch(0.85 0.01 280);
+  --color-dim: oklch(0.65 0.012 280);
+  --color-faint: oklch(0.5 0.012 280);
+  --color-faint-2: oklch(0.4 0.012 280);
 
-  --color-accent: oklch(70% 0.16 250);
-  --color-accent-soft: oklch(28% 0.1 250);
+  --color-accent: oklch(0.72 0.18 295);
+  --color-accent-soft: oklch(0.72 0.18 295 / 0.18);
+  /* Button has always referenced bg-accent-hover, which was never
+     defined — a live dead class. Defined here rather than left dangling. */
+  --color-accent-hover: oklch(0.78 0.18 295);
+  --color-accent-ink: oklch(0.18 0.02 280);
 
-  --color-warm: oklch(72% 0.17 35);
-  --color-warm-soft: oklch(28% 0.1 35);
+  /* The design uses one amber for BOTH the warm tier and warnings, and
+     one cyan for the cold tier and the secondary accent. Kept as two
+     names each so tone="warm" and tone="warn" stay meaningful. */
+  --color-warm: oklch(0.82 0.16 75);
+  --color-warm-soft: oklch(0.82 0.16 75 / 0.16);
 
-  --color-cold: oklch(72% 0.14 220);
-  --color-cold-soft: oklch(28% 0.1 220);
+  --color-cold: oklch(0.78 0.14 200);
+  --color-cold-soft: oklch(0.78 0.14 200 / 0.15);
 
-  --color-graph: oklch(72% 0.16 165);
-  --color-graph-soft: oklch(28% 0.1 165);
+  --color-graph: oklch(0.78 0.16 155);
+  --color-graph-soft: oklch(0.78 0.16 155 / 0.15);
 
-  --color-err: oklch(70% 0.2 25);
-  --color-err-soft: oklch(28% 0.1 25);
+  --color-err: oklch(0.7 0.2 25);
+  --color-err-soft: oklch(0.7 0.2 25 / 0.16);
 
-  --color-warn: oklch(78% 0.16 80);
-  --color-warn-soft: oklch(28% 0.1 80);
+  --color-warn: oklch(0.82 0.16 75);
+  --color-warn-soft: oklch(0.82 0.16 75 / 0.16);
+
+  --color-link: oklch(0.78 0.16 285);
+  /* 1px rule of the grid the design lays under <main>. */
+  --color-grid: oklch(0.32 0.012 280 / 0.18);
 
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
 
-  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 4px 12px rgba(0, 0, 0, 0.25);
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 4px 24px -6px oklch(0 0 0 / 0.5),
+    0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-modal: 0 20px 60px oklch(0 0 0 / 0.5);
+  /* Active nav item in the design carries a soft accent bloom. */
+  --shadow-glow: 0 0 14px oklch(0.72 0.18 295 / 0.18);
 
   --animate-fade-in: fade-in 120ms ease-out;
   --animate-scale-in: scale-in 120ms ease-out;
@@ -71,38 +95,51 @@
 /* Light theme override. Tailwind 4 reads the same custom properties from
    :root, so we just rebind them under `.light`. */
 .light {
-  --color-bg: #fafbfc;
-  --color-panel: #ffffff;
-  --color-subtle: #f3f5f8;
-  --color-hover: #eef0f4;
+  --color-bg: oklch(0.985 0.003 280);
+  --color-panel: oklch(0.97 0.004 280);
+  --color-subtle: oklch(0.945 0.005 280);
+  --color-subtle-2: oklch(0.92 0.006 280);
+  --color-hover: oklch(0.92 0.008 285 / 0.7);
+  --color-active: oklch(0.55 0.22 295 / 0.12);
+  --color-input: oklch(0.97 0.004 280);
 
-  --color-rule: #e6e9ee;
-  --color-rule-soft: #eef0f4;
+  --color-rule: oklch(0.86 0.008 280);
+  --color-rule-strong: oklch(0.78 0.01 280);
+  --color-rule-soft: oklch(0.91 0.006 280);
 
-  --color-ink: #0d1117;
-  --color-dim: #5b6470;
-  --color-faint: #8b94a3;
+  --color-ink: oklch(0.18 0.012 280);
+  --color-ink-2: oklch(0.3 0.012 280);
+  --color-dim: oklch(0.45 0.012 280);
+  --color-faint: oklch(0.6 0.012 280);
+  --color-faint-2: oklch(0.68 0.012 280);
 
-  --color-accent: oklch(58% 0.15 250);
-  --color-accent-soft: oklch(95% 0.04 250);
+  --color-accent: oklch(0.55 0.22 295);
+  --color-accent-soft: oklch(0.55 0.22 295 / 0.14);
+  --color-accent-hover: oklch(0.48 0.22 295);
+  --color-accent-ink: oklch(0.99 0 0);
 
-  --color-warm: oklch(62% 0.16 35);
-  --color-warm-soft: oklch(95% 0.04 35);
+  --color-warm: oklch(0.62 0.15 75);
+  --color-warm-soft: oklch(0.62 0.15 75 / 0.14);
 
-  --color-cold: oklch(58% 0.13 220);
-  --color-cold-soft: oklch(95% 0.04 220);
+  --color-cold: oklch(0.55 0.13 200);
+  --color-cold-soft: oklch(0.55 0.13 200 / 0.13);
 
-  --color-graph: oklch(60% 0.16 165);
-  --color-graph-soft: oklch(95% 0.04 165);
+  --color-graph: oklch(0.55 0.16 155);
+  --color-graph-soft: oklch(0.55 0.16 155 / 0.13);
 
-  --color-err: oklch(58% 0.2 25);
-  --color-err-soft: oklch(95% 0.04 25);
+  --color-err: oklch(0.55 0.22 25);
+  --color-err-soft: oklch(0.55 0.22 25 / 0.13);
 
-  --color-warn: oklch(70% 0.16 80);
-  --color-warn-soft: oklch(95% 0.04 80);
+  --color-warn: oklch(0.62 0.15 75);
+  --color-warn-soft: oklch(0.62 0.15 75 / 0.14);
 
-  --shadow-card: 0 1px 2px rgba(13, 17, 23, 0.04);
-  --shadow-modal: 0 12px 40px rgba(0, 0, 0, 0.06);
+  --color-link: oklch(0.5 0.2 285);
+  --color-grid: oklch(0.4 0.012 280 / 0.08);
+
+  --shadow-card: 0 4px 24px -6px oklch(0 0 0 / 0.12),
+    0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-modal: 0 12px 40px oklch(0 0 0 / 0.1);
+  --shadow-glow: 0 0 14px oklch(0.55 0.22 295 / 0.16);
 }
 
 @keyframes fade-in {
@@ -168,6 +205,16 @@
 }
 
 @layer utilities {
+  /* The 32px graph-paper rule the design lays under <main>. Drawn with
+     two gradients rather than an image so it inherits the theme token
+     and costs no request — the dashboard CSP is asserted byte-for-byte
+     in go/internal/httpapi/parity_test.go and permits no remote assets. */
+  .grid-bg {
+    background-image: linear-gradient(var(--color-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
   /* Subtle scrollbars consistent across the dashboard. */
   .scroll-thin {
     scrollbar-width: thin;

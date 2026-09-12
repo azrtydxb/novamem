@@ -1,13 +1,16 @@
 import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  RefreshCw,
-  ShieldCheck,
-  Trash2,
-  UserPlus,
-  Users as UsersIcon,
-} from "lucide-react";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth-context";
+import { KCard } from "../components/k/KCard";
+import { KHeader } from "../components/k/KHeader";
+import { KBtn } from "../components/k/KBtn";
+import { KPill } from "../components/k/KPill";
+import { KEmpty } from "../components/k/KEmpty";
+import { Input } from "../components/Input";
+import { Modal } from "../components/Modal";
+import { useToast } from "../components/Toast";
+import { cn, fmtRelative } from "../lib/utils";
 
 /** Better Auth's "user" row shape (admin/list-users response). */
 interface BAUser {
@@ -18,21 +21,6 @@ interface BAUser {
   createdAt: string;
   banned?: boolean | null;
 }
-import { useAuth } from "../lib/auth-context";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../components/Card";
-import { Button } from "../components/Button";
-import { Input } from "../components/Input";
-import { Badge } from "../components/Badge";
-import { Modal } from "../components/Modal";
-import { PageHeader } from "../components/PageHeader";
-import { useToast } from "../components/Toast";
-import { fmtRelative } from "../lib/utils";
 
 export function UsersPage() {
   const queryClient = useQueryClient();
@@ -63,76 +51,62 @@ export function UsersPage() {
   };
 
   return (
-    <>
-      <PageHeader
-        kicker="Dashboard auth · username + password"
+    <div className="p-6">
+      <KHeader
+        crumb="dashboard auth · username + password"
         title="Users"
-        subtitle="Manage dashboard logins and roles. Memory access remains scoped to each user and shared projects."
-        actions={
-          <Button size="sm" variant="ghost" onClick={refresh} loading={busy}>
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </Button>
+        right={
+          <>
+            {users ? <KPill tone="dim">{users.length}</KPill> : null}
+            <KBtn onClick={refresh} loading={busy}>
+              Refresh
+            </KBtn>
+          </>
         }
       />
-      <div className="p-5 space-y-3">
-        <CreateUserCard onCreated={refresh} />
 
-        <div className="space-y-3">
-          {fetchErr ? (
-            <Card className="p-8 text-center text-sm text-err">
-              <div className="font-medium mb-1">Couldn't load users</div>
-              <div className="text-dim text-xs">{fetchErr.message}</div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={refresh}
-                className="mt-3"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Try again
-              </Button>
-            </Card>
-          ) : users === null ? (
-            <Card className="p-8 text-center text-sm text-dim">
-              Loading users…
-            </Card>
-          ) : users.length === 0 ? (
-            <Card className="p-12 text-center">
-              <UsersIcon className="h-8 w-8 text-faint mx-auto mb-3" />
-              <div className="text-sm text-ink font-medium">No users yet</div>
-              <div className="text-xs text-dim mt-1">
-                Create your first user above.
-              </div>
-            </Card>
-          ) : (
-            <Card>
-              <div className="overflow-hidden rounded-lg">
-                <table className="w-full text-sm">
-                  <thead className="bg-subtle/60">
-                    <tr className="text-dim text-[11px] uppercase tracking-wider">
-                      <th className="text-left font-medium px-4 py-2.5">
-                        User
-                      </th>
-                      <th className="text-left font-medium px-4 py-2.5">
-                        Role
-                      </th>
-                      <th className="text-left font-medium px-4 py-2.5">
-                        Status
-                      </th>
-                      <th className="text-right font-medium px-4 py-2.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {users.map((u) => (
-                      <UserRow key={u.id} user={u} onChange={refresh} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-        </div>
-      </div>
-    </>
+      <CreateUserCard onCreated={refresh} />
+
+      <KCard className="mt-4" title="accounts">
+        {fetchErr ? (
+          <KEmpty
+            glyph="⚠"
+            title="Couldn't load users"
+            hint={fetchErr.message}
+            action={<KBtn onClick={refresh}>Try again</KBtn>}
+          />
+        ) : users === null ? (
+          <KEmpty glyph="◌" title="Loading users…" />
+        ) : users.length === 0 ? (
+          <KEmpty
+            title="No users yet"
+            hint="Create the first one above. Each user owns their own memory namespace; admins manage accounts and don't store memories."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="border-b border-rule">
+                  {["user", "role", "status", ""].map((h, i) => (
+                    <th
+                      key={h || `sp${i}`}
+                      className="px-4 py-2 font-mono text-[9.5px] font-normal uppercase tracking-[0.14em] text-faint-2"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <UserRow key={u.id} user={u} onChange={refresh} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </KCard>
+    </div>
   );
 }
 
@@ -178,58 +152,53 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
   const canSubmit = email.trim().includes("@") && password.length >= 8;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Create user</CardTitle>
-        <CardDescription>
-          Each user signs in with email + password and owns their own memory
-          namespace. Admins manage users only — they don't store memories or use
-          the MCP.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Input
-              type="email"
-              name="email"
-              label="Email"
-              placeholder="alice@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              error={error ?? undefined}
-            />
-            <Input
-              name="name"
-              label="Display name (optional)"
-              placeholder="Alice"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+    <KCard title="create user">
+      <form onSubmit={submit} className="space-y-3 p-4">
+        <p className="max-w-2xl text-xs leading-relaxed text-dim">
+          The password you set here is temporary: the account is created needing
+          a change, so the user is sent straight to the change-password screen
+          the first time they sign in.
+        </p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Input
-            type="password"
-            name="password"
-            label="Password"
-            placeholder="min 8 chars"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            type="email"
+            name="email"
+            label="Email"
+            placeholder="alice@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            error={error ?? undefined}
           />
-          <div className="flex items-end justify-between gap-3">
-            <RoleSelector role={role} onChange={setRole} />
-            <Button
-              type="submit"
-              variant="primary"
-              loading={busy}
-              disabled={!canSubmit}
-            >
-              <UserPlus className="h-3.5 w-3.5" /> Create
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+          <Input
+            name="name"
+            label="Display name (optional)"
+            placeholder="Alice"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <Input
+          type="password"
+          name="password"
+          label="Temporary password"
+          placeholder="min 8 chars"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <div className="flex items-end justify-between gap-3">
+          <RoleSelector role={role} onChange={setRole} />
+          <KBtn
+            type="submit"
+            variant="primary"
+            loading={busy}
+            disabled={!canSubmit}
+          >
+            Create
+          </KBtn>
+        </div>
+      </form>
+    </KCard>
   );
 }
 
@@ -244,21 +213,21 @@ function RoleSelector({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-medium text-dim">Role</label>
-      <div className="inline-flex p-0.5 rounded-md border border-rule bg-bg">
+      <label className="block font-mono text-[10.5px] lowercase tracking-[0.05em] text-faint">
+        role
+      </label>
+      <div className="inline-flex rounded-md border border-rule bg-bg p-0.5">
         {(["user", "admin"] as const).map((r) => (
           <button
             key={r}
             type="button"
             disabled={disabled}
             onClick={() => onChange(r)}
-            className={
-              "h-8 px-3 text-xs font-medium rounded-sm transition-colors " +
-              (role === r
-                ? "bg-subtle text-ink shadow-sm"
-                : "text-dim hover:text-ink") +
-              (disabled ? " opacity-50 cursor-not-allowed" : "")
-            }
+            className={cn(
+              "h-8 rounded-sm px-3 font-mono text-[11px] lowercase transition-colors",
+              role === r ? "bg-subtle text-ink" : "text-dim hover:text-ink",
+              disabled && "cursor-not-allowed opacity-50"
+            )}
           >
             {r}
           </button>
@@ -298,84 +267,100 @@ function UserRow({ user, onChange }: { user: BAUser; onChange: () => void }) {
 
   const deleteUser = async () => {
     setConfirmDelete(false);
-    // Better Auth's admin/remove-user. Better Auth POSTs the userId in
-    // the body — there's no DELETE-by-id route.
-    const r = await api("POST", "/api/auth/admin/remove-user", {
-      userId: user.id,
-    });
-    if (r.ok) {
-      toast.success(`User "${user.email}" deleted`);
+    // DELETE /v1/admin/users/{id}, not Better Auth's admin/remove-user.
+    // remove-user deletes the session rows and the "user" row and stops
+    // there: the account's memories, minted tokens and owned projects all
+    // survive it. The confirmation below promises they are removed, and
+    // this is the endpoint that actually removes them — it reports what
+    // it cleaned up, which is why the toast can name real numbers.
+    try {
+      const r = await api<{
+        entriesRemoved?: number;
+        tokensRemoved?: number;
+        /** The ids of the projects that were deleted, not a count — the
+         *  server returns `[]string`. Interpolating it directly printed
+         *  the joined ids (and nothing at all when empty). */
+        projectsDeleted?: string[];
+        coldCleanupOk?: boolean;
+      }>("DELETE", `/v1/admin/users/${encodeURIComponent(user.id)}`);
+      const b = r.body ?? {};
+      const detail = [
+        `${b.entriesRemoved ?? 0} entries`,
+        `${b.tokensRemoved ?? 0} tokens`,
+        `${b.projectsDeleted?.length ?? 0} projects`,
+      ].join(", ");
+      if (b.coldCleanupOk === false) {
+        // Saying "all gone" over a partial cleanup is the same failure
+        // the forget flow was fixed for.
+        toast.success(
+          `User "${user.email}" deleted, vectors left behind`,
+          `${detail}. The cold-tier copies could not be removed and will be reaped.`
+        );
+      } else {
+        toast.success(`User "${user.email}" deleted`, detail);
+      }
       onChange();
-    } else {
-      toast.error("Delete failed", r.error ?? `status ${r.status}`);
+    } catch (err) {
+      toast.error("Delete failed", (err as Error).message);
     }
   };
 
   return (
-    <tr>
-      <td className="px-4 py-3">
+    <tr className="border-b border-rule-soft last:border-0 hover:bg-subtle/40">
+      <td className="px-4 py-2.5">
         <div className="flex items-center gap-2.5">
-          <div className="h-7 w-7 rounded-full bg-accent/15 flex-none flex items-center justify-center">
-            <span className="text-[11px] font-semibold text-accent uppercase">
+          <div className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-accent-soft">
+            <span className="font-mono text-[11px] font-bold uppercase text-accent">
               {displayName.charAt(0)}
             </span>
           </div>
-          <div>
-            <div className="font-medium text-ink">
+          <div className="min-w-0">
+            <div className="text-[13px] text-ink">
               {displayName}
-              {isMe && <span className="ml-1.5 text-faint text-xs">(you)</span>}
+              {isMe ? (
+                <span className="ml-1.5 font-mono text-[10px] text-faint">
+                  (you)
+                </span>
+              ) : null}
             </div>
-            <div className="text-xs text-faint">
+            <div className="font-mono text-[10px] text-faint">
               {user.email} · created {fmtRelative(user.createdAt)}
             </div>
           </div>
         </div>
       </td>
-      <td className="px-4 py-3">
-        {user.role === "admin" ? (
-          <Badge tone="accent">
-            <ShieldCheck className="h-3 w-3" /> admin
-          </Badge>
-        ) : (
-          <Badge tone="neutral">user</Badge>
-        )}
+      <td className="px-4 py-2.5">
+        <KPill tone={user.role === "admin" ? "accent" : "dim"}>
+          {user.role === "admin" ? "admin" : "user"}
+        </KPill>
       </td>
-      <td className="px-4 py-3 text-dim text-xs">
+      <td className="px-4 py-2.5">
         {user.banned ? (
-          <Badge tone="danger">banned</Badge>
+          <KPill tone="err">banned</KPill>
         ) : (
-          <span className="text-faint">active</span>
+          <span className="font-mono text-[10.5px] text-faint">active</span>
         )}
       </td>
-      <td className="px-4 py-3 text-right">
-        <div className="inline-flex gap-1">
+      <td className="px-4 py-2.5 text-right">
+        <div className="inline-flex gap-1.5">
           {user.role === "user" ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setConfirmRole({ to: "admin" })}
-            >
-              Promote
-            </Button>
+            <KBtn onClick={() => setConfirmRole({ to: "admin" })}>Promote</KBtn>
           ) : (
-            <Button
-              size="sm"
-              variant="ghost"
+            <KBtn
               onClick={() => setConfirmRole({ to: "user" })}
               disabled={isMe}
             >
               Demote
-            </Button>
+            </KBtn>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
+          <KBtn
+            variant="danger"
             onClick={() => setConfirmDelete(true)}
             disabled={isMe}
             title={isMe ? "you can't delete yourself" : "delete user"}
           >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+            Delete
+          </KBtn>
         </div>
 
         <Modal
@@ -386,15 +371,10 @@ function UserRow({ user, onChange }: { user: BAUser; onChange: () => void }) {
           size="md"
           footer={
             <>
-              <Button
-                variant="secondary"
-                onClick={() => setConfirmDelete(false)}
-              >
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={deleteUser}>
-                <Trash2 className="h-3.5 w-3.5" /> Delete
-              </Button>
+              <KBtn onClick={() => setConfirmDelete(false)}>Cancel</KBtn>
+              <KBtn variant="danger" onClick={deleteUser}>
+                Delete
+              </KBtn>
             </>
           }
         />
@@ -415,15 +395,13 @@ function UserRow({ user, onChange }: { user: BAUser; onChange: () => void }) {
           size="md"
           footer={
             <>
-              <Button variant="secondary" onClick={() => setConfirmRole(null)}>
-                Cancel
-              </Button>
-              <Button
+              <KBtn onClick={() => setConfirmRole(null)}>Cancel</KBtn>
+              <KBtn
                 variant="primary"
                 onClick={() => confirmRole && setRole(confirmRole.to)}
               >
                 {confirmRole?.to === "admin" ? "Promote" : "Demote"}
-              </Button>
+              </KBtn>
             </>
           }
         />

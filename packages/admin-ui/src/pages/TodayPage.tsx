@@ -1,29 +1,31 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ActivityEvent } from "../lib/api";
-import { Card, CardContent } from "../components/Card";
-import { PageHeader } from "../components/PageHeader";
-import { fmtRelative } from "../lib/utils";
+import { KCard } from "../components/k/KCard";
+import { KHeader } from "../components/k/KHeader";
+import { KEmpty } from "../components/k/KEmpty";
+import { KPill } from "../components/k/KPill";
+import { cn, fmtRelative } from "../lib/utils";
 
 interface TodayResp {
   events: ActivityEvent[];
 }
 
-const KIND_DOT: Record<ActivityEvent["kind"], string> = {
+type Kind = ActivityEvent["kind"];
+
+const KIND_DOT: Record<Kind, string> = {
   remember: "bg-graph",
   token: "bg-accent",
   project: "bg-warm",
   audit: "bg-faint",
 };
 
-const KIND_LABEL: Record<ActivityEvent["kind"], string> = {
-  remember: "remember",
-  token: "token",
-  project: "project",
-  audit: "audit",
-};
+const KINDS: Kind[] = ["remember", "token", "project", "audit"];
 
 export function TodayPage() {
   const today = new Date().toISOString().slice(0, 10);
+  const [kind, setKind] = useState<Kind | "all">("all");
+
   const { data, isFetching } = useQuery({
     queryKey: ["today"],
     queryFn: async () => {
@@ -34,62 +36,97 @@ export function TodayPage() {
     refetchInterval: 15_000,
   });
 
-  const events = data?.events ?? [];
+  const all = data?.events ?? [];
+  const events = kind === "all" ? all : all.filter((e) => e.kind === kind);
+  // Only offer a filter for kinds that are actually in the feed: a chip
+  // that can only ever select nothing is a dead control. The selected
+  // kind stays listed even once it drops out of the (capped, polling)
+  // feed — otherwise the chips vanish while the empty state tells the
+  // user to switch back to all, with nothing left to click.
+  const present = KINDS.filter(
+    (k) => all.some((e) => e.kind === k) || k === kind
+  );
 
   return (
-    <>
-      <PageHeader
-        kicker={`Activity · ${today}`}
+    <div className="p-6">
+      <KHeader
+        crumb={`activity · ${today}`}
         title="Today"
-        subtitle="Your recent memories, tokens, and project changes."
+        right={<KPill tone="dim">{all.length}</KPill>}
       />
-      <div className="p-5">
-        <Card>
-          {isFetching && events.length === 0 ? (
-            <CardContent className="text-center text-dim text-sm py-12">
-              Loading activity…
-            </CardContent>
-          ) : events.length === 0 ? (
-            <CardContent className="text-center py-12">
-              <div className="font-mono text-[11px] text-faint mb-1">
-                no_activity
-              </div>
-              <div className="text-base font-medium text-ink mb-1">
-                Nothing yet today
-              </div>
-              <div className="text-sm text-dim">
-                Remembers, token mints, and project joins will show up here.
-              </div>
-            </CardContent>
-          ) : (
-            events.map((e, i) => (
-              <div
-                key={`${e.at}-${i}`}
-                className="grid items-center gap-3.5 px-[18px] py-3.5 border-b border-rule-soft last:border-b-0"
-                style={{ gridTemplateColumns: "auto 92px 1fr" }}
+
+      <KCard
+        title="feed"
+        right={
+          // `all` must stay clickable whenever something is filtered,
+          // even if only one kind remains.
+          present.length > 1 || kind !== "all" ? (
+            <span className="flex items-center gap-1">
+              {(["all", ...present] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setKind(k as Kind | "all")}
+                  aria-pressed={kind === k}
+                  className={cn(
+                    "rounded-sm px-1.5 py-0.5 lowercase transition-colors",
+                    kind === k ? "bg-active text-ink" : "hover:text-ink"
+                  )}
+                >
+                  {k}
+                </button>
+              ))}
+            </span>
+          ) : null
+        }
+      >
+        {isFetching && all.length === 0 ? (
+          <KEmpty glyph="◌" title="Loading activity…" />
+        ) : events.length === 0 ? (
+          <KEmpty
+            glyph="◷"
+            title={all.length > 0 ? `No ${kind} events` : "Nothing yet today"}
+            hint={
+              all.length > 0
+                ? "The filter is hiding the rest — switch back to all."
+                : "Remembers, token mints and project joins show up here as they happen."
+            }
+          />
+        ) : (
+          events.map((e, i) => (
+            <div
+              key={`${e.at}-${i}`}
+              className="flex items-start gap-3 border-b border-rule-soft px-4 py-3 last:border-0 hover:bg-subtle/40"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                  KIND_DOT[e.kind]
+                )}
+              />
+              <span
+                className="w-20 shrink-0 font-mono text-[10.5px] text-faint"
+                title={new Date(e.at).toLocaleString()}
               >
-                <div className={`h-2 w-2 rounded-full ${KIND_DOT[e.kind]}`} />
-                <span className="font-mono text-[11px] text-dim">
-                  {fmtRelative(e.at)}
-                </span>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[9px] uppercase tracking-[0.06em] text-dim bg-subtle rounded px-1.5 py-0.5">
-                      {KIND_LABEL[e.kind]}
+                {fmtRelative(e.at)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-sm bg-subtle px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-dim">
+                    {e.kind}
+                  </span>
+                  {e.project ? (
+                    <span className="font-mono text-[10px] text-faint">
+                      {e.project}
                     </span>
-                    {e.project ? (
-                      <span className="font-mono text-[10px] text-faint">
-                        {e.project}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1 text-[13px] text-ink">{e.text}</div>
+                  ) : null}
                 </div>
+                <div className="mt-1 text-[13px] text-ink">{e.text}</div>
               </div>
-            ))
-          )}
-        </Card>
-      </div>
-    </>
+            </div>
+          ))
+        )}
+      </KCard>
+    </div>
   );
 }
