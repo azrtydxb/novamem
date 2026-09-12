@@ -10,6 +10,11 @@ interface Props {
   onClose: () => void;
   role: "admin" | "user";
   onNavigate: (t: Tab) => void;
+  /** A memory hit was chosen. The caller takes the page there AND shows
+   *  the entry — navigating without the id and query threw both away, so
+   *  Browse opened on its previous state and picking a result did
+   *  nothing observable. */
+  onOpenMemory: (result: SearchResult, query: string) => void;
 }
 
 /** Rows the palette can act on. Two kinds, deliberately in one list so
@@ -27,7 +32,13 @@ type Row =
  *  Memory search runs only for the `user` role: `/v1/search` is scoped to
  *  the caller's own entries, and an admin account has none, so showing an
  *  always-empty section to operators would be noise. */
-export function CommandPalette({ open, onClose, role, onNavigate }: Props) {
+export function CommandPalette({
+  open,
+  onClose,
+  role,
+  onNavigate,
+  onOpenMemory,
+}: Props) {
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -95,9 +106,9 @@ export function CommandPalette({ open, onClose, role, onNavigate }: Props) {
     if (row.kind === "nav") {
       onNavigate(row.item.id);
     } else {
-      // Memory hits jump to Browse, which is the page that can actually
-      // render an entry with its tier, decay and signals.
-      onNavigate("browse");
+      // Browse is the page that can render an entry in full, so the hit
+      // goes there carrying the query that found it and its id.
+      onOpenMemory(row.result, debounced.trim());
     }
   };
 

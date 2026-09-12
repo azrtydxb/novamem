@@ -233,20 +233,27 @@ export interface SearchResult {
   signals: { keyword: number; vector: number; graph: number };
 }
 
+/** One row of `POST /v1/recent`.
+ *
+ *  Verified against the running server (2026-09-12): the response
+ *  carries `id, content, namespace, source, tier, project, score,
+ *  metadata` and nothing else.
+ *
+ *  This interface used to also declare `hits`, `age`, `signals` and
+ *  `decay?` as if they were returned. They are not, and never were —
+ *  `/v1/recent` is ordered, not ranked, so it computes no fusion
+ *  signals. A UI that trusted the type rendered `signals.keyword` on a
+ *  row that had no `signals` and threw. The type is the contract the
+ *  server actually honours, not the one the dashboard would prefer. */
 export interface RecentEntry {
   id: string;
   content: string;
   namespace: string;
   source: string;
   tier: "warm" | "cold";
-  hits: number;
-  age: string;
   project: string | null;
-  signals: { keyword: number; vector: number; graph: number };
   score: number;
-  /** 0..1 fraction of the entry's "lifespan" remaining before decay
-   *  promotes it. Computed by the server from hits + lastAccessed. */
-  decay?: number;
+  metadata: Record<string, unknown>;
 }
 
 export interface NeighborsResult {

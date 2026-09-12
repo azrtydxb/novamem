@@ -39,8 +39,13 @@ export function TodayPage() {
   const all = data?.events ?? [];
   const events = kind === "all" ? all : all.filter((e) => e.kind === kind);
   // Only offer a filter for kinds that are actually in the feed: a chip
-  // that can only ever select nothing is a dead control.
-  const present = KINDS.filter((k) => all.some((e) => e.kind === k));
+  // that can only ever select nothing is a dead control. The selected
+  // kind stays listed even once it drops out of the (capped, polling)
+  // feed — otherwise the chips vanish while the empty state tells the
+  // user to switch back to all, with nothing left to click.
+  const present = KINDS.filter(
+    (k) => all.some((e) => e.kind === k) || k === kind
+  );
 
   return (
     <div className="p-6">
@@ -53,7 +58,9 @@ export function TodayPage() {
       <KCard
         title="feed"
         right={
-          present.length > 1 ? (
+          // `all` must stay clickable whenever something is filtered,
+          // even if only one kind remains.
+          present.length > 1 || kind !== "all" ? (
             <span className="flex items-center gap-1">
               {(["all", ...present] as const).map((k) => (
                 <button

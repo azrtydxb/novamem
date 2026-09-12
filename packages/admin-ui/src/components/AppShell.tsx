@@ -102,6 +102,8 @@ export function navFor(role: "admin" | "user"): NavItem[] {
 interface Props {
   active: Tab;
   onChange: (t: Tab) => void;
+  /** A ⌘K memory hit was chosen — take the app to Browse and open it. */
+  onOpenMemory: (seed: { query: string; id: string }) => void;
   children: ReactNode;
 }
 
@@ -122,7 +124,7 @@ function useTheme(): ["dark" | "light", () => void] {
   return [theme, () => setTheme((t) => (t === "dark" ? "light" : "dark"))];
 }
 
-export function AppShell({ active, onChange, children }: Props) {
+export function AppShell({ active, onChange, onOpenMemory, children }: Props) {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
   const nav = navFor(isAdmin ? "admin" : "user");
@@ -308,6 +310,10 @@ export function AppShell({ active, onChange, children }: Props) {
         role={isAdmin ? "admin" : "user"}
         onNavigate={(t) => {
           onChange(t);
+          setPaletteOpen(false);
+        }}
+        onOpenMemory={(result, query) => {
+          onOpenMemory({ query, id: result.id });
           setPaletteOpen(false);
         }}
       />

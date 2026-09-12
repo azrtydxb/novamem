@@ -62,6 +62,12 @@ function Authed() {
   // value matters because `user` is still loading on the first render,
   // so any role-derived initial state would be the wrong one.
   const [chosenTab, setTab] = useState<Tab | null>(null);
+  // Set when a ⌘K memory hit sends the user to Browse; Browse opens on
+  // that query with that row expanded.
+  const [browseSeed, setBrowseSeed] = useState<{
+    query: string;
+    id: string;
+  } | null>(null);
   const tab: Tab = chosenTab ?? (isAdmin ? "overview" : "home");
 
   // Reset to a sensible default when auth state changes (login, or a
@@ -99,7 +105,14 @@ function Authed() {
   }
 
   return (
-    <AppShell active={tab} onChange={setTab}>
+    <AppShell
+      active={tab}
+      onChange={setTab}
+      onOpenMemory={(seed) => {
+        setBrowseSeed(seed);
+        setTab("browse");
+      }}
+    >
       <Suspense fallback={<PageSkeleton />}>
         {tab === "overview" && <MetricsPage />}
         {isAdmin && tab === "health" && <HealthPage />}
@@ -110,7 +123,7 @@ function Authed() {
         )}
         {!isAdmin && tab === "projects" && <ProjectsPage />}
         {!isAdmin && tab === "tokens" && <MyTokensPage />}
-        {!isAdmin && tab === "browse" && <BrowsePage />}
+        {!isAdmin && tab === "browse" && <BrowsePage seed={browseSeed} />}
         {!isAdmin && tab === "today" && <TodayPage />}
         {!isAdmin && tab === "graph" && <GraphPage />}
         {tab === "onboarding" && (

@@ -14,14 +14,17 @@ import { cn } from "../lib/utils";
 
 /** What a row can carry.
  *
- *  `/v1/recent` returns `RecentEntry`, which has `hits`, `age` and
- *  `decay`; `/v1/search` returns `SearchResult`, which has none of them.
- *  The row renders those three only when they are present rather than
- *  substituting zeros, because "0 hits" and "this endpoint does not
- *  report hits" are different claims. */
-type Row = Omit<SearchResult, "metadata"> &
-  Partial<Pick<SearchResult, "metadata">> &
-  Partial<Pick<RecentEntry, "hits" | "age" | "decay">>;
+ *  The two endpoints behind this page return different shapes.
+ *  `/v1/search` ranks, so every hit has `signals`. `/v1/recent` orders
+ *  by recency and computes no ranking at all — no `signals`, and none of
+ *  the `hits` / `age` / `decay` the v2 design draws on a row.
+ *
+ *  So `signals` is optional here and the row renders the bars only when
+ *  they exist. Passing an absent `signals` into KSignals threw; showing
+ *  three empty bars instead would be the other failure — a bar at zero
+ *  claims a signal contributed nothing, not that nothing computed it. */
+type Row = Omit<SearchResult, "signals"> &
+  Partial<Pick<SearchResult, "signals">>;
 
 interface RecentResp {
   results: RecentEntry[];
@@ -35,8 +38,14 @@ type TierFilter = "all" | "warm" | "cold";
 
 /** Browse memories — `/v1/recent` by default, `/v1/search` once the user
  *  types. Both return the same row shape for the fields they share. */
-export function BrowsePage() {
-  const [query, setQuery] = useState("");
+interface BrowseProps {
+  /** Set when the user arrived by picking a memory in the ⌘K palette:
+   *  the query that found it, and the row to open. */
+  seed?: { query: string; id: string } | null;
+}
+
+export function BrowsePage({ seed }: BrowseProps = {}) {
+  const [query, setQuery] = useState(seed?.query ?? "");
   // Debounce input: render after 300ms of typing inactivity to avoid
   // thrashing the search backend on every keystroke.
   const debounced = useDebounced(query, 300);
@@ -45,7 +54,14 @@ export function BrowsePage() {
   const toast = useToast();
   const [confirmForget, setConfirmForget] = useState<Row | null>(null);
   const [tier, setTier] = useState<TierFilter>("all");
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(seed?.id ?? null);
+
+  // A later pick from the palette re-seeds a page that is already open.
+  useEffect(() => {
+    if (!seed) return;
+    setQuery(seed.query);
+    setExpanded(seed.id);
+  }, [seed]);
   const { activeProjectId, activeProjectName } = useActiveProject();
   // Active-project mode: union the user-global view with the selected
   // project so Browse shows both side-by-side. The query key includes
@@ -365,8 +381,6 @@ function ResultRow({
   onToggle: () => void;
   onForget: () => void;
 }) {
-  const decayPct = r.decay == null ? null : Math.round(r.decay * 100);
-
   return (
     <div className="border-b border-rule-soft last:border-0">
       <div
@@ -390,14 +404,7 @@ function ResultRow({
             <span>{r.id.slice(0, 8)}</span>
             <span>· ns {r.namespace}</span>
             <span>· {r.project ?? "global"}</span>
-            {r.age ? <span>· {r.age}</span> : null}
             <span>· {r.source}</span>
-            {decayPct != null ? (
-              <span className={decayPct < 25 ? "text-warn" : undefined}>
-                · decay {decayPct}%
-              </span>
-            ) : null}
-            {r.hits != null ? <span>· {r.hits} hits</span> : null}
           </div>
         </button>
         <div className="shrink-0 text-right">
@@ -421,7 +428,14 @@ function ResultRow({
           <div className="mb-3 text-[13px] leading-relaxed text-ink-2">
             {r.content}
           </div>
-          <KSignals signals={r.signals} />
+          {r.signals ? (
+            <KSignals signals={r.signals} />
+          ) : (
+            // Recency ordering, not fusion: there is no ranking to show.
+            <div className="font-mono text-[10.5px] text-faint">
+              ordered by recency — search to see how the signals fused
+            </div>
+          )}
           <div className="mt-3 font-mono text-[10px] text-faint">{r.id}</div>
         </div>
       ) : null}

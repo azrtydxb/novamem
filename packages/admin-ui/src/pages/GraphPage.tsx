@@ -28,7 +28,6 @@ interface NeighborsResp {
 interface Node {
   id: string;
   label: string;
-  hits: number;
   tier: "warm" | "cold";
   /** Normalised 0..1 layout coords. */
   x: number;
@@ -97,7 +96,6 @@ export function GraphPage() {
       return {
         id: seed,
         label: shortLabel(e?.content ?? seed),
-        hits: e?.hits ?? 0,
         tier: e?.tier ?? "warm",
         x: 0.5,
         y: 0.5,
@@ -111,7 +109,6 @@ export function GraphPage() {
       return {
         id: n.id,
         label: shortLabel(n.content),
-        hits: 1,
         tier: n.tier,
         x: 0.5 + Math.cos(angle) * 0.34,
         y: 0.5 + Math.sin(angle) * 0.34,
@@ -205,7 +202,10 @@ function GraphSvg({
         );
       })}
       {nodes.map((n) => {
-        const r = 12 + Math.min(20, n.hits * 0.4);
+        // Fixed radius. This used to be 12 + hits*0.4, but /v1/recent
+        // returns no hit count, so every node was drawn at 12 anyway and
+        // the sizing only looked like it meant something.
+        const r = 13;
         const isSeed = n.id === seed;
         const fill =
           n.tier === "warm" ? "var(--color-warm)" : "var(--color-cold)";
@@ -281,15 +281,10 @@ function Inspector({
             <div className="mt-0.5 font-mono text-[10.5px] text-dim">
               {node.id}
             </div>
+            {/* "hits" was here, always reading 0: the endpoint behind
+                this page does not return a hit count. A zero is a claim,
+                not a blank. */}
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <div>
-                <div className="font-mono text-[18px] font-bold text-ink tabular-nums">
-                  {node.hits}
-                </div>
-                <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-faint-2">
-                  hits
-                </div>
-              </div>
               <div>
                 <div className="font-mono text-[18px] font-bold text-ink tabular-nums">
                   {seedEdges.length}

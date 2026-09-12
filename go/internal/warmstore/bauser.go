@@ -146,9 +146,15 @@ func (s *Store) CreateBAUser(ctx context.Context, email, name, password, role st
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
+	// mustChangePassword tracks the credential, so it is only true when a
+	// credential is created. An account made with no password (the invite
+	// shape upstream allows) has no password to change, cannot sign in
+	// through the only flow this product offers, and therefore could
+	// never reach the screen that clears the flag — it would be created
+	// permanently locked.
 	if _, err = tx.Exec(ctx, `
 		INSERT INTO "user" (id, email, name, "emailVerified", role, "createdAt", "updatedAt", "mustChangePassword")
-		VALUES ($1, $2, $3, false, $4, now(), now(), true)`, id, email, name, role); err != nil {
+		VALUES ($1, $2, $3, false, $4, now(), now(), $5)`, id, email, name, role, hash != ""); err != nil {
 		return nil, err
 	}
 	if hash != "" {

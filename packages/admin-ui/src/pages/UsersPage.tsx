@@ -267,16 +267,41 @@ function UserRow({ user, onChange }: { user: BAUser; onChange: () => void }) {
 
   const deleteUser = async () => {
     setConfirmDelete(false);
-    // Better Auth's admin/remove-user. Better Auth POSTs the userId in
-    // the body — there's no DELETE-by-id route.
-    const r = await api("POST", "/api/auth/admin/remove-user", {
-      userId: user.id,
-    });
-    if (r.ok) {
-      toast.success(`User "${user.email}" deleted`);
+    // DELETE /v1/admin/users/{id}, not Better Auth's admin/remove-user.
+    // remove-user deletes the session rows and the "user" row and stops
+    // there: the account's memories, minted tokens and owned projects all
+    // survive it. The confirmation below promises they are removed, and
+    // this is the endpoint that actually removes them — it reports what
+    // it cleaned up, which is why the toast can name real numbers.
+    try {
+      const r = await api<{
+        entriesRemoved?: number;
+        tokensRemoved?: number;
+        /** The ids of the projects that were deleted, not a count — the
+         *  server returns `[]string`. Interpolating it directly printed
+         *  the joined ids (and nothing at all when empty). */
+        projectsDeleted?: string[];
+        coldCleanupOk?: boolean;
+      }>("DELETE", `/v1/admin/users/${encodeURIComponent(user.id)}`);
+      const b = r.body ?? {};
+      const detail = [
+        `${b.entriesRemoved ?? 0} entries`,
+        `${b.tokensRemoved ?? 0} tokens`,
+        `${b.projectsDeleted?.length ?? 0} projects`,
+      ].join(", ");
+      if (b.coldCleanupOk === false) {
+        // Saying "all gone" over a partial cleanup is the same failure
+        // the forget flow was fixed for.
+        toast.success(
+          `User "${user.email}" deleted, vectors left behind`,
+          `${detail}. The cold-tier copies could not be removed and will be reaped.`
+        );
+      } else {
+        toast.success(`User "${user.email}" deleted`, detail);
+      }
       onChange();
-    } else {
-      toast.error("Delete failed", r.error ?? `status ${r.status}`);
+    } catch (err) {
+      toast.error("Delete failed", (err as Error).message);
     }
   };
 
