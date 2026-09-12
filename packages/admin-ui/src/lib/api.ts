@@ -129,6 +129,10 @@ export interface MetricsSnapshot {
    *  has no notion of "my tokens". */
   tokens?: TokenMetricsRow[];
   uptime_ms: number;
+  /** Hostname of the replica that served this read. These counters are
+   *  per-replica and in-memory, so two consecutive reads behind a load
+   *  balancer can legitimately disagree. */
+  instance?: string;
 }
 
 export interface UserToken {
@@ -200,6 +204,10 @@ export interface UserMetricsSnapshot {
    *  the dashboard can chart individual token usage alongside the total. */
   tokens?: TokenMetricsRow[];
   uptime_ms: number;
+  /** Hostname of the replica that served this read. These counters are
+   *  per-replica and in-memory, so two consecutive reads behind a load
+   *  balancer can legitimately disagree. */
+  instance?: string;
 }
 
 export interface TokenMetricsRow {

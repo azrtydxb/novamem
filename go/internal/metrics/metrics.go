@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"strconv"
 	"sync"
@@ -206,6 +207,17 @@ func (c *Collector) RecordOrphansReaped(n int) {
 func (c *Collector) RecordSearchError()   { c.addGlobal(&c.global.searchErrors, 1) }
 func (c *Collector) RecordRememberError() { c.addGlobal(&c.global.rememberErrors, 1) }
 
+// instanceID names the process serving a metrics read. The hostname is
+// the pod name under Kubernetes, which is what an operator greps for;
+// it falls back to the pid so a bare-metal or container run is still
+// distinguishable from its siblings.
+var instanceID = func() string {
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return fmt.Sprintf("pid-%d", os.Getpid())
+}()
+
 func (c *Collector) MarkDecayRun(at time.Time) {
 	c.mu.Lock()
 	c.global.decayRuns++
@@ -298,6 +310,14 @@ func (c *Collector) SnapshotForUser(userID string, tokens []TokenMetrics, warmEn
 		},
 		"tokens":    tokens,
 		"uptime_ms": now.Sub(c.startedAt).Milliseconds(),
+		// Which process answered. These counters are per-replica and
+		// in-memory, so with more than one replica behind a load balancer
+		// two consecutive reads legitimately disagree — a decay run shows
+		// on the pod that performed it and nowhere else. Without this a
+		// dashboard reports "never" for a sweep that ran a minute ago on
+		// a sibling, and an operator has no way to tell that apart from a
+		// broken sweep.
+		"instance": instanceID,
 	}
 }
 
