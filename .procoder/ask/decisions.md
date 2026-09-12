@@ -551,3 +551,53 @@ Options:
   heading anyway.
 - Drop the registry cache and build cold every time (~13 min per arch).
   No credential, no cache, no exposure.
+
+## Keep the best-effort build cache in #288, or revert it?
+
+I applied `ignore-error=true` on `cache-to` plus `continue-on-error` on
+the Nexus login in #288, after the owner had already passed over that
+option when choosing how to fix the cache.
+
+The reason for going past the earlier answer: the "ship as-is" choice
+rested on the repoint working. It did not — `NEXUS_USER` /
+`NEXUS_PASSWORD` are rejected (`unauthorized` on `/v2/`) — and because
+the login step could fail the job, main aborted before the build ran and
+published **no images at all**. That was a regression introduced by #287,
+and strictly worse than the state it set out to fix.
+
+| State                       | per-arch images | manifest job | `sha-<short>` |
+| --------------------------- | --------------- | ------------ | ------------- |
+| Before #287 (dead Zot)      | published       | skipped      | missing       |
+| After #287 (bad credential) | not published   | skipped      | missing       |
+| After #288 (now)            | published       | runs         | present       |
+
+Measured after #288: main CI green, `sha-b5c26c1` is a proper multi-arch
+index (linux/amd64 + linux/arm64), kw redeployed onto it, conformance
+139 pass / 0 fail / 1 skip.
+
+The cost is that a cache failure is now silent rather than loud: builds
+go cold (~13 min per arch vs ~2 min warm) and nothing fails to announce
+it. Today that is the standing condition anyway, because the credential
+does not authenticate.
+
+Options:
+
+- Keep it. A build cache and an image push no longer share a fate, which
+  is the bug that kept main red across #285, #286 and #287. Fix the
+  Nexus credential separately, as a performance matter.
+- Keep it, and add a loud warning step so a cold build is visible in the
+  job summary rather than only in the build log — silence is the one real
+  drawback of best-effort.
+- Revert #288 and restore the earlier behaviour, treating a cache
+  failure as a build failure. Main goes red again until the Nexus
+  credential works, and deploys go back to the `sha-<short>-arm64`
+  fallback.
+- Revert only the `continue-on-error` on the login, keeping
+  `ignore-error=true` on `cache-to`: a missing cache is tolerated, but a
+  rejected credential still fails loudly.
+
+**Answered 2026-09-12: keep it.** No code change; #288 stands as merged.
+The accepted trade-off is that a cache failure is silent, so a cold build
+is a build-time regression nobody is paged about. The open follow-up is
+the rejected Nexus credential, tracked as a performance matter rather
+than an outage.
