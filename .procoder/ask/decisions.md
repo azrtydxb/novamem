@@ -601,3 +601,37 @@ The accepted trade-off is that a cache failure is silent, so a cold build
 is a build-time regression nobody is paged about. The open follow-up is
 the rejected Nexus credential, tracked as a performance matter rather
 than an outage.
+
+## Close the four issues that measurement says are already resolved?
+
+Verified against the tree at 5368bcd, not inferred from the PRs that
+touched them:
+
+| Issue | Claim                                                  | Measured now                                                                                                                                                     |
+| ----- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #276  | compose sets an embeddings provider the server rejects | docker-compose.yaml sets none; `cp .env.example .env && docker compose up` is satisfiable — both `:?` variables present, enforced by `checkComposeIsSatisfiable` |
+| #266  | no outputSchema, 48 undocumented parameters            | 21/21 tools carry an outputSchema; undocumented parameters: 0                                                                                                    |
+| #265  | no operationIds, descriptions or schemas               | 55/55 operations have an operationId and a published description; 33 component schemas; publishing without a description now fails the generator                 |
+| #263  | openapi.json tracked but unreferenced, drifts          | generated from api/openapi.yaml and covered by the CI regenerate-and-diff gate                                                                                   |
+
+Each is also now guarded, so closing does not depend on nobody
+regressing it quietly.
+
+The other three are not mine to close:
+
+- #277 — the documentation half is done and its env-var criterion is
+  enforced by gen-env-docs, but the exporter does not exist. Its
+  acceptance criteria offer a choice: build it, or delete the page and
+  retire the claim.
+- #268 — the acceptance criterion is explicitly a decision ("decide
+  which admin/ops capabilities should be agent-reachable at all"). It
+  was blocked on #265, which is now done, so it is unblocked rather than
+  finished.
+- #140, #139 — untouched feature work.
+
+Options:
+
+- Close #263, #265, #266, #276 with the measured evidence as the closing
+  comment.
+- Close them silently, without a comment.
+- Leave them open and let the next person re-derive it.

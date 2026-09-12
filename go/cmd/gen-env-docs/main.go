@@ -346,6 +346,7 @@ func auditDocs() {
 		if err != nil {
 			return err
 		}
+		checkUnimplementedPrefixes(rel, string(src), &problems)
 		seen := map[string]bool{}
 		for _, name := range novamemVar.FindAllString(string(src), -1) {
 			if seen[name] {
@@ -627,5 +628,50 @@ func checkComposeIsSatisfiable(template string) {
 			"path does) in registry.go, or add it to templateExtras if the server never "+
 			"reads it.",
 			strings.Join(missing, ", "), envExamplePath, strings.Join(missing, " or "))
+	}
+}
+
+// otelVar matches a variable in the one configuration namespace this
+// project documents but does not read.
+//
+// docs/observability.md described
+// OTLP trace export driven by OTEL_ENABLED, OTEL_SERVICE_NAME and
+// OTEL_EXPORTER_OTLP_ENDPOINT — a faithful description of the retired
+// TypeScript server. The Go server reads none of them, so an operator
+// following that page got silence, which is the worst failure mode an
+// observability setting has: indistinguishable from a working exporter
+// with nothing to report (#277).
+var otelVar = regexp.MustCompile(`OTEL_[A-Z0-9_]*[A-Z0-9]`)
+
+// notImplementedMarker is the page saying so in its own words. Matched
+// loosely on purpose — the requirement is that a reader is told, not
+// that they are told in one blessed phrasing.
+var notImplementedMarker = regexp.MustCompile(`(?i)not implemented|no OpenTelemetry|does nothing|reads no`)
+
+// checkUnimplementedPrefixes requires a page naming an unimplemented
+// setting to say that it is unimplemented.
+//
+// Deliberately NOT "never mention it": the pages that name these are
+// right to. observability.md is kept as the specification for
+// reinstating tracing, env-reference.md names the variable precisely to
+// say it does nothing, and hardening.md tells operators there is no OTLP
+// to enable. All three are useful; a silent mention is what is not.
+//
+// This lifts on its own if the exporter is ever built: declare the
+// variables in registry.go and they stop being unimplemented, at which
+// point the NOVAMEM_-style declared-or-fail rule is the one that applies.
+func checkUnimplementedPrefixes(rel, src string, problems *[]string) {
+	for _, name := range otelVar.FindAllString(src, -1) {
+		if _, declared := config.Lookup(name); declared {
+			continue // the exporter exists now; ordinary rules apply
+		}
+		if notImplementedMarker.MatchString(src) {
+			break // the page says so; one marker covers the page
+		}
+		*problems = append(*problems, fmt.Sprintf(
+			"%s names %s without saying anywhere that it is not implemented — "+
+				"the Go server reads no OTEL_* variable, so a reader would set it and get silence",
+			rel, name))
+		break
 	}
 }
