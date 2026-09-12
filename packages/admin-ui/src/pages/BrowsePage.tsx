@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, RecentEntry, SearchResult } from "../lib/api";
+import { api, RecentEntry, RememberResult, SearchResult } from "../lib/api";
 import { useActiveProject } from "../lib/active-project";
 import { KCard } from "../components/k/KCard";
 import { KHeader } from "../components/k/KHeader";
@@ -118,20 +118,53 @@ export function BrowsePage({ seed }: BrowseProps = {}) {
     mutationFn: async () => {
       // Writes follow the active scope: when a project is active, store
       // the new memory inside it; otherwise it's user-global.
-      const r = await api<{ id: string }>("POST", "/v1/remember", {
+      const r = await api<RememberResult>("POST", "/v1/remember", {
         content: newContent.trim(),
         ...(activeProjectId ? { project: activeProjectId } : {}),
       });
       if (!r.ok) throw new Error(r.error ?? `remember ${r.status}`);
       return r.body;
     },
-    onSuccess: () => {
-      toast.success(
-        "Memory stored",
-        activeProjectName
-          ? `Added to "${activeProjectName}".`
-          : "Added to your memory."
-      );
+    onSuccess: (body) => {
+      // A 201 does not mean an entry was written. The engine answers
+      // `{id: null, rejected: "<reason>"}` for content it will not keep
+      // (too short to be durable knowledge, over the length cap), and
+      // flags a write that merged into an existing entry rather than
+      // creating one. Calling all of those "Memory stored" tells the
+      // user something is in their memory when nothing is — the same
+      // failure the forget flow was fixed for with `deleted: false`.
+      if (body?.rejected) {
+        toast.error("Not stored", body.rejected);
+        // The composer stays open holding the text, so the user can
+        // expand it rather than retype it.
+        return;
+      }
+      const scope = activeProjectName
+        ? `Added to "${activeProjectName}".`
+        : "Added to your memory.";
+      if (body?.deduplicated) {
+        toast.success(
+          "Already remembered",
+          "An entry with this content exists — nothing new was written."
+        );
+      } else if (body?.updated) {
+        toast.success(
+          "Existing memory updated",
+          body.superseded?.length
+            ? `Superseded ${body.superseded.length} earlier ${
+                body.superseded.length === 1 ? "entry" : "entries"
+              }.`
+            : "The write merged into an entry you already had."
+        );
+      } else if (body?.embedded === false) {
+        // Stored, but searchable by keyword only until it is embedded.
+        toast.success(
+          "Memory stored without a vector",
+          `${scope} The embedder did not answer, so this entry will not match by similarity yet.`
+        );
+      } else {
+        toast.success("Memory stored", scope);
+      }
       setComposing(false);
       setNewContent("");
       void queryClient.invalidateQueries({ queryKey: ["browse-recent"] });

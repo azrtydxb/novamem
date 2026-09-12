@@ -292,3 +292,20 @@ export interface AuditEntry {
   metadata: Record<string, unknown> | null;
   requestIp: string | null;
 }
+
+/** Response of `POST /v1/remember` — mirrors `engine.RememberResult`.
+ *
+ *  A 201 does not mean an entry was created. `rejected` carries the
+ *  engine's reason for keeping nothing (content too short to be durable
+ *  knowledge, or over the length cap) and leaves `id` null;
+ *  `deduplicated` and `updated` mean the write merged into an entry the
+ *  user already had. A UI that reports every 201 as "stored" tells the
+ *  user something is in their memory when nothing is. */
+export interface RememberResult {
+  id: string | null;
+  rejected?: string;
+  deduplicated?: boolean;
+  updated?: boolean;
+  superseded?: string[];
+  embedded?: boolean;
+}
