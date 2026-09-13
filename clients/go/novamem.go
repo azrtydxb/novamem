@@ -320,12 +320,23 @@ type Entry struct {
 	Truncated bool `json:"truncated,omitempty"`
 }
 
-// Signals is the per-channel contribution to an entry's score. Neighbors
-// populates only Graph.
+// Signals is the per-channel contribution to an entry's score.
+//
+// Fusion is five-signal: Search populates all of them, Neighbors
+// populates only Graph, and Recent populates none (see Entry.Signals).
+// Recency and Entity were missing here, so Go consumers decoding a
+// search response silently dropped two channels — and Recency is
+// routinely the largest contributor after Keyword on fresh entries.
+//
+// `omitempty` throughout: a channel weighted to zero and a channel the
+// route does not compute both come back absent, and neither is worth a
+// literal 0 in a re-encoded payload.
 type Signals struct {
 	Keyword float64 `json:"keyword,omitempty"`
 	Vector  float64 `json:"vector,omitempty"`
 	Graph   float64 `json:"graph,omitempty"`
+	Recency float64 `json:"recency,omitempty"`
+	Entity  float64 `json:"entity,omitempty"`
 }
 
 // Results is what the three read paths return.
@@ -403,7 +414,8 @@ type CaptureResult struct {
 // Saved reports whether the store now holds this memory under some id.
 func (r CaptureResult) Saved() bool { return r.ID != nil && *r.ID != "" }
 
-// SearchRequest is a hybrid (keyword + vector + graph) query.
+// SearchRequest is a hybrid (keyword + vector + graph + recency +
+// entity) query.
 //
 // With neither Namespace nor IncludeNamespaces set, the server searches every
 // namespace the caller has entries in — so omitting them is the right default
@@ -530,7 +542,7 @@ func (c *Client) Capture(ctx context.Context, req CaptureRequest) (CaptureResult
 	return out, err
 }
 
-// Search runs a hybrid keyword + vector + graph query.
+// Search runs a hybrid keyword + vector + graph + recency + entity query.
 //
 // NO RETRY, by design. A read that fails should fail FAST so the caller can
 // degrade inside the same turn — "I could not reach my memory" said promptly
