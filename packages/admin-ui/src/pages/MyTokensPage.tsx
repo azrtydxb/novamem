@@ -183,6 +183,7 @@ export function MyTokensPage() {
           <div>
             <button
               onClick={() => setShowRevoked((v) => !v)}
+              aria-expanded={showRevoked}
               className="font-mono text-[11px] text-faint hover:text-ink transition-colors"
             >
               {showRevoked ? "▾" : "▸"} {revoked.length} revoked{" "}

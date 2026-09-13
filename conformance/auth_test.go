@@ -43,6 +43,22 @@ func cleanupForget(t *testing.T, ids []string) {
 // cleanupAdminDelete is the afterAll token/project DELETE loop via the
 // admin cookie (already cached by the test body that minted the rows, so
 // AdminCookie cannot fail here). Best-effort, logged, never failing.
+// cleanupBearerDelete is cleanupAdminDelete over NOVAMEM_ADMIN_TOKEN.
+//
+// The cookie variant calls AdminCookie, which t.Fatals when the run has
+// no cookie identity. Using it from a bearer-only suite makes that suite
+// require credentials it never otherwise needs — and fails it in cleanup,
+// after the assertions have already passed.
+func cleanupBearerDelete(t *testing.T, kind string, paths []string) {
+	for _, path := range paths {
+		r := AdminAPI(t, path, Opts{Method: "DELETE"})
+		if r.Status != 200 {
+			raw, _ := json.Marshal(r.Body)
+			t.Logf("cleanup: delete %s %s → %d %s", kind, path, r.Status, raw)
+		}
+	}
+}
+
 func cleanupAdminDelete(t *testing.T, kind string, paths []string) {
 	e := loadEnv()
 	for _, path := range paths {
@@ -181,12 +197,13 @@ func TestRotateTokenUserMode(t *testing.T) {
 			t.Fatalf("new-token recent status = %d, want 200", newWorks.Status)
 		}
 
-		// Track the ROTATED token's hash for cleanup (the original's hash
-		// is now a dead row, but deleting by its hash is a no-op 404 — track
-		// the live one instead so cleanup actually removes the row).
-		// Append, never replace: rotation leaves the ORIGINAL row behind
-		// (revoked, but still listed), so tracking only the rotated hash
-		// orphaned one row per run.
+		// Track BOTH hashes. Rotation leaves the original row in place
+		// (revoked, and GET /v1/me/tokens still returns it), and
+		// DeleteUserTokenByHash hard-deletes an owned row whatever its
+		// revoked_at — so both rows are deletable and both need deleting.
+		// This used to replace the tracked hash rather than append,
+		// orphaning one row per run on the belief that the original's
+		// hash 404s. It does not.
 		mintedTokenHashes = append(mintedTokenHashes, sha256Hex(rotated))
 	})
 
