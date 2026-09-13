@@ -36,6 +36,30 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
+/** Whether a change of signed-in identity should wipe the query cache.
+ *
+ *  Only when *leaving* a known identity. The first resolve of a page load
+ *  goes `null -> someone`, and clearing there is both pointless — a fresh
+ *  page has nothing stale — and harmful: it lands at the exact moment
+ *  queries gated on `enabled: !!userId` are starting, wipes them mid
+ *  flight, and leaves their observers idle with no refetch.
+ *
+ *  That is not hypothetical. The first version cleared on every change and
+ *  silently suppressed `/v1/me/projects`, so the sidebar's project
+ *  switcher never rendered for anyone — the request was not slow or
+ *  failing, it was never made.
+ *
+ *  Sign-out sets the user to null, so account switching still passes
+ *  through `someone -> null` and clears there. A direct `a -> b` swap
+ *  clears too.
+ */
+export function shouldClearCache(
+  prev: string | null,
+  next: string | null
+): boolean {
+  return prev !== null && prev !== next;
+}
+
 interface BetterAuthSessionResp {
   user?: {
     id: string;
@@ -63,21 +87,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // session cookie, but none of the keys say so — ["browse-recent",
   // project] is the same key for everyone. The QueryClient is a singleton
   // that outlives a sign-out, so signing in as someone else on the same
-  // tab renders the previous account's memories, metrics and search hits
-  // from cache until each request comes back.
+  // tab would render the previous account's memories, metrics and search
+  // hits from cache until each request came back.
   //
-  // Clearing on every identity change fixes all of those at once, and
-  // keeps fixing the next one: a key added later cannot forget to include
-  // a user id it never had to include. `clear()` drops cached data rather
-  // than invalidating it, so nothing stale is rendered while refetching.
+  // Clearing on identity change fixes all of those at once, and keeps
+  // fixing the next one: a key added later cannot forget to include a
+  // user id it never had to include.
   const queryClient = useQueryClient();
   const lastUserId = useRef<string | null>(null);
   useEffect(() => {
     const id = state.user?.id ?? null;
-    if (id !== lastUserId.current) {
-      lastUserId.current = id;
-      queryClient.clear();
-    }
+    const prev = lastUserId.current;
+    lastUserId.current = id;
+    if (shouldClearCache(prev, id)) queryClient.clear();
   }, [state.user?.id, queryClient]);
 
   const reload = useCallback(async () => {

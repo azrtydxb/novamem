@@ -268,12 +268,19 @@ export interface ActivityEvent {
   project: string | null;
 }
 
+/** Response of `GET /v1/me/onboarding` — matches the `Onboarding` schema
+ *  in the generated OpenAPI contract.
+ *
+ *  The field is `userExists`, not `userDone`. The UI declared `userDone`,
+ *  which the server has never sent, so the "Account ready" step read
+ *  `undefined` and rendered as outstanding for every user who had one.
+ *  `userId` is nullable in the spec. */
 export interface OnboardingState {
   bootstrapDone: boolean;
-  userDone: boolean;
+  userExists: boolean;
   mintedToken: boolean;
   remembered: boolean;
-  userId: string;
+  userId: string | null;
 }
 
 /** One row of `GET /v1/admin/audit-log`.

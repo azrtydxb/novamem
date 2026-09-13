@@ -46,7 +46,7 @@ export function OnboardingPage({ onSkip, onContinue }: Props) {
       // who is being welcomed reads as a bug, not as information. The
       // auth context already holds the name they signed in with.
       hint: user?.username ? `signed in as ${user.username}` : "—",
-      done: data?.userDone ?? false,
+      done: data?.userExists ?? false,
     },
     {
       n: 3,

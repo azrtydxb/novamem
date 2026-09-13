@@ -13,13 +13,15 @@ vi.mock("./api", () => ({
   },
 }));
 
-vi.mock("./auth-context", () => ({
+vi.mock("./auth-context", async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
   useAuth: () => ({ user: currentUser }),
 }));
 
 const { ActiveProjectProvider, useActiveProject } = await import(
   "./active-project"
 );
+const { shouldClearCache } = await import("./auth-context");
 
 function Probe() {
   const { activeProjectId, activeProjectName } = useActiveProject();
@@ -132,5 +134,28 @@ describe("ActiveProjectProvider", () => {
     await waitFor(() =>
       expect(screen.getByTestId("name").textContent).toBe("Live")
     );
+  });
+});
+
+describe("shouldClearCache", () => {
+  // The cache must be wiped when one account gives way to another, and
+  // must NOT be wiped on the first resolve of a page load — clearing
+  // there kills queries gated on `enabled: !!userId` at the moment they
+  // start, which is how the project switcher silently stopped fetching.
+  it("does not clear on the first identity of a page load", () => {
+    expect(shouldClearCache(null, "user-a")).toBe(false);
+  });
+
+  it("clears on sign-out", () => {
+    expect(shouldClearCache("user-a", null)).toBe(true);
+  });
+
+  it("clears on a direct account swap", () => {
+    expect(shouldClearCache("user-a", "user-b")).toBe(true);
+  });
+
+  it("does nothing when the identity has not changed", () => {
+    expect(shouldClearCache("user-a", "user-a")).toBe(false);
+    expect(shouldClearCache(null, null)).toBe(false);
   });
 });
