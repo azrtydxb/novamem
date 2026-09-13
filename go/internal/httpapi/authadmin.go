@@ -155,6 +155,11 @@ func (s *server) handleBACreateUser(w http.ResponseWriter, r *http.Request) {
 			"User already exists. Use another email.")
 		return
 	}
+	// POST /v1/admin/users audits creation; this passthrough is the route
+	// the dashboard actually uses, and it audited nothing.
+	s.auditAs(r, u, "user.create", created.ID, map[string]any{
+		"email": created.Email, "role": role,
+	})
 	writeJSONValue(w, http.StatusOK, map[string]any{"user": created})
 }
 
@@ -201,6 +206,14 @@ func (s *server) handleBASetRole(w http.ResponseWriter, r *http.Request) {
 		s.sendEngineErr(w, r, err)
 		return
 	}
+	// Granting or removing admin is the most consequential thing an
+	// operator can do here, and it was the one action leaving no trace:
+	// the audit log covers /v1/admin/* but these Better Auth passthroughs
+	// wrote nothing, so the dashboard's Audit page — which presents itself
+	// as the record of admin actions — silently omitted every role change.
+	s.auditAs(r, u, "user.set-role", userID, map[string]any{
+		"from": target.Role, "to": role, "email": target.Email,
+	})
 	writeJSONValue(w, http.StatusOK, map[string]any{"user": updated})
 }
 
@@ -241,6 +254,14 @@ func (s *server) handleBARemoveUser(w http.ResponseWriter, r *http.Request) {
 		s.sendEngineErr(w, r, err)
 		return
 	}
+	// Note this deletes only the Better Auth rows — memories, tokens and
+	// owned projects survive it, which is why the dashboard calls
+	// DELETE /v1/admin/users/{id} instead. The action is audited here so
+	// that a caller who does use this route still leaves a trace, and the
+	// name says which of the two it was.
+	s.auditAs(r, u, "user.remove-auth-only", userID, map[string]any{
+		"email": target.Email,
+	})
 	writeJSONValue(w, http.StatusOK, map[string]any{"success": true})
 }
 

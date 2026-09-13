@@ -49,9 +49,19 @@ func (s *server) dashUser(r *http.Request) *warmstore.User { return callerOf(r).
 // audit records an operator-visible action. Failures are logged, never
 // surfaced — an audit gap beats failing the action it describes.
 func (s *server) audit(r *http.Request, action, target string, metadata map[string]any) {
+	s.auditAs(r, s.dashUser(r), action, target, metadata)
+}
+
+// auditAs is audit with the actor supplied rather than read from the
+// request context. The /api/auth/* passthroughs do not run through
+// withAuth, so `dashUser` is nil on them and every row they wrote was
+// attributed to "unknown" — which is most of the value of auditing a
+// role change gone. They resolve the admin through `baAdmin`; this lets
+// them pass that along.
+func (s *server) auditAs(r *http.Request, actor *warmstore.User, action, target string, metadata map[string]any) {
 	label := "unknown"
 	var actorID *string
-	if u := s.dashUser(r); u != nil {
+	if u := actor; u != nil {
 		label = "user:" + u.Username
 		actorID = &u.ID
 	}
