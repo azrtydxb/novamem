@@ -37,32 +37,26 @@ const SOURCE = readFileSync(resolve(process.cwd(), "src/lib/api.ts"), "utf8");
 
 /** interface name in api.ts -> schema name in the OpenAPI components.
  *
- *  Only schemas that describe their response completely are listed. The
- *  generated spec is authoritative about *paths* — CI gates those against
- *  the registered routes — but several of its response schemas are looser
- *  than the Go structs they stand for, so comparing against them would
- *  flag correct code:
+ *  `MemoryEntry` now carries the optional `signals` object the ranked
+ *  routes really return, so SearchResult can be checked against it too.
+ *  That binding is the one that would have caught the fourth instance of
+ *  this bug: `signals` was typed `{keyword, vector, graph}` while
+ *  /v1/search answers with all five, and the dashboard hid `recency`
+ *  entirely.
  *
- *    - `MemoryEntry` has no `signals`, yet /v1/search returns it (checked
- *      against the running server). Fine for RecentEntry, which /v1/recent
- *      genuinely answers without one; wrong for SearchResult.
- *    - `RememberResult` omits `updated` and `superseded`, both present on
- *      `engine.RememberResult`.
- *    - `TokenList` rows are `additionalProperties: true` — untyped, so
- *      there is nothing to compare.
- *    - `Health` describes the `/health` liveness probe (`{ok}`), not the
- *      admin deep-health payload HealthSnapshot models.
- *
- *  Those gaps are worth closing in the spec — that is a server-side
- *  contract change, and doing it would let every interface here be
- *  checked. Until then this guards the ones it can, rather than pretending
- *  to cover all of them.
+ *  `TokenList` rows are still `additionalProperties: true` — untyped, so
+ *  there is nothing to compare — and `Health` describes the `/health`
+ *  liveness probe (`{ok}`), not the admin deep-health payload
+ *  HealthSnapshot models. Those two remain unbound.
  */
 const BINDINGS: Array<[string, string]> = [
   // Would have caught RecentEntry's phantom signals/hits/age/decay.
   ["RecentEntry", "MemoryEntry"],
+  // Would have caught SearchResult.signals being three fields, not five.
+  ["SearchResult", "MemoryEntry"],
   // Would have caught OnboardingState.userDone.
   ["OnboardingState", "Onboarding"],
+  ["RememberResult", "RememberResult"],
   ["Project", "ProjectListItem"],
   ["ProjectMember", "MemberList"],
 ];
@@ -132,6 +126,21 @@ describe("api.ts interfaces vs the generated OpenAPI contract", () => {
       expect(invented).toEqual([]);
     }
   );
+
+  it("renders exactly the signals the contract defines", async () => {
+    // The top-level field check above compares interface members, not the
+    // shape *inside* one — and the fourth instance of this bug was a
+    // nested shape: `signals` was typed as three fields while /v1/search
+    // answers with five, so the dashboard silently dropped `recency`.
+    // SIGNAL_ORDER is what KSignals iterates, so comparing it to the
+    // schema closes that hole for the one nested object that matters.
+    const { SIGNAL_ORDER } = await import("../components/k/KSignals");
+    const schema = SPEC.components.schemas.MemoryEntry as {
+      properties: { signals?: { properties?: Record<string, unknown> } };
+    };
+    const inContract = Object.keys(schema.properties.signals?.properties ?? {});
+    expect([...SIGNAL_ORDER].sort()).toEqual(inContract.sort());
+  });
 
   it("reads a spec that actually describes the endpoints", () => {
     // Guards the guard: a mistyped path or an empty file would make every

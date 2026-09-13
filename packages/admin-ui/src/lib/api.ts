@@ -221,6 +221,8 @@ export interface TokenMetricsRow {
   rates: { queries_per_sec_60s: number; remembers_per_sec_60s: number };
 }
 
+import type { Signals } from "../components/k/KSignals";
+
 export interface SearchResult {
   id: string;
   score: number;
@@ -230,7 +232,10 @@ export interface SearchResult {
   project: string | null;
   source: string;
   metadata: Record<string, unknown>;
-  signals: { keyword: number; vector: number; graph: number };
+  /** Present on ranked responses only, and partial: /v1/search returns
+   *  all five, /v1/neighbors returns `graph` alone. Verified against the
+   *  running server — the old three-field shape was wrong about it. */
+  signals?: Signals;
 }
 
 /** One row of `POST /v1/recent`.

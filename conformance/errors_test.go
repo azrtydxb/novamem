@@ -18,10 +18,14 @@ import (
 func TestErrorShapes(t *testing.T) {
 	Target(t)
 
-	// Every token this suite mints gets revoked. The read-only probe below
-	// used to leak one per run: 18 live `conf-err-ro-*` tokens had piled up
-	// on novamem-bench, each one a working credential and every one of them
-	// cluttering the dashboard's per-token usage table.
+	// Every token this suite mints gets revoked AND deleted. The read-only
+	// probe below used to leak one per run: 18 live `conf-err-ro-*` tokens
+	// had piled up on novamem-bench, each one a working credential.
+	//
+	// Revoking alone fixed the credential but not the clutter — a revoked
+	// row is still returned by GET /v1/me/tokens, so the rows kept
+	// accumulating (100 of them on kw by 2026-09-13). Revoke first so the
+	// token is dead even if the delete fails, then delete the row.
 	var mintedTokens []string
 	t.Cleanup(func() {
 		var failed []string
@@ -41,6 +45,7 @@ func TestErrorShapes(t *testing.T) {
 				raw, _ := json.Marshal(r.Body)
 				failed = append(failed, fmt.Sprintf("%s… → %d %s", token[:min(12, len(token))], r.Status, raw))
 			}
+			cleanupAdminDelete(t, "token", []string{"/v1/me/tokens/" + sha256Hex(token)})
 		}
 		if len(failed) > 0 {
 			t.Errorf("conformance leaked %d live token(s) — revoke failed:\n  %s",

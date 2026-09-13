@@ -37,6 +37,14 @@ export function MyTokensPage() {
     },
   });
   const tokens: UserToken[] | null = tokensQ.data ?? null;
+  // A revoked token is not a credential — it cannot authenticate anything.
+  // The table listed them identically to live ones, so a user who had run
+  // the conformance suite a few times was shown a hundred "API tokens"
+  // when five worked. The rows are real history, so they are kept behind a
+  // disclosure rather than hidden outright.
+  const live = tokens?.filter((t) => !t.revoked) ?? null;
+  const revoked = tokens?.filter((t) => t.revoked) ?? [];
+  const [showRevoked, setShowRevoked] = useState(false);
   const busy = tokensQ.isFetching;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["me", "tokens"] });
@@ -92,12 +100,18 @@ export function MyTokensPage() {
           <Card className="p-8 text-center text-sm text-dim">
             Loading tokens…
           </Card>
-        ) : tokens.length === 0 ? (
+        ) : live!.length === 0 ? (
           <Card className="p-12 text-center">
             <KeyRound className="h-8 w-8 text-faint mx-auto mb-3" />
-            <div className="text-sm text-ink font-medium">No tokens yet</div>
+            <div className="text-sm text-ink font-medium">
+              {revoked.length > 0 ? "No live tokens" : "No tokens yet"}
+            </div>
             <div className="text-xs text-dim mt-1">
-              Create one above to start authenticating a device.
+              {revoked.length > 0
+                ? `Create one above. ${revoked.length} revoked ${
+                    revoked.length === 1 ? "token is" : "tokens are"
+                  } listed below.`
+                : "Create one above to start authenticating a device."}
             </div>
           </Card>
         ) : (
@@ -120,7 +134,7 @@ export function MyTokensPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {tokens.map((t) => (
+                  {live!.map((t) => (
                     <tr key={t.tokenHash}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -164,6 +178,49 @@ export function MyTokensPage() {
             </div>
           </Card>
         )}
+
+        {revoked.length > 0 ? (
+          <div>
+            <button
+              onClick={() => setShowRevoked((v) => !v)}
+              className="font-mono text-[11px] text-faint hover:text-ink transition-colors"
+            >
+              {showRevoked ? "▾" : "▸"} {revoked.length} revoked{" "}
+              {revoked.length === 1 ? "token" : "tokens"}
+            </button>
+            {showRevoked ? (
+              <Card className="mt-2">
+                {revoked.map((t) => (
+                  <div
+                    key={t.tokenHash}
+                    className="flex items-center gap-3 border-b border-rule-soft px-4 py-2.5 last:border-0"
+                  >
+                    <Badge tone="neutral">revoked</Badge>
+                    <span className="text-[12.5px] text-dim">
+                      {t.label || "unlabeled"}
+                    </span>
+                    <span
+                      className="font-mono text-[10.5px] text-faint"
+                      title={t.tokenHash}
+                    >
+                      {shortHash(t.tokenHash)}
+                    </span>
+                    <span className="ml-auto font-mono text-[10.5px] text-faint">
+                      created {fmtTimestamp(t.createdAt)}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setConfirmDelete(t)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </Button>
+                  </div>
+                ))}
+              </Card>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* Created result modal — full plaintext, prominent Copy button */}
         <Modal

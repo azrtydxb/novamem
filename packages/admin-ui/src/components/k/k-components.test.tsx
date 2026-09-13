@@ -9,21 +9,44 @@ import { KSpark } from "./KSpark";
 import { KStat } from "./KStat";
 
 describe("KSignals", () => {
-  // The decision this component encodes: the prototype draws five bars,
-  // the server returns three. A zero-height bar for a signal nobody
-  // computes reads as "contributed nothing", which is a different and
-  // false claim.
-  it("renders one bar per signal the server actually returns", () => {
-    const { container } = render(
-      <KSignals signals={{ keyword: 0.92, vector: 0.84, graph: 0.31 }} />
+  // This suite used to assert the opposite: that recency and entity are
+  // NOT rendered, on the stated grounds that the server returns three
+  // signals. It returns five on /v1/search — recency routinely around
+  // .98 — and the assertion was locking in a UI that hid a signal doing
+  // real work. Checked against the running deployment.
+  it("renders every signal the response carried", () => {
+    render(
+      <KSignals
+        signals={{
+          keyword: 0.92,
+          vector: 0.84,
+          graph: 0.31,
+          recency: 0.98,
+          entity: 0,
+        }}
+      />
     );
-    expect(screen.getByText("keyword")).toBeInTheDocument();
-    expect(screen.getByText("vector")).toBeInTheDocument();
+    for (const k of ["keyword", "vector", "graph", "recency", "entity"]) {
+      expect(screen.getByText(k)).toBeInTheDocument();
+    }
+  });
+
+  it("renders only the signals present, not a fixed set", () => {
+    // /v1/neighbors answers with `graph` alone. A bar at zero claims a
+    // signal contributed nothing; a missing bar says it was not computed
+    // on this route, and those are different claims.
+    const { container } = render(<KSignals signals={{ graph: 0.95 }} />);
     expect(screen.getByText("graph")).toBeInTheDocument();
+    expect(screen.queryByText("keyword")).not.toBeInTheDocument();
     expect(screen.queryByText("recency")).not.toBeInTheDocument();
-    expect(screen.queryByText("entity")).not.toBeInTheDocument();
-    // three labels + three values, and no fourth track
-    expect(container.querySelectorAll(".bg-subtle-2")).toHaveLength(3);
+    expect(container.querySelectorAll(".bg-subtle-2")).toHaveLength(1);
+  });
+
+  it("renders nothing when the response carried no signals", () => {
+    // /v1/recent orders rather than ranks. Passing undefined used to
+    // throw on `signals[key]`.
+    const { container } = render(<KSignals signals={undefined} />);
+    expect(container.firstChild).toBeNull();
   });
 
   it("drops the leading zero so values align under narrow labels", () => {
