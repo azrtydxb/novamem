@@ -50,8 +50,17 @@ func cleanupForget(t *testing.T, ids []string) {
 // require credentials it never otherwise needs — and fails it in cleanup,
 // after the assertions have already passed.
 func cleanupBearerDelete(t *testing.T, kind string, paths []string) {
+	token := loadEnv().AdminToken
 	for _, path := range paths {
-		r := AdminAPI(t, path, Opts{Method: "DELETE"})
+		// apiE, not AdminAPI: AdminAPI goes through API, which t.Fatalfs on
+		// a transport error — so a transient network blip during cleanup
+		// would fail a suite whose assertions had already passed. Cleanup
+		// is best-effort; log and move on, as cleanupAdminDelete does.
+		r, err := apiE(path, Opts{Method: "DELETE", Token: &token})
+		if err != nil {
+			t.Logf("cleanup: delete %s %s failed: %v", kind, path, err)
+			continue
+		}
 		if r.Status != 200 {
 			raw, _ := json.Marshal(r.Body)
 			t.Logf("cleanup: delete %s %s → %d %s", kind, path, r.Status, raw)
