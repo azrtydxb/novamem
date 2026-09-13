@@ -42,6 +42,7 @@ export function KSignals({ signals, compact, className }: Props) {
   // here", and those are different claims.
   const present = SIGNAL_ORDER.filter((k) => signals?.[k] !== undefined);
   if (present.length === 0) return null;
+  const stacked = present.length > 3;
 
   return (
     <div
@@ -57,9 +58,23 @@ export function KSignals({ signals, compact, className }: Props) {
         const v = signals?.[key] ?? 0;
         return (
           <div key={key}>
-            <div className="flex justify-between font-mono text-[10px] tracking-[0.05em] lowercase text-faint">
-              <span>{compact ? key.slice(0, 3) : key}</span>
-              <b className="font-medium text-ink-2">
+            {/* Side by side at three signals; stacked at five. A 34px
+                column cannot hold a label and a value on one line —
+                measured, after the first attempt merely traded
+                overlapping labels for labels truncated to 4px. */}
+            <div
+              className={cn(
+                "font-mono text-[10px] tracking-[0.05em] lowercase text-faint",
+                stacked ? "leading-tight" : "flex justify-between gap-1"
+              )}
+            >
+              <div className="truncate">{compact ? key.slice(0, 3) : key}</div>
+              <b
+                className={cn(
+                  "font-medium text-ink-2 tabular-nums",
+                  stacked && "block"
+                )}
+              >
                 {/* .84 rather than 0.84 — the design drops the leading
                     zero so the numbers align under narrow labels. */}
                 {v.toFixed(2).replace(/^0/, "")}
