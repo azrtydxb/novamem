@@ -83,6 +83,20 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        signals:
+          type: object
+          description: >-
+            Per-signal contributions behind `score`, present on the ranked
+            responses (/v1/search, /v1/context, /v1/neighbors) and absent on
+            /v1/recent, which orders by recency and ranks nothing. Every key
+            is optional because the set varies by route: fusion returns all
+            five, /v1/neighbors returns `graph` alone.
+          properties:
+            keyword: *id003
+            vector: *id003
+            graph: *id003
+            recency: *id003
+            entity: *id003
       required:
         - id
         - content
@@ -95,6 +109,10 @@ components:
         rejected: *id001
         deduplicated: &id002
           type: boolean
+        updated: *id002
+        superseded:
+          type: array
+          items: *id001
         embedded: *id002
       required:
         - id

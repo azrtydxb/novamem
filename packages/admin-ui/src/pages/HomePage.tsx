@@ -177,8 +177,11 @@ export function HomePage({ onBrowse }: Props) {
                         <span className="text-dim">· {r.score.toFixed(3)}</span>
                       </div>
                     </div>
-                    <div className="w-32 shrink-0">
-                      <KSignals signals={r.signals} />
+                    {/* Wide enough for five signals: three fitted in
+                        w-32, five did not, and the labels overlapped.
+                        `compact` trims them to three characters. */}
+                    <div className="hidden w-56 shrink-0 lg:block">
+                      <KSignals signals={r.signals} compact />
                     </div>
                   </button>
                 ))}

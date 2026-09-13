@@ -63,7 +63,7 @@ func TestHappyPath(t *testing.T) {
 		ID: "01KMEM", Score: 0.87, Content: "User prefers dark roast",
 		Tier: "warm", Namespace: "user", Project: &project, Source: "memory_capture",
 		Metadata: map[string]any{"sensitivity": "private"},
-		Signals:  &Signals{Keyword: 0.4, Vector: 0.5},
+		Signals:  &Signals{Keyword: 0.4, Vector: 0.5, Recency: 0.9},
 	}
 
 	tests := []struct {
@@ -136,7 +136,12 @@ func TestHappyPath(t *testing.T) {
 				if got.Entries[0].Project == nil || *got.Entries[0].Project != "phoenix" {
 					t.Errorf("Project=%v", got.Entries[0].Project)
 				}
-				if got.Entries[0].Signals == nil || got.Entries[0].Signals.Vector != 0.5 {
+				// Recency is asserted because it was missing from the
+				// struct: a server sending five channels had two dropped
+				// on the floor by every Go consumer.
+				if got.Entries[0].Signals == nil ||
+					got.Entries[0].Signals.Vector != 0.5 ||
+					got.Entries[0].Signals.Recency != 0.9 {
 					t.Errorf("Signals=%+v", got.Entries[0].Signals)
 				}
 			},

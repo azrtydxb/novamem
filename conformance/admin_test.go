@@ -453,6 +453,12 @@ func TestAdminFullLifecycle(t *testing.T) {
 	}
 	mintBody := mint.MustValidate(t, MintTokenResponse)
 	plaintext := mintBody["token"].(string)
+	// Revoking below kills the credential but leaves the row, which
+	// GET /v1/me/tokens still returns — so this probe leaked one listed
+	// token per run until the dashboard showed a hundred of them.
+	t.Cleanup(func() {
+		cleanupAdminDelete(t, "token", []string{"/v1/me/tokens/" + sha256Hex(plaintext)})
+	})
 
 	revoke := AdminCookieAPI(t, "/v1/admin/tokens/revoke", Opts{
 		Method: "POST",

@@ -184,7 +184,10 @@ func TestRotateTokenUserMode(t *testing.T) {
 		// Track the ROTATED token's hash for cleanup (the original's hash
 		// is now a dead row, but deleting by its hash is a no-op 404 — track
 		// the live one instead so cleanup actually removes the row).
-		mintedTokenHashes[len(mintedTokenHashes)-1] = sha256Hex(rotated)
+		// Append, never replace: rotation leaves the ORIGINAL row behind
+		// (revoked, but still listed), so tracking only the rotated hash
+		// orphaned one row per run.
+		mintedTokenHashes = append(mintedTokenHashes, sha256Hex(rotated))
 	})
 
 	t.Run("rotate-token requires a bearer; unauthenticated is 401", func(t *testing.T) {
@@ -381,7 +384,10 @@ func TestProjectConfinedAndReadOnlyTokensUserMode(t *testing.T) {
 			t.Fatalf("rotate status = %d, want 201", rotate.Status)
 		}
 		rotated, _ := rotate.Obj(t)["token"].(string)
-		mintedTokenHashes[len(mintedTokenHashes)-1] = sha256Hex(rotated)
+		// Append, never replace: rotation leaves the ORIGINAL row behind
+		// (revoked, but still listed), so tracking only the rotated hash
+		// orphaned one row per run.
+		mintedTokenHashes = append(mintedTokenHashes, sha256Hex(rotated))
 
 		// The rotated token is still read-only: a write is still 403.
 		write := API(t, "/v1/remember", Opts{

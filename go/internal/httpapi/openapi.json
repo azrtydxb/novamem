@@ -414,6 +414,27 @@
           "score": {
             "type": "number"
           },
+          "signals": {
+            "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+            "properties": {
+              "entity": {
+                "type": "number"
+              },
+              "graph": {
+                "type": "number"
+              },
+              "keyword": {
+                "type": "number"
+              },
+              "recency": {
+                "type": "number"
+              },
+              "vector": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
           "source": {
             "type": "string"
           },
@@ -642,6 +663,15 @@
           },
           "rejected": {
             "type": "string"
+          },
+          "superseded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated": {
+            "type": "boolean"
           }
         },
         "required": [
