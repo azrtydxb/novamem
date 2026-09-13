@@ -45,7 +45,10 @@ func TestErrorShapes(t *testing.T) {
 				raw, _ := json.Marshal(r.Body)
 				failed = append(failed, fmt.Sprintf("%s… → %d %s", token[:min(12, len(token))], r.Status, raw))
 			}
-			cleanupAdminDelete(t, "token", []string{"/v1/me/tokens/" + sha256Hex(token)})
+			// Bearer, not cookie: this suite authenticates with
+			// NOVAMEM_ADMIN_TOKEN throughout and must not acquire a
+			// cookie dependency in its cleanup.
+			cleanupBearerDelete(t, "token", []string{"/v1/me/tokens/" + sha256Hex(token)})
 		}
 		if len(failed) > 0 {
 			t.Errorf("conformance leaked %d live token(s) — revoke failed:\n  %s",
