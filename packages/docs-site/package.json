@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@scalar/api-reference": "1.68.0",
-    "@types/node": "^26.4",
+    "@types/node": "^26.5",
     "mermaid": "^11.17.2",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
