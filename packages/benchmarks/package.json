@@ -19,7 +19,7 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
-    "@types/node": "^26.5",
+    "@types/node": "^26.6",
     "tsx": "^4.23.13",
     "vitest": "^4.1.11"
   }
