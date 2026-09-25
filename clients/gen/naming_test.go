@@ -36,3 +36,21 @@ func TestCident(t *testing.T) {
 		}
 	}
 }
+
+func TestJavaident(t *testing.T) {
+	for in, want := range map[string]string{
+		"default": "default_", "class": "class_", "hashCode": "hashCode_", "toString": "toString_",
+		"query": "query", "userId": "userId", "UserID": "userId", "record": "record",
+	} {
+		if got := javaident(in); got != want {
+			t.Errorf("javaident(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{
+		"Management.Import": "importEntries", "Client.SessionRecap": "sessionRecap", "Client.Health": "health",
+	} {
+		if got := javamethod(in); got != want {
+			t.Errorf("javamethod(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

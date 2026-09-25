@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -21,8 +23,12 @@ type Options struct {
 }
 
 // directive is the first line of every template:
-// {{/* lang: <lang> out: <path relative to Out> */}} (or the trimming form "*/ -}}")
-var directive = regexp.MustCompile(`^\{\{/\* lang: (\S+) out: (\S+) \*/ ?-?\}\}`)
+// {{/* lang: <lang> out: <path relative to Out> [fmt: <command>] */}} (or
+// the trimming form "*/ -}}"). With fmt, the output is piped through
+// `<command> -`: a language whose formatter lays lines out by length (Java's
+// google-java-format) cannot be matched by a template alone, and the gate
+// would reject the file otherwise. Only names in formatters are accepted.
+var directive = regexp.MustCompile(`^\{\{/\* lang: (\S+) out: (\S+)(?: fmt: (\S+))? \*/ ?-?\}\}`)
 
 type rendered struct {
 	path string // relative to Out
@@ -47,6 +53,8 @@ func render(opts Options) ([]rendered, error) {
 		"rustident":  rustident,
 		"cident":     cident,
 		"swiftident": swiftident,
+		"javaident":  javaident,
+		"javamethod": javamethod,
 		"list":       func(v ...string) []string { return v },
 		// dict builds a map for passing several values to a sub-template.
 		"dict": func(kv ...any) (map[string]any, error) {
@@ -90,6 +98,11 @@ func render(opts Options) ([]rendered, error) {
 		}
 		body := bytes.ReplaceAll(buf.Bytes(), []byte("\r\n"), []byte("\n"))
 		body = append(bytes.TrimRight(body, "\n"), '\n')
+		if len(m[3]) > 0 {
+			if body, err = format(string(m[3]), body); err != nil {
+				return nil, fmt.Errorf("%s: %w", f, err)
+			}
+		}
 		out = append(out, rendered{path: path, body: body})
 	}
 	// Zero templates would make -check pass while checking nothing — the
@@ -98,6 +111,32 @@ func render(opts Options) ([]rendered, error) {
 		return nil, fmt.Errorf("no templates in %s match langs %v", opts.Templates, opts.Langs)
 	}
 	return out, nil
+}
+
+// formatters are the commands a template may name with fmt:, each run as
+// `<command> -`. A closed list: the name comes from a template file, and
+// only these are ever executed.
+var formatters = map[string]func() *exec.Cmd{
+	"google-java-format": func() *exec.Cmd { return exec.Command("google-java-format", "-") },
+}
+
+// format pipes body through the named formatter.
+func format(name string, body []byte) ([]byte, error) {
+	mk, ok := formatters[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown formatter %q (known: google-java-format)", name)
+	}
+	cmd := mk()
+	cmd.Stdin = bytes.NewReader(body)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, fmt.Errorf("formatter %s is not on PATH; install it to generate this file", name)
+		}
+		return nil, fmt.Errorf("formatter %s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
 }
 
 // header marks every file the generator writes; Check uses it to find
