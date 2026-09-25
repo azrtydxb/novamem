@@ -5,7 +5,8 @@
 // Serialization leaves out unset optional fields (and empty optional
 // strings), always writes required ones (null when null), and sends
 // timestamps as UTC with a Z. Unknown fields are ignored; a missing
-// required field fails. An enum value this version does not know reads as
+// required non-nullable field fails, and a required nullable one that is
+// absent reads as null. An enum value this version does not know reads as
 // UNKNOWN.
 
 package com.azrtydxb.novamem.types;

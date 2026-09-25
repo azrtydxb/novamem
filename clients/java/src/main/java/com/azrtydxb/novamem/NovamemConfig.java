@@ -29,6 +29,11 @@ public final class NovamemConfig {
     if (!isHttpUrl(url)) {
       throw new IllegalArgumentException("novamem: baseUrl is not an absolute http(s) URL");
     }
+    // Paths are appended to baseUrl, so a query or fragment on it would
+    // swallow every route ("https://h?x=1" + "/v1/stats").
+    if (url.contains("?") || url.contains("#")) {
+      throw new IllegalArgumentException("novamem: baseUrl must not have a query or fragment");
+    }
     if (b.token == null || b.token.isBlank()) {
       throw new IllegalArgumentException("novamem: token is required");
     }
@@ -77,9 +82,14 @@ public final class NovamemConfig {
     return token;
   }
 
+  /** The base URL for printing: a token pasted into it by mistake is redacted there too. */
+  String redactedBaseUrl() {
+    return baseUrl.replace(token, "[redacted]");
+  }
+
   @Override
   public String toString() {
-    return "NovamemConfig[baseUrl=" + baseUrl + ", token=[redacted]]";
+    return "NovamemConfig[baseUrl=" + redactedBaseUrl() + ", token=[redacted]]";
   }
 
   /** Builds a {@link NovamemConfig}. */
