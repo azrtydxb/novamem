@@ -21,6 +21,56 @@
         ],
         "type": "object"
       },
+      "AdminUser": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "entryCount": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "tokenCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "createdAt",
+          "entryCount",
+          "tokenCount"
+        ],
+        "type": "object"
+      },
+      "AdminUserList": {
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUser"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "type": "object"
+      },
       "AdoptionReport": {
         "properties": {
           "diagnostics": {
@@ -142,6 +192,17 @@
         ],
         "type": "object"
       },
+      "ContextPrefix": {
+        "properties": {
+          "prefix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "prefix"
+        ],
+        "type": "object"
+      },
       "DecayResult": {
         "properties": {
           "demoted": {
@@ -257,6 +318,85 @@
         ],
         "type": "object"
       },
+      "ExportPage": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ExportedEntry"
+            },
+            "type": "array"
+          },
+          "nextAfterId": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "nextAfterId"
+        ],
+        "type": "object"
+      },
+      "ExportedEntry": {
+        "properties": {
+          "agentName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "capturedFrom": {
+            "nullable": true,
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "projectId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "content",
+          "namespace",
+          "source",
+          "agentName",
+          "metadata",
+          "sourceType",
+          "capturedFrom",
+          "confidence",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "ForgetResult": {
         "properties": {
           "coldDeleteOk": {
@@ -331,6 +471,40 @@
         },
         "required": [
           "summary"
+        ],
+        "type": "object"
+      },
+      "ImportResult": {
+        "properties": {
+          "deduplicated": {
+            "type": "integer"
+          },
+          "failed": {
+            "items": {
+              "properties": {
+                "error": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "index",
+                "error"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "imported": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "imported",
+          "deduplicated",
+          "failed"
         ],
         "type": "object"
       },
@@ -629,6 +803,54 @@
         ],
         "type": "object"
       },
+      "ProvisionedUser": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "token": {
+            "description": "Present only when tokenLabel was sent.",
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "email"
+        ],
+        "type": "object"
+      },
+      "QuotaResult": {
+        "properties": {
+          "quota": {
+            "properties": {
+              "maxEntries": {
+                "nullable": true,
+                "type": "integer"
+              },
+              "writesPerMinute": {
+                "nullable": true,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "maxEntries",
+              "writesPerMinute"
+            ],
+            "type": "object"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "quota"
+        ],
+        "type": "object"
+      },
       "ReapOrphansResult": {
         "properties": {
           "abandoned": {
@@ -676,6 +898,17 @@
         },
         "required": [
           "id"
+        ],
+        "type": "object"
+      },
+      "RevokeResult": {
+        "properties": {
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revoked"
         ],
         "type": "object"
       },
@@ -787,6 +1020,17 @@
         ],
         "type": "object"
       },
+      "TokenDeleted": {
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object"
+      },
       "TokenList": {
         "properties": {
           "tokens": {
@@ -840,6 +1084,84 @@
             "type": "object"
           }
         },
+        "type": "object"
+      },
+      "UserDeletion": {
+        "properties": {
+          "coldCleanup": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "coldCleanupOk": {
+            "type": "boolean"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "entriesRemoved": {
+            "type": "integer"
+          },
+          "projectsDeleted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tokensRemoved": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted",
+          "entriesRemoved",
+          "tokensRemoved",
+          "projectsDeleted",
+          "coldCleanup",
+          "coldCleanupOk"
+        ],
+        "type": "object"
+      },
+      "UserDeletionPreview": {
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          },
+          "wouldDelete": {
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "entries": {
+                "type": "integer"
+              },
+              "ownedProjects": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "tokens": {
+                "type": "integer"
+              },
+              "userId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "entries",
+              "tokens",
+              "ownedProjects"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "dryRun",
+          "wouldDelete"
+        ],
         "type": "object"
       }
     },
@@ -1364,7 +1686,14 @@
         },
         "responses": {
           "200": {
-            "description": "revocation count"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeResult"
+                }
+              }
+            },
+            "description": "Whether a matching token existed and was revoked"
           },
           "401": {
             "content": {
@@ -1397,7 +1726,14 @@
         "operationId": "getV1AdminUsers",
         "responses": {
           "200": {
-            "description": "admin user list"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserList"
+                }
+              }
+            },
+            "description": "Every user with their entry and live-token counts"
           },
           "401": {
             "content": {
@@ -1476,8 +1812,15 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "created admin user"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionedUser"
+                }
+              }
+            },
+            "description": "The provisioned user, plus a bearer when tokenLabel was sent"
           },
           "401": {
             "content": {
@@ -1530,7 +1873,21 @@
         ],
         "responses": {
           "200": {
-            "description": "deletion counts"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/UserDeletion"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UserDeletionPreview"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "The deletion outcome, or with dryRun=true what would be deleted"
           },
           "401": {
             "content": {
@@ -1599,7 +1956,14 @@
         },
         "responses": {
           "200": {
-            "description": "the stored quota"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaResult"
+                }
+              }
+            },
+            "description": "The quota now in force for the user"
           },
           "401": {
             "content": {
@@ -2006,7 +2370,14 @@
         ],
         "responses": {
           "200": {
-            "description": "a cacheable text prefix, not a JSON object"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextPrefix"
+                }
+              }
+            },
+            "description": "The cacheable observation-log prefix"
           },
           "401": {
             "content": {
@@ -2543,7 +2914,14 @@
         ],
         "responses": {
           "200": {
-            "description": "a streamed NDJSON dump whose line shape is MemoryEntry"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportPage"
+                }
+              }
+            },
+            "description": "One page of the caller's entries, oldest first"
           },
           "401": {
             "content": {
@@ -2644,8 +3022,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "counts echoed from a streamed upload"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            },
+            "description": "Import outcome"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            },
+            "description": "Every entry failed; the body still reports each failure"
           },
           "401": {
             "content": {
@@ -3307,7 +3702,14 @@
         ],
         "responses": {
           "200": {
-            "description": "revocation confirmation"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenDeleted"
+                }
+              }
+            },
+            "description": "The token was deleted"
           },
           "401": {
             "content": {

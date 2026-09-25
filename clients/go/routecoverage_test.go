@@ -11,6 +11,9 @@ package novamem
 import (
 	"encoding/json"
 	"os"
+	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -36,18 +39,18 @@ var routeMap = map[string]string{
 	"DELETE /v1/admin/users/{id}":    "Admin.DeleteUser (dryRun=true: Admin.PreviewDeleteUser)",
 	"PUT /v1/admin/users/{id}/quota": "Admin.SetUserQuota",
 
-	"POST /v1/adoption":          "Client.Adoption",
+	"POST /v1/adoption":          "Management.Adoption",
 	"POST /v1/auth/rotate-token": "non-goal: token rotation is an integration-host flow (init CLI / shim), not a client-library call",
 	"POST /v1/capture":           "Client.Capture",
 	"POST /v1/context":           "Client.Context",
 	"GET /v1/context-prefix":     "Client.ContextPrefix",
-	"POST /v1/decay":             "Client.Decay",
+	"POST /v1/decay":             "Management.Decay",
 	"POST /v1/dream-cycle":       "non-goal: operator maintenance endpoint (admin-session gated)",
-	"POST /v1/evaluate":          "Client.Evaluate",
+	"POST /v1/evaluate":          "Management.Evaluate",
 	"POST /v1/forget":            "Client.Forget",
-	"POST /v1/hygiene":           "Client.Hygiene",
+	"POST /v1/hygiene":           "Management.Hygiene",
 	"POST /v1/neighbors":         "Client.Neighbors",
-	"POST /v1/observe":           "Client.Observe",
+	"POST /v1/observe":           "Management.Observe",
 	"POST /v1/reap-orphans":      "non-goal: operator maintenance endpoint",
 	"POST /v1/recent":            "Client.Recent",
 	"POST /v1/remember":          "Client.Remember",
@@ -71,7 +74,7 @@ var routeMap = map[string]string{
 	"GET /v1/me/projects/{id}/members":             "Management.ListProjectMembers",
 	"POST /v1/me/projects/{id}/members":            "Management.AddProjectMember",
 	"DELETE /v1/me/projects/{id}/members/{userId}": "Management.RemoveProjectMember (by username: Management.RemoveProjectMemberByUsername)",
-	"GET /v1/me/today":                             "Management.Today",
+	"GET /v1/me/today":                             "non-goal: dashboard feed; the client's Today is Recent with a 24h window over POST /v1/recent",
 	"GET /v1/me/tokens":                            "Management.ListTokens",
 	"POST /v1/me/tokens":                           "Management.MintToken",
 	"DELETE /v1/me/tokens/{hash}":                  "Management.RevokeToken",
@@ -107,6 +110,35 @@ func TestEveryOpenAPIRouteIsMappedOrDeclaredNonGoal(t *testing.T) {
 	for key := range routeMap {
 		if !seen[key] {
 			t.Errorf("routeMap entry %q no longer exists in openapi.json — remove or update it", key)
+		}
+	}
+}
+
+// TestRouteMapNamesRealMethods pins the other half of the map: every
+// "Class.Method" it names must exist. The coverage test above only
+// checks the keys, so for a while five rows credited Client with
+// Management methods and one credited Management with a Today it does
+// not have — the map read as an audit while naming methods nobody could
+// call.
+func TestRouteMapNamesRealMethods(t *testing.T) {
+	types := map[string]reflect.Type{
+		"Client":     reflect.TypeOf(&Client{}),
+		"Management": reflect.TypeOf(&Management{}),
+		"Admin":      reflect.TypeOf(&Admin{}),
+	}
+	ref := regexp.MustCompile(`\b(Client|Management|Admin)\.([A-Z]\w*)`)
+	for key, target := range routeMap {
+		if strings.HasPrefix(target, "non-goal:") {
+			continue
+		}
+		refs := ref.FindAllStringSubmatch(target, -1)
+		if len(refs) == 0 {
+			t.Errorf("%s: %q names no Class.Method and is not a non-goal", key, target)
+		}
+		for _, m := range refs {
+			if _, ok := types[m[1]].MethodByName(m[2]); !ok {
+				t.Errorf("%s: %s has no method %s", key, m[1], m[2])
+			}
 		}
 	}
 }
