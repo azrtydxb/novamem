@@ -44,6 +44,12 @@ pub unsafe extern "C" fn {{$fn}}(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "{{.Op}}")?;
+{{- if or (eq .Name "Client.Health") .Response}}
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "{{.Op}}", message: "out must not be NULL".into() });
+        }
+{{- end}}
 {{- range .Params}}{{template "bind" .}}{{end}}
 {{- if .Request}}
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();

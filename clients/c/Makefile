@@ -31,7 +31,12 @@ $(BUILD)/scenarios_c: tests/scenarios.c include/novamem.h lib | $(BUILD)
 $(BUILD)/scenarios_cpp: tests/scenarios.cpp include/novamem.hpp include/novamem.h lib | $(BUILD)
 	$(CXX) $(CXXFLAGS) -DNOVAMEM_TEST_DISPATCH tests/scenarios.cpp $(LIB) $(NATIVE) -o $@
 
-test: $(BUILD)/scenarios_c $(BUILD)/scenarios_cpp
+$(BUILD)/null_out: tests/null_out.c include/novamem.h lib | $(BUILD)
+	$(CC) $(CFLAGS) tests/null_out.c $(LIB) $(NATIVE) -o $@
+
+test: $(BUILD)/scenarios_c $(BUILD)/scenarios_cpp $(BUILD)/null_out
+	$(CXX) $(CXXFLAGS) -fsyntax-only tests/literals.cpp
+	$(BUILD)/null_out
 	python3 tests/run_scenarios.py $(BUILD)/scenarios_c
 	python3 tests/run_scenarios.py $(BUILD)/scenarios_cpp
 	sh tests/routes.sh

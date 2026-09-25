@@ -24,6 +24,10 @@ pub unsafe extern "C" fn novamem_admin_delete_user(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "delete-user")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "delete-user", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let r = block_on(h.0.delete_user(&p_id))?;
         write_out(out, boxed(novamem_user_deletion::to_c(&r)));
@@ -39,6 +43,10 @@ pub unsafe extern "C" fn novamem_admin_list_users(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "list-users")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "list-users", message: "out must not be NULL".into() });
+        }
         let r = block_on(h.0.list_users())?;
         write_out(out, boxed(novamem_admin_user_list::to_c(&r)));
         Ok(())
@@ -54,6 +62,10 @@ pub unsafe extern "C" fn novamem_admin_preview_delete_user(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "preview-delete-user")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "preview-delete-user", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let r = block_on(h.0.preview_delete_user(&p_id))?;
         write_out(out, boxed(novamem_user_deletion_preview::to_c(&r)));
@@ -70,6 +82,10 @@ pub unsafe extern "C" fn novamem_admin_provision_user(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "provision-user")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "provision-user", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.provision_user(p_request))?;
         write_out(out, boxed(novamem_provisioned_user::to_c(&r)));
@@ -86,6 +102,10 @@ pub unsafe extern "C" fn novamem_admin_revoke_user_token(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "revoke-user-token")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "revoke-user-token", message: "out must not be NULL".into() });
+        }
         let p_token = c_str(token).unwrap_or_default();
         let r = block_on(h.0.revoke_user_token(&p_token))?;
         write_out(out, boxed(novamem_revoke_result::to_c(&r)));
@@ -104,6 +124,10 @@ pub unsafe extern "C" fn novamem_admin_set_user_quota(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "set-user-quota")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "set-user-quota", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let p_max_entries = opt_num(max_entries);
         let p_writes_per_minute = opt_num(writes_per_minute);
@@ -122,6 +146,10 @@ pub unsafe extern "C" fn novamem_client_capture(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "capture")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "capture", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.capture(p_request))?;
         write_out(out, boxed(novamem_capture_result::to_c(&r)));
@@ -138,6 +166,10 @@ pub unsafe extern "C" fn novamem_client_context(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "context")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "context", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.context(p_request))?;
         write_out(out, boxed(novamem_search_result::to_c(&r)));
@@ -154,6 +186,10 @@ pub unsafe extern "C" fn novamem_client_context_prefix(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "context-prefix")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "context-prefix", message: "out must not be NULL".into() });
+        }
         let p_project = c_str(project);
         let r = block_on(h.0.context_prefix(p_project.as_deref()))?;
         write_out(out, boxed(novamem_context_prefix::to_c(&r)));
@@ -170,6 +206,10 @@ pub unsafe extern "C" fn novamem_client_forget(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "forget")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "forget", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.forget(p_request))?;
         write_out(out, boxed(novamem_forget_result::to_c(&r)));
@@ -185,6 +225,10 @@ pub unsafe extern "C" fn novamem_client_health(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "health")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "health", message: "out must not be NULL".into() });
+        }
         let r = block_on(h.0.health())?;
         write_out(out, r);
         Ok(())
@@ -200,6 +244,10 @@ pub unsafe extern "C" fn novamem_client_neighbors(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "neighbors")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "neighbors", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.neighbors(p_request))?;
         write_out(out, boxed(novamem_search_result::to_c(&r)));
@@ -216,6 +264,10 @@ pub unsafe extern "C" fn novamem_client_recent(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "recent")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "recent", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.recent(p_request))?;
         write_out(out, boxed(novamem_entry_list::to_c(&r)));
@@ -232,6 +284,10 @@ pub unsafe extern "C" fn novamem_client_remember(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "remember")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "remember", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.remember(p_request))?;
         write_out(out, boxed(novamem_remember_result::to_c(&r)));
@@ -248,6 +304,10 @@ pub unsafe extern "C" fn novamem_client_search(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "search")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "search", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.search(p_request))?;
         write_out(out, boxed(novamem_search_result::to_c(&r)));
@@ -264,6 +324,10 @@ pub unsafe extern "C" fn novamem_client_session_recap(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "session-recap")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "session-recap", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.session_recap(p_request))?;
         write_out(out, boxed(novamem_session_recap_result::to_c(&r)));
@@ -279,6 +343,10 @@ pub unsafe extern "C" fn novamem_client_stats(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "stats")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "stats", message: "out must not be NULL".into() });
+        }
         let r = block_on(h.0.stats())?;
         write_out(out, boxed(novamem_stats::to_c(&r)));
         Ok(())
@@ -294,6 +362,10 @@ pub unsafe extern "C" fn novamem_client_today(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "recent")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "recent", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.today(p_request))?;
         write_out(out, boxed(novamem_entry_list::to_c(&r)));
@@ -311,6 +383,10 @@ pub unsafe extern "C" fn novamem_client_update(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "update")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "update", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.update(&p_id, p_request))?;
@@ -327,6 +403,10 @@ pub unsafe extern "C" fn novamem_management_active_project(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "active-project")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "active-project", message: "out must not be NULL".into() });
+        }
         let r = block_on(h.0.active_project())?;
         write_out(out, boxed(novamem_active_project::to_c(&r)));
         Ok(())
@@ -344,6 +424,10 @@ pub unsafe extern "C" fn novamem_management_add_project_member(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "add-member")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "add-member", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let p_email = c_str(email).unwrap_or_default();
         let p_role = c_str(role);
@@ -362,6 +446,10 @@ pub unsafe extern "C" fn novamem_management_adoption(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "adoption")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "adoption", message: "out must not be NULL".into() });
+        }
         let p_client = c_str(client);
         let r = block_on(h.0.adoption(p_client.as_deref()))?;
         write_out(out, boxed(novamem_adoption_report::to_c(&r)));
@@ -380,6 +468,10 @@ pub unsafe extern "C" fn novamem_management_changes(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "changes")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "changes", message: "out must not be NULL".into() });
+        }
         let p_since = c_str(since);
         let p_after_seq = opt_num(after_seq);
         let p_limit = opt_num(limit);
@@ -411,6 +503,10 @@ pub unsafe extern "C" fn novamem_management_create_project(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "create-project")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "create-project", message: "out must not be NULL".into() });
+        }
         let p_name = c_str(name).unwrap_or_default();
         let r = block_on(h.0.create_project(&p_name))?;
         write_out(out, boxed(novamem_project::to_c(&r)));
@@ -427,6 +523,10 @@ pub unsafe extern "C" fn novamem_management_decay(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "decay")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "decay", message: "out must not be NULL".into() });
+        }
         let p_effective_days = opt_num(effective_days);
         let r = block_on(h.0.decay(p_effective_days))?;
         write_out(out, boxed(novamem_decay_result::to_c(&r)));
@@ -443,6 +543,10 @@ pub unsafe extern "C" fn novamem_management_delete_project(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "delete-project")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "delete-project", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let r = block_on(h.0.delete_project(&p_id))?;
         write_out(out, boxed(novamem_project_deleted::to_c(&r)));
@@ -459,6 +563,10 @@ pub unsafe extern "C" fn novamem_management_evaluate(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "evaluate")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "evaluate", message: "out must not be NULL".into() });
+        }
         let p_suite = c_str(suite);
         let r = block_on(h.0.evaluate(p_suite.as_deref()))?;
         write_out(out, boxed(novamem_evaluate_report::to_c(&r)));
@@ -476,6 +584,10 @@ pub unsafe extern "C" fn novamem_management_export(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "export")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "export", message: "out must not be NULL".into() });
+        }
         let p_after_id = c_str(after_id);
         let p_limit = opt_num(limit);
         let r = block_on(h.0.export(p_after_id.as_deref(), p_limit))?;
@@ -493,6 +605,10 @@ pub unsafe extern "C" fn novamem_management_hygiene(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "hygiene")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "hygiene", message: "out must not be NULL".into() });
+        }
         let p_k = opt_num(k);
         let r = block_on(h.0.hygiene(p_k))?;
         write_out(out, boxed(novamem_hygiene_report::to_c(&r)));
@@ -509,6 +625,10 @@ pub unsafe extern "C" fn novamem_management_import(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "import")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "import", message: "out must not be NULL".into() });
+        }
         let p_entries: Vec<serde_json::Value> = c_json(entries_json).unwrap_or_default();
         let r = block_on(h.0.import(p_entries))?;
         write_out(out, boxed(novamem_import_result::to_c(&r)));
@@ -525,6 +645,10 @@ pub unsafe extern "C" fn novamem_management_list_project_members(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "list-members")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "list-members", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let r = block_on(h.0.list_project_members(&p_id))?;
         write_out(out, boxed(novamem_member_list::to_c(&r)));
@@ -540,6 +664,10 @@ pub unsafe extern "C" fn novamem_management_list_projects(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "list-projects")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "list-projects", message: "out must not be NULL".into() });
+        }
         let r = block_on(h.0.list_projects())?;
         write_out(out, boxed(novamem_project_list::to_c(&r)));
         Ok(())
@@ -554,6 +682,10 @@ pub unsafe extern "C" fn novamem_management_list_tokens(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "list-tokens")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "list-tokens", message: "out must not be NULL".into() });
+        }
         let r = block_on(h.0.list_tokens())?;
         write_out(out, boxed(novamem_token_list::to_c(&r)));
         Ok(())
@@ -569,6 +701,10 @@ pub unsafe extern "C" fn novamem_management_mint_token(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "mint-token")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "mint-token", message: "out must not be NULL".into() });
+        }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.mint_token(p_request))?;
         write_out(out, boxed(novamem_minted_token::to_c(&r)));
@@ -586,6 +722,10 @@ pub unsafe extern "C" fn novamem_management_observe(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "observe")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "observe", message: "out must not be NULL".into() });
+        }
         let p_project = c_str(project);
         let p_limit = opt_num(limit);
         let r = block_on(h.0.observe(p_project.as_deref(), p_limit))?;
@@ -604,6 +744,10 @@ pub unsafe extern "C" fn novamem_management_remove_project_member(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "remove-member")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "remove-member", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let p_user_id = c_str(user_id).unwrap_or_default();
         let r = block_on(h.0.remove_project_member(&p_id, &p_user_id))?;
@@ -622,6 +766,10 @@ pub unsafe extern "C" fn novamem_management_remove_project_member_by_username(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "remove-member")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "remove-member", message: "out must not be NULL".into() });
+        }
         let p_id = c_str(id).unwrap_or_default();
         let p_username = c_str(username).unwrap_or_default();
         let r = block_on(h.0.remove_project_member_by_username(&p_id, &p_username))?;
@@ -639,6 +787,10 @@ pub unsafe extern "C" fn novamem_management_revoke_token(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "revoke-token")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "revoke-token", message: "out must not be NULL".into() });
+        }
         let p_hash = c_str(hash).unwrap_or_default();
         let r = block_on(h.0.revoke_token(&p_hash))?;
         write_out(out, boxed(novamem_token_deleted::to_c(&r)));
@@ -655,6 +807,10 @@ pub unsafe extern "C" fn novamem_management_set_active_project(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "set-active-project")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "set-active-project", message: "out must not be NULL".into() });
+        }
         let p_project = c_str(project).unwrap_or_default();
         let r = block_on(h.0.set_active_project(&p_project))?;
         write_out(out, boxed(novamem_active_project::to_c(&r)));
@@ -670,6 +826,10 @@ pub unsafe extern "C" fn novamem_management_usage(
 ) -> novamem_status {
     guard(err, || {
         let h = handle(h, "usage")?;
+        // Checked before the call: a result with nowhere to go would leak.
+        if out.is_null() {
+            return Err(crate::FfiError::Local { op: "usage", message: "out must not be NULL".into() });
+        }
         let r = block_on(h.0.usage())?;
         write_out(out, boxed(novamem_usage::to_c(&r)));
         Ok(())

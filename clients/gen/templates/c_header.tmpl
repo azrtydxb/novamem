@@ -9,7 +9,9 @@
  * Memory: every struct a call returns through an out-parameter is owned by
  * the caller and freed with its novamem_<type>_free (which frees everything
  * inside it). Request structs are only read; the caller keeps them.
- * Strings are UTF-8, NUL-terminated; NULL means absent. An optional number
+ * Strings are UTF-8, NUL-terminated, and declared const so a C++ caller
+ * can point a request field at a literal; NULL means absent. (Strings in a
+ * returned struct are still owned by it and released by its free.) An optional number
  * or boolean carries a has_<field> flag. JSON-valued fields hold JSON text.
  *
  * Errors: every call returns NOVAMEM_OK or NOVAMEM_ERR and fills the
@@ -50,7 +52,7 @@ typedef struct novamem_admin novamem_admin;
 typedef struct novamem_{{snake .Name}} novamem_{{snake .Name}};
 {{- end}}{{end}}
 {{define "cfield"}}{{$k := .K}}{{$f := .F}}{{$n := cident $f.Wire}}{{$opt := or (not $f.Required) $f.Nullable}}
-{{- if eq $k "str" "enum" "json"}}    char *{{$n}};
+{{- if eq $k "str" "enum" "json"}}    const char *{{$n}};
 {{- else if eq $k "i32"}}{{if $opt}}    bool has_{{$n}};
 {{end}}    int32_t {{$n}};
 {{- else if eq $k "i64"}}{{if $opt}}    bool has_{{$n}};
@@ -60,7 +62,7 @@ typedef struct novamem_{{snake .Name}} novamem_{{snake .Name}};
 {{- else if eq $k "bool"}}{{if $opt}}    bool has_{{$n}};
 {{end}}    bool {{$n}};
 {{- else if eq $k "obj"}}    struct novamem_{{snake $f.Ref.Named}} *{{$n}};
-{{- else if eq $k "arr_str"}}    char **{{$n}};
+{{- else if eq $k "arr_str"}}    const char **{{$n}};
     size_t {{$n}}_len;
 {{- else if eq $k "arr_obj"}}    struct novamem_{{snake $f.Ref.Array.Named}} *{{$n}};
     size_t {{$n}}_len;

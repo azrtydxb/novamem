@@ -34,7 +34,7 @@ static int found(const novamem_search_result *r, const char *id) {
 static novamem_search_result *search(novamem_client *c, const char *query, const char *step) {
     novamem_error err = {0};
     novamem_search_request req = {0};
-    req.query = (char *)query;
+    req.query = query;
     req.namespace_ = "sdk-smoke";
     novamem_search_result *out = NULL;
     check(step, novamem_client_search(c, &req, &out, &err), &err);

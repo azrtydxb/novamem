@@ -116,21 +116,26 @@ func rustident(s string) string {
 	return id
 }
 
-// cKeywords are C and C++ reserved words: a C header has to compile as
+// cKeywords are the C11 and C++17 reserved words (plus C++20's, so a
+// header stays valid for newer compilers): a C header has to compile as
 // C++ too, where a struct field named "namespace" is a syntax error.
-var cKeywords = map[string]bool{
-	"auto": true, "bool": true, "break": true, "case": true, "catch": true, "char": true,
-	"class": true, "const": true, "continue": true, "default": true, "delete": true,
-	"do": true, "double": true, "else": true, "enum": true, "explicit": true,
-	"export": true, "extern": true, "false": true, "float": true, "for": true,
-	"friend": true, "goto": true, "if": true, "inline": true, "int": true, "long": true,
-	"mutable": true, "namespace": true, "new": true, "operator": true, "private": true,
-	"protected": true, "public": true, "register": true, "restrict": true, "return": true,
-	"short": true, "signed": true, "sizeof": true, "static": true, "struct": true,
-	"switch": true, "template": true, "this": true, "throw": true, "true": true,
-	"try": true, "typedef": true, "typename": true, "union": true, "unsigned": true,
-	"using": true, "virtual": true, "void": true, "volatile": true, "while": true,
-}
+var cKeywords = func() map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields(`
+		auto break case char const continue default do double else enum extern
+		float for goto if inline int long register restrict return short signed
+		sizeof static struct switch typedef union unsigned void volatile while
+		alignas alignof and and_eq asm bitand bitor bool catch char8_t char16_t
+		char32_t class compl concept consteval constexpr constinit const_cast
+		co_await co_return co_yield decltype delete dynamic_cast explicit export
+		false friend mutable namespace new noexcept not not_eq nullptr operator
+		or or_eq private protected public reinterpret_cast requires static_assert
+		static_cast template this thread_local throw true try typeid typename using
+		virtual wchar_t xor xor_eq`) {
+		m[w] = true
+	}
+	return m
+}()
 
 // cident: snake_case, with a trailing underscore on a C or C++ keyword
 // ("namespace" → "namespace_").

@@ -8,7 +8,9 @@
  * Memory: every struct a call returns through an out-parameter is owned by
  * the caller and freed with its novamem_<type>_free (which frees everything
  * inside it). Request structs are only read; the caller keeps them.
- * Strings are UTF-8, NUL-terminated; NULL means absent. An optional number
+ * Strings are UTF-8, NUL-terminated, and declared const so a C++ caller
+ * can point a request field at a literal; NULL means absent. (Strings in a
+ * returned struct are still owned by it and released by its free.) An optional number
  * or boolean carries a has_<field> flag. JSON-valued fields hold JSON text.
  *
  * Errors: every call returns NOVAMEM_OK or NOVAMEM_ERR and fills the
@@ -117,18 +119,18 @@ struct novamem_active_project {
 void novamem_active_project_free(novamem_active_project *p);
 
 struct novamem_active_project_active {
-    char *id;
-    char *name;
+    const char *id;
+    const char *name;
 };
 void novamem_active_project_active_free(novamem_active_project_active *p);
 
 struct novamem_admin_user {
-    char *created_at;
-    char *email;
+    const char *created_at;
+    const char *email;
     int32_t entry_count;
-    char *id;
-    char *name;
-    char *role;
+    const char *id;
+    const char *name;
+    const char *role;
     int32_t token_count;
 };
 void novamem_admin_user_free(novamem_admin_user *p);
@@ -140,32 +142,32 @@ struct novamem_admin_user_list {
 void novamem_admin_user_list_free(novamem_admin_user_list *p);
 
 struct novamem_adoption_report {
-    char *diagnostics;
-    char *features;
-    char *mcp;
-    char *refresh;
-    char *requested_client;
-    char **required_tools;
+    const char *diagnostics;
+    const char *features;
+    const char *mcp;
+    const char *refresh;
+    const char *requested_client;
+    const char **required_tools;
     size_t required_tools_len;
-    char *server;
+    const char *server;
 };
 void novamem_adoption_report_free(novamem_adoption_report *p);
 
 struct novamem_capture_request {
-    char *agent_name;
-    char *captured_from;
+    const char *agent_name;
+    const char *captured_from;
     bool has_confidence;
     double confidence;
-    char *content;
-    char *expires_at;
+    const char *content;
+    const char *expires_at;
     bool has_force;
     bool force;
-    char *metadata;
-    char *namespace_;
-    char *project;
-    char *sensitivity;
-    char *source;
-    char *source_type;
+    const char *metadata;
+    const char *namespace_;
+    const char *project;
+    const char *sensitivity;
+    const char *source;
+    const char *source_type;
 };
 void novamem_capture_request_free(novamem_capture_request *p);
 
@@ -174,9 +176,9 @@ struct novamem_capture_result {
     bool deduplicated;
     bool has_embedded;
     bool embedded;
-    char *id;
-    char *rejected;
-    char **superseded;
+    const char *id;
+    const char *rejected;
+    const char **superseded;
     size_t superseded_len;
     bool has_updated;
     bool updated;
@@ -192,39 +194,39 @@ struct novamem_change_feed {
 void novamem_change_feed_free(novamem_change_feed *p);
 
 struct novamem_change_feed_changes_item {
-    char *at;
-    char *change;
-    char *detail;
-    char *entry_id;
-    char *project_id;
+    const char *at;
+    const char *change;
+    const char *detail;
+    const char *entry_id;
+    const char *project_id;
     bool has_seq;
     int64_t seq;
 };
 void novamem_change_feed_changes_item_free(novamem_change_feed_changes_item *p);
 
 struct novamem_context_prefix {
-    char *prefix;
+    const char *prefix;
 };
 void novamem_context_prefix_free(novamem_context_prefix *p);
 
 struct novamem_context_request {
-    char *as_of;
+    const char *as_of;
     bool has_decompose;
     bool decompose;
     bool has_expand_source_chunks;
     bool expand_source_chunks;
-    char **include_namespaces;
+    const char **include_namespaces;
     size_t include_namespaces_len;
-    char **include_projects;
+    const char **include_projects;
     size_t include_projects_len;
     bool has_k;
     int32_t k;
-    char *max_sensitivity;
+    const char *max_sensitivity;
     bool has_max_tokens;
     int32_t max_tokens;
-    char *message;
-    char *namespace_;
-    char *project;
+    const char *message;
+    const char *namespace_;
+    const char *project;
     struct novamem_context_request_weights *weights;
 };
 void novamem_context_request_free(novamem_context_request *p);
@@ -260,13 +262,13 @@ struct novamem_evaluate_report {
     struct novamem_evaluate_report_cases_item *cases;
     size_t cases_len;
     bool passed;
-    char *suite;
+    const char *suite;
     struct novamem_evaluate_report_summary *summary;
 };
 void novamem_evaluate_report_free(novamem_evaluate_report *p);
 
 struct novamem_evaluate_report_cases_item {
-    char *name;
+    const char *name;
     bool has_passed;
     bool passed;
 };
@@ -285,29 +287,29 @@ void novamem_evaluate_report_summary_free(novamem_evaluate_report_summary *p);
 struct novamem_export_page {
     struct novamem_exported_entry *entries;
     size_t entries_len;
-    char *next_after_id;
+    const char *next_after_id;
 };
 void novamem_export_page_free(novamem_export_page *p);
 
 struct novamem_exported_entry {
-    char *agent_name;
-    char *captured_from;
+    const char *agent_name;
+    const char *captured_from;
     double confidence;
-    char *content;
-    char *created_at;
-    char *id;
-    char *metadata;
-    char *namespace_;
-    char *project_id;
-    char *source;
-    char *source_type;
-    char *updated_at;
+    const char *content;
+    const char *created_at;
+    const char *id;
+    const char *metadata;
+    const char *namespace_;
+    const char *project_id;
+    const char *source;
+    const char *source_type;
+    const char *updated_at;
 };
 void novamem_exported_entry_free(novamem_exported_entry *p);
 
 struct novamem_forget_request {
-    char *id;
-    char *project;
+    const char *id;
+    const char *project;
 };
 void novamem_forget_request_free(novamem_forget_request *p);
 
@@ -324,11 +326,11 @@ struct novamem_health {
 void novamem_health_free(novamem_health *p);
 
 struct novamem_hygiene_report {
-    char *contradiction_candidates;
-    char *duplicate_clusters;
-    char *low_value;
-    char *orphan_candidates;
-    char *stale;
+    const char *contradiction_candidates;
+    const char *duplicate_clusters;
+    const char *low_value;
+    const char *orphan_candidates;
+    const char *stale;
     struct novamem_hygiene_report_summary *summary;
 };
 void novamem_hygiene_report_free(novamem_hygiene_report *p);
@@ -358,15 +360,15 @@ struct novamem_import_result {
 void novamem_import_result_free(novamem_import_result *p);
 
 struct novamem_import_result_failed_item {
-    char *error;
+    const char *error;
     int32_t index;
 };
 void novamem_import_result_failed_item_free(novamem_import_result_failed_item *p);
 
 struct novamem_member_added {
     bool added;
-    char *user_id;
-    char *username;
+    const char *user_id;
+    const char *username;
 };
 void novamem_member_added_free(novamem_member_added *p);
 
@@ -377,10 +379,10 @@ struct novamem_member_list {
 void novamem_member_list_free(novamem_member_list *p);
 
 struct novamem_member_list_members_item {
-    char *joined_at;
-    char *role;
-    char *user_id;
-    char *username;
+    const char *joined_at;
+    const char *role;
+    const char *user_id;
+    const char *username;
 };
 void novamem_member_list_members_item_free(novamem_member_list_members_item *p);
 
@@ -390,16 +392,16 @@ struct novamem_member_removed {
 void novamem_member_removed_free(novamem_member_removed *p);
 
 struct novamem_memory_entry {
-    char *content;
-    char *id;
-    char *metadata;
-    char *namespace_;
-    char *project;
+    const char *content;
+    const char *id;
+    const char *metadata;
+    const char *namespace_;
+    const char *project;
     bool has_score;
     double score;
     struct novamem_memory_entry_signals *signals;
-    char *source;
-    char *tier;
+    const char *source;
+    const char *tier;
 };
 void novamem_memory_entry_free(novamem_memory_entry *p);
 
@@ -420,35 +422,35 @@ void novamem_memory_entry_signals_free(novamem_memory_entry_signals *p);
 struct novamem_mint_token_request {
     bool has_expires_in_days;
     int32_t expires_in_days;
-    char *label;
-    char *project;
-    char *scope;
+    const char *label;
+    const char *project;
+    const char *scope;
 };
 void novamem_mint_token_request_free(novamem_mint_token_request *p);
 
 struct novamem_minted_token {
-    char *created_at;
-    char *expires_at;
-    char *project_id;
-    char *scope;
-    char *token;
-    char *user_id;
-    char *warning;
+    const char *created_at;
+    const char *expires_at;
+    const char *project_id;
+    const char *scope;
+    const char *token;
+    const char *user_id;
+    const char *warning;
 };
 void novamem_minted_token_free(novamem_minted_token *p);
 
 struct novamem_neighbors_request {
     bool has_depth;
     int32_t depth;
-    char *id;
-    char **include_namespaces;
+    const char *id;
+    const char **include_namespaces;
     size_t include_namespaces_len;
-    char **include_projects;
+    const char **include_projects;
     size_t include_projects_len;
     bool has_k;
     int32_t k;
-    char *max_sensitivity;
-    char *project;
+    const char *max_sensitivity;
+    const char *project;
 };
 void novamem_neighbors_request_free(novamem_neighbors_request *p);
 
@@ -463,15 +465,15 @@ struct novamem_observe_result {
 void novamem_observe_result_free(novamem_observe_result *p);
 
 struct novamem_project {
-    char *created_at;
-    char *id;
-    char *name;
-    char *owner_user_id;
+    const char *created_at;
+    const char *id;
+    const char *name;
+    const char *owner_user_id;
 };
 void novamem_project_free(novamem_project *p);
 
 struct novamem_project_deleted {
-    char **cold_collections_dropped;
+    const char **cold_collections_dropped;
     size_t cold_collections_dropped_len;
     bool deleted;
     bool has_entries_removed;
@@ -488,35 +490,35 @@ struct novamem_project_list {
 void novamem_project_list_free(novamem_project_list *p);
 
 struct novamem_project_list_item {
-    char *created_at;
-    char *id;
-    char *name;
-    char *owner_user_id;
-    char *role;
+    const char *created_at;
+    const char *id;
+    const char *name;
+    const char *owner_user_id;
+    const char *role;
 };
 void novamem_project_list_item_free(novamem_project_list_item *p);
 
 struct novamem_provision_user_request {
-    char *email;
-    char *name;
-    char *password;
+    const char *email;
+    const char *name;
+    const char *password;
     bool has_token_expires_in_days;
     int32_t token_expires_in_days;
-    char *token_label;
-    char *token_scope;
+    const char *token_label;
+    const char *token_scope;
 };
 void novamem_provision_user_request_free(novamem_provision_user_request *p);
 
 struct novamem_provisioned_user {
-    char *email;
-    char *token;
-    char *user_id;
+    const char *email;
+    const char *token;
+    const char *user_id;
 };
 void novamem_provisioned_user_free(novamem_provisioned_user *p);
 
 struct novamem_quota_result {
     struct novamem_quota_result_quota *quota;
-    char *user_id;
+    const char *user_id;
 };
 void novamem_quota_result_free(novamem_quota_result *p);
 
@@ -529,17 +531,17 @@ struct novamem_quota_result_quota {
 void novamem_quota_result_quota_free(novamem_quota_result_quota *p);
 
 struct novamem_recent_request {
-    char *content_mode;
-    char **include_namespaces;
+    const char *content_mode;
+    const char **include_namespaces;
     size_t include_namespaces_len;
-    char **include_projects;
+    const char **include_projects;
     size_t include_projects_len;
     bool has_k;
     int32_t k;
-    char *max_sensitivity;
-    char *namespace_;
-    char *project;
-    char *since;
+    const char *max_sensitivity;
+    const char *namespace_;
+    const char *project;
+    const char *since;
 };
 void novamem_recent_request_free(novamem_recent_request *p);
 
@@ -548,9 +550,9 @@ struct novamem_remember_result {
     bool deduplicated;
     bool has_embedded;
     bool embedded;
-    char *id;
-    char *rejected;
-    char **superseded;
+    const char *id;
+    const char *rejected;
+    const char **superseded;
     size_t superseded_len;
     bool has_updated;
     bool updated;
@@ -563,27 +565,27 @@ struct novamem_revoke_result {
 void novamem_revoke_result_free(novamem_revoke_result *p);
 
 struct novamem_search_request {
-    char *agent_name;
-    char *as_of;
-    char *content_mode;
+    const char *agent_name;
+    const char *as_of;
+    const char *content_mode;
     bool has_decompose;
     bool decompose;
     bool has_expand_source_chunks;
     bool expand_source_chunks;
-    char **include_namespaces;
+    const char **include_namespaces;
     size_t include_namespaces_len;
-    char **include_projects;
+    const char **include_projects;
     size_t include_projects_len;
     bool has_k;
     int32_t k;
-    char *max_sensitivity;
+    const char *max_sensitivity;
     bool has_max_tokens;
     int32_t max_tokens;
     bool has_min_vector_score;
     double min_vector_score;
-    char *namespace_;
-    char *project;
-    char *query;
+    const char *namespace_;
+    const char *project;
+    const char *query;
     bool has_rerank;
     bool rerank;
     struct novamem_search_request_weights *weights;
@@ -613,32 +615,32 @@ struct novamem_search_result {
 void novamem_search_result_free(novamem_search_result *p);
 
 struct novamem_session_recap_request {
-    char *agent_name;
-    char *captured_from;
+    const char *agent_name;
+    const char *captured_from;
     bool has_confidence;
     double confidence;
-    char **decisions;
+    const char **decisions;
     size_t decisions_len;
     bool has_force;
     bool force;
-    char *metadata;
-    char *namespace_;
-    char **other;
+    const char *metadata;
+    const char *namespace_;
+    const char **other;
     size_t other_len;
-    char **preferences;
+    const char **preferences;
     size_t preferences_len;
-    char *project;
-    char **project_conventions;
+    const char *project;
+    const char **project_conventions;
     size_t project_conventions_len;
-    char **root_causes;
+    const char **root_causes;
     size_t root_causes_len;
-    char **safety_constraints;
+    const char **safety_constraints;
     size_t safety_constraints_len;
-    char *sensitivity;
-    char **setup_facts;
+    const char *sensitivity;
+    const char **setup_facts;
     size_t setup_facts_len;
-    char *source;
-    char *source_type;
+    const char *source;
+    const char *source_type;
 };
 void novamem_session_recap_request_free(novamem_session_recap_request *p);
 
@@ -650,8 +652,8 @@ struct novamem_session_recap_result {
 void novamem_session_recap_result_free(novamem_session_recap_result *p);
 
 struct novamem_stats {
-    char *by_namespace;
-    char *last_decay_at;
+    const char *by_namespace;
+    const char *last_decay_at;
     double total_cold;
     double total_warm;
     bool has_uptime_ms;
@@ -673,26 +675,26 @@ struct novamem_token_deleted {
 void novamem_token_deleted_free(novamem_token_deleted *p);
 
 struct novamem_token_list {
-    char *tokens;
+    const char *tokens;
 };
 void novamem_token_list_free(novamem_token_list *p);
 
 struct novamem_update_request {
-    char *captured_from;
+    const char *captured_from;
     bool has_confidence;
     double confidence;
-    char *content;
-    char *metadata;
-    char *namespace_;
-    char *project;
-    char *sensitivity;
-    char *source_type;
+    const char *content;
+    const char *metadata;
+    const char *namespace_;
+    const char *project;
+    const char *sensitivity;
+    const char *source_type;
 };
 void novamem_update_request_free(novamem_update_request *p);
 
 struct novamem_update_result {
     bool embedding_changed;
-    char *id;
+    const char *id;
     bool updated;
 };
 void novamem_update_result_free(novamem_update_result *p);
@@ -713,12 +715,12 @@ struct novamem_usage_quota {
 void novamem_usage_quota_free(novamem_usage_quota *p);
 
 struct novamem_user_deletion {
-    char **cold_cleanup;
+    const char **cold_cleanup;
     size_t cold_cleanup_len;
     bool cold_cleanup_ok;
     bool deleted;
     int32_t entries_removed;
-    char **projects_deleted;
+    const char **projects_deleted;
     size_t projects_deleted_len;
     int32_t tokens_removed;
 };
@@ -731,12 +733,12 @@ struct novamem_user_deletion_preview {
 void novamem_user_deletion_preview_free(novamem_user_deletion_preview *p);
 
 struct novamem_user_deletion_preview_would_delete {
-    char *email;
+    const char *email;
     int32_t entries;
-    char **owned_projects;
+    const char **owned_projects;
     size_t owned_projects_len;
     int32_t tokens;
-    char *user_id;
+    const char *user_id;
 };
 void novamem_user_deletion_preview_would_delete_free(novamem_user_deletion_preview_would_delete *p);
 

@@ -22,3 +22,17 @@ func TestCasing(t *testing.T) {
 		}
 	}
 }
+
+// proved by: dropping any of these words from cKeywords fails this test.
+func TestCident(t *testing.T) {
+	for in, want := range map[string]string{
+		"namespace": "namespace_", "export": "export_", "and": "and_", "not": "not_",
+		"nullptr": "nullptr_", "decltype": "decltype_", "typeid": "typeid_",
+		"threadLocal": "thread_local_", "staticAssert": "static_assert_",
+		"wcharT": "wchar_t_", "xor": "xor_", "query": "query", "userId": "user_id",
+	} {
+		if got := cident(in); got != want {
+			t.Errorf("cident(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
