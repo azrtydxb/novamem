@@ -1,12 +1,14 @@
 name: SDKs
 
 # The nine language SDKs (ADR 0009) and the contract they share. Each SDK
-# gets its own job here as it lands; `generated` gates them all.
+# gets its own job here as it lands; `generated` gates them all. go/** is
+# a trigger too: sdk-smoke runs every SDK against the server this PR builds.
 on:
   pull_request:
     paths:
       [
         "clients/**",
+        "go/**",
         "api/**",
         "docs/api/**",
         "go.work",
@@ -17,6 +19,7 @@ on:
     paths:
       [
         "clients/**",
+        "go/**",
         "api/**",
         "docs/api/**",
         "go.work",
@@ -44,6 +47,9 @@ jobs:
           # clients/gen and clients/contract are stdlib-only: no go.sum to key a cache on.
           cache: false
       - run: cd clients/gen && go vet ./... && go test -count=1 ./...
+      # The smoke module's own tests; its live schema check skips (loudly)
+      # here and runs in sdk-smoke.
+      - run: cd clients/smoke && go vet ./... && go test -count=1 ./...
       # The Java template names google-java-format as its formatter (the
       # layout depends on line length, so no template can match it alone).
       # Pinned to the version contributors get from Homebrew: a different
@@ -332,3 +338,132 @@ jobs:
           mvn -B -q dependency:build-classpath -Dmdep.outputFile=cp.txt
           NOVAMEM_SMOKE_URL=http://127.0.0.1:1 NOVAMEM_SMOKE_TOKEN=nm_x \
             java -cp "$(cat cp.txt):target/classes:target/test-classes" com.azrtydxb.novamem.Smoke down
+
+  # Live smoke (plan Task 16): every SDK against a server built from this
+  # PR. The server, the token minter and the embeddings stand-in are built
+  # once here, statically, and run inside each language's own image below.
+  sdk-smoke-build:
+    needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - name: Build server, mint and embed
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p smoke-bin
+          (cd go && go build -o ../smoke-bin/novamem-server ./cmd/novamem-server)
+          (cd clients/smoke && go build -o ../../smoke-bin/mint ./cmd/mint && go build -o ../../smoke-bin/embed ./cmd/embed)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: smoke-bin
+          path: smoke-bin/
+          retention-days: 1
+
+  # One leg per SDK, in the image its own job uses (the Ruby, PHP and Swift
+  # setup actions do not work on the ARC runners), plus the schema leg that
+  # checks live responses against docs/api/openapi.json.
+  sdk-smoke:
+    needs: [sdk-smoke-build]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { lang: python, image: "python:3.13-bookworm" }
+          - { lang: typescript, image: "node:24-bookworm" }
+          - { lang: dotnet, image: "mcr.microsoft.com/dotnet/sdk:8.0" }
+          - { lang: java, image: "maven:3.9-eclipse-temurin-21" }
+          - { lang: rust, image: "rust:1-bookworm" }
+          - { lang: c, image: "rust:1-bookworm" }
+          - { lang: ruby, image: "ruby:3.2-bookworm" }
+          - { lang: php, image: "composer:2" }
+          - { lang: swift, image: "swift:6.3-noble" }
+          - { lang: schema, image: "golang:1.26-bookworm" }
+    container:
+      image: ${{ matrix.image }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: novamem
+          POSTGRES_PASSWORD: novamem
+          POSTGRES_DB: novamem
+        options: >-
+          --health-cmd "pg_isready -U novamem"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      NOVAMEM_SMOKE_URL: http://127.0.0.1:7778
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: smoke-bin
+          path: smoke-bin
+      - run: chmod +x smoke-bin/*
+      - name: Build the SDK (before the server starts)
+        if: matrix.lang != 'schema'
+        run: sh clients/smoke/run.sh ${{ matrix.lang }} build
+      - name: Start embed and the server
+        env:
+          NOVAMEM_WARM_URL: postgres://novamem:novamem@postgres:5432/novamem?sslmode=disable
+          NOVAMEM_COLD_PROVIDER: pgvector
+          NOVAMEM_EMBEDDINGS_PROVIDER: openai-compatible
+          NOVAMEM_EMBEDDINGS_ENDPOINT: http://127.0.0.1:7779/v1
+          NOVAMEM_EMBEDDINGS_MODEL: smoke-hash
+          NOVAMEM_AUTH_MODE: user
+          NOVAMEM_COOKIE_SECRET: sdk-smoke-cookie-secret-0123456789
+          NOVAMEM_BOOTSTRAP_ADMIN_EMAIL: smoke-admin@example.com
+          NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD: smoke-admin-password
+          NOVAMEM_INSECURE_COOKIES: "1"
+          NOVAMEM_PORT: "7778"
+          NOVAMEM_BASE_URL: http://127.0.0.1:7778
+        run: |
+          nohup smoke-bin/embed -addr 127.0.0.1:7779 > "$RUNNER_TEMP/embed.log" 2>&1 &
+          nohup smoke-bin/novamem-server > "$RUNNER_TEMP/server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/server.pid"
+      - name: Mint tokens
+        run: |
+          ADMIN=$(smoke-bin/mint -wait 90s -email smoke-admin@example.com -password smoke-admin-password)
+          echo "::add-mask::$ADMIN"
+          echo "NOVAMEM_SMOKE_ADMIN_TOKEN=$ADMIN" >> "$GITHUB_ENV"
+          USER_TOKEN=$(smoke-bin/mint -label sdk-smoke-user -email smoke-admin@example.com -password smoke-admin-password)
+          echo "::add-mask::$USER_TOKEN"
+          echo "NOVAMEM_SMOKE_TOKEN=$USER_TOKEN" >> "$GITHUB_ENV"
+      - name: Live schema check
+        if: matrix.lang == 'schema'
+        run: go test -count=1 -v -run TestResponsesMatchSchemas ./clients/smoke/...
+      - name: Smoke up
+        if: matrix.lang != 'schema'
+        run: sh clients/smoke/run.sh ${{ matrix.lang }} up
+      - name: Stop the server
+        if: matrix.lang != 'schema'
+        # The job container's PID 1 does not reap children, so an exited
+        # server lingers as a zombie: that counts as stopped (its socket is
+        # closed). Anything else after 30 s fails the step.
+        run: |
+          pid=$(cat "$RUNNER_TEMP/server.pid")
+          kill "$pid"
+          for _ in $(seq 1 30); do
+            state=$(sed -n 's/^State:[[:space:]]*\(.\).*/\1/p' "/proc/$pid/status" 2>/dev/null || true)
+            case "$state" in "" | Z) exit 0 ;; esac
+            sleep 1
+          done
+          echo "server $pid still running (state $state)"
+          exit 1
+      - name: Smoke down
+        if: matrix.lang != 'schema'
+        run: sh clients/smoke/run.sh ${{ matrix.lang }} down
+      - name: Server log
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/server.log" "$RUNNER_TEMP/embed.log"

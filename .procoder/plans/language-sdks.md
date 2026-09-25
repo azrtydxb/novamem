@@ -2387,29 +2387,30 @@ Files:
 
 - `clients/smoke/go.mod` (created: `module github.com/azrtydxb/novamem/clients/smoke`, `go 1.23.0`, no requirements; added to `go.work`)
 - `clients/smoke/cmd/mint/main.go` (created: signs in the bootstrap admin and prints a fresh `nm_` token)
+- `clients/smoke/cmd/embed/main.go` (created: a deterministic OpenAI-compatible `/v1/embeddings` stand-in). Without an embedder the server marks every search `degraded` (go/internal/engine/search.go), and a degraded search with no results is — correctly — `unavailable` in every SDK, so the search-after-forget step could never pass. The stand-in hashes words into a unit vector of `-dim` (default 384, the server's `NOVAMEM_EMBEDDINGS_DIM` default), so the same text embeds identically and no model is downloaded.
 - `clients/smoke/schema.go` (created: a minimal OpenAPI-subset validator)
 - `clients/smoke/schema_test.go` (created: `TestResponsesMatchSchemas`, plus the validator's own unit test)
-- `clients/smoke/run.sh` (created: runs each SDK's smoke `up`, or `down` with `-down`)
+- `clients/smoke/run.sh` (created: `run.sh <lang> <build|up|down>` runs one SDK's smoke phase)
 - `.github/workflows/sdk.yml` (modified: add the `sdk-smoke` job)
 
 Interfaces:
 
-- `mint` flags: `-url` (default `http://127.0.0.1:7778`), `-email`, `-password` and `-label` (default `sdk-smoke`). It does `POST /api/auth/sign-in/email` with `Origin: <url>` and body `{"email","password"}`, takes every `Set-Cookie` name=value pair, then does `POST /v1/me/tokens` with that `Cookie` header, `Origin: <url>` and body `{"label":"<label>"}`. It prints the `token` field on stdout and exits non-zero with the status and body on any non-2xx.
+- `mint` flags: `-url` (default `http://127.0.0.1:7778`), `-email`, `-password`, `-label` (default `sdk-smoke`) and `-wait` (default `0`: when set, poll `GET /ready` until 200 or the duration passes, so minimal images need no curl). It does `POST /api/auth/sign-in/email` with `Origin: <url>` and body `{"email","password"}`, takes every `Set-Cookie` name=value pair, then does `POST /v1/me/tokens` with that `Cookie` header, `Origin: <url>` and body `{"label":"<label>"}`. It prints the `token` field on stdout and exits non-zero with the status and body on any non-2xx.
 - `schema.go` exports `func Validate(doc map[string]any, schemaName string, v any) error`, which checks `type`, `required`, `properties` (recursively), `items`, `nullable` and `$ref` (resolved against `doc.components.schemas`). Unknown fields pass. The error names the JSON path.
 - `TestResponsesMatchSchemas` reads the environment variables `NOVAMEM_SMOKE_URL` and `NOVAMEM_SMOKE_ADMIN_TOKEN` (the minted admin token). If either is unset it calls `t.Skip("NOVAMEM_SMOKE_URL unset: live schema check needs the sdk-smoke job")`, a loud skip.
-- `run.sh <up|down>` runs, in order, each SDK's smoke with `NOVAMEM_SMOKE_URL` and `NOVAMEM_SMOKE_TOKEN` exported:
+- `run.sh <lang> <build|up|down>`: `build` prepares that SDK (`npm ci && npm run build`, `mvn -B -q test-compile dependency:build-classpath -Dmdep.outputFile=cp.txt`, `cargo build --example smoke`, `make -C clients/c build/smoke`, `composer install --no-dev`, `swift build --product novamem-smoke`, `dotnet build clients/dotnet/smoke`; nothing for python and ruby). `up` and `down` run the smoke with `NOVAMEM_SMOKE_URL` and `NOVAMEM_SMOKE_TOKEN` from the environment and never build, so `down` measures the stopped server rather than a compile. The commands:
 
-  - `python3 clients/python/smoke.py`
-  - `node clients/typescript/smoke.mjs`
-  - `dotnet run --project clients/dotnet/smoke`
-  - `java -cp "$(cat clients/java/cp.txt):clients/java/target/classes:clients/java/target/test-classes" com.azrtydxb.novamem.Smoke`
-  - `cargo run --quiet --manifest-path clients/rust/Cargo.toml --example smoke`
-  - `make -s -C clients/c smoke`
-  - `ruby -Iclients/ruby/lib clients/ruby/smoke.rb`
-  - `php clients/php/smoke.php`
-  - `swift run --package-path clients/swift novamem-smoke`
+  - python: `python3 clients/python/smoke.py`
+  - typescript: `node clients/typescript/smoke.mjs`
+  - dotnet: `dotnet run --no-build --project clients/dotnet/smoke --`
+  - java: `java -cp "$(cat clients/java/cp.txt):clients/java/target/classes:clients/java/target/test-classes" com.azrtydxb.novamem.Smoke`
+  - rust: `target/debug/examples/smoke` (the workspace target dir)
+  - c: `clients/c/build/smoke`
+  - ruby: `ruby -Iclients/ruby/lib clients/ruby/smoke.rb`
+  - php: `php clients/php/smoke.php`
+  - swift: `clients/swift/.build/debug/novamem-smoke`
 
-  Each is invoked with the mode as its argument. The script continues past failures, prints `FAIL <lang>` for each, and exits 1 if any failed.
+  Each is invoked with the mode as its argument; an unknown language exits 2.
 
 - [ ] Write the failing tests `clients/smoke/schema_test.go`:
 
@@ -2544,30 +2545,16 @@ Run `cd clients/smoke && go test ./...`: expect FAIL with `undefined: Validate`.
 
 - [ ] Implement `schema.go`. Run `cd clients/smoke && go test -count=1 ./...`: expect PASS (`TestValidateCatchesMissingRequired` passes, and `TestResponsesMatchSchemas` shows as SKIP with its reason).
 - [ ] Implement `cmd/mint/main.go` and `run.sh`.
-- [ ] Add the `sdk-smoke` job to `.github/workflows/sdk.yml`:
-  - `runs-on: arc-azrtydxb-amd64`, `timeout-minutes: 40`, `needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]`.
-  - Give it a `services.postgres` block with image `pgvector/pgvector:pg16`, the environment variables `POSTGRES_USER=novamem`, `POSTGRES_PASSWORD=novamem` and `POSTGRES_DB=novamem`, ports `5432:5432`, and options `--health-cmd "pg_isready -U novamem" --health-interval 5s --health-timeout 5s --health-retries 20` (Task 1 proved this works on the ARC runners).
-  - Then these steps:
-    1. `actions/checkout@v7`; `actions/setup-go@v6`; and the setup actions for Python 3.13, Node 24, .NET 8, Java 21, Rust stable, Ruby 3.2, PHP 8.4 and Swift 6.2 (same actions and versions as Tasks 7–15).
-    2. Build the server: `cd go && go build -o "$RUNNER_TEMP/novamem-server" ./cmd/novamem-server`.
-    3. Start it in the background with these environment variables, and write its PID to `$RUNNER_TEMP/server.pid`:
-       - `NOVAMEM_WARM_URL=postgres://novamem:novamem@127.0.0.1:5432/novamem?sslmode=disable`
-       - `NOVAMEM_COLD_PROVIDER=pgvector`
-       - `NOVAMEM_AUTH_MODE=user`
-       - `NOVAMEM_COOKIE_SECRET=sdk-smoke-cookie-secret-0123456789`
-       - `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL=smoke-admin@example.com`
-       - `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=smoke-admin-password`
-       - `NOVAMEM_INSECURE_COOKIES=1`
-       - `NOVAMEM_PORT=7778`
-       - `NOVAMEM_BASE_URL=http://127.0.0.1:7778`
-    4. Wait for readiness: `timeout 90 bash -c 'until curl -fsS http://127.0.0.1:7778/ready; do sleep 2; done'`.
-    5. `ADMIN=$(go run ./clients/smoke/cmd/mint -email smoke-admin@example.com -password smoke-admin-password)`, then `echo "::add-mask::$ADMIN"`, then `echo "NOVAMEM_SMOKE_ADMIN_TOKEN=$ADMIN" >> "$GITHUB_ENV"`, then mint a second token with `-label sdk-smoke-user` and export it as `NOVAMEM_SMOKE_TOKEN`, also masked.
-    6. `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 go test -count=1 -v -run TestResponsesMatchSchemas ./clients/smoke/...`
-    7. Build every SDK's smoke prerequisites: `npm ci && npm run build` in typescript; `mvn -B -q test-compile dependency:build-classpath -Dmdep.outputFile=cp.txt` in java; `make -C clients/c lib`.
-    8. `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 sh clients/smoke/run.sh up`
-    9. Stop the server: `kill "$(cat "$RUNNER_TEMP/server.pid")"`, wait for the port to close, and use `sleep 1` only inside the wait loop.
-    10. `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 sh clients/smoke/run.sh down`
-- [ ] Run `actionlint .github/workflows/sdk.yml`: expect PASS. Push and open the PR: expect `sdk-smoke` green, with a log line `PASS <lang> up` and `PASS <lang> down` for all nine languages.
+- [ ] Add two jobs to `.github/workflows/sdk.yml`. The toolchain setup actions for Ruby, PHP and Swift do not work on the ARC runners (Tasks 12–15 moved those jobs into containers), so each language runs in its own image instead of one host job with nine setup actions:
+  - `sdk-smoke-build` (`runs-on: arc-azrtydxb-amd64`, `needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]`): `actions/setup-go`, then `CGO_ENABLED=0 go build` of `./go/cmd/novamem-server`, `./clients/smoke/cmd/mint` and `./clients/smoke/cmd/embed` into `smoke-bin/`, uploaded with `actions/upload-artifact` as `smoke-bin`.
+  - `sdk-smoke` (`needs: [sdk-smoke-build]`, `timeout-minutes: 30`, `fail-fast: false`): a matrix of `{lang, image}` — python `python:3.13-bookworm`, typescript `node:24-bookworm`, dotnet `mcr.microsoft.com/dotnet/sdk:8.0`, java `maven:3.9-eclipse-temurin-21`, rust and c `rust:1-bookworm`, ruby `ruby:3.2-bookworm`, php `composer:2`, swift `swift:6.3-noble`, and schema `golang:1.26-bookworm` — with `container.image: ${{ matrix.image }}` and a `services.postgres` block: image `pgvector/pgvector:pg16`, `POSTGRES_USER=novamem`, `POSTGRES_PASSWORD=novamem`, `POSTGRES_DB=novamem`, options `--health-cmd "pg_isready -U novamem" --health-interval 5s --health-timeout 5s --health-retries 20`. Steps:
+    1. `actions/checkout`, `actions/download-artifact` (`smoke-bin`), `chmod +x smoke-bin/*`, and `sh clients/smoke/run.sh <lang> build` (before the server starts: a build is not what `down` measures).
+    2. Start `smoke-bin/embed -addr 127.0.0.1:7779` and `smoke-bin/novamem-server` in the background, writing the server's PID to `$RUNNER_TEMP/server.pid`, with `NOVAMEM_WARM_URL=postgres://novamem:novamem@postgres:5432/novamem?sslmode=disable`, `NOVAMEM_COLD_PROVIDER=pgvector`, `NOVAMEM_EMBEDDINGS_PROVIDER=openai-compatible`, `NOVAMEM_EMBEDDINGS_ENDPOINT=http://127.0.0.1:7779/v1`, `NOVAMEM_EMBEDDINGS_MODEL=smoke-hash`, `NOVAMEM_AUTH_MODE=user`, `NOVAMEM_COOKIE_SECRET=sdk-smoke-cookie-secret-0123456789`, `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL=smoke-admin@example.com`, `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=smoke-admin-password`, `NOVAMEM_INSECURE_COOKIES=1`, `NOVAMEM_PORT=7778` and `NOVAMEM_BASE_URL=http://127.0.0.1:7778`.
+    3. `ADMIN=$(smoke-bin/mint -wait 90s -email smoke-admin@example.com -password smoke-admin-password)`, `echo "::add-mask::$ADMIN"`, exported as `NOVAMEM_SMOKE_ADMIN_TOKEN`; a second token with `-label sdk-smoke-user`, masked, exported as `NOVAMEM_SMOKE_TOKEN`.
+    4. schema: `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 go test -count=1 -v -run TestResponsesMatchSchemas ./clients/smoke/...`. Every other language: `sh clients/smoke/run.sh <lang> up`.
+    5. Stop the server (`kill "$(cat "$RUNNER_TEMP/server.pid")"`) and wait, in a `sleep 1` loop of at most 30 s, until the process is gone or a zombie (`/proc/<pid>/status` State `Z`: the job container's PID 1 does not reap children, and an exited process has closed its socket).
+    6. Every language but schema: `sh clients/smoke/run.sh <lang> down`.
+- [ ] Run `actionlint .github/workflows/sdk.yml`: expect PASS. Push and open the PR: expect every `sdk-smoke` matrix leg green, each with the log lines `PASS <lang> up` and `PASS <lang> down`, and the schema leg with `TestResponsesMatchSchemas` PASS (not SKIP).
 - [ ] Falsifiability check on a scratch commit (dropped before merge): make `clients/python/smoke.py`'s `down` step accept an empty result. Expect `sdk-smoke` to fail with `FAIL python`. Separately, add `bogus` to `ProvisionedUser.required` in `api/openapi.yaml` and regenerate: expect `TestResponsesMatchSchemas` to fail with `POST /v1/admin/users: $.bogus: required field missing`. Drop both.
 - [ ] Commit `ci(sdk): live smoke of every SDK against a server built from the PR`.
 
