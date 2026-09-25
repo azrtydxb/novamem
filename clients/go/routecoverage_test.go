@@ -1,144 +1,59 @@
 package novamem
 
-// Route-coverage pin: every route in the server's OpenAPI document must be
-// accounted for here — either mapped to the client method that calls it, or
-// carried as an explicit non-goal with its reason. A route added to
-// openapi.json without a row in this map fails the test, so growing the API
-// forces a client decision instead of silently widening the gap. This map is
-// also the written TS→Go surface audit: every public method of the retired
-// TypeScript client (packages/client) maps to a Go method below.
+// Route-coverage pin. The list of API routes, and which client method
+// covers each, lives in ../contract/routes.json — one file shared by every
+// novamem SDK (ADR 0009). clients/contract checks that list against the
+// OpenAPI document; this test checks the half only Go can see: every
+// method routes.json credits to Client, Management or Admin exists here.
+//
+// The list used to be a map in this file whose method names nothing
+// checked, and for a while five rows credited Client with Management
+// methods and one credited Management with a Today it did not have.
 
 import (
 	"encoding/json"
 	"os"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 )
 
-// routeMap maps "METHOD path" to the client method covering it, or to a
-// "non-goal: reason" entry for routes the client deliberately does not wrap.
-var routeMap = map[string]string{
-	"GET /health": "Client.Health",
-	"GET /live":   "non-goal: liveness probe for orchestrators, not an API client call",
-	"GET /ready":  "non-goal: readiness probe for orchestrators, not an API client call",
-	"GET /.well-known/oauth-protected-resource": "non-goal: RFC 9728 discovery document for MCP clients; this client is handed a bearer, it does not discover one",
-
-	"POST /mcp":   "non-goal: MCP transport — spoken by MCP hosts and the shim, not the REST client",
-	"GET /mcp":    "non-goal: MCP transport",
-	"DELETE /mcp": "non-goal: MCP transport",
-
-	"GET /v1/admin/audit-log":        "non-goal: dashboard-only read; add on first programmatic consumer",
-	"GET /v1/admin/health/deep":      "non-goal: dashboard-only read",
-	"GET /v1/admin/metrics":          "non-goal: dashboard-only read",
-	"GET /v1/admin/metrics/prom":     "non-goal: Prometheus scrape target",
-	"POST /v1/admin/tokens/revoke":   "Admin.RevokeUserToken",
-	"POST /v1/admin/users":           "Admin.ProvisionUser",
-	"GET /v1/admin/users":            "Admin.ListUsers",
-	"DELETE /v1/admin/users/{id}":    "Admin.DeleteUser (dryRun=true: Admin.PreviewDeleteUser)",
-	"PUT /v1/admin/users/{id}/quota": "Admin.SetUserQuota",
-
-	"POST /v1/adoption":          "Management.Adoption",
-	"POST /v1/auth/rotate-token": "non-goal: token rotation is an integration-host flow (init CLI / shim), not a client-library call",
-	"POST /v1/capture":           "Client.Capture",
-	"POST /v1/context":           "Client.Context",
-	"GET /v1/context-prefix":     "Client.ContextPrefix",
-	"POST /v1/decay":             "Management.Decay",
-	"POST /v1/dream-cycle":       "non-goal: operator maintenance endpoint (admin-session gated)",
-	"POST /v1/evaluate":          "Management.Evaluate",
-	"POST /v1/forget":            "Client.Forget",
-	"POST /v1/hygiene":           "Management.Hygiene",
-	"POST /v1/neighbors":         "Client.Neighbors",
-	"POST /v1/observe":           "Management.Observe",
-	"POST /v1/reap-orphans":      "non-goal: operator maintenance endpoint",
-	"POST /v1/recent":            "Client.Recent",
-	"POST /v1/remember":          "Client.Remember",
-	"POST /v1/search":            "Client.Search",
-	"POST /v1/session-recap":     "Client.SessionRecap",
-	"GET /v1/stats":              "Client.Stats",
-	"PUT /v1/memories/{id}":      "Client.Update",
-
-	"GET /v1/me/active-project":                    "Management.ActiveProject",
-	"PUT /v1/me/active-project":                    "Management.SetActiveProject",
-	"DELETE /v1/me/active-project":                 "Management.ClearActiveProject",
-	"GET /v1/me/changes":                           "Management.Changes",
-	"GET /v1/me/export":                            "Management.Export",
-	"POST /v1/me/import":                           "Management.Import",
-	"GET /v1/me/metrics":                           "non-goal: dashboard-only read",
-	"GET /v1/me/metrics/history":                   "non-goal: dashboard-only read",
-	"GET /v1/me/onboarding":                        "non-goal: dashboard-only read",
-	"GET /v1/me/projects":                          "Management.ListProjects",
-	"POST /v1/me/projects":                         "Management.CreateProject",
-	"DELETE /v1/me/projects/{id}":                  "Management.DeleteProject",
-	"GET /v1/me/projects/{id}/members":             "Management.ListProjectMembers",
-	"POST /v1/me/projects/{id}/members":            "Management.AddProjectMember",
-	"DELETE /v1/me/projects/{id}/members/{userId}": "Management.RemoveProjectMember (by username: Management.RemoveProjectMemberByUsername)",
-	"GET /v1/me/today":                             "non-goal: dashboard feed; the client's Today is Recent with a 24h window over POST /v1/recent",
-	"GET /v1/me/tokens":                            "Management.ListTokens",
-	"POST /v1/me/tokens":                           "Management.MintToken",
-	"DELETE /v1/me/tokens/{hash}":                  "Management.RevokeToken",
-	"GET /v1/me/usage":                             "Management.Usage",
-}
-
-func TestEveryOpenAPIRouteIsMappedOrDeclaredNonGoal(t *testing.T) {
-	raw, err := os.ReadFile("../../docs/api/openapi.json")
+// proved by: renaming Management.Decay to Client.Decay in routes.json
+// fails this test.
+func TestEveryRouteIsAccounted(t *testing.T) {
+	raw, err := os.ReadFile("../contract/routes.json")
 	if err != nil {
-		t.Skipf("openapi.json not readable outside the monorepo: %v", err)
+		t.Skipf("routes.json not readable outside the monorepo: %v", err)
 	}
-	var spec struct {
-		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	var routes map[string]struct {
+		Methods []struct {
+			Name string `json:"name"`
+		} `json:"methods"`
 	}
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		t.Fatalf("parse openapi.json: %v", err)
+	if err := json.Unmarshal(raw, &routes); err != nil {
+		t.Fatalf("parse routes.json: %v", err)
 	}
-	seen := map[string]bool{}
-	methods := map[string]string{"get": "GET", "post": "POST", "put": "PUT", "delete": "DELETE", "patch": "PATCH"}
-	for path, ops := range spec.Paths {
-		for op := range ops {
-			m, ok := methods[op]
-			if !ok {
-				continue // parameters, summary, etc.
-			}
-			key := m + " " + path
-			seen[key] = true
-			if routeMap[key] == "" {
-				t.Errorf("route %q is in openapi.json but not in routeMap — map it to a client method or record it as a non-goal", key)
-			}
-		}
-	}
-	for key := range routeMap {
-		if !seen[key] {
-			t.Errorf("routeMap entry %q no longer exists in openapi.json — remove or update it", key)
-		}
-	}
-}
-
-// TestRouteMapNamesRealMethods pins the other half of the map: every
-// "Class.Method" it names must exist. The coverage test above only
-// checks the keys, so for a while five rows credited Client with
-// Management methods and one credited Management with a Today it does
-// not have — the map read as an audit while naming methods nobody could
-// call.
-func TestRouteMapNamesRealMethods(t *testing.T) {
 	types := map[string]reflect.Type{
-		"Client":     reflect.TypeOf(&Client{}),
-		"Management": reflect.TypeOf(&Management{}),
-		"Admin":      reflect.TypeOf(&Admin{}),
+		"Client":     reflect.TypeFor[*Client](),
+		"Management": reflect.TypeFor[*Management](),
+		"Admin":      reflect.TypeFor[*Admin](),
 	}
-	ref := regexp.MustCompile(`\b(Client|Management|Admin)\.([A-Z]\w*)`)
-	for key, target := range routeMap {
-		if strings.HasPrefix(target, "non-goal:") {
-			continue
-		}
-		refs := ref.FindAllStringSubmatch(target, -1)
-		if len(refs) == 0 {
-			t.Errorf("%s: %q names no Class.Method and is not a non-goal", key, target)
-		}
-		for _, m := range refs {
-			if _, ok := types[m[1]].MethodByName(m[2]); !ok {
-				t.Errorf("%s: %s has no method %s", key, m[1], m[2])
+	methods := 0
+	for key, r := range routes {
+		for _, m := range r.Methods {
+			methods++
+			class, method, _ := strings.Cut(m.Name, ".")
+			typ, ok := types[class]
+			if !ok {
+				t.Errorf("%s: unknown class %q", key, class)
+				continue
+			}
+			if _, ok := typ.MethodByName(method); !ok {
+				t.Errorf("%s: %s has no method %s", key, class, method)
 			}
 		}
+	}
+	if methods == 0 {
+		t.Fatal("routes.json names no methods — wrong file?")
 	}
 }

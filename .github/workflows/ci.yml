@@ -94,16 +94,21 @@ jobs:
             go/go.sum
             clients/go/go.sum
       - run: cd go && go build ./... && go vet ./... && go test ./...
-      # -count=1 on the client module: routecoverage_test.go reads
-      # ../../docs/api/openapi.json, a file OUTSIDE its own module, and Go's
-      # test cache did not treat that as an input. #279 removed two routes
-      # from the document and left their routeMap entries behind; this step
-      # reported success on a stale cached result and main went red without
-      # anyone being told. Caching a drift guard defeats the guard.
+      # -count=1 on the client and contract modules: their drift guards read
+      # files OUTSIDE their own module (../contract/routes.json,
+      # ../../docs/api/openapi.json), and Go's test cache does not treat
+      # those as inputs. #279 removed two routes from the document and left
+      # their map entries behind; the step reported success on a stale
+      # cached result and main went red without anyone being told. Caching a
+      # drift guard defeats the guard.
       - run: cd clients/go && go build ./... && go vet ./... && go test -count=1 ./...
+      # The route map and scenario suite every SDK is held to (ADR 0009).
+      - run: cd clients/contract && go build ./... && go vet ./... && go test -count=1 ./...
       # Both Go modules are lint-clean and stay that way.
       - run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
         working-directory: clients/go
+      - run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
+        working-directory: clients/contract
       - run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
         working-directory: go
       # The black-box oracle (ADR 0003). Without NOVAMEM_URL every case

@@ -1,0 +1,443 @@
+{
+  "DELETE /mcp": {
+    "nonGoal": "MCP transport"
+  },
+  "DELETE /v1/admin/users/{id}": {
+    "methods": [
+      {
+        "name": "Admin.PreviewDeleteUser",
+        "op": "preview-delete-user",
+        "params": ["id"],
+        "response": "UserDeletionPreview"
+      },
+      {
+        "name": "Admin.DeleteUser",
+        "op": "delete-user",
+        "params": ["id"],
+        "response": "UserDeletion"
+      }
+    ]
+  },
+  "DELETE /v1/me/active-project": {
+    "methods": [
+      {
+        "name": "Management.ClearActiveProject",
+        "op": "clear-active-project",
+        "response": null
+      }
+    ]
+  },
+  "DELETE /v1/me/projects/{id}": {
+    "methods": [
+      {
+        "name": "Management.DeleteProject",
+        "op": "delete-project",
+        "params": ["id"],
+        "response": "ProjectDeleted"
+      }
+    ]
+  },
+  "DELETE /v1/me/projects/{id}/members/{userId}": {
+    "methods": [
+      {
+        "name": "Management.RemoveProjectMember",
+        "op": "remove-member",
+        "params": ["id", "userId"],
+        "response": "MemberRemoved"
+      },
+      {
+        "name": "Management.RemoveProjectMemberByUsername",
+        "op": "remove-member",
+        "params": ["id", "username"],
+        "response": "MemberRemoved"
+      }
+    ]
+  },
+  "DELETE /v1/me/tokens/{hash}": {
+    "methods": [
+      {
+        "name": "Management.RevokeToken",
+        "op": "revoke-token",
+        "params": ["hash"],
+        "response": "TokenDeleted"
+      }
+    ]
+  },
+  "GET /.well-known/oauth-protected-resource": {
+    "nonGoal": "RFC 9728 discovery document for MCP clients; this client is handed a bearer, it does not discover one"
+  },
+  "GET /health": {
+    "methods": [
+      {
+        "name": "Client.Health",
+        "op": "health",
+        "response": "Health"
+      }
+    ]
+  },
+  "GET /live": {
+    "nonGoal": "liveness probe for orchestrators, not an API client call"
+  },
+  "GET /mcp": {
+    "nonGoal": "MCP transport"
+  },
+  "GET /ready": {
+    "nonGoal": "readiness probe for orchestrators, not an API client call"
+  },
+  "GET /v1/admin/audit-log": {
+    "nonGoal": "dashboard-only read; add on first programmatic consumer"
+  },
+  "GET /v1/admin/health/deep": {
+    "nonGoal": "dashboard-only read"
+  },
+  "GET /v1/admin/metrics": {
+    "nonGoal": "dashboard-only read"
+  },
+  "GET /v1/admin/metrics/prom": {
+    "nonGoal": "Prometheus scrape target"
+  },
+  "GET /v1/admin/users": {
+    "methods": [
+      {
+        "name": "Admin.ListUsers",
+        "op": "list-users",
+        "response": "AdminUserList"
+      }
+    ]
+  },
+  "GET /v1/context-prefix": {
+    "methods": [
+      {
+        "name": "Client.ContextPrefix",
+        "op": "context-prefix",
+        "params": ["project"],
+        "response": "ContextPrefix"
+      }
+    ]
+  },
+  "GET /v1/me/active-project": {
+    "methods": [
+      {
+        "name": "Management.ActiveProject",
+        "op": "active-project",
+        "response": "ActiveProject"
+      }
+    ]
+  },
+  "GET /v1/me/changes": {
+    "methods": [
+      {
+        "name": "Management.Changes",
+        "op": "changes",
+        "params": ["since", "afterSeq", "limit"],
+        "response": "ChangeFeed"
+      }
+    ]
+  },
+  "GET /v1/me/export": {
+    "methods": [
+      {
+        "name": "Management.Export",
+        "op": "export",
+        "params": ["afterId", "limit"],
+        "response": "ExportPage"
+      }
+    ]
+  },
+  "GET /v1/me/metrics": {
+    "nonGoal": "dashboard-only read"
+  },
+  "GET /v1/me/metrics/history": {
+    "nonGoal": "dashboard-only read"
+  },
+  "GET /v1/me/onboarding": {
+    "nonGoal": "dashboard-only read"
+  },
+  "GET /v1/me/projects": {
+    "methods": [
+      {
+        "name": "Management.ListProjects",
+        "op": "list-projects",
+        "response": "ProjectList"
+      }
+    ]
+  },
+  "GET /v1/me/projects/{id}/members": {
+    "methods": [
+      {
+        "name": "Management.ListProjectMembers",
+        "op": "list-members",
+        "params": ["id"],
+        "response": "MemberList"
+      }
+    ]
+  },
+  "GET /v1/me/today": {
+    "nonGoal": "dashboard feed; the client's Today is Recent with a 24h window over POST /v1/recent"
+  },
+  "GET /v1/me/tokens": {
+    "methods": [
+      {
+        "name": "Management.ListTokens",
+        "op": "list-tokens",
+        "response": "TokenList"
+      }
+    ]
+  },
+  "GET /v1/me/usage": {
+    "methods": [
+      {
+        "name": "Management.Usage",
+        "op": "usage",
+        "response": "Usage"
+      }
+    ]
+  },
+  "GET /v1/stats": {
+    "methods": [
+      {
+        "name": "Client.Stats",
+        "op": "stats",
+        "response": "Stats"
+      }
+    ]
+  },
+  "POST /mcp": {
+    "nonGoal": "MCP transport \u2014 spoken by MCP hosts and the shim, not the REST client"
+  },
+  "POST /v1/admin/tokens/revoke": {
+    "methods": [
+      {
+        "name": "Admin.RevokeUserToken",
+        "op": "revoke-user-token",
+        "params": ["token"],
+        "response": "RevokeResult"
+      }
+    ]
+  },
+  "POST /v1/admin/users": {
+    "methods": [
+      {
+        "name": "Admin.ProvisionUser",
+        "op": "provision-user",
+        "request": "ProvisionUserRequest",
+        "response": "ProvisionedUser"
+      }
+    ]
+  },
+  "POST /v1/adoption": {
+    "methods": [
+      {
+        "name": "Management.Adoption",
+        "op": "adoption",
+        "params": ["client"],
+        "response": "AdoptionReport"
+      }
+    ]
+  },
+  "POST /v1/auth/rotate-token": {
+    "nonGoal": "token rotation is an integration-host flow (init CLI / shim), not a client-library call"
+  },
+  "POST /v1/capture": {
+    "methods": [
+      {
+        "name": "Client.Capture",
+        "op": "capture",
+        "request": "CaptureRequest",
+        "response": "CaptureResult"
+      }
+    ]
+  },
+  "POST /v1/context": {
+    "methods": [
+      {
+        "name": "Client.Context",
+        "op": "context",
+        "request": "ContextRequest",
+        "response": "SearchResult"
+      }
+    ]
+  },
+  "POST /v1/decay": {
+    "methods": [
+      {
+        "name": "Management.Decay",
+        "op": "decay",
+        "params": ["effectiveDays"],
+        "response": "DecayResult"
+      }
+    ]
+  },
+  "POST /v1/dream-cycle": {
+    "nonGoal": "operator maintenance endpoint (admin-session gated)"
+  },
+  "POST /v1/evaluate": {
+    "methods": [
+      {
+        "name": "Management.Evaluate",
+        "op": "evaluate",
+        "params": ["suite"],
+        "response": "EvaluateReport"
+      }
+    ]
+  },
+  "POST /v1/forget": {
+    "methods": [
+      {
+        "name": "Client.Forget",
+        "op": "forget",
+        "request": "ForgetRequest",
+        "response": "ForgetResult"
+      }
+    ]
+  },
+  "POST /v1/hygiene": {
+    "methods": [
+      {
+        "name": "Management.Hygiene",
+        "op": "hygiene",
+        "params": ["k"],
+        "response": "HygieneReport"
+      }
+    ]
+  },
+  "POST /v1/me/import": {
+    "methods": [
+      {
+        "name": "Management.Import",
+        "op": "import",
+        "params": ["entries"],
+        "response": "ImportResult"
+      }
+    ]
+  },
+  "POST /v1/me/projects": {
+    "methods": [
+      {
+        "name": "Management.CreateProject",
+        "op": "create-project",
+        "params": ["name"],
+        "response": "Project"
+      }
+    ]
+  },
+  "POST /v1/me/projects/{id}/members": {
+    "methods": [
+      {
+        "name": "Management.AddProjectMember",
+        "op": "add-member",
+        "params": ["id", "email", "role"],
+        "response": "MemberAdded"
+      }
+    ]
+  },
+  "POST /v1/me/tokens": {
+    "methods": [
+      {
+        "name": "Management.MintToken",
+        "op": "mint-token",
+        "request": "MintTokenRequest",
+        "response": "MintedToken"
+      }
+    ]
+  },
+  "POST /v1/neighbors": {
+    "methods": [
+      {
+        "name": "Client.Neighbors",
+        "op": "neighbors",
+        "request": "NeighborsRequest",
+        "response": "SearchResult"
+      }
+    ]
+  },
+  "POST /v1/observe": {
+    "methods": [
+      {
+        "name": "Management.Observe",
+        "op": "observe",
+        "params": ["project", "limit"],
+        "response": "ObserveResult"
+      }
+    ]
+  },
+  "POST /v1/reap-orphans": {
+    "nonGoal": "operator maintenance endpoint"
+  },
+  "POST /v1/recent": {
+    "methods": [
+      {
+        "name": "Client.Recent",
+        "op": "recent",
+        "request": "RecentRequest",
+        "response": "EntryList"
+      },
+      {
+        "name": "Client.Today",
+        "op": "recent",
+        "request": "RecentRequest",
+        "response": "EntryList"
+      }
+    ]
+  },
+  "POST /v1/remember": {
+    "methods": [
+      {
+        "name": "Client.Remember",
+        "op": "remember",
+        "request": "CaptureRequest",
+        "response": "RememberResult"
+      }
+    ]
+  },
+  "POST /v1/search": {
+    "methods": [
+      {
+        "name": "Client.Search",
+        "op": "search",
+        "request": "SearchRequest",
+        "response": "SearchResult"
+      }
+    ]
+  },
+  "POST /v1/session-recap": {
+    "methods": [
+      {
+        "name": "Client.SessionRecap",
+        "op": "session-recap",
+        "request": "SessionRecapRequest",
+        "response": "SessionRecapResult"
+      }
+    ]
+  },
+  "PUT /v1/admin/users/{id}/quota": {
+    "methods": [
+      {
+        "name": "Admin.SetUserQuota",
+        "op": "set-user-quota",
+        "params": ["id", "maxEntries", "writesPerMinute"],
+        "response": "QuotaResult"
+      }
+    ]
+  },
+  "PUT /v1/me/active-project": {
+    "methods": [
+      {
+        "name": "Management.SetActiveProject",
+        "op": "set-active-project",
+        "params": ["project"],
+        "response": "ActiveProject"
+      }
+    ]
+  },
+  "PUT /v1/memories/{id}": {
+    "methods": [
+      {
+        "name": "Client.Update",
+        "op": "update",
+        "request": "UpdateRequest",
+        "response": "UpdateResult"
+      }
+    ]
+  }
+}
