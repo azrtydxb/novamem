@@ -386,9 +386,11 @@ config and the HTTP client.
   same as unset.
 - `since` timestamps: always sent as RFC 3339 UTC with a `Z` suffix, in
   every language. Local-time inputs are converted.
-- Large integers (sequence numbers in `Changes`): parsed as 64-bit, never
-  as JS float. The TS SDK uses `number` only where the spec says `int32`,
-  and `string` for int64 fields.
+- Large integers (sequence numbers in `Changes`): parsed as 64-bit
+  everywhere except TypeScript, where they are `number`. `JSON.parse`
+  yields numbers and a string would need a custom parser per response;
+  sequence numbers cannot plausibly pass 2^53 (decided 2026-09-25 while
+  building the TS SDK).
 - Unknown fields in responses: ignored in every language, so a newer
   server works with an older SDK.
 - A 2xx on a no-payload endpoint (`SetUserQuota`, `SetActiveProject`):

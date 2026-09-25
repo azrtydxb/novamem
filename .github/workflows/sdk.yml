@@ -76,3 +76,32 @@ jobs:
           "$RUNNER_TEMP/nm/bin/pip" install -q ./clients/python
           extra=$("$RUNNER_TEMP/nm/bin/pip" list --format=freeze | grep -v -E '^(pip|setuptools|novamem)==' || true)
           if [ -n "$extra" ]; then echo "unexpected runtime dependencies: $extra"; exit 1; fi
+
+  # TypeScript SDK (plan Task 8): the shared scenario suite on the oldest
+  # and newest supported Node, and a package with no runtime dependencies.
+  typescript:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Scenario suite
+        working-directory: clients/typescript
+        run: npm ci && npm test
+      - name: Publishes with no runtime dependencies
+        working-directory: clients/typescript
+        run: |
+          npm run build
+          node -e 'process.exit(require("./package.json").dependencies ? 1 : 0)'
+          npm pack --dry-run --json | node -e 'const p=JSON.parse(require("fs").readFileSync(0))[0]; const bad=p.files.filter(f=>!(f.path.startsWith("dist/")||["package.json","README.md"].includes(f.path))); if (bad.length) { console.error("unexpected files:", bad.map(f=>f.path)); process.exit(1) }'

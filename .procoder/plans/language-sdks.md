@@ -46,7 +46,7 @@ Every task inherits all of these. They are copied from the spec.
   - `today` is `recent` with `since` set to now − 24 h.
   - `health`: `{ok:false}` returns false, not an error.
   - GET and bodyless DELETE calls send no body. Every call sends `Accept: application/json`; calls with a body send `Content-Type: application/json`.
-  - Optional fields that are unset or empty strings are omitted from request JSON. Timestamps are sent as RFC 3339 UTC with a `Z` suffix. Unknown response fields are ignored. int64 fields are strings in TS.
+  - Optional fields that are unset or empty strings are omitted from request JSON. Timestamps are sent as RFC 3339 UTC with a `Z` suffix. Unknown response fields are ignored. int64 fields are `number` in TS (see the spec's edge cases).
 - `expect.messageContains` is matched case-insensitively, because each language capitalises field names in its own way (`Token is required` in Go, `token is required` in Python).
 - Scenario runners start the server through `clients/contract/scenario-server.sh` (Go's runner builds the binary itself), never with `go run`.
 - "Empty" (the scenario outcome) means the method succeeded and its result's wire JSON is `[]`, or is an object whose `results` array has length 0.
@@ -1030,7 +1030,7 @@ Run `cd clients/python && PYTHONPATH=src:tests python -m unittest discover -s te
 
 Files:
 
-- `clients/gen/templates/typescript.tmpl` (created; out: `typescript/src/types.ts`): `export interface` per object type, using wire field names and `?` for optional fields. `int64` becomes `string`, `datetime` becomes `string`, enums become union string literal types, and maps become `Record<string, unknown>`.
+- `clients/gen/templates/typescript.tmpl` (created; out: `typescript/src/types.ts`): `export interface` per object type, using wire field names and `?` for optional fields. `int64` becomes `number`, request `datetime` becomes `string | Date`, enums become union string literal types, and maps become `Record<string, unknown>`.
 - `clients/gen/templates/typescript_dispatch.tmpl` (created; out: `typescript/test/dispatch.ts`): `export const DISPATCH: Record<string, (c: Clients, args: any, signal?: AbortSignal) => Promise<unknown>>`, keyed by `routes.json` name, calling `c.<Class>.<camel(method)>(args, {signal})` or, for scalars, `(args.<p1>, args.<p2>, …, {signal})`.
 - `clients/typescript/package.json` (created: `"name": "@azrtydxb/novamem"`, `"version": "2.0.0"`, `"type": "module"`, `"engines": {"node": ">=20"}`, `"exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}}`, `"files": ["dist"]`, no `dependencies`, `devDependencies` of `{"typescript": "5.9.3"}` only, and scripts `build: tsc -p .` and `test: tsc -p tsconfig.test.json && node --test dist-test/test/`)
 - `clients/typescript/tsconfig.json`, `clients/typescript/tsconfig.test.json` (created: `strict`, `target ES2022`, `module NodeNext`)
