@@ -1561,6 +1561,14 @@ Run `cd clients/java && mvn -B verify`: expect FAIL with `cannot find symbol` / 
 
 ## Task 11: Rust SDK
 
+Status: built on `feat/sdk-rust`. Where the build differs from the steps below, the build is right:
+
+- reqwest is pinned to 0.12.28 with only `rustls-tls`. 0.13 needs Rust 1.85 and defaults to `aws-lc-rs`, which requires cmake. The `json` feature isn't needed, since bodies are serde_json bytes. Runtime dependencies are exactly reqwest, serde, serde_json, thiserror and tokio (a CI step checks this).
+- The generated dispatch table lives at `tests/dispatch/mod.rs`, because Cargo compiles every top-level file in `tests/` as its own crate. Both it and `src/types.rs` are `#[rustfmt::skip]`.
+- Scalar params come from routes.json's typed `params` (`{name, type, required}`, added on this branch for the statically typed SDKs): required strings are `&str`, optional ones `Option<&str>`, numbers `Option<i32|i64>`, and `Import` takes `Vec<serde_json::Value>`.
+- Cross-origin redirects rely on reqwest, which strips `Authorization` when the host changes; `tests/redirect.rs` pins that behaviour.
+- The two cancel scenarios are skipped, because dropping a Rust future leaves no outcome to classify.
+
 Files:
 
 - `clients/gen/templates/rust.tmpl` (created; out: `rust/src/types.rs`): `#[derive(Debug, Clone, Default, Serialize, Deserialize)]` structs with `#[serde(rename = "<wire>")]` per field. Optional fields are `Option<T>` with `#[serde(skip_serializing_if = "Option::is_none")]`. Enums use `#[serde(rename_all …)]` per variant `rename`. `datetime` becomes `String` (RFC 3339; the client formats it with a hand-written UTC formatter in `src/time.rs`, so no `chrono` dependency is added). `int64` becomes `i64`, `int32` becomes `i32`, and maps become `serde_json::Map<String, serde_json::Value>`.

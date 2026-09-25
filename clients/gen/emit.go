@@ -44,6 +44,7 @@ func render(opts Options) ([]rendered, error) {
 		"wire":       func(f Field) string { return f.Wire },
 		"join":       strings.Join,
 		"pyident":    pyident,
+		"rustident":  rustident,
 		"methodName": func(m string) string { _, after, _ := strings.Cut(m, "."); return after },
 		"className":  func(m string) string { before, _, _ := strings.Cut(m, "."); return before },
 	}

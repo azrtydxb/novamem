@@ -93,3 +93,25 @@ func pyident(s string) string {
 	}
 	return id
 }
+
+// rustKeywords are the names Rust needs as raw identifiers (r#type).
+var rustKeywords = map[string]bool{
+	"as": true, "break": true, "const": true, "continue": true, "crate": true, "else": true,
+	"enum": true, "extern": true, "false": true, "fn": true, "for": true, "if": true,
+	"impl": true, "in": true, "let": true, "loop": true, "match": true, "mod": true,
+	"move": true, "mut": true, "pub": true, "ref": true, "return": true, "self": true,
+	"static": true, "struct": true, "super": true, "trait": true, "true": true,
+	"type": true, "unsafe": true, "use": true, "where": true, "while": true,
+	"async": true, "await": true, "dyn": true, "abstract": true, "become": true,
+	"box": true, "do": true, "final": true, "macro": true, "override": true,
+	"priv": true, "typeof": true, "unsized": true, "virtual": true, "yield": true, "try": true,
+}
+
+// rustident: snake_case, raw where Rust reserves the word ("type" → "r#type").
+func rustident(s string) string {
+	id := snake(s)
+	if rustKeywords[id] {
+		return "r#" + id
+	}
+	return id
+}

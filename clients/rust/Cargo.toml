@@ -1,0 +1,23 @@
+[package]
+name = "novamem"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+description = "Rust client for novamem, the tiered memory service for agents"
+repository = "https://github.com/azrtydxb/novamem"
+readme = "README.md"
+keywords = ["memory", "agents", "llm", "client"]
+categories = ["api-bindings", "web-programming::http-client"]
+
+# The dependency set is fixed by ADR 0009: HTTP, JSON, the runtime reqwest
+# needs, and error derives. Nothing else.
+[dependencies]
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "process", "io-util", "time"] }

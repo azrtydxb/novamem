@@ -1,0 +1,4 @@
+# Resolve dependencies to versions that support each crate's declared
+# rust-version (clients/rust: 1.80), not simply the newest (Cargo 1.84+).
+[resolver]
+incompatible-rust-versions = "fallback"

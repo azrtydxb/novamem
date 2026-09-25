@@ -5,5 +5,7 @@
 set -eu
 cd "$(dirname "$0")"
 bin="${TMPDIR:-/tmp}/novamem-scenario-server-$$"
-go build -o "$bin" ./cmd/scenario-server
+# -buildvcs=false: in a CI container the checkout belongs to another user,
+# git refuses to report its status, and a VCS-stamped build fails.
+go build -buildvcs=false -o "$bin" ./cmd/scenario-server
 exec "$bin" "$@"

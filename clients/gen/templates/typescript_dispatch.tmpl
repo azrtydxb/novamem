@@ -25,7 +25,7 @@ export const DISPATCH: Record<string, (c: Clients, a: Args, signal?: AbortSignal
 {{- range .Methods}}
   "{{.Name}}": (c, a, signal) =>
     c.{{className .Name}}.{{camel (methodName .Name)}}(
-{{- range .Params}}a["{{.}}"], {{end}}
-{{- if .Request}}{{if .Params}}omit(a, [{{range $i, $p := .Params}}{{if $i}}, {{end}}"{{$p}}"{{end}}]){{else}}a{{end}} as any, {{end}}{ signal }),
+{{- range .Params}}a["{{.Name}}"], {{end}}
+{{- if .Request}}{{if .Params}}omit(a, [{{range $i, $p := .Params}}{{if $i}}, {{end}}"{{$p.Name}}"{{end}}]){{else}}a{{end}} as any, {{end}}{ signal }),
 {{- end}}
 };

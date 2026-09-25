@@ -105,3 +105,36 @@ jobs:
           npm run build
           node -e 'process.exit(require("./package.json").dependencies ? 1 : 0)'
           npm pack --dry-run --json | node -e 'const p=JSON.parse(require("fs").readFileSync(0))[0]; const bad=p.files.filter(f=>!(f.path.startsWith("dist/")||["package.json","README.md"].includes(f.path))); if (bad.length) { console.error("unexpected files:", bad.map(f=>f.path)); process.exit(1) }'
+
+  # Rust SDK (plan Task 11): the shared scenario suite on the MSRV and on
+  # stable, from the committed lockfile. The C/C++ SDK builds on this crate.
+  rust:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: ["1.80", "1"]
+    # The official image brings the linker the ARC runner lacks.
+    container:
+      image: rust:${{ matrix.rust }}-bookworm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - name: Scenario suite
+        working-directory: clients/rust
+        run: cargo test --locked
+      - name: Lint
+        if: matrix.rust == '1'
+        working-directory: clients/rust
+        run: rustup component add clippy && cargo clippy --locked --all-targets -- -D warnings
+      - name: Runtime dependencies are the five ADR 0009 allows
+        working-directory: clients/rust
+        run: |
+          got=$(cargo tree --locked --depth 1 -e normal --prefix none | sed 1d | awk '{print $1}' | sort -u | tr '\n' ' ')
+          want="reqwest serde serde_json thiserror tokio "
+          [ "$got" = "$want" ] || { echo "runtime dependencies: $got (want $want)"; exit 1; }
