@@ -35,6 +35,13 @@ def subset(want, got, path="$"):
 def main():
     binary = sys.argv[1]
     wrap = shlex.split(os.environ.get("NOVAMEM_WRAP", ""))
+    # Under valgrind (memcheck) the runner is ~50x slower: the suite's 300 ms
+    # client timeout would fire on ordinary calls. Memcheck asks one thing —
+    # does any call leak or corrupt memory — so it runs with a generous
+    # timeout, skips the scenarios whose outcome is a timing race, and fails
+    # only on a valgrind error exit or a crash. `make test` checks outcomes.
+    memcheck = bool(wrap)
+    timeout_ms = 10000 if memcheck else SCEN["timeoutMs"]
     proc = subprocess.Popen(
         ["sh", "scenario-server.sh", "-scenarios", "scenarios.json"],
         cwd=CONTRACT,
@@ -49,6 +56,9 @@ def main():
             sid, call, exp = s["id"], s["call"], s["expect"]
             if "cancel" in s.get("requires", []):
                 print(f"skip (the blocking C API has no cancellation): {sid}")
+                continue
+            if memcheck and '"timeout"' in json.dumps(s.get("respond")):
+                print(f"skip (a timing race under valgrind): {sid}")
                 continue
             if call["class"] == "ctor":
                 base, token, method, args = (
@@ -66,7 +76,7 @@ def main():
                 )
                 token, method, args = TOKEN, call["method"], json.dumps(call["args"])
             r = subprocess.run(
-                [*wrap, binary, base, token, str(SCEN["timeoutMs"]), method, args],
+                [*wrap, binary, base, token, str(timeout_ms), method, args],
                 capture_output=True,
                 text=True,
                 check=False,  # the exit code is inspected below
@@ -75,6 +85,12 @@ def main():
                 failures.append(
                     f"{sid}: runner exited {r.returncode}: {r.stderr.strip()[-400:]}"
                 )
+                continue
+            if memcheck:
+                # Drain the verdict so the next scenario starts clean; its
+                # outcome is `make test`'s business.
+                with urllib.request.urlopen(f"{url}/_verdict/{sid}"):
+                    pass
                 continue
             outcome, retryable, status, code, rest = (
                 r.stdout.rstrip("\n").split(" ", 4) + [""] * 5
