@@ -1,0 +1,104 @@
+name: Release SDK (C/C++)
+
+# Publishes clients/c when a clients/c/vX.Y.Z tag is pushed (ADR 0009:
+# independent semver per SDK). verify runs the whole SDK workflow at the
+# tag, live smoke included. The artifact is a prebuilt archive per Linux
+# triplet on the GitHub release; the vcpkg port and Conan recipe in
+# clients/c/port download it, and this workflow opens the PR that pins
+# their SHA-512s. Submitting to the vcpkg and Conan indexes is a manual
+# upstream PR (clients/c/README.md).
+on:
+  push:
+    tags: ["clients/c/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-c-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/sdk.yml
+
+  version-matches-tag:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: The manifest version is the tag's
+        run: |
+          want="${GITHUB_REF_NAME#clients/c/v}"
+          got=$(sh scripts/sdk-version.sh c)
+          [ "$got" = "$want" ] || { echo "manifest version $got, tag $want"; exit 1; }
+
+  archive:
+    needs: [verify, version-matches-tag]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { triplet: linux-x86_64, runner: arc-azrtydxb-amd64 }
+          - { triplet: linux-aarch64, runner: arc-azrtydxb-publish }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    container:
+      image: rust:1-bookworm
+    steps:
+      - uses: actions/checkout@v7
+      # Without test-dispatch: the release library carries only the public API.
+      - name: Build and archive
+        env:
+          TRIPLET: ${{ matrix.triplet }}
+        run: |
+          v="${GITHUB_REF_NAME#clients/c/v}"
+          cargo build --release --locked -p novamem-ffi
+          stage="novamem-c-$v-$TRIPLET"
+          mkdir -p "dist/$stage/lib"
+          cp -r clients/c/include "dist/$stage/include"
+          cp target/release/libnovamem_ffi.a target/release/libnovamem_ffi.so "dist/$stage/lib/"
+          tar -C dist -czf "dist/$stage.tar.gz" "$stage"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: archive-${{ matrix.triplet }}
+          path: dist/*.tar.gz
+          retention-days: 1
+
+  release:
+    needs: [archive]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    permissions:
+      contents: write # the GitHub release and the pin branch
+      pull-requests: write # the pin PR
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: archive-*
+          merge-multiple: true
+          path: dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#clients/c/v}"
+          gh release create "$GITHUB_REF_NAME" --title "novamem C/C++ SDK $v" \
+            --notes "Prebuilt C/C++ SDK archives (headers, static and shared library) for Linux." dist/*.tar.gz
+      - name: Open the PR that pins the recipes' hashes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#clients/c/v}"
+          sh clients/c/port/pin.sh "$v" \
+            "$(sha512sum "dist/novamem-c-$v-linux-x86_64.tar.gz" | cut -d' ' -f1)" \
+            "$(sha512sum "dist/novamem-c-$v-linux-aarch64.tar.gz" | cut -d' ' -f1)"
+          branch="chore/sdk-c-pin-$v"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "chore(sdk-c): pin $v archive hashes"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "chore(sdk-c): pin $v archive hashes" \
+            --body "The vcpkg port and Conan recipe for the clients/c/v$v release archives."

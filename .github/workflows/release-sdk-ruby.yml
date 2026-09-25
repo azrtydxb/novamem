@@ -1,0 +1,48 @@
+name: Release SDK (Ruby)
+
+# Publishes clients/ruby when a clients/ruby/vX.Y.Z tag is pushed
+# (ADR 0009: independent semver per SDK). verify runs the whole SDK
+# workflow at the tag, live smoke included; publish needs it and the version check.
+on:
+  push:
+    tags: ["clients/ruby/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-ruby-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/sdk.yml
+
+  version-matches-tag:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: The manifest version is the tag's
+        run: |
+          want="${GITHUB_REF_NAME#clients/ruby/v}"
+          got=$(sh scripts/sdk-version.sh ruby)
+          [ "$got" = "$want" ] || { echo "manifest version $got, tag $want"; exit 1; }
+
+  publish:
+    needs: [verify, version-matches-tag]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    container:
+      image: ruby:3.2-bookworm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and push the novamem gem
+        working-directory: clients/ruby
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          v="${VERSION#clients/ruby/v}"
+          gem build novamem.gemspec
+          gem push "novamem-$v.gem"

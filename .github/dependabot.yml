@@ -40,3 +40,77 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 2
+
+  # The language SDKs (ADR 0009), one entry per manifest.
+  - package-ecosystem: "pip"
+    directory: "/clients/python"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "npm"
+    directory: "/clients/typescript"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "nuget"
+    directory: "/clients/dotnet"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "maven"
+    directory: "/clients/java"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "cargo"
+    directory: "/clients/rust"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "cargo"
+    directory: "/clients/c/novamem-ffi"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "bundler"
+    directory: "/clients/ruby"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "composer"
+    directory: "/clients/php"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "swift"
+    directory: "/clients/swift"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "gomod"
+    directory: "/clients/contract"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "gomod"
+    directory: "/clients/gen"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "gomod"
+    directory: "/clients/smoke"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
