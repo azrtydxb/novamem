@@ -146,3 +146,28 @@ func cident(s string) string {
 	}
 	return id
 }
+
+// swiftKeywords are the words Swift needs backticks around as identifiers.
+var swiftKeywords = func() map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields(`
+		associatedtype class deinit enum extension fileprivate func import init
+		inout internal let open operator private precedencegroup protocol public
+		rethrows static struct subscript typealias var break case catch continue
+		default defer do else fallthrough for guard if in repeat return throw
+		switch where while as false is nil self Self super throws true try
+		Any await`) {
+		m[w] = true
+	}
+	return m
+}()
+
+// swiftident: camelCase, backticked where Swift reserves the word
+// ("import" → "`import`").
+func swiftident(s string) string {
+	id := camel(s)
+	if swiftKeywords[id] {
+		return "`" + id + "`"
+	}
+	return id
+}

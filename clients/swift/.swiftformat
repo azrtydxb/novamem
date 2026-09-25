@@ -1,0 +1,6 @@
+# Written by `go run ./clients/gen`; formatting them would fight the
+# generator. Change the templates in clients/gen/templates instead.
+--exclude Sources/Novamem/Types.swift,Tests/NovamemTests/Dispatch.swift
+--swiftversion 5.9
+--maxwidth 140
+--disable noForceUnwrapInTests,noForceTryInTests
