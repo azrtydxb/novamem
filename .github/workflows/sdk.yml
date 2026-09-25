@@ -1,0 +1,31 @@
+name: SDKs
+on:
+  pull_request:
+    paths: ["clients/**", "api/**", "docs/api/**", ".github/workflows/sdk.yml"]
+  push:
+    branches: [main]
+    paths: ["clients/**", "api/**", "docs/api/**", ".github/workflows/sdk.yml"]
+concurrency:
+  group: sdk-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  # Temporary (plan Task 1): answers whether the ARC runners can run
+  # service containers, which decides how sdk-smoke starts Postgres.
+  # Task 16 deletes this job.
+  probe:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: novamem
+          POSTGRES_PASSWORD: novamem
+          POSTGRES_DB: novamem
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U novamem" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - run: timeout 60 bash -c 'until (exec 3<>/dev/tcp/127.0.0.1/5432) 2>/dev/null; do sleep 2; done' && echo "services ok"
