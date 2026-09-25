@@ -25,6 +25,7 @@ public sealed class NovamemOptions
     public HttpClient? HttpClient { get; init; }
 
     /// <inheritdoc />
+    /// <remarks>A token pasted into the URL by mistake is redacted there too.</remarks>
     public override string ToString() =>
-        $"NovamemOptions {{ BaseUrl = {BaseUrl}, Token = [redacted] }}";
+        $"NovamemOptions {{ BaseUrl = {(string.IsNullOrEmpty(Token) ? BaseUrl : BaseUrl.Replace(Token, "[redacted]", StringComparison.Ordinal))}, Token = [redacted] }}";
 }

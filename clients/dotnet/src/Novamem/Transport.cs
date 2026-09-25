@@ -38,6 +38,13 @@ internal sealed class Transport
                 "novamem: BaseUrl is not an absolute http(s) URL",
                 nameof(o)
             );
+        // Paths are appended to BaseUrl, so a query or fragment on it would
+        // swallow every route ("https://h?x=1" + "/v1/stats").
+        if (u.Query.Length > 0 || u.Fragment.Length > 0)
+            throw new ArgumentException(
+                "novamem: BaseUrl must not have a query or fragment",
+                nameof(o)
+            );
         if (string.IsNullOrWhiteSpace(o.Token))
             throw new ArgumentException("novamem: Token is required", nameof(o));
         _base = baseUrl;
@@ -59,7 +66,7 @@ internal sealed class Transport
 
     internal string BaseUrl => _base;
 
-    string Redact(string s) => s.Replace(_token, "[redacted]", StringComparison.Ordinal);
+    internal string Redact(string s) => s.Replace(_token, "[redacted]", StringComparison.Ordinal);
 
     /// <summary>Performs one request; returns its status and body bytes (null when none is expected).</summary>
     internal async Task<(int Status, byte[]? Body)> CallAsync(

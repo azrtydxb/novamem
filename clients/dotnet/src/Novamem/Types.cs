@@ -3,7 +3,8 @@
 // Wire types for the novamem API, generated from docs/api/openapi.json.
 // Serialization (Json.Options) leaves out unset and empty optional fields,
 // always writes required ones (null when null), and sends timestamps as UTC
-// with a Z. Unknown fields are ignored; a missing required field fails.
+// with a Z. Unknown fields are ignored; a missing required non-nullable
+// field fails, and a required nullable one that is absent reads as null.
 // Enum-typed fields are plain strings, so an unknown value is kept.
 #nullable enable
 #pragma warning disable CS1591

@@ -18,7 +18,7 @@ public abstract class Base
 
     /// <inheritdoc />
     public override string ToString() =>
-        $"{GetType().Name} {{ BaseUrl = {T.BaseUrl}, Token = [redacted] }}";
+        $"{GetType().Name} {{ BaseUrl = {T.Redact(T.BaseUrl)}, Token = [redacted] }}";
 
     private protected static bool Blank(string? s) => string.IsNullOrWhiteSpace(s);
 
