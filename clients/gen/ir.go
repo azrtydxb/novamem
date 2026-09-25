@@ -75,6 +75,52 @@ func (m Model) DatetimeFields() []string {
 	return out
 }
 
+// CKind classifies a field for the C ABI (clients/c), which both the C
+// header and the Rust #[repr(C)] mirror are generated from, so the two
+// cannot disagree about layout:
+//
+//	str     char*                 string, datetime
+//	enum    char*                 the wire value
+//	json    char*                 JSON text: any, maps, arrays of any/maps
+//	i32 i64 f64 bool              a scalar (plus has_<f> when optional)
+//	obj     struct*               NULL when absent
+//	arr_str char**  + <f>_len
+//	arr_obj struct* + <f>_len     an array of structs
+func (m Model) CKind(r TypeRef) string {
+	switch {
+	case r.Prim == "string" || r.Prim == "datetime":
+		return "str"
+	case r.Prim == "int32":
+		return "i32"
+	case r.Prim == "int64":
+		return "i64"
+	case r.Prim == "float":
+		return "f64"
+	case r.Prim == "bool":
+		return "bool"
+	case r.Named != "":
+		if m.isEnum(r.Named) {
+			return "enum"
+		}
+		return "obj"
+	case r.Array != nil && (r.Array.Prim == "string" || r.Array.Prim == "datetime"):
+		return "arr_str"
+	case r.Array != nil && r.Array.Named != "" && !m.isEnum(r.Array.Named):
+		return "arr_obj"
+	default:
+		return "json"
+	}
+}
+
+func (m Model) isEnum(name string) bool {
+	for _, t := range m.Types {
+		if t.Name == name {
+			return t.IsEnum()
+		}
+	}
+	return false
+}
+
 // Model is what every template receives.
 type Model struct {
 	Types   []Type

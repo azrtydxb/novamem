@@ -115,3 +115,29 @@ func rustident(s string) string {
 	}
 	return id
 }
+
+// cKeywords are C and C++ reserved words: a C header has to compile as
+// C++ too, where a struct field named "namespace" is a syntax error.
+var cKeywords = map[string]bool{
+	"auto": true, "bool": true, "break": true, "case": true, "catch": true, "char": true,
+	"class": true, "const": true, "continue": true, "default": true, "delete": true,
+	"do": true, "double": true, "else": true, "enum": true, "explicit": true,
+	"export": true, "extern": true, "false": true, "float": true, "for": true,
+	"friend": true, "goto": true, "if": true, "inline": true, "int": true, "long": true,
+	"mutable": true, "namespace": true, "new": true, "operator": true, "private": true,
+	"protected": true, "public": true, "register": true, "restrict": true, "return": true,
+	"short": true, "signed": true, "sizeof": true, "static": true, "struct": true,
+	"switch": true, "template": true, "this": true, "throw": true, "true": true,
+	"try": true, "typedef": true, "typename": true, "union": true, "unsigned": true,
+	"using": true, "virtual": true, "void": true, "volatile": true, "while": true,
+}
+
+// cident: snake_case, with a trailing underscore on a C or C++ keyword
+// ("namespace" → "namespace_").
+func cident(s string) string {
+	id := snake(s)
+	if cKeywords[id] {
+		return id + "_"
+	}
+	return id
+}

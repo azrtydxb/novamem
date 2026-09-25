@@ -1,0 +1,23 @@
+[package]
+name = "novamem-ffi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+description = "C ABI over the novamem Rust SDK (clients/c)"
+publish = false
+
+[lib]
+# staticlib/cdylib for C and C++; rlib so `cargo test` can link the crate.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Exposes novamem_test_call_by_name for the scenario runners. Release
+# archives are built without it.
+test-dispatch = []
+
+[dependencies]
+novamem = { path = "../../rust" }
+serde = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }

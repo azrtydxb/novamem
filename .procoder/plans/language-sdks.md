@@ -1749,6 +1749,14 @@ Run `cd clients/rust && cargo test`: expect FAIL with `error[E0432]: unresolved 
 
 ## Task 12: C and C++ SDK over the Rust crate
 
+Status: built on `feat/sdk-c`. Where the build differs from the steps below, the build is right:
+
+- No cbindgen. `clients/gen` generates the C header (`c_header.tmpl`), the Rust `#[repr(C)]` mirror (`rust_ffi.tmpl`), the 41 C functions plus the test entry point (`rust_ffi_methods.tmpl`), and the C++ wrapper (`cpp.tmpl`), all from one model. The C and Rust sides therefore can't disagree about layout, and nothing extra runs at build time.
+- `Model.CKind` maps every field to one of ten shapes: `str`/`enum`/`json` are `char*`; `i32`/`i64`/`f64`/`bool` get a `has_` flag when optional; `obj` is a struct pointer; `arr_str` and `arr_obj` are a pointer plus `_len`. Names that are C or C++ keywords take a trailing underscore (`namespace_`, `export_`).
+- `novamem-ffi` is a member of the root Cargo workspace, and the Makefile links `target/release/libnovamem_ffi.a`. The C job runs in a `rust:1-bookworm` container so valgrind installs without sudo.
+- The vcpkg port and Conan recipe move to Task 17: they need a release archive's SHA-512, and placeholder hashes would be wrong.
+- Leaks were checked locally with macOS `leaks` (0 leaks on search, export, list-users and session-recap round trips; disabling `novamem_search_result_free` → "3 leaks for 144 total leaked bytes"). valgrind runs in CI.
+
 Files:
 
 - `clients/gen/templates/rust_ffi.tmpl` (created; out: `c/novamem-ffi/src/types_ffi.rs`):
