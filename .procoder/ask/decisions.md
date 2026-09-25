@@ -638,3 +638,55 @@ Options:
   follows naturally on first login. Largest, and the most faithful to the
   design's intent.
 - Both: keep the nav entries AND add the forced first-login flow.
+
+## Multi-language SDKs — how to proceed?
+
+Adding SDKs (Python, TS, Rust, .NET, Java; Go exists) reverses ADR 0002,
+which made the HTTP API the contract and deprecated the npm TS client.
+
+Options:
+
+- Draft an ADR superseding 0002 (OpenAPI-generated SDKs, thin
+  hand-written layer, CI smoke tests per language) before any code.
+- Skip the ADR and prototype the Python SDK from openapi.yaml first.
+- Keep ADR 0002: no new SDKs, invest in the OpenAPI spec and docs instead.
+
+**Decision (2026-09-25, owner):** draft an ADR superseding 0002 first; no SDK code until it is accepted.
+
+## ADR 0009 — which languages, and when?
+
+Options:
+
+- Accept as drafted (Python, TS, .NET, Java, then Rust; C/C++, Ruby, PHP, Swift rejected).
+- Revise first.
+- Leave proposed.
+
+**Decision (2026-09-25, owner):** all languages, all now, none rejected — Python, TS, .NET, Java, Rust, C/C++, Ruby, PHP, Swift. ADR 0009 accepted with that scope; 0002 superseded.
+
+## Language SDKs — spec decisions (2026-09-25 interview)
+
+Options were put to the owner one at a time; answers recorded below.
+
+- Surface: full Go parity (Client + Management + Admin, 41 methods).
+- Dependencies: stdlib where it exists; Rust uses reqwest; Java uses Jackson.
+- Sync/async: idiomatic per language.
+- Versioning: independent semver per SDK.
+- Names: `novamem` everywhere; npm reuses `@azrtydxb/novamem` as 2.0.0.
+- Floors: current LTS (Python 3.10, Node 20, .NET 8, Java 17, Rust 1.80, Ruby 3.2, PHP 8.2, Swift 5.9, C11/C++17).
+- Live tests: job-local server on the ARC runners (kw / novanas).
+- Swift CI: Linux only.
+- Type generation: one in-repo Go generator.
+- Missing response schemas: fill api/openapi.yaml first.
+- Swift/PHP distribution: split read-only mirror repos (azrtydxb/novamem-swift, azrtydxb/novamem-php).
+
+**Decision (2026-09-25, owner):** as listed above; encoded in .procoder/specs/language-sdks.md.
+
+## Go client types — generated or hand-written?
+
+Options:
+
+- Keep hand-written (the reference; held by the scenario suite and routes.json).
+- Generate and keep the old names as aliases.
+- Generate with a breaking clients/go/v2.
+
+**Decision (2026-09-25, owner):** keep hand-written. The spec's out-of-scope line stands.
