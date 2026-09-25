@@ -27,6 +27,9 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:7779", "listen address")
 	dim := flag.Int("dim", 384, "vector dimension (the server's NOVAMEM_EMBEDDINGS_DIM)")
 	flag.Parse()
+	if *dim <= 0 {
+		log.Fatalf("embed: -dim must be positive, got %d", *dim)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -54,7 +57,8 @@ func main() {
 
 // Embed hashes each lower-cased word of text into one of dim buckets and
 // returns the normalised vector. Text with no words embeds as a unit vector
-// on bucket 0, so no vector is ever all zeros.
+// on bucket 0, so no vector is ever all zeros. dim must be positive (main
+// checks the flag).
 func Embed(text string, dim int) []float64 {
 	v := make([]float64, dim)
 	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
