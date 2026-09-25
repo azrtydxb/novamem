@@ -65,50 +65,19 @@ Every task inherits all of these. They are copied from the spec.
 
 ## Task 1: Probe ARC service-container support
 
+Status: done 2026-09-25. Draft PR #306 ran the probe job on `arc-azrtydxb-amd64` (run 36098964791). The runner pulled `pgvector/pgvector:pg16`, the container reported `healthy`, and the step printed `services ok`. **Result: service containers work on the ARC runners.** PR #306 was closed unmerged, and its `probe` job never reaches `main`.
+
 Files:
 
-- `.github/workflows/sdk.yml` (created; this task adds only the `probe` job, which Task 16 later deletes)
+- none on `main`. The probe lived only on branch `feat/sdk-probe`.
 
 Interfaces:
 
-- Produces the fact `SERVICES_OK` (true or false), recorded as a comment on the first line of `.github/workflows/sdk.yml` (`# probe: services ok` or `# probe: services unavailable`). Task 16 reads it to choose how Postgres is started.
+- Produces the fact `SERVICES_OK = true`, recorded here. Task 16 uses a `services.postgres` block and skips the apt-installed Postgres fallback.
 
-- [ ] Write the probe job:
-
-```yaml
-name: SDKs
-on:
-  pull_request:
-    paths: ["clients/**", "api/**", "docs/api/**", ".github/workflows/sdk.yml"]
-  push:
-    branches: [main]
-    paths: ["clients/**", "api/**", "docs/api/**", ".github/workflows/sdk.yml"]
-concurrency:
-  group: sdk-${{ github.ref }}
-  cancel-in-progress: true
-permissions:
-  contents: read
-jobs:
-  probe:
-    runs-on: arc-azrtydxb-amd64
-    timeout-minutes: 10
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: novamem
-          POSTGRES_PASSWORD: novamem
-          POSTGRES_DB: novamem
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U novamem" --health-interval 5s --health-timeout 5s --health-retries 20
-    steps:
-      - run: timeout 60 bash -c 'until (exec 3<>/dev/tcp/127.0.0.1/5432) 2>/dev/null; do sleep 2; done' && echo "services ok"
-```
-
-- [ ] Run `actionlint .github/workflows/sdk.yml`: expect PASS (no output).
-- [ ] Push the branch `feat/sdk-probe` and open a draft PR. Expect one of two results. The job logs `services ok`: services work. Or the job fails with `Container operations are only supported on Linux runners` or `docker: not found` (from the "Initialize containers" step): services don't work.
-- [ ] Add the outcome as line 1 of `.github/workflows/sdk.yml`, either `# probe: services ok` or `# probe: services unavailable`. Commit `ci(sdk): probe ARC service-container support` and close the draft PR, keeping the branch.
+- [x] Wrote the probe job (a `services.postgres` block with image `pgvector/pgvector:pg16`, plus a `/dev/tcp` wait step echoing `services ok`) and ran `actionlint`: PASS.
+- [x] Pushed `feat/sdk-probe` and opened draft PR #306: the job succeeded and logged `services ok`.
+- [x] Recorded the outcome in this task and in the todo's evidence, and closed PR #306 unmerged.
 
 ## Task 2: Response schemas for the nine wrapped routes
 
@@ -2331,7 +2300,7 @@ Files:
 - `clients/smoke/schema.go` (created: a minimal OpenAPI-subset validator)
 - `clients/smoke/schema_test.go` (created: `TestResponsesMatchSchemas`, plus the validator's own unit test)
 - `clients/smoke/run.sh` (created: runs each SDK's smoke `up`, or `down` with `-down`)
-- `.github/workflows/sdk.yml` (modified: delete the `probe` job and its line-1 comment; add the `sdk-smoke` job)
+- `.github/workflows/sdk.yml` (modified: add the `sdk-smoke` job)
 
 Interfaces:
 
@@ -2487,7 +2456,7 @@ Run `cd clients/smoke && go test ./...`: expect FAIL with `undefined: Validate`.
 - [ ] Implement `cmd/mint/main.go` and `run.sh`.
 - [ ] Add the `sdk-smoke` job to `.github/workflows/sdk.yml`:
   - `runs-on: arc-azrtydxb-amd64`, `timeout-minutes: 40`, `needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]`.
-  - If Task 1 recorded `services ok`, give it a `services.postgres` block identical to the probe's. If it recorded `services unavailable`, replace that block with a first step that runs `sudo apt-get install -y postgresql-16 postgresql-16-pgvector && sudo pg_ctlcluster 16 main start && sudo -u postgres psql -c "CREATE USER novamem PASSWORD 'novamem' SUPERUSER" -c "CREATE DATABASE novamem OWNER novamem"`.
+  - Give it a `services.postgres` block with image `pgvector/pgvector:pg16`, the environment variables `POSTGRES_USER=novamem`, `POSTGRES_PASSWORD=novamem` and `POSTGRES_DB=novamem`, ports `5432:5432`, and options `--health-cmd "pg_isready -U novamem" --health-interval 5s --health-timeout 5s --health-retries 20` (Task 1 proved this works on the ARC runners).
   - Then these steps:
     1. `actions/checkout@v7`; `actions/setup-go@v6`; and the setup actions for Python 3.13, Node 24, .NET 8, Java 21, Rust stable, Ruby 3.2, PHP 8.4 and Swift 6.2 (same actions and versions as Tasks 7–15).
     2. Build the server: `cd go && go build -o "$RUNNER_TEMP/novamem-server" ./cmd/novamem-server`.
