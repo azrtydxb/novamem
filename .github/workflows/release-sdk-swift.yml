@@ -1,0 +1,57 @@
+name: Release SDK (Swift)
+
+# Publishes clients/swift when a clients/swift/vX.Y.Z tag is pushed
+# (ADR 0009: independent semver per SDK). verify runs the whole SDK
+# workflow at the tag, live smoke included; publish needs it and the version check.
+on:
+  push:
+    tags: ["clients/swift/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-swift-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/sdk.yml
+
+  version-matches-tag:
+    # Swift has no manifest version: the mirror's tag is the version, so
+    # this only insists the tag is X.Y.Z.
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    steps:
+      - name: The tag is X.Y.Z
+        run: |
+          v="${GITHUB_REF_NAME#clients/swift/v}"
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag version $v is not X.Y.Z"; exit 1; }
+
+  publish:
+    needs: [verify, version-matches-tag]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 20
+    container:
+      image: swift:6.3-noble
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # subtree split walks the whole history
+      # SwiftPM reads Package.swift from a repository's root, so clients/swift
+      # is split into the read-only mirror azrtydxb/novamem-swift (ADR 0010),
+      # tagged X.Y.Z with no "v", as SwiftPM expects.
+      - name: Push clients/swift to the mirror and tag it
+        env:
+          MIRROR_TOKEN: ${{ secrets.SDK_MIRROR_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          swift package describe --package-path clients/swift > /dev/null
+          v="${VERSION#clients/swift/v}"
+          remote="https://x-access-token:${MIRROR_TOKEN}@github.com/azrtydxb/novamem-swift"
+          git subtree split --prefix clients/swift -b swift-split
+          git push "$remote" swift-split:main
+          git tag "$v" swift-split
+          git push "$remote" "$v"

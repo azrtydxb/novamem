@@ -12,7 +12,9 @@ on:
         "api/**",
         "docs/api/**",
         "go.work",
+        "scripts/check-sdk-tag-triggers.sh",
         ".github/workflows/sdk.yml",
+        ".github/workflows/release-sdk-*.yml",
       ]
   push:
     branches: [main]
@@ -23,8 +25,13 @@ on:
         "api/**",
         "docs/api/**",
         "go.work",
+        "scripts/check-sdk-tag-triggers.sh",
         ".github/workflows/sdk.yml",
+        ".github/workflows/release-sdk-*.yml",
       ]
+  # Each release-sdk-<lang>.yml runs this whole workflow as its verify job:
+  # nothing is published from a tag whose suite (and live smoke) is red.
+  workflow_call:
 
 concurrency:
   group: sdk-${{ github.ref }}
@@ -34,6 +41,17 @@ permissions:
   contents: read
 
 jobs:
+  # Only clients/<lang>/v* tags may fire a release-sdk workflow, and no SDK
+  # tag may fire the server's tag-triggered workflows.
+  triggers:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    container:
+      image: python:3.13-bookworm
+    steps:
+      - uses: actions/checkout@v7
+      - run: pip install -q pyyaml==6.0.2 && sh scripts/check-sdk-tag-triggers.sh
+
   # The generator's own tests. Every SDK's wire types are generated from
   # docs/api/openapi.json and clients/contract/routes.json and checked in.
   generated:

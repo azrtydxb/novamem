@@ -1,0 +1,58 @@
+name: Release SDK (TypeScript)
+
+# Publishes clients/typescript when a clients/typescript/vX.Y.Z tag is pushed
+# (ADR 0009: independent semver per SDK). verify runs the whole SDK
+# workflow at the tag, live smoke included; publish needs it and the version check.
+on:
+  push:
+    tags: ["clients/typescript/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-typescript-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/sdk.yml
+
+  version-matches-tag:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: The manifest version is the tag's
+        run: |
+          want="${GITHUB_REF_NAME#clients/typescript/v}"
+          got=$(sh scripts/sdk-version.sh typescript)
+          [ "$got" = "$want" ] || { echo "manifest version $got, tag $want"; exit 1; }
+
+  publish:
+    needs: [verify, version-matches-tag]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Publish @azrtydxb/novamem
+        working-directory: clients/typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm ci && npm run build && npm publish --provenance --access public
+      # 2.x is the SDK; 1.x was the MCP shim, deprecated when 2.0.0 took the
+      # name (ADR 0009). A release must not undo either state.
+      - name: Deprecation state
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          v="${VERSION#clients/typescript/v}"
+          test -z "$(npm view "@azrtydxb/novamem@$v" deprecated)"
+          test -n "$(npm view @azrtydxb/novamem@1.1.3 deprecated)"

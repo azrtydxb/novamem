@@ -2571,7 +2571,7 @@ Files:
 Interfaces:
 
 - Each workflow triggers on `on: push: tags: ["clients/<lang>/v*"]` only, uses `permissions: contents: write, id-token: write` where the registry supports trusted publishing, and runs on `arc-azrtydxb-amd64`. Its jobs are:
-  - `verify`: identical steps to that SDK's `sdk.yml` job.
+  - `verify`: `uses: ./.github/workflows/sdk.yml` — the whole SDK workflow (now also `on: workflow_call`), live smoke included, rather than a copy of one job's steps that could drift from it.
   - `version-matches-tag`: fails unless the manifest version equals the tag's `X.Y.Z`. The manifest version comes from `pyproject.toml`, `package.json`, the `.csproj`, `pom.xml`, `Cargo.toml` or `novamem.gemspec`. PHP and Swift have no manifest version, so this job is skipped for them.
   - `publish`, with `needs: [verify, version-matches-tag]`.
 - Publish commands and secrets:
@@ -2580,15 +2580,14 @@ Interfaces:
   - dotnet: `dotnet pack -c Release clients/dotnet/src/Novamem -o out && dotnet nuget push out/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json`.
   - java: `mvn -B -P release deploy`, with `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY` and `MAVEN_GPG_PASSPHRASE` secrets through `actions/setup-java@v5`'s `server-id: central` and `gpg-private-key` inputs.
   - rust: `cargo publish --locked --manifest-path clients/rust/Cargo.toml`, with `CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.
-  - c: a matrix job builds `cargo build --release --manifest-path clients/c/novamem-ffi/Cargo.toml` on `arc-azrtydxb-amd64` (linux-x86_64) and `arc-azrtydxb` (linux-aarch64), then archives `include/` plus `libnovamem_ffi.a` and `libnovamem_ffi.so` as `novamem-c-${VERSION}-<triplet>.tar.gz`. Only these two Linux triplets exist, matching the recipes from Task 12. It then runs `gh release create "$GITHUB_REF_NAME" --title "novamem C/C++ SDK $VERSION" <archives>` and rewrites the SHA-512s in `clients/c/port/vcpkg/portfile.cmake` and `clients/c/port/conan/conanfile.py`. It opens a PR with those two files (`gh pr create --title "chore(sdk-c): pin ${VERSION} archive hashes"`), because submitting to the vcpkg and Conan central indexes is a manual upstream PR, documented in `clients/c/README.md`.
+  - c: a matrix job builds `cargo build --release --manifest-path clients/c/novamem-ffi/Cargo.toml` on `arc-azrtydxb-amd64` (linux-x86_64) and `arc-azrtydxb-publish` (linux-aarch64, the arm64 runner ci.yml's image build uses), then archives `include/` plus `libnovamem_ffi.a` and `libnovamem_ffi.so` as `novamem-c-${VERSION}-<triplet>.tar.gz`. Only these two Linux triplets exist, matching the recipes from Task 12. It then runs `gh release create "$GITHUB_REF_NAME" --title "novamem C/C++ SDK $VERSION" <archives>` and rewrites the SHA-512s in `clients/c/port/vcpkg/portfile.cmake` and `clients/c/port/conan/conanfile.py`. It opens a PR with those two files (`gh pr create --title "chore(sdk-c): pin ${VERSION} archive hashes"`), because submitting to the vcpkg and Conan central indexes is a manual upstream PR, documented in `clients/c/README.md`.
   - ruby: `gem build clients/ruby/novamem.gemspec && gem push novamem-${VERSION}.gem`, with `GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}`.
   - php: the job runs `git subtree split --prefix clients/php -b php-split`, then `git push "https://x-access-token:${{ secrets.SDK_MIRROR_TOKEN }}@github.com/azrtydxb/novamem-php" php-split:main`, then tags the mirror `v${VERSION}` and pushes the tag. Packagist has the mirror registered with its GitHub hook, so it picks up the tag. `SDK_MIRROR_TOKEN` is a fine-grained PAT with `contents: write` on the two mirror repos only.
   - swift: the job runs `swift package describe --package-path clients/swift`, then `git subtree split --prefix clients/swift -b swift-split`, then pushes to `azrtydxb/novamem-swift` `main` with `SDK_MIRROR_TOKEN`, tagging the mirror `${VERSION}` (no `v`, as SwiftPM expects). Consumers use `.package(url: "https://github.com/azrtydxb/novamem-swift", from: "0.1.0")`.
 - `scripts/check-sdk-tag-triggers.sh` fails:
 
   - if any `release-sdk-*.yml` has a tag pattern other than `clients/<its lang>/v*`;
-  - if `release-binaries.yml`'s `tags` pattern `v*` would match `clients/python/v0.1.0` (it does not; glob `v*` is anchored at the start);
-  - or if `ci.yml` triggers on `tags`.
+  - or if a `tags` pattern of `release-binaries.yml` or `ci.yml` would match any `clients/<lang>/v0.1.0` (neither does: glob `v*` is anchored at the start). `ci.yml` triggers on `v*` on purpose — server releases publish semver image tags — so the check is that SDK tags never match, not that ci.yml has no tag trigger.
 
 - [ ] Write the failing check `scripts/check-sdk-tag-triggers.sh`:
 
