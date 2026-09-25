@@ -4,6 +4,9 @@
 // Field names are the wire names. Request timestamps accept a Date or an
 // ISO string (a Date is sent as UTC with a Z by JSON.stringify).
 
+/** Wire names of timestamp fields: the client sends these as UTC with a Z. */
+export const DATETIME_FIELDS: readonly string[] = ["asOf", "expiresAt", "since"];
+
 
 export interface ActiveProject {
   active: ActiveProjectActive | null;

@@ -8,18 +8,28 @@ import {
   type CallOptions,
   type ClientOptions,
 } from "./transport.js";
+import { DATETIME_FIELDS } from "./types.js";
 import type * as t from "./types.js";
 
 const seg = encodeURIComponent;
 const blank = (s: string | undefined | null) => !(s ?? "").trim();
 
 /** Drops unset and empty-string fields: the server's schemas are strict,
- * and an empty optional means "not given", as it does in every SDK. */
+ * and an empty optional means "not given", as it does in every SDK.
+ * Timestamps, given as a Date or a string, are sent as UTC with a Z; a
+ * string that does not parse is sent unchanged, and the server answers it. */
 function clean<T extends object>(o: T | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(o ?? {}))
-    if (v !== undefined && v !== null && v !== "") out[k] = v;
+  for (const [k, v] of Object.entries(o ?? {})) {
+    if (v === undefined || v === null || v === "") continue;
+    out[k] = DATETIME_FIELDS.includes(k) ? utc(v) : v;
+  }
   return out;
+}
+
+function utc(v: unknown): unknown {
+  const d = v instanceof Date ? v : typeof v === "string" ? new Date(v) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toISOString() : v;
 }
 
 /** A degraded answer with no results is an outage wearing the costume of an
@@ -485,7 +495,11 @@ export class Management extends Base {
     o: CallOptions = {}
   ): Promise<t.ChangeFeed> {
     return this.t.call("changes", "GET", "/v1/me/changes", {
-      query: { since, afterSeq, limit },
+      query: {
+        since: since === undefined ? undefined : String(utc(since)),
+        afterSeq,
+        limit,
+      },
       signal: o.signal,
     });
   }
