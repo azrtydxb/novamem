@@ -1,0 +1,17 @@
+# Static analysis of the hand-written SDK (the commit gate and CI use it).
+parameters:
+    level: 6
+    paths:
+        - src
+        - smoke.php
+    # Symbols come from the sources themselves, so analysis needs no
+    # `composer install`.
+    scanDirectories:
+        - src
+    excludePaths:
+        analyse:
+            # Written by `go run ./clients/gen`; reviewed through its template.
+            - src/Types.php
+            # PHPUnit tests need vendor/; they run, they are not analysed here.
+            - tests
+            - vendor
