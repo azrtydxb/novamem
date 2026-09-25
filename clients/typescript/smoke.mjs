@@ -6,47 +6,63 @@
 // down: the server has been stopped; search must report unavailable, not an
 //       empty result. Every failure prints "typescript <step>: <detail>" and exits 1.
 import { randomUUID } from "node:crypto";
-import { Client, NovamemError, isUnavailable } from "./dist/index.js";
+import { Client, isUnavailable } from "./dist/index.js";
 
 const fail = (step, detail) => {
   console.log(`typescript ${step}: ${detail}`);
   process.exit(1);
 };
 
-const mode = process.argv[2] ?? "up";
-const c = new Client({
-  baseUrl: process.env.NOVAMEM_SMOKE_URL,
-  token: process.env.NOVAMEM_SMOKE_TOKEN,
-});
+/** Runs one step; any error becomes "typescript <name>: <detail>". */
+const step = async (name, call) => {
+  try {
+    return await call();
+  } catch (e) {
+    fail(name, e instanceof Error ? e.message : String(e));
+  }
+};
 
-if (mode === "down") {
+async function down(c) {
   try {
     await c.search({ query: "anything" });
-    fail("down", "search succeeded against a stopped server");
   } catch (e) {
-    if (!isUnavailable(e)) fail("down", `want unavailable, got ${e}`);
+    if (isUnavailable(e)) {
+      console.log("PASS typescript down");
+      return;
+    }
+    fail("down", `want unavailable, got ${e}`);
   }
-  console.log("PASS typescript down");
-} else {
+  fail("down", "search succeeded against a stopped server");
+}
+
+async function up(c) {
   const marker = randomUUID().replaceAll("-", "");
-  let cap;
-  try {
-    cap = await c.capture({
+  const query = { query: marker, namespace: "sdk-smoke" };
+  const cap = await step("capture", () =>
+    c.capture({
       content: `sdk-smoke typescript ${marker}`,
       namespace: "sdk-smoke",
       force: true,
-    });
-  } catch (e) {
-    fail("capture", e instanceof NovamemError ? e.message : String(e));
-  }
+    })
+  );
   if (!cap.id) fail("capture", `not saved: ${JSON.stringify(cap)}`);
-  const hits = await c.search({ query: marker, namespace: "sdk-smoke" });
+  const hits = await step("search", () => c.search(query));
   if (!hits.results.some((r) => r.id === cap.id))
     fail("search", `captured ${cap.id} not found`);
-  const gone = await c.forget({ id: cap.id });
+  const gone = await step("forget", () => c.forget({ id: cap.id }));
   if (!gone.deleted) fail("forget", JSON.stringify(gone));
-  const after = await c.search({ query: marker, namespace: "sdk-smoke" });
+  const after = await step("search-after-forget", () => c.search(query));
   if (after.results.some((r) => r.id === cap.id))
     fail("search-after-forget", `${cap.id} still returned`);
   console.log("PASS typescript up");
 }
+
+const c = await step(
+  "connect",
+  async () =>
+    new Client({
+      baseUrl: process.env.NOVAMEM_SMOKE_URL,
+      token: process.env.NOVAMEM_SMOKE_TOKEN,
+    })
+);
+await (process.argv[2] === "down" ? down(c) : up(c));

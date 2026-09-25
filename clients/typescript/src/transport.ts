@@ -112,12 +112,11 @@ export class Transport {
     let status = 0;
     let raw: Uint8Array;
     try {
-      const res = await this.#fetch(url, {
+      const res = await this.#follow(url, {
         method,
         headers,
         body,
         signal: both.signal,
-        redirect: "follow",
       });
       status = res.status;
       raw = await readCapped(res);
@@ -178,6 +177,44 @@ export class Transport {
     }
   }
 
+  /** Follows up to 5 redirects itself, so the bearer never reaches another
+   * origin: a cross-origin hop drops Authorization, as Go's http.Client
+   * does. 303, and 301/302 after a POST, continue as a bodyless GET. */
+  async #follow(
+    url: string,
+    init: RequestInit & { headers: Record<string, string> }
+  ): Promise<Response> {
+    let current = url;
+    let req = init;
+    for (let hops = 0; ; hops++) {
+      const res = await this.#fetch(current, { ...req, redirect: "manual" });
+      const location = res.headers.get("location");
+      if (
+        res.status < 300 ||
+        res.status >= 400 ||
+        res.status === 304 ||
+        !location ||
+        hops === 5
+      )
+        return res;
+      await res.body?.cancel();
+      const next = new URL(location, current);
+      const headers = { ...req.headers };
+      if (next.origin !== new URL(current).origin) delete headers.Authorization;
+      const toGet =
+        res.status === 303 ||
+        ((res.status === 301 || res.status === 302) && req.method === "POST");
+      if (toGet) delete headers["Content-Type"];
+      req = {
+        ...req,
+        headers,
+        method: toGet ? "GET" : req.method,
+        body: toGet ? undefined : req.body,
+      };
+      current = next.toString();
+    }
+  }
+
   #httpError(op: string, status: number, text: string): NovamemError {
     let message = "";
     let code = "";
@@ -197,6 +234,7 @@ export class Transport {
     // The server's message is quoted verbatim; a server echoing the token
     // back would otherwise launder it into the caller's logs.
     message = this.#redact(message);
+    code = this.#redact(code);
     const unavailable = status >= 500 || status === 429;
     return new NovamemError({
       op,
