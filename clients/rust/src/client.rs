@@ -6,7 +6,6 @@ use std::time::{Duration, SystemTime};
 
 use reqwest::Method;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use serde_json::{json, Map, Value};
 
 use crate::transport::{Call, Resp, Transport};
@@ -27,12 +26,6 @@ fn seg(s: &str) -> String {
 
 fn blank(s: &str) -> bool {
     s.trim().is_empty()
-}
-
-/// A request as JSON. Fails rather than sending `null` when a value cannot
-/// be encoded (a NaN or infinite float, for one).
-fn body<T: Serialize>(op: &str, v: &T) -> Result<Value, Error> {
-    serde_json::to_value(v).map_err(|e| Error::new(op, format!("encode request: {e}")))
 }
 
 /// An object of the given fields, leaving out unset and empty ones.
@@ -119,9 +112,7 @@ impl Client {
         }
         let v = self
             .t
-            .call(
-                Call::new("capture", Method::POST, "/v1/capture").body(body("capture", &request)?),
-            )
+            .call(Call::new("capture", Method::POST, "/v1/capture").json(&request)?)
             .await?;
         decode("capture", v)
     }
@@ -132,7 +123,7 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("search", Method::POST, "/v1/search").body(body("search", &request)?))
+            .call(Call::new("search", Method::POST, "/v1/search").json(&request)?)
             .await?;
         degraded_empty("search", &v)?;
         decode("search", v)
@@ -141,7 +132,7 @@ impl Client {
     pub async fn recent(&self, request: t::RecentRequest) -> Result<t::EntryList, Error> {
         let v = self
             .t
-            .call(Call::new("recent", Method::POST, "/v1/recent").body(body("recent", &request)?))
+            .call(Call::new("recent", Method::POST, "/v1/recent").json(&request)?)
             .await?;
         degraded_empty("recent", &v)?;
         decode("recent", v)
@@ -163,10 +154,7 @@ impl Client {
         }
         let v = self
             .t
-            .call(
-                Call::new("neighbors", Method::POST, "/v1/neighbors")
-                    .body(body("neighbors", &request)?),
-            )
+            .call(Call::new("neighbors", Method::POST, "/v1/neighbors").json(&request)?)
             .await?;
         degraded_empty("neighbors", &v)?;
         decode("neighbors", v)
@@ -184,7 +172,7 @@ impl Client {
         let path = format!("/v1/memories/{}", seg(id.trim()));
         let mut v = self
             .t
-            .call(Call::new("update", Method::PUT, path).body(body("update", &request)?))
+            .call(Call::new("update", Method::PUT, path).json(&request)?)
             .await?;
         if v.body
             .get("id")
@@ -206,7 +194,7 @@ impl Client {
         }
         match self
             .t
-            .call(Call::new("forget", Method::POST, "/v1/forget").body(body("forget", &request)?))
+            .call(Call::new("forget", Method::POST, "/v1/forget").json(&request)?)
             .await
         {
             Ok(v) => decode("forget", v),
@@ -225,10 +213,7 @@ impl Client {
         }
         let v = self
             .t
-            .call(
-                Call::new("remember", Method::POST, "/v1/remember")
-                    .body(body("remember", &request)?),
-            )
+            .call(Call::new("remember", Method::POST, "/v1/remember").json(&request)?)
             .await?;
         decode("remember", v)
     }
@@ -239,9 +224,7 @@ impl Client {
         }
         let v = self
             .t
-            .call(
-                Call::new("context", Method::POST, "/v1/context").body(body("context", &request)?),
-            )
+            .call(Call::new("context", Method::POST, "/v1/context").json(&request)?)
             .await?;
         decode("context", v)
     }
@@ -252,10 +235,7 @@ impl Client {
     ) -> Result<t::SessionRecapResult, Error> {
         let v = self
             .t
-            .call(
-                Call::new("session-recap", Method::POST, "/v1/session-recap")
-                    .body(body("session-recap", &request)?),
-            )
+            .call(Call::new("session-recap", Method::POST, "/v1/session-recap").json(&request)?)
             .await?;
         decode("session-recap", v)
     }
@@ -299,10 +279,7 @@ impl Management {
     pub async fn mint_token(&self, request: t::MintTokenRequest) -> Result<t::MintedToken, Error> {
         let v = self
             .t
-            .call(
-                Call::new("mint-token", Method::POST, "/v1/me/tokens")
-                    .body(body("context-prefix", &request)?),
-            )
+            .call(Call::new("mint-token", Method::POST, "/v1/me/tokens").json(&request)?)
             .await?;
         decode("mint-token", v)
     }
@@ -588,10 +565,7 @@ impl Admin {
         }
         let v = self
             .t
-            .call(
-                Call::new("provision-user", Method::POST, "/v1/admin/users")
-                    .body(body("list-tokens", &request)?),
-            )
+            .call(Call::new("provision-user", Method::POST, "/v1/admin/users").json(&request)?)
             .await?;
         decode("provision-user", v)
     }
@@ -667,6 +641,7 @@ impl Admin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Serialize;
 
     struct Unencodable;
 
@@ -676,13 +651,17 @@ mod tests {
         }
     }
 
-    // proved by: mapping a serialization error to Value::Null in body()
+    // proved by: mapping a serialization error to Value::Null in Call::json
     // fails this test. (serde_json writes NaN as null rather than failing,
-    // so a failing Serialize is the way to reach this path.)
+    // so a failing Serialize is the way to reach this path.) The op comes
+    // from the call itself, so it cannot disagree with the call's name.
     #[test]
     fn an_unencodable_request_fails_locally() {
-        let e = body("capture", &Unencodable).unwrap_err();
-        assert_eq!(e.op(), "capture");
+        let e = Call::new("mint-token", Method::POST, "/v1/me/tokens")
+            .json(&Unencodable)
+            .err()
+            .expect("an unencodable request must fail");
+        assert_eq!(e.op(), "mint-token");
         assert!(
             e.to_string().contains("encode request: cannot encode"),
             "{e}"
