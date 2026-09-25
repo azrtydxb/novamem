@@ -4,6 +4,7 @@ use (
 	./clients/contract
 	./clients/gen
 	./clients/go
+	./clients/smoke
 	./conformance
 	./go
 )
