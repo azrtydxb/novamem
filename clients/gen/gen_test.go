@@ -146,3 +146,37 @@ func TestRealSpecBuilds(t *testing.T) {
 		}
 	}
 }
+
+// proved by: dropping the fmt: branch in render fails this test (the
+// output keeps its lower case).
+func TestFormatterRunsOnOutput(t *testing.T) {
+	dir := t.TempDir()
+	tmpl := filepath.Join(dir, "tmpl")
+	_ = os.MkdirAll(tmpl, 0o755)
+	// A stand-in google-java-format on PATH that upper-cases its input.
+	bin := filepath.Join(dir, "bin")
+	_ = os.MkdirAll(bin, 0o755)
+	_ = os.WriteFile(filepath.Join(bin, "google-java-format"),
+		[]byte("#!/bin/sh\n[ \"$1\" = - ] || exit 2\ntr a-z A-Z\n"), 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	src := "{{/* lang: x out: x/types.txt fmt: google-java-format */}}{{range .Types}}{{.Name}}\n{{end}}"
+	_ = os.WriteFile(filepath.Join(tmpl, "x.tmpl"), []byte(src), 0o644)
+	out := filepath.Join(dir, "out")
+	opts := Options{Spec: "testdata/mini.json", Routes: "testdata/routes.json", Templates: tmpl, Out: out}
+	if err := Run(opts); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(out, "x/types.txt"))
+	if !strings.Contains(string(got), "SEARCHREQUEST\n") {
+		t.Fatalf("generated = %q, want the formatter's output", got)
+	}
+	if stale, err := Check(opts); err != nil || len(stale) != 0 {
+		t.Fatalf("formatted output reported stale: %v %v", stale, err)
+	}
+	// A formatter that is not on the list is refused, not executed.
+	src = strings.Replace(src, "fmt: google-java-format", "fmt: rm", 1)
+	_ = os.WriteFile(filepath.Join(tmpl, "x.tmpl"), []byte(src), 0o644)
+	if _, err := Check(opts); err == nil || !strings.Contains(err.Error(), `unknown formatter "rm"`) {
+		t.Fatalf("an unlisted formatter must be refused, got %v", err)
+	}
+}
