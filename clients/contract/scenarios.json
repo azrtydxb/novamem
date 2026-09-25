@@ -1,0 +1,2342 @@
+{
+  "version": 1,
+  "token": "nm_scenario_TOKEN_must_never_leak",
+  "timeoutMs": 300,
+  "scenarios": [
+    {
+      "id": "search-refused",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "refused"
+      },
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true
+      }
+    },
+    {
+      "id": "search-timeout",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "timeout"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true
+      }
+    },
+    {
+      "id": "search-reset",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "reset"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true
+      }
+    },
+    {
+      "id": "search-500",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 500,
+        "json": {
+          "error": "boom"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true,
+        "statusCode": 500
+      }
+    },
+    {
+      "id": "search-503",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 503,
+        "raw": "upstream down"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true,
+        "statusCode": 503
+      }
+    },
+    {
+      "id": "search-429",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 429,
+        "json": {
+          "error": "slow down",
+          "code": "rate_limited"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true,
+        "statusCode": 429,
+        "code": "rate_limited"
+      }
+    },
+    {
+      "id": "search-404",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 404,
+        "json": {
+          "error": "not found"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "not_found",
+        "retryable": false,
+        "statusCode": 404
+      }
+    },
+    {
+      "id": "search-400",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 400,
+        "json": {
+          "error": "bad",
+          "code": "invalid_body"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 400,
+        "code": "invalid_body"
+      }
+    },
+    {
+      "id": "search-401",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 401,
+        "json": {
+          "error": "unauthorized"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 401
+      }
+    },
+    {
+      "id": "search-403",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 403,
+        "json": {
+          "error": "forbidden"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 403
+      }
+    },
+    {
+      "id": "search-empty-body",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "raw": ""
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": false
+      }
+    },
+    {
+      "id": "search-html-body",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "raw": "<html>bad gateway</html>"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": false
+      }
+    },
+    {
+      "id": "search-oversize",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "oversize"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": false
+      }
+    },
+    {
+      "id": "search-cancel",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        },
+        "cancelAfterMs": 50
+      },
+      "respond": {
+        "fault": "timeout"
+      },
+      "expect": {
+        "outcome": "canceled"
+      },
+      "requires": ["cancel"]
+    },
+    {
+      "id": "capture-refused",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "refused"
+      },
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true
+      }
+    },
+    {
+      "id": "capture-timeout",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "timeout"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true
+      }
+    },
+    {
+      "id": "capture-reset",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "reset"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true
+      }
+    },
+    {
+      "id": "capture-500",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 500,
+        "json": {
+          "error": "boom"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true,
+        "statusCode": 500
+      }
+    },
+    {
+      "id": "capture-503",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 503,
+        "raw": "upstream down"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true,
+        "statusCode": 503
+      }
+    },
+    {
+      "id": "capture-429",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 429,
+        "json": {
+          "error": "slow down",
+          "code": "rate_limited"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true,
+        "statusCode": 429,
+        "code": "rate_limited"
+      }
+    },
+    {
+      "id": "capture-404",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 404,
+        "json": {
+          "error": "not found"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "not_found",
+        "retryable": false,
+        "statusCode": 404
+      }
+    },
+    {
+      "id": "capture-400",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 400,
+        "json": {
+          "error": "bad",
+          "code": "invalid_body"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 400,
+        "code": "invalid_body"
+      }
+    },
+    {
+      "id": "capture-401",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 401,
+        "json": {
+          "error": "unauthorized"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 401
+      }
+    },
+    {
+      "id": "capture-403",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 403,
+        "json": {
+          "error": "forbidden"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 403
+      }
+    },
+    {
+      "id": "capture-empty-body",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "raw": ""
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": false
+      }
+    },
+    {
+      "id": "capture-html-body",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "raw": "<html>bad gateway</html>"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": false
+      }
+    },
+    {
+      "id": "capture-oversize",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        }
+      },
+      "respond": {
+        "fault": "oversize"
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": false
+      }
+    },
+    {
+      "id": "capture-cancel",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "coffee"
+        },
+        "cancelAfterMs": 50
+      },
+      "respond": {
+        "fault": "timeout"
+      },
+      "expect": {
+        "outcome": "canceled"
+      },
+      "requires": ["cancel"]
+    },
+    {
+      "id": "search-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee",
+          "k": 5
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "id": "e1",
+              "content": "dark roast"
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee",
+            "k": 5
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "search-degraded-empty-is-unavailable",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": [],
+          "degraded": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true
+      }
+    },
+    {
+      "id": "search-degraded-with-results-is-data",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "id": "e1",
+              "content": "dark roast"
+            }
+          ],
+          "degraded": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search",
+          "json": {
+            "query": "coffee"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok",
+        "result": {
+          "degraded": true
+        }
+      }
+    },
+    {
+      "id": "token-echoed-in-401-is-redacted",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 401,
+        "json": {
+          "error": "bad token nm_scenario_TOKEN_must_never_leak"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search"
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 401
+      }
+    },
+    {
+      "id": "capture-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": "User prefers dark roast",
+          "namespace": "prefs"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "id": "e1"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/capture",
+          "json": {
+            "content": "User prefers dark roast",
+            "namespace": "prefs"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "capture-blank-content-local",
+      "call": {
+        "class": "Client",
+        "method": "Client.Capture",
+        "args": {
+          "content": ""
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "id": "e1"
+        }
+      },
+      "expectRequest": [],
+      "expect": {
+        "outcome": "error",
+        "messageContains": "content is required"
+      }
+    },
+    {
+      "id": "forget-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Forget",
+        "args": {
+          "id": "e1"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "deleted": true,
+          "coldDeleteOk": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/forget",
+          "json": {
+            "id": "e1"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok",
+        "result": {
+          "deleted": true,
+          "coldDeleteOk": true
+        }
+      }
+    },
+    {
+      "id": "forget-404-not-deleted",
+      "call": {
+        "class": "Client",
+        "method": "Client.Forget",
+        "args": {
+          "id": "e1"
+        }
+      },
+      "respond": {
+        "status": 404,
+        "json": {
+          "error": "not found"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/forget",
+          "json": {
+            "id": "e1"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok",
+        "result": {
+          "deleted": false,
+          "coldDeleteOk": true
+        }
+      }
+    },
+    {
+      "id": "forget-500-error",
+      "call": {
+        "class": "Client",
+        "method": "Client.Forget",
+        "args": {
+          "id": "e1"
+        }
+      },
+      "respond": {
+        "status": 500,
+        "json": {
+          "error": "boom"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/forget"
+        }
+      ],
+      "expect": {
+        "outcome": "unavailable",
+        "retryable": true,
+        "statusCode": 500
+      }
+    },
+    {
+      "id": "forget-blank-id-local",
+      "call": {
+        "class": "Client",
+        "method": "Client.Forget",
+        "args": {
+          "id": " "
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {}
+      },
+      "expectRequest": [],
+      "expect": {
+        "outcome": "error",
+        "messageContains": "id is required"
+      }
+    },
+    {
+      "id": "health-ok-false",
+      "call": {
+        "class": "Client",
+        "method": "Client.Health",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "ok": false
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/health",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok",
+        "result": false
+      }
+    },
+    {
+      "id": "health-503-is-false",
+      "call": {
+        "class": "Client",
+        "method": "Client.Health",
+        "args": {}
+      },
+      "respond": {
+        "status": 503,
+        "json": {
+          "ok": false
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/health",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok",
+        "result": false
+      }
+    },
+    {
+      "id": "today-since-24h",
+      "call": {
+        "class": "Client",
+        "method": "Client.Today",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": []
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/recent"
+        }
+      ],
+      "expect": {
+        "outcome": "empty"
+      }
+    },
+    {
+      "id": "stats-get-sends-no-body",
+      "call": {
+        "class": "Client",
+        "method": "Client.Stats",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "byNamespace": {},
+          "totalWarm": 0,
+          "totalCold": 0
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/stats",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "observe-503-observer-disabled",
+      "call": {
+        "class": "Management",
+        "method": "Management.Observe",
+        "args": {
+          "project": "p1"
+        }
+      },
+      "respond": {
+        "status": 503,
+        "json": {
+          "error": "observer disabled"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/observe",
+          "json": {
+            "project": "p1"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 503,
+        "code": "observer_disabled"
+      }
+    },
+    {
+      "id": "remove-member-by-username-two-calls",
+      "call": {
+        "class": "Management",
+        "method": "Management.RemoveProjectMemberByUsername",
+        "args": {
+          "id": "p1",
+          "username": "bob"
+        }
+      },
+      "respond": [
+        {
+          "status": 200,
+          "json": {
+            "members": [
+              {
+                "userId": "u2",
+                "username": "bob",
+                "role": "member"
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "json": {
+            "removed": true
+          }
+        }
+      ],
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/projects/p1/members",
+          "noBody": true
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/me/projects/p1/members/u2",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "ctor-blank-token",
+      "call": {
+        "class": "ctor",
+        "method": "ctor",
+        "args": {
+          "baseUrl": "<server>",
+          "token": "  "
+        }
+      },
+      "expect": {
+        "outcome": "error",
+        "messageContains": "token"
+      }
+    },
+    {
+      "id": "ctor-relative-url",
+      "call": {
+        "class": "ctor",
+        "method": "ctor",
+        "args": {
+          "baseUrl": "localhost:7778",
+          "token": "nm_scenario_TOKEN_must_never_leak"
+        }
+      },
+      "expect": {
+        "outcome": "error"
+      }
+    },
+    {
+      "id": "recent-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Recent",
+        "args": {
+          "k": 3
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": []
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/recent",
+          "json": {
+            "k": 3
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "empty"
+      }
+    },
+    {
+      "id": "neighbors-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Neighbors",
+        "args": {
+          "id": "e1",
+          "depth": 2
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "id": "e1",
+              "content": "dark roast"
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/neighbors",
+          "json": {
+            "id": "e1",
+            "depth": 2
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "update-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Update",
+        "args": {
+          "id": "e1",
+          "content": "new"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "id": "e1",
+          "updated": true,
+          "embeddingChanged": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "PUT",
+          "path": "/v1/memories/e1",
+          "json": {
+            "content": "new"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "remember-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Remember",
+        "args": {
+          "content": "keep this"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "id": "e2"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/remember",
+          "json": {
+            "content": "keep this"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "context-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.Context",
+        "args": {
+          "message": "what coffee?"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "id": "e1",
+              "content": "dark roast"
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/context",
+          "json": {
+            "message": "what coffee?"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "session-recap-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.SessionRecap",
+        "args": {
+          "decisions": ["use pgvector"]
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "id": "e3"
+            }
+          ],
+          "saved": 1
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/session-recap",
+          "json": {
+            "decisions": ["use pgvector"]
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "context-prefix-ok",
+      "call": {
+        "class": "Client",
+        "method": "Client.ContextPrefix",
+        "args": {
+          "project": "p1"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "prefix": "observations: …"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/context-prefix",
+          "noBody": true,
+          "query": {
+            "project": "p1"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "mint-token-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.MintToken",
+        "args": {
+          "label": "ci"
+        }
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "token": "nm_minted",
+          "createdAt": "2026-09-25T00:00:00.000Z"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/me/tokens",
+          "json": {
+            "label": "ci"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "list-tokens-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.ListTokens",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "tokens": [
+            {
+              "tokenHash": "h1",
+              "label": "ci",
+              "scope": "full",
+              "createdAt": "2026-09-25T00:00:00.000Z",
+              "revoked": false
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/tokens",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "revoke-token-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.RevokeToken",
+        "args": {
+          "hash": "h1"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "deleted": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "DELETE",
+          "path": "/v1/me/tokens/h1",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "list-projects-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.ListProjects",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "projects": [
+            {
+              "id": "p1",
+              "name": "proj",
+              "ownerUserId": "u1",
+              "createdAt": "2026-09-25T00:00:00.000Z",
+              "role": "owner"
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/projects",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "create-project-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.CreateProject",
+        "args": {
+          "name": "proj"
+        }
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "id": "p1",
+          "name": "proj",
+          "ownerUserId": "u1",
+          "createdAt": "2026-09-25T00:00:00.000Z"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/me/projects",
+          "json": {
+            "name": "proj"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "delete-project-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.DeleteProject",
+        "args": {
+          "id": "p1"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "deleted": true,
+          "entriesRemoved": 0,
+          "coldCollectionsDropped": [],
+          "graphCleared": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "DELETE",
+          "path": "/v1/me/projects/p1",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "list-members-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.ListProjectMembers",
+        "args": {
+          "id": "p1"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "members": [
+            {
+              "userId": "u2",
+              "username": "bob",
+              "role": "member"
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/projects/p1/members",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "add-member-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.AddProjectMember",
+        "args": {
+          "id": "p1",
+          "email": "bob@example.com",
+          "role": "member"
+        }
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "added": true,
+          "userId": "u2",
+          "username": "bob"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/me/projects/p1/members",
+          "json": {
+            "username": "bob@example.com",
+            "role": "member"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "remove-member-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.RemoveProjectMember",
+        "args": {
+          "id": "p1",
+          "userId": "u2"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "removed": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "DELETE",
+          "path": "/v1/me/projects/p1/members/u2",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "active-project-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.ActiveProject",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "active": {
+            "id": "p1",
+            "name": "proj"
+          }
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/active-project",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "set-active-project-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.SetActiveProject",
+        "args": {
+          "project": "p1"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "active": {
+            "id": "p1",
+            "name": "proj"
+          }
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "PUT",
+          "path": "/v1/me/active-project",
+          "json": {
+            "project": "p1"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "clear-active-project-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.ClearActiveProject",
+        "args": {}
+      },
+      "respond": {
+        "status": 204
+      },
+      "expectRequest": [
+        {
+          "method": "DELETE",
+          "path": "/v1/me/active-project",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "decay-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Decay",
+        "args": {
+          "effectiveDays": 30
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "demoted": 1,
+          "promoted": 0,
+          "expired": 0
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/decay",
+          "json": {
+            "effectiveDays": 30
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "hygiene-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Hygiene",
+        "args": {
+          "k": 10
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "summary": {
+            "scanned": 0
+          },
+          "lowValue": [],
+          "stale": []
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/hygiene",
+          "json": {
+            "k": 10
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "evaluate-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Evaluate",
+        "args": {
+          "suite": "smoke"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "suite": "smoke",
+          "passed": true,
+          "summary": {
+            "total": 1,
+            "passed": 1,
+            "failed": 0
+          },
+          "cases": [
+            {
+              "name": "c1",
+              "passed": true
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/evaluate",
+          "json": {
+            "suite": "smoke"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "adoption-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Adoption",
+        "args": {
+          "client": "claude-code"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "requestedClient": "claude-code",
+          "diagnostics": [],
+          "mcp": {},
+          "server": {}
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/adoption",
+          "json": {
+            "client": "claude-code"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "observe-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Observe",
+        "args": {
+          "project": "p1",
+          "limit": 20
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "observed": 3,
+          "reflected": false
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/observe",
+          "json": {
+            "project": "p1",
+            "limit": 20
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "changes-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Changes",
+        "args": {
+          "afterSeq": 5,
+          "limit": 10
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "changes": [
+            {
+              "seq": 6,
+              "entryId": "e1",
+              "change": "created",
+              "at": "2026-09-25T00:00:00.000Z"
+            }
+          ],
+          "nextSeq": 6
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/changes",
+          "noBody": true,
+          "query": {
+            "afterSeq": "5",
+            "limit": "10"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "usage-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Usage",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "entries": 3,
+          "quota": {
+            "maxEntries": null,
+            "writesPerMinute": null
+          }
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/usage",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "export-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Export",
+        "args": {
+          "afterId": "e0",
+          "limit": 2
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "entries": [
+            {
+              "id": "e1",
+              "projectId": null,
+              "content": "c",
+              "namespace": "default",
+              "source": "api",
+              "agentName": null,
+              "metadata": {},
+              "sourceType": null,
+              "capturedFrom": null,
+              "confidence": 1,
+              "createdAt": "2026-09-25T00:00:00.000Z",
+              "updatedAt": "2026-09-25T00:00:00.000Z"
+            }
+          ],
+          "nextAfterId": "e1"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/me/export",
+          "noBody": true,
+          "query": {
+            "afterId": "e0",
+            "limit": "2"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "import-ok",
+      "call": {
+        "class": "Management",
+        "method": "Management.Import",
+        "args": {
+          "entries": [
+            {
+              "content": "restored"
+            }
+          ]
+        }
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "imported": 1,
+          "deduplicated": 0,
+          "failed": []
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/me/import",
+          "json": {
+            "entries": [
+              {
+                "content": "restored"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "provision-user-ok",
+      "call": {
+        "class": "Admin",
+        "method": "Admin.ProvisionUser",
+        "args": {
+          "email": "agent@example.com",
+          "password": "correct-horse-1",
+          "tokenLabel": "agent"
+        }
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "userId": "u9",
+          "email": "agent@example.com",
+          "token": "nm_agent"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/admin/users",
+          "json": {
+            "email": "agent@example.com",
+            "password": "correct-horse-1",
+            "tokenLabel": "agent"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "revoke-user-token-ok",
+      "call": {
+        "class": "Admin",
+        "method": "Admin.RevokeUserToken",
+        "args": {
+          "token": "nm_leaked"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "revoked": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/admin/tokens/revoke",
+          "json": {
+            "token": "nm_leaked"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "list-users-ok",
+      "call": {
+        "class": "Admin",
+        "method": "Admin.ListUsers",
+        "args": {}
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "users": [
+            {
+              "id": "u1",
+              "email": "a@example.com",
+              "name": null,
+              "role": "admin",
+              "createdAt": "2026-09-25T00:00:00.000Z",
+              "entryCount": 0,
+              "tokenCount": 1
+            }
+          ]
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/v1/admin/users",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "preview-delete-user-ok",
+      "call": {
+        "class": "Admin",
+        "method": "Admin.PreviewDeleteUser",
+        "args": {
+          "id": "u9"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "dryRun": true,
+          "wouldDelete": {
+            "userId": "u9",
+            "email": "agent@example.com",
+            "entries": 2,
+            "tokens": 1,
+            "ownedProjects": []
+          }
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "DELETE",
+          "path": "/v1/admin/users/u9",
+          "noBody": true,
+          "query": {
+            "dryRun": "true"
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "delete-user-ok",
+      "call": {
+        "class": "Admin",
+        "method": "Admin.DeleteUser",
+        "args": {
+          "id": "u9"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "deleted": true,
+          "entriesRemoved": 2,
+          "tokensRemoved": 1,
+          "projectsDeleted": [],
+          "coldCleanup": [],
+          "coldCleanupOk": true
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "DELETE",
+          "path": "/v1/admin/users/u9",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "id": "set-user-quota-ok",
+      "call": {
+        "class": "Admin",
+        "method": "Admin.SetUserQuota",
+        "args": {
+          "id": "u9",
+          "maxEntries": 100,
+          "writesPerMinute": 10
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "userId": "u9",
+          "quota": {
+            "maxEntries": 100,
+            "writesPerMinute": 10
+          }
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "PUT",
+          "path": "/v1/admin/users/u9/quota",
+          "json": {
+            "maxEntries": 100,
+            "writesPerMinute": 10
+          }
+        }
+      ],
+      "expect": {
+        "outcome": "ok"
+      }
+    }
+  ]
+}

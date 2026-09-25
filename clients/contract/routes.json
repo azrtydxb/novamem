@@ -435,6 +435,7 @@
       {
         "name": "Client.Update",
         "op": "update",
+        "params": ["id"],
         "request": "UpdateRequest",
         "response": "UpdateResult"
       }

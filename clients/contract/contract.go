@@ -21,11 +21,13 @@ type Method struct {
 	// Op is the error-classification label the Go client uses for this
 	// method ("search", "remove-member", …). Every SDK reports the same one.
 	Op string `json:"op"`
-	// Request names the generated request type, for methods that take one.
-	Request string `json:"request,omitempty"`
-	// Params lists the wire names of scalar arguments, for methods that
-	// take those instead of a request type.
+	// Params names the scalar arguments, in order. These are argument
+	// names, not wire names: AddProjectMember's email travels in a body
+	// field called "username", and Update's id travels in the path.
 	Params []string `json:"params,omitempty"`
+	// Request names the generated request type, for methods that take one.
+	// A method may take both: Update(id, request).
+	Request string `json:"request,omitempty"`
 	// Response names a schema in the OpenAPI components section, or is nil
 	// for routes that answer with no payload.
 	Response *string `json:"response"`
