@@ -1,0 +1,6 @@
+# The Rust crates of the language SDKs (ADR 0009). One workspace so they
+# share a lockfile, and so tools that expect a crate at the repository root
+# (the commit gate's clippy) find one.
+[workspace]
+members = ["clients/rust"]
+resolver = "2"
