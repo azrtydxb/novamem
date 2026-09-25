@@ -7,13 +7,25 @@
       {
         "name": "Admin.PreviewDeleteUser",
         "op": "preview-delete-user",
-        "params": ["id"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "UserDeletionPreview"
       },
       {
         "name": "Admin.DeleteUser",
         "op": "delete-user",
-        "params": ["id"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "UserDeletion"
       }
     ]
@@ -32,7 +44,13 @@
       {
         "name": "Management.DeleteProject",
         "op": "delete-project",
-        "params": ["id"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "ProjectDeleted"
       }
     ]
@@ -42,13 +60,35 @@
       {
         "name": "Management.RemoveProjectMember",
         "op": "remove-member",
-        "params": ["id", "userId"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "userId",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "MemberRemoved"
       },
       {
         "name": "Management.RemoveProjectMemberByUsername",
         "op": "remove-member",
-        "params": ["id", "username"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "username",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "MemberRemoved"
       }
     ]
@@ -58,7 +98,13 @@
       {
         "name": "Management.RevokeToken",
         "op": "revoke-token",
-        "params": ["hash"],
+        "params": [
+          {
+            "name": "hash",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "TokenDeleted"
       }
     ]
@@ -110,7 +156,13 @@
       {
         "name": "Client.ContextPrefix",
         "op": "context-prefix",
-        "params": ["project"],
+        "params": [
+          {
+            "name": "project",
+            "type": "string",
+            "required": false
+          }
+        ],
         "response": "ContextPrefix"
       }
     ]
@@ -129,7 +181,23 @@
       {
         "name": "Management.Changes",
         "op": "changes",
-        "params": ["since", "afterSeq", "limit"],
+        "params": [
+          {
+            "name": "since",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "afterSeq",
+            "type": "int64",
+            "required": false
+          },
+          {
+            "name": "limit",
+            "type": "int32",
+            "required": false
+          }
+        ],
         "response": "ChangeFeed"
       }
     ]
@@ -139,7 +207,18 @@
       {
         "name": "Management.Export",
         "op": "export",
-        "params": ["afterId", "limit"],
+        "params": [
+          {
+            "name": "afterId",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "limit",
+            "type": "int32",
+            "required": false
+          }
+        ],
         "response": "ExportPage"
       }
     ]
@@ -167,7 +246,13 @@
       {
         "name": "Management.ListProjectMembers",
         "op": "list-members",
-        "params": ["id"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "MemberList"
       }
     ]
@@ -210,7 +295,13 @@
       {
         "name": "Admin.RevokeUserToken",
         "op": "revoke-user-token",
-        "params": ["token"],
+        "params": [
+          {
+            "name": "token",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "RevokeResult"
       }
     ]
@@ -230,7 +321,13 @@
       {
         "name": "Management.Adoption",
         "op": "adoption",
-        "params": ["client"],
+        "params": [
+          {
+            "name": "client",
+            "type": "string",
+            "required": false
+          }
+        ],
         "response": "AdoptionReport"
       }
     ]
@@ -263,7 +360,13 @@
       {
         "name": "Management.Decay",
         "op": "decay",
-        "params": ["effectiveDays"],
+        "params": [
+          {
+            "name": "effectiveDays",
+            "type": "int32",
+            "required": false
+          }
+        ],
         "response": "DecayResult"
       }
     ]
@@ -276,7 +379,13 @@
       {
         "name": "Management.Evaluate",
         "op": "evaluate",
-        "params": ["suite"],
+        "params": [
+          {
+            "name": "suite",
+            "type": "string",
+            "required": false
+          }
+        ],
         "response": "EvaluateReport"
       }
     ]
@@ -296,7 +405,13 @@
       {
         "name": "Management.Hygiene",
         "op": "hygiene",
-        "params": ["k"],
+        "params": [
+          {
+            "name": "k",
+            "type": "int32",
+            "required": false
+          }
+        ],
         "response": "HygieneReport"
       }
     ]
@@ -306,7 +421,13 @@
       {
         "name": "Management.Import",
         "op": "import",
-        "params": ["entries"],
+        "params": [
+          {
+            "name": "entries",
+            "type": "object[]",
+            "required": true
+          }
+        ],
         "response": "ImportResult"
       }
     ]
@@ -316,7 +437,13 @@
       {
         "name": "Management.CreateProject",
         "op": "create-project",
-        "params": ["name"],
+        "params": [
+          {
+            "name": "name",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "Project"
       }
     ]
@@ -326,7 +453,23 @@
       {
         "name": "Management.AddProjectMember",
         "op": "add-member",
-        "params": ["id", "email", "role"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "email",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "required": false
+          }
+        ],
         "response": "MemberAdded"
       }
     ]
@@ -356,7 +499,18 @@
       {
         "name": "Management.Observe",
         "op": "observe",
-        "params": ["project", "limit"],
+        "params": [
+          {
+            "name": "project",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "limit",
+            "type": "int32",
+            "required": false
+          }
+        ],
         "response": "ObserveResult"
       }
     ]
@@ -415,7 +569,23 @@
       {
         "name": "Admin.SetUserQuota",
         "op": "set-user-quota",
-        "params": ["id", "maxEntries", "writesPerMinute"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "maxEntries",
+            "type": "int32",
+            "required": false
+          },
+          {
+            "name": "writesPerMinute",
+            "type": "int32",
+            "required": false
+          }
+        ],
         "response": "QuotaResult"
       }
     ]
@@ -425,7 +595,13 @@
       {
         "name": "Management.SetActiveProject",
         "op": "set-active-project",
-        "params": ["project"],
+        "params": [
+          {
+            "name": "project",
+            "type": "string",
+            "required": true
+          }
+        ],
         "response": "ActiveProject"
       }
     ]
@@ -435,7 +611,13 @@
       {
         "name": "Client.Update",
         "op": "update",
-        "params": ["id"],
+        "params": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          }
+        ],
         "request": "UpdateRequest",
         "response": "UpdateResult"
       }

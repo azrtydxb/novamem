@@ -9,7 +9,7 @@ import novamem as _nm
 DISPATCH = {
 {{- range .Methods}}
     "{{.Name}}": lambda c, a: c["{{className .Name}}"].{{pyident (methodName .Name)}}(
-{{- range .Params}}{{pyident .}}=a.get("{{.}}"), {{end}}
+{{- range .Params}}{{pyident .Name}}=a.get("{{.Name}}"), {{end}}
 {{- if .Request}}request=_nm.{{.Request}}.from_wire(a){{end}}),
 {{- end}}
 }

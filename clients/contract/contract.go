@@ -21,16 +21,28 @@ type Method struct {
 	// Op is the error-classification label the Go client uses for this
 	// method ("search", "remove-member", …). Every SDK reports the same one.
 	Op string `json:"op"`
-	// Params names the scalar arguments, in order. These are argument
+	// Params are the scalar arguments, in order. Their names are argument
 	// names, not wire names: AddProjectMember's email travels in a body
 	// field called "username", and Update's id travels in the path.
-	Params []string `json:"params,omitempty"`
+	Params []Param `json:"params,omitempty"`
 	// Request names the generated request type, for methods that take one.
 	// A method may take both: Update(id, request).
 	Request string `json:"request,omitempty"`
 	// Response names a schema in the OpenAPI components section, or is nil
 	// for routes that answer with no payload.
 	Response *string `json:"response"`
+}
+
+// Param is one scalar argument. Statically typed SDKs build their
+// signatures from Type and Required.
+type Param struct {
+	Name string `json:"name"`
+	// Type is string, int32, int64, bool, or object[] (a list of
+	// free-form JSON objects, as Import takes).
+	Type string `json:"type"`
+	// Required arguments are validated locally; optional ones are left
+	// out of the request when unset.
+	Required bool `json:"required"`
 }
 
 // Route is one "METHOD /path" entry: covered by Methods, or a NonGoal.
@@ -51,6 +63,15 @@ func LoadRoutes(path string) (map[string]Route, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	for key, r := range routes {
+		for _, m := range r.Methods {
+			for _, p := range m.Params {
+				switch p.Type {
+				case "string", "int32", "int64", "bool", "object[]":
+				default:
+					return nil, fmt.Errorf("%s %s: param %q has unknown type %q", key, m.Name, p.Name, p.Type)
+				}
+			}
+		}
 		switch {
 		case len(r.Methods) > 0 && r.NonGoal != "":
 			return nil, fmt.Errorf("%s: has both methods and a nonGoal", key)
