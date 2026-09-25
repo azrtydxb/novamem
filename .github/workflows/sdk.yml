@@ -251,3 +251,33 @@ jobs:
       - name: No dependencies
         working-directory: clients/swift
         run: swift package show-dependencies | tee /dev/stderr | grep -q "No external dependencies found"
+
+  # .NET SDK (plan Task 9): the shared scenario suite on .NET 8, in the
+  # official SDK image (no toolchain install on the ARC runner).
+  dotnet:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:8.0
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - name: Scenario suite
+        working-directory: clients/dotnet
+        run: dotnet test tests/Novamem.Tests
+      - name: No package references
+        working-directory: clients/dotnet
+        run: |
+          out=$(dotnet list src/Novamem/Novamem.csproj package)
+          echo "$out"
+          echo "$out" | grep -q "has no package references\|No packages were found"
+      - name: Smoke program builds
+        working-directory: clients/dotnet
+        run: dotnet build smoke
