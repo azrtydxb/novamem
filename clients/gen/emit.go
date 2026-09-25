@@ -21,8 +21,8 @@ type Options struct {
 }
 
 // directive is the first line of every template:
-// {{/* lang: <lang> out: <path relative to Out> */}}
-var directive = regexp.MustCompile(`^\{\{/\* lang: (\S+) out: (\S+) \*/\}\}`)
+// {{/* lang: <lang> out: <path relative to Out> */}} (or the trimming form "*/ -}}")
+var directive = regexp.MustCompile(`^\{\{/\* lang: (\S+) out: (\S+) \*/ ?-?\}\}`)
 
 type rendered struct {
 	path string // relative to Out
@@ -41,8 +41,11 @@ func render(opts Options) ([]rendered, error) {
 	sort.Strings(files)
 	funcs := template.FuncMap{
 		"pascal": pascal, "camel": camel, "snake": snake, "upperSnake": upperSnake,
-		"wire": func(f Field) string { return f.Wire },
-		"join": strings.Join,
+		"wire":       func(f Field) string { return f.Wire },
+		"join":       strings.Join,
+		"pyident":    pyident,
+		"methodName": func(m string) string { _, after, _ := strings.Cut(m, "."); return after },
+		"className":  func(m string) string { before, _, _ := strings.Cut(m, "."); return before },
 	}
 	out := []rendered{}
 	for _, f := range files {

@@ -811,6 +811,14 @@ Run `cd clients/gen && go test ./...`: expect FAIL with `undefined: BuildModel`.
 
 ## Task 7: Python SDK
 
+Status: built on `feat/sdk-python`. Where the build differs from the steps below, the build is right:
+
+- Async cancellation surfaces as the native `asyncio.CancelledError`. It is never converted into a `CanceledError` class (which doesn't exist), because converting it would break `asyncio.timeout()` and `TaskGroup`, and every other SDK with cancellation also uses its platform's native signal.
+- Every method returns the generated type named by routes.json `response` (`list_tokens()` → `TokenList`, `decay()` → `DecayResult`). The exceptions are `health()` → `bool` and `clear_active_project()` → `None`.
+- Python keywords get a trailing underscore: `Management.Import` is `import_` (the generator's `pyident`).
+- The runner starts the server with `sh scenario-server.sh`. The dispatch table is shared by the sync and async clients (`ADISPATCH = DISPATCH`).
+- Ruff excludes the two generated files (`[tool.ruff] extend-exclude` in `clients/python/pyproject.toml`). This follows the `.prettierignore` rule for generated outputs.
+
 Files:
 
 - `clients/gen/templates/python.tmpl` (created; out: `python/src/novamem/_types.py`): `@dataclass(frozen=True)` per object type. It has `to_wire(self) -> dict` (omitting fields that are `None` or `""`, and rendering `datetime` as UTC `...Z`) and `@classmethod from_wire(cls, d: dict)` (ignoring unknown keys). Enums are `class X(str, Enum)`.

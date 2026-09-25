@@ -44,5 +44,35 @@ jobs:
           # clients/gen and clients/contract are stdlib-only: no go.sum to key a cache on.
           cache: false
       - run: cd clients/gen && go vet ./... && go test -count=1 ./...
-      # The -check step lands with the first language template (#309): with
-      # no template it would check nothing, and the generator now refuses that.
+      # Regenerate every SDK's types and compare with what is checked in: an
+      # API change that was not regenerated fails here, naming each file.
+      - run: go run ./clients/gen -spec docs/api/openapi.json -routes clients/contract/routes.json -out clients -check
+
+  # Python SDK (plan Task 7): the shared scenario suite, sync and async, on
+  # the oldest and newest supported Pythons. Go builds the scenario server.
+  python:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Scenario suite
+        working-directory: clients/python
+        run: PYTHONPATH=src:tests python -m unittest discover -s tests -v
+      - name: Installs with no dependencies
+        run: |
+          python -m venv "$RUNNER_TEMP/nm"
+          "$RUNNER_TEMP/nm/bin/pip" install -q ./clients/python
+          extra=$("$RUNNER_TEMP/nm/bin/pip" list --format=freeze | grep -v -E '^(pip|setuptools|novamem)==' || true)
+          if [ -n "$extra" ]; then echo "unexpected runtime dependencies: $extra"; exit 1; fi
