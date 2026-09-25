@@ -1,0 +1,92 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "mini",
+    "version": "1"
+  },
+  "paths": {
+    "/v1/search": {
+      "post": {
+        "operationId": "postV1Search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  },
+                  "k": {
+                    "type": "integer"
+                  },
+                  "contentMode": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "snippet"
+                    ]
+                  }
+                },
+                "required": [
+                  "query"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SearchResult": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "degraded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "MemoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "POST /v1/search": {
+    "methods": [
+      {
+        "name": "Client.Search",
+        "op": "search",
+        "request": "SearchRequest",
+        "response": "SearchResult"
+      }
+    ]
+  }
+}

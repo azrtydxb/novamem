@@ -1,0 +1,49 @@
+name: SDKs
+
+# The nine language SDKs (ADR 0009) and the contract they share. Each SDK
+# gets its own job here as it lands; `generated` gates them all.
+on:
+  pull_request:
+    paths:
+      [
+        "clients/**",
+        "api/**",
+        "docs/api/**",
+        "go.work",
+        ".github/workflows/sdk.yml",
+      ]
+  push:
+    branches: [main]
+    paths:
+      [
+        "clients/**",
+        "api/**",
+        "docs/api/**",
+        "go.work",
+        ".github/workflows/sdk.yml",
+      ]
+
+concurrency:
+  group: sdk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Every SDK's wire types are generated from docs/api/openapi.json and
+  # clients/contract/routes.json and checked in. Regenerate and compare:
+  # an API change that was not regenerated fails here, naming each file.
+  generated:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            clients/gen/go.sum
+            clients/contract/go.sum
+      - run: cd clients/gen && go vet ./... && go test -count=1 ./...
+      - run: go run ./clients/gen -spec docs/api/openapi.json -routes clients/contract/routes.json -out clients -check
