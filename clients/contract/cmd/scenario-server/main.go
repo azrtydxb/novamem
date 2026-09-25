@@ -27,16 +27,22 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Bind the serving listener FIRST. The closed port is taken and released
+	// while it is still held, so the OS cannot hand the same number to both:
+	// a "refused" scenario that dialled the live server would pass for the
+	// wrong reason.
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatal(err)
+	}
 	closed, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatal(err)
 	}
 	closedPort := closed.Addr().(*net.TCPAddr).Port
 	_ = closed.Close()
-
-	ln, err := net.Listen("tcp", *addr)
-	if err != nil {
-		log.Fatal(err)
+	if closedPort == ln.Addr().(*net.TCPAddr).Port {
+		log.Fatal("closed port equals the serving port")
 	}
 	// Runners block on this line; failing to write it must not leave them
 	// waiting on a server that is up but silent.

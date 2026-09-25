@@ -168,6 +168,15 @@ func (s *server) verdict(w http.ResponseWriter, r *http.Request) {
 		out.Requests = st.requests
 		out.Mismatches = append(out.Mismatches, st.mismatches...)
 	}
+	// Requests the scenario expected but never received: a method that
+	// stops early (lists members, never deletes) or answers without calling
+	// out at all (a hard-coded Health) must not pass.
+	if sc, ok := s.byID[id]; ok && sc.ExpectRequest != nil {
+		for n := out.Requests; n < len(*sc.ExpectRequest); n++ {
+			e := (*sc.ExpectRequest)[n]
+			out.Mismatches = append(out.Mismatches, fmt.Sprintf("request %d: never sent (want %s %s)", n, e.Method, e.Path))
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
 }

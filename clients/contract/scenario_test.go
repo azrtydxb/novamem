@@ -55,6 +55,11 @@ func TestScenarioServerReplaysAndRecords(t *testing.T) {
 		t.Fatalf("verdict = %d %v, want 1 request and no mismatches", n, m)
 	}
 
+	// A scenario whose expected request never arrives is a mismatch too.
+	if n, m := verdictOf(t, srv.URL, "s1"); n != 0 || len(m) != 1 || !strings.Contains(m[0], "never sent") {
+		t.Fatalf("verdict with no request = %d %v, want one never-sent mismatch", n, m)
+	}
+
 	// Wrong method, no auth, no Accept: every one of them is reported.
 	req2, _ := http.NewRequest("GET", srv.URL+"/s/s1/v1/search", nil)
 	resp2, err := http.DefaultClient.Do(req2)
@@ -90,13 +95,17 @@ func TestEveryMethodHasAScenario(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	have := map[string]bool{}
+	// Every method needs a scenario it must SUCCEED in: an error scenario
+	// alone would let a method that always fails pass the suite.
+	succeeds := map[string]bool{}
 	for _, s := range f.Scenarios {
-		have[s.Call.Method] = true
+		if s.Expect.Outcome == "ok" || s.Expect.Outcome == "empty" {
+			succeeds[s.Call.Method] = true
+		}
 	}
 	for _, m := range Surface(routes) {
-		if !have[m.Name] {
-			t.Errorf("no scenario calls %s", m.Name)
+		if !succeeds[m.Name] {
+			t.Errorf("no scenario in which %s succeeds", m.Name)
 		}
 	}
 	for _, s := range f.Scenarios {
