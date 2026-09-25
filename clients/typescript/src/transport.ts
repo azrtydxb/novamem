@@ -37,7 +37,10 @@ export class Transport {
   readonly #fetch: typeof fetch;
 
   constructor(o: ClientOptions) {
-    const base = (o?.baseUrl ?? "").trim().replace(/\/+$/, "");
+    // A loop, not /\/+$/: that regex backtracks polynomially on a long run
+    // of slashes (CodeQL js/polynomial-redos).
+    let base = (o?.baseUrl ?? "").trim();
+    while (base.endsWith("/")) base = base.slice(0, -1);
     let ok = false;
     try {
       const u = new URL(base);
