@@ -1,0 +1,18 @@
+# Valgrind suppressions for `make memcheck`. Each one names memory the SDK
+# does not own; everything the C ABI allocates stays fully checked.
+#
+# glibc resolver state. Resolving a hostname (redirect-cross-origin-drops-bearer
+# goes to "localhost") runs getaddrinfo on a tokio blocking thread. glibc keeps
+# that thread's resolver configuration for the thread's lifetime; the process
+# exits with the thread idle, and valgrind, after __libc_freeres, reports the
+# configuration block as definitely lost.
+{
+   glibc-resolv-conf-on-a-live-runtime-thread
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   ...
+   fun:__resolv_conf_allocate
+   ...
+   fun:getaddrinfo
+}
