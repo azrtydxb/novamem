@@ -38,7 +38,7 @@ final class Transport
         string $op,
         string $method,
         string $path,
-        mixed $body = null,
+        #[\SensitiveParameter] mixed $body = null,
         ?array $query = null,
         bool $expectBody = true,
     ): mixed {
@@ -85,7 +85,7 @@ final class Transport
         string $op,
         string $method,
         string $url,
-        ?string $payload,
+        #[\SensitiveParameter] ?string $payload,
         int $deadline,
     ): array {
         $auth = true;
@@ -129,7 +129,7 @@ final class Transport
         string $op,
         string $method,
         string $url,
-        ?string $payload,
+        #[\SensitiveParameter] ?string $payload,
         bool $auth,
         int $deadline,
     ): array {
@@ -218,7 +218,7 @@ final class Transport
     private function decode(
         string $op,
         int $status,
-        string $raw,
+        #[\SensitiveParameter] string $raw,
         bool $expectBody,
     ): mixed {
         if ($status < 200 || $status >= 300) {
@@ -238,8 +238,14 @@ final class Transport
             );
         }
         try {
-            return json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
+            $decoded = null;
+        }
+        // Every success body is a JSON object. With assoc decoding `[]` and
+        // `{}` both become [], so the first byte tells them apart; `null`,
+        // a scalar or an array would otherwise reach fromArray as data.
+        if (!is_array($decoded) || ltrim($raw)[0] !== "{") {
             // In practice a proxy's HTML error page: we never reached a
             // working novamem. Not retryable — it parses the same way again.
             throw new NovamemException(
@@ -249,12 +255,13 @@ final class Transport
                 unavailable: true,
             );
         }
+        return $decoded;
     }
 
     private function httpError(
         string $op,
         int $status,
-        string $raw,
+        #[\SensitiveParameter] string $raw,
     ): NovamemException {
         $message = "";
         $code = "";
@@ -305,6 +312,11 @@ final class Transport
             return $location;
         }
         $p = parse_url($base);
+        if (str_starts_with($location, "//")) {
+            // A network-path reference names another host: keep only the
+            // scheme, so the origin check below sees where it really goes.
+            return $p["scheme"] . ":" . $location;
+        }
         $root =
             $p["scheme"] .
             "://" .

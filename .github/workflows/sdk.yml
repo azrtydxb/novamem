@@ -208,7 +208,15 @@ jobs:
           tools: composer
       - name: Scenario suite
         working-directory: clients/php
-        run: composer install --no-interaction --no-progress && vendor/bin/phpunit
+        # The ARC runners' egress to repo.packagist.org drops the odd
+        # connection (curl error 7 after a few ms), so the install retries.
+        run: |
+          for i in 1 2 3; do
+            composer install --no-interaction --no-progress && break
+            [ "$i" = 3 ] && exit 1
+            sleep 10
+          done
+          vendor/bin/phpunit
       - name: Static analysis
         working-directory: clients/php
         run: vendor/bin/phpstan analyse --no-progress

@@ -13,7 +13,7 @@ use Novamem\Types as T;
 final class Admin extends Base
 {
     public function provisionUser(
-        T\ProvisionUserRequest $request,
+        #[\SensitiveParameter] T\ProvisionUserRequest $request,
     ): T\ProvisionedUser {
         if (self::blank($request->email) || $request->password === "") {
             throw new NovamemException(

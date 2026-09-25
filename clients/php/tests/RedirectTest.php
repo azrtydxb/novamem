@@ -66,15 +66,31 @@ final class RedirectTest extends TestCase
             "REDIRECT_TO" => "http://localhost:$target/moved",
         ]);
         $this->assertTrue(
-            new Client(
+            (new Client(
                 new Config("http://127.0.0.1:$origin", "nm_secret"),
-            )->health(),
+            ))->health(),
         );
         $this->assertSame(
             "none",
             file_get_contents($seen),
             "the bearer followed a redirect to another origin",
         );
+    }
+
+    // proved by: resolving "//host/path" under the base root in
+    // Transport::resolve fails this test (the hop never reaches $target).
+    public function testANetworkPathRedirectIsAnotherOrigin(): void
+    {
+        $seen = tempnam(sys_get_temp_dir(), "nm");
+        [$origin, $target] = [self::freePort(), self::freePort()];
+        $this->serve($target, ["SEEN_FILE" => $seen, "REDIRECT_TO" => ""]);
+        $this->serve($origin, ["REDIRECT_TO" => "//localhost:$target/moved"]);
+        $this->assertTrue(
+            (new Client(
+                new Config("http://127.0.0.1:$origin", "nm_secret"),
+            ))->health(),
+        );
+        $this->assertSame("none", file_get_contents($seen));
     }
 
     public function testAnotherPortIsAnotherOrigin(): void
@@ -86,9 +102,9 @@ final class RedirectTest extends TestCase
             "REDIRECT_TO" => "http://127.0.0.1:$target/moved",
         ]);
         $this->assertTrue(
-            new Client(
+            (new Client(
                 new Config("http://127.0.0.1:$origin", "nm_secret"),
-            )->health(),
+            ))->health(),
         );
         $this->assertSame("none", file_get_contents($seen));
     }
@@ -100,9 +116,9 @@ final class RedirectTest extends TestCase
         // /health redirects to /moved on the same server, which records.
         $this->serve($port, ["SEEN_FILE" => $seen, "REDIRECT_TO" => "/moved"]);
         $this->assertTrue(
-            new Client(
+            (new Client(
                 new Config("http://127.0.0.1:$port", "nm_secret"),
-            )->health(),
+            ))->health(),
         );
         $this->assertSame("Bearer nm_secret", file_get_contents($seen));
     }
