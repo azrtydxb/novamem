@@ -485,3 +485,36 @@ jobs:
       - name: Server log
         if: failure()
         run: tail -n 200 "$RUNNER_TEMP/server.log" "$RUNNER_TEMP/embed.log"
+
+  # The SDK READMEs (plan Task 18): every Operations table lists all 41
+  # routes.json methods, and every Quickstart compiles with its own
+  # toolchain, in the image that SDK's smoke leg uses.
+  readmes:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { lang: tables, image: "python:3.13-bookworm" }
+          - { lang: python, image: "python:3.13-bookworm" }
+          - { lang: typescript, image: "node:24-bookworm" }
+          - { lang: dotnet, image: "mcr.microsoft.com/dotnet/sdk:8.0" }
+          - { lang: java, image: "maven:3.9-eclipse-temurin-17" }
+          - { lang: rust, image: "rust:1-bookworm" }
+          - { lang: c, image: "rust:1-bookworm" }
+          - { lang: ruby, image: "ruby:3.2-bookworm" }
+          - { lang: php, image: "composer:2" }
+          - { lang: swift, image: "swift:6.3-noble" }
+    container:
+      image: ${{ matrix.image }}
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare the SDK
+        if: matrix.lang != 'tables'
+        run: sh clients/smoke/run.sh ${{ matrix.lang }} build
+      - run: sh scripts/check-sdk-readmes.sh ${{ matrix.lang }}
