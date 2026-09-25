@@ -106,6 +106,11 @@ export default withMermaid(
           ],
         },
         {
+          text: "SDKs",
+          collapsed: false,
+          items: [{ text: "Client libraries", link: "/sdks" }],
+        },
+        {
           text: "Dashboard",
           collapsed: false,
           items: [
@@ -218,5 +223,5 @@ export default withMermaid(
     mermaid: {
       theme: "dark",
     },
-  })
+  }),
 );
