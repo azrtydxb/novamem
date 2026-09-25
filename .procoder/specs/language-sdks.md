@@ -328,6 +328,7 @@ non-empty `mismatches` fails the scenario.
   (`*Async` future `cancel`) and Swift (`Task.cancel`). Python `Client`,
   Rust (dropping a future returns nothing to classify), C, C++, Ruby and
   PHP skip them, and their runners print each skipped id.
+- `expect.messageContains` (optional) must appear in the error message, compared case-insensitively.
 - `expectRequest` is optional. When present, the runner asserts method,
   path and JSON body (subset match), and always asserts
   `Authorization: Bearer <token>`.

@@ -47,6 +47,8 @@ Every task inherits all of these. They are copied from the spec.
   - `health`: `{ok:false}` returns false, not an error.
   - GET and bodyless DELETE calls send no body. Every call sends `Accept: application/json`; calls with a body send `Content-Type: application/json`.
   - Optional fields that are unset or empty strings are omitted from request JSON. Timestamps are sent as RFC 3339 UTC with a `Z` suffix. Unknown response fields are ignored. int64 fields are strings in TS.
+- `expect.messageContains` is matched case-insensitively, because each language capitalises field names in its own way (`Token is required` in Go, `token is required` in Python).
+- Scenario runners start the server through `clients/contract/scenario-server.sh` (Go's runner builds the binary itself), never with `go run`.
 - "Empty" (the scenario outcome) means the method succeeded and its result's wire JSON is `[]`, or is an object whose `results` array has length 0.
 - Naming: Python and Ruby use `snake_case`; TS, Java and Swift use `camelCase`; .NET uses `PascalCase` with an `Async` suffix; Rust uses `snake_case`; C uses `novamem_<class>_<snake>`. The classes are `Client`, `Management` and `Admin`.
 - Sync/async:
@@ -137,49 +139,49 @@ Interfaces:
   - `func Surface(routes map[string]Route) []Method`, which returns the 41 methods sorted by `Name`.
 - The 41 method entries, which every later task uses verbatim:
 
-| Route                                        | name                                     | op                   | request / params                         | response            |
-| -------------------------------------------- | ---------------------------------------- | -------------------- | ---------------------------------------- | ------------------- |
-| POST /v1/capture                             | Client.Capture                           | capture              | CaptureRequest                           | CaptureResult       |
-| POST /v1/search                              | Client.Search                            | search               | SearchRequest                            | SearchResult        |
-| POST /v1/recent                              | Client.Recent                            | recent               | RecentRequest                            | EntryList           |
-| POST /v1/recent                              | Client.Today                             | recent               | RecentRequest                            | EntryList           |
-| POST /v1/neighbors                           | Client.Neighbors                         | neighbors            | NeighborsRequest                         | SearchResult        |
-| PUT /v1/memories/{id}                        | Client.Update                            | update               | UpdateRequest (includes `id`)            | UpdateResult        |
-| POST /v1/forget                              | Client.Forget                            | forget               | ForgetRequest                            | ForgetResult        |
-| POST /v1/remember                            | Client.Remember                          | remember             | CaptureRequest                           | RememberResult      |
-| POST /v1/context                             | Client.Context                           | context              | ContextRequest                           | SearchResult        |
-| POST /v1/session-recap                       | Client.SessionRecap                      | session-recap        | SessionRecapRequest                      | SessionRecapResult  |
-| GET /v1/context-prefix                       | Client.ContextPrefix                     | context-prefix       | params [project]                         | ContextPrefix       |
-| GET /v1/stats                                | Client.Stats                             | stats                | —                                        | Stats               |
-| GET /health                                  | Client.Health                            | health               | —                                        | Health              |
-| POST /v1/me/tokens                           | Management.MintToken                     | mint-token           | MintTokenRequest                         | MintedToken         |
-| GET /v1/me/tokens                            | Management.ListTokens                    | list-tokens          | —                                        | TokenList           |
-| DELETE /v1/me/tokens/{hash}                  | Management.RevokeToken                   | revoke-token         | params [hash]                            | TokenDeleted        |
-| GET /v1/me/projects                          | Management.ListProjects                  | list-projects        | —                                        | ProjectList         |
-| POST /v1/me/projects                         | Management.CreateProject                 | create-project       | params [name]                            | Project             |
-| DELETE /v1/me/projects/{id}                  | Management.DeleteProject                 | delete-project       | params [id]                              | ProjectDeleted      |
-| GET /v1/me/projects/{id}/members             | Management.ListProjectMembers            | list-members         | params [id]                              | MemberList          |
-| POST /v1/me/projects/{id}/members            | Management.AddProjectMember              | add-member           | params [id, email, role]                 | MemberAdded         |
-| DELETE /v1/me/projects/{id}/members/{userId} | Management.RemoveProjectMember           | remove-member        | params [id, userId]                      | MemberRemoved       |
-| DELETE /v1/me/projects/{id}/members/{userId} | Management.RemoveProjectMemberByUsername | remove-member        | params [id, username]                    | MemberRemoved       |
-| GET /v1/me/active-project                    | Management.ActiveProject                 | active-project       | —                                        | ActiveProject       |
-| PUT /v1/me/active-project                    | Management.SetActiveProject              | set-active-project   | params [project]                         | ActiveProject       |
-| DELETE /v1/me/active-project                 | Management.ClearActiveProject            | clear-active-project | —                                        | null                |
-| POST /v1/decay                               | Management.Decay                         | decay                | params [effectiveDays]                   | DecayResult         |
-| POST /v1/hygiene                             | Management.Hygiene                       | hygiene              | params [k]                               | HygieneReport       |
-| POST /v1/evaluate                            | Management.Evaluate                      | evaluate             | params [suite]                           | EvaluateReport      |
-| POST /v1/adoption                            | Management.Adoption                      | adoption             | params [client]                          | AdoptionReport      |
-| POST /v1/observe                             | Management.Observe                       | observe              | params [project, limit]                  | ObserveResult       |
-| GET /v1/me/changes                           | Management.Changes                       | changes              | params [since, afterSeq, limit]          | ChangeFeed          |
-| GET /v1/me/usage                             | Management.Usage                         | usage                | —                                        | Usage               |
-| GET /v1/me/export                            | Management.Export                        | export               | params [afterId, limit]                  | ExportPage          |
-| POST /v1/me/import                           | Management.Import                        | import               | params [entries]                         | ImportResult        |
-| POST /v1/admin/users                         | Admin.ProvisionUser                      | provision-user       | ProvisionUserRequest                     | ProvisionedUser     |
-| POST /v1/admin/tokens/revoke                 | Admin.RevokeUserToken                    | revoke-user-token    | params [token]                           | RevokeResult        |
-| GET /v1/admin/users                          | Admin.ListUsers                          | list-users           | —                                        | AdminUserList       |
-| DELETE /v1/admin/users/{id}                  | Admin.PreviewDeleteUser                  | preview-delete-user  | params [id]                              | UserDeletionPreview |
-| DELETE /v1/admin/users/{id}                  | Admin.DeleteUser                         | delete-user          | params [id]                              | UserDeletion        |
-| PUT /v1/admin/users/{id}/quota               | Admin.SetUserQuota                       | set-user-quota       | params [id, maxEntries, writesPerMinute] | QuotaResult         |
+| Route                                        | name                                     | op                   | request / params                                     | response            |
+| -------------------------------------------- | ---------------------------------------- | -------------------- | ---------------------------------------------------- | ------------------- |
+| POST /v1/capture                             | Client.Capture                           | capture              | CaptureRequest                                       | CaptureResult       |
+| POST /v1/search                              | Client.Search                            | search               | SearchRequest                                        | SearchResult        |
+| POST /v1/recent                              | Client.Recent                            | recent               | RecentRequest                                        | EntryList           |
+| POST /v1/recent                              | Client.Today                             | recent               | RecentRequest                                        | EntryList           |
+| POST /v1/neighbors                           | Client.Neighbors                         | neighbors            | NeighborsRequest                                     | SearchResult        |
+| PUT /v1/memories/{id}                        | Client.Update                            | update               | params [id] + UpdateRequest (id travels in the path) | UpdateResult        |
+| POST /v1/forget                              | Client.Forget                            | forget               | ForgetRequest                                        | ForgetResult        |
+| POST /v1/remember                            | Client.Remember                          | remember             | CaptureRequest                                       | RememberResult      |
+| POST /v1/context                             | Client.Context                           | context              | ContextRequest                                       | SearchResult        |
+| POST /v1/session-recap                       | Client.SessionRecap                      | session-recap        | SessionRecapRequest                                  | SessionRecapResult  |
+| GET /v1/context-prefix                       | Client.ContextPrefix                     | context-prefix       | params [project]                                     | ContextPrefix       |
+| GET /v1/stats                                | Client.Stats                             | stats                | —                                                    | Stats               |
+| GET /health                                  | Client.Health                            | health               | —                                                    | Health              |
+| POST /v1/me/tokens                           | Management.MintToken                     | mint-token           | MintTokenRequest                                     | MintedToken         |
+| GET /v1/me/tokens                            | Management.ListTokens                    | list-tokens          | —                                                    | TokenList           |
+| DELETE /v1/me/tokens/{hash}                  | Management.RevokeToken                   | revoke-token         | params [hash]                                        | TokenDeleted        |
+| GET /v1/me/projects                          | Management.ListProjects                  | list-projects        | —                                                    | ProjectList         |
+| POST /v1/me/projects                         | Management.CreateProject                 | create-project       | params [name]                                        | Project             |
+| DELETE /v1/me/projects/{id}                  | Management.DeleteProject                 | delete-project       | params [id]                                          | ProjectDeleted      |
+| GET /v1/me/projects/{id}/members             | Management.ListProjectMembers            | list-members         | params [id]                                          | MemberList          |
+| POST /v1/me/projects/{id}/members            | Management.AddProjectMember              | add-member           | params [id, email, role]                             | MemberAdded         |
+| DELETE /v1/me/projects/{id}/members/{userId} | Management.RemoveProjectMember           | remove-member        | params [id, userId]                                  | MemberRemoved       |
+| DELETE /v1/me/projects/{id}/members/{userId} | Management.RemoveProjectMemberByUsername | remove-member        | params [id, username]                                | MemberRemoved       |
+| GET /v1/me/active-project                    | Management.ActiveProject                 | active-project       | —                                                    | ActiveProject       |
+| PUT /v1/me/active-project                    | Management.SetActiveProject              | set-active-project   | params [project]                                     | ActiveProject       |
+| DELETE /v1/me/active-project                 | Management.ClearActiveProject            | clear-active-project | —                                                    | null                |
+| POST /v1/decay                               | Management.Decay                         | decay                | params [effectiveDays]                               | DecayResult         |
+| POST /v1/hygiene                             | Management.Hygiene                       | hygiene              | params [k]                                           | HygieneReport       |
+| POST /v1/evaluate                            | Management.Evaluate                      | evaluate             | params [suite]                                       | EvaluateReport      |
+| POST /v1/adoption                            | Management.Adoption                      | adoption             | params [client]                                      | AdoptionReport      |
+| POST /v1/observe                             | Management.Observe                       | observe              | params [project, limit]                              | ObserveResult       |
+| GET /v1/me/changes                           | Management.Changes                       | changes              | params [since, afterSeq, limit]                      | ChangeFeed          |
+| GET /v1/me/usage                             | Management.Usage                         | usage                | —                                                    | Usage               |
+| GET /v1/me/export                            | Management.Export                        | export               | params [afterId, limit]                              | ExportPage          |
+| POST /v1/me/import                           | Management.Import                        | import               | params [entries]                                     | ImportResult        |
+| POST /v1/admin/users                         | Admin.ProvisionUser                      | provision-user       | ProvisionUserRequest                                 | ProvisionedUser     |
+| POST /v1/admin/tokens/revoke                 | Admin.RevokeUserToken                    | revoke-user-token    | params [token]                                       | RevokeResult        |
+| GET /v1/admin/users                          | Admin.ListUsers                          | list-users           | —                                                    | AdminUserList       |
+| DELETE /v1/admin/users/{id}                  | Admin.PreviewDeleteUser                  | preview-delete-user  | params [id]                                          | UserDeletionPreview |
+| DELETE /v1/admin/users/{id}                  | Admin.DeleteUser                         | delete-user          | params [id]                                          | UserDeletion        |
+| PUT /v1/admin/users/{id}/quota               | Admin.SetUserQuota                       | set-user-quota       | params [id, maxEntries, writesPerMinute]             | QuotaResult         |
 
 The class corrections in this table (`Management.Decay`, `.Evaluate`, `.Hygiene`, `.Observe` and `.Adoption`, plus `GET /v1/me/today` as a non-goal) already landed in `clients/go/routecoverage_test.go` on `fix/sdk-prereqs`, guarded by `TestRouteMapNamesRealMethods`. This task moves the corrected map into `routes.json`, and deletes that Go map and both of its tests in favour of `TestEveryRouteIsAccounted`.
 
@@ -369,6 +371,7 @@ Interfaces:
   - `GET /_verdict/{id}` returns `{"requests": n, "mismatches": [...]}` and resets that id's state.
   - An unknown id replies 599 `{"error":"unknown scenario <id>"}`.
 
+- `scenario-server.sh` (created): builds `./cmd/scenario-server` into `$TMPDIR` and `exec`s it with the given flags, so killing the process an SDK runner started kills the server.
 - `cmd/scenario-server`: its flags are `-scenarios <path>` and `-addr` (default `127.0.0.1:0`). At startup it binds, then releases, one extra port (the `closed` port). It prints exactly `listening http://127.0.0.1:<port> closed=<closedPort>\n` to stdout, flushes, then serves until killed.
 
 - [ ] Write the failing test in `clients/contract/scenario_test.go`:
@@ -502,6 +505,9 @@ Run `cd clients/contract && go test ./...`: expect FAIL with `undefined: File`.
   - `capture-blank-content-local`: the same shape with `{"content":""}`, message contains `content is required`.
   - `health-ok-false`: `Client.Health`; 200 `{"ok":false}`; expect ok with `result: false`.
   - `today-since-24h`: `Client.Today`, args `{}`; 200 `{"results":[]}`; expectRequest POST `/v1/recent`; expect empty. The server also checks that `since` in the body parses as RFC 3339 and falls within now − 24 h ± 60 s. Implement this as a special rule keyed on the scenario id, recording mismatch `since out of range` when it fails.
+  - `health-503-is-false`: `Client.Health`; 503 `{"ok":false}`; expect ok with `result: false` (the Go client treats `/health`'s own 503 as the answer "not healthy", not an outage).
+  - `observe-503-observer-disabled`: `Management.Observe` with args `{"project":"p1"}`; 503 `{"error":"observer disabled"}`; expect error, not retryable, status 503, code `observer_disabled`.
+  - `search-ok` and `capture-ok`: one plain success each, so the error-table ops also have a success path.
   - `stats-get-sends-no-body`: `Client.Stats`; expectRequest GET `/v1/stats` with `noBody: true`; 200 `{"byNamespace":{},"totals":{"warm":0,"cold":0}}`; expect ok.
   - `ctor-blank-token`: `call.class: "ctor"`, args `{"baseUrl":"<server>","token":"  "}`; expect error, `requests == 0`.
   - `ctor-relative-url`: `call.class: "ctor"`, args `{"baseUrl":"localhost:7778","token":"nm_scenario_TOKEN_must_never_leak"}`; expect error, message must not contain the token.
@@ -518,7 +524,7 @@ Files:
 
 Interfaces:
 
-- Consumes the Task 4 protocol, and starts `go run ./cmd/scenario-server -scenarios scenarios.json` with working directory `../contract`.
+- Consumes the Task 4 protocol. It builds `./cmd/scenario-server` into `t.TempDir()` and runs the binary with working directory `../contract`; it never uses `go run`, because killing `go run` leaves the compiled child holding the test's output open. Every other SDK uses `clients/contract/scenario-server.sh`, which builds and then `exec`s, for the same reason.
 - Produces the reference runner that every other SDK's runner copies in its own language:
 
   1. start or locate the server;
@@ -569,7 +575,7 @@ type scenarioFile struct {
 
 func startScenarioServer(t *testing.T) (base, closed string) {
 	t.Helper()
-	cmd := exec.Command("go", "run", "./cmd/scenario-server", "-scenarios", "scenarios.json")
+	cmd := exec.Command("sh", "scenario-server.sh", "-scenarios", "scenarios.json")
 	cmd.Dir = "../contract"
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -845,7 +851,7 @@ TOKEN = SCEN["token"]
 
 def start_server():
     p = subprocess.Popen(
-        ["go", "run", "./cmd/scenario-server", "-scenarios", "scenarios.json"],
+        ["sh", "scenario-server.sh", "-scenarios", "scenarios.json"],
         cwd=CLIENTS / "contract", stdout=subprocess.PIPE, text=True)
     _, url, closed = p.stdout.readline().split()
     return p, url, closed.split("=")[1]
@@ -1234,7 +1240,7 @@ public sealed class ScenarioServer : IDisposable
     public ScenarioServer()
     {
         var contract = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../contract"));
-        _p = Process.Start(new ProcessStartInfo("go", "run ./cmd/scenario-server -scenarios scenarios.json")
+        _p = Process.Start(new ProcessStartInfo("sh", "scenario-server.sh -scenarios scenarios.json")
             { WorkingDirectory = contract, RedirectStandardOutput = true })!;
         var parts = _p.StandardOutput.ReadLine()!.Split(' ');
         Url = parts[1]; Closed = parts[2].Split('=')[1];
@@ -1417,7 +1423,7 @@ class ScenarioTest {
   @BeforeAll
   static void start() throws Exception {
     scen = M.readTree(CONTRACT.resolve("scenarios.json").toFile());
-    proc = new ProcessBuilder("go", "run", "./cmd/scenario-server", "-scenarios", "scenarios.json")
+    proc = new ProcessBuilder("sh", "scenario-server.sh", "-scenarios", "scenarios.json")
         .directory(CONTRACT.toFile()).redirectError(ProcessBuilder.Redirect.INHERIT).start();
     String[] parts = new BufferedReader(new InputStreamReader(proc.getInputStream())).readLine().split(" ");
     url = parts[1];
@@ -1601,8 +1607,8 @@ async fn test_scenarios() {
     let scen: Value = serde_json::from_str(&std::fs::read_to_string(contract().join("scenarios.json")).unwrap()).unwrap();
     let token = scen["token"].as_str().unwrap().to_string();
     let timeout = Duration::from_millis(scen["timeoutMs"].as_u64().unwrap());
-    let mut child = Command::new("go")
-        .args(["run", "./cmd/scenario-server", "-scenarios", "scenarios.json"])
+    let mut child = Command::new("sh")
+        .args(["scenario-server.sh", "-scenarios", "scenarios.json"])
         .current_dir(contract())
         .stdout(Stdio::piped())
         .kill_on_drop(true)
@@ -1800,7 +1806,7 @@ int main(int argc, char **argv) {
 
 Write `clients/c/tests/scenarios.cpp` as the same program using `novamem.hpp`: construct `novamem::Client` inside try/catch and map `novamem::Error` fields to the same output line. It calls the C++ test entry `novamem::test_call(base, token, timeout, method, args)`, which `novamem.hpp` provides only when `NOVAMEM_TEST_DISPATCH` is defined; it wraps `novamem_test_call_by_name` and throws `novamem::Error`.
 
-Write `clients/c/tests/run_scenarios.py`, a stdlib-only harness. It starts the scenario server exactly as Task 7's `start_server` does, and for each scenario runs `[binary, base, token, timeoutMs, method, json.dumps(args)]`, using `ctor` as the method for ctor scenarios with `args.baseUrl` and `args.token` as base and token. It skips `requires: cancel` scenarios, printing `skip (blocking API has no cancellation): <id>`. It parses the output line, asserts outcome, retryable, statusCode and code against `expect`, asserts `leaked == 0`, and checks `/_verdict`. It exits 1 listing every failure. It takes the binary path as `argv[1]`.
+Write `clients/c/tests/run_scenarios.py`, a stdlib-only harness. It starts the scenario server exactly as Task 7's `start_server` does (`sh scenario-server.sh -scenarios scenarios.json` in `clients/contract`), and for each scenario runs `[binary, base, token, timeoutMs, method, json.dumps(args)]`, using `ctor` as the method for ctor scenarios with `args.baseUrl` and `args.token` as base and token. It skips `requires: cancel` scenarios, printing `skip (blocking API has no cancellation): <id>`. It parses the output line, asserts outcome, retryable, statusCode and code against `expect`, asserts `leaked == 0`, and checks `/_verdict`. It exits 1 listing every failure. It takes the binary path as `argv[1]`.
 
 Write `clients/c/tests/routes.sh`:
 
@@ -1875,7 +1881,7 @@ TOKEN = SCEN.fetch("token")
 class ScenariosTest < Minitest::Test
   def self.server
     @server ||= begin
-      io = IO.popen(["go", "run", "./cmd/scenario-server", "-scenarios", "scenarios.json"], chdir: CONTRACT)
+      io = IO.popen(["sh", "scenario-server.sh", "-scenarios", "scenarios.json"], chdir: CONTRACT)
       _, url, closed = io.gets.split
       Minitest.after_run { Process.kill("KILL", io.pid) }
       [url, closed.split("=").last]
@@ -2013,7 +2019,7 @@ final class ScenarioTest extends TestCase
     {
         $contract = realpath(__DIR__ . '/../../contract');
         self::$scen = json_decode(file_get_contents("$contract/scenarios.json"), true);
-        self::$proc = proc_open(['go', 'run', './cmd/scenario-server', '-scenarios', 'scenarios.json'],
+        self::$proc = proc_open(['sh', 'scenario-server.sh', '-scenarios', 'scenarios.json'],
             [1 => ['pipe', 'w']], $pipes, $contract);
         [, self::$url, $closed] = explode(' ', trim(fgets($pipes[1])));
         self::$closed = explode('=', $closed)[1];
@@ -2170,7 +2176,7 @@ final class ScenarioTests: XCTestCase {
     func startServer() throws -> (Process, String, String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["go", "run", "./cmd/scenario-server", "-scenarios", "scenarios.json"]
+        p.arguments = ["sh", "scenario-server.sh", "-scenarios", "scenarios.json"]
         p.currentDirectoryURL = Self.contract
         let pipe = Pipe(); p.standardOutput = pipe
         try p.run()
