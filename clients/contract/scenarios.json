@@ -891,6 +891,34 @@
       }
     },
     {
+      "id": "token-echoed-in-code-is-redacted",
+      "call": {
+        "class": "Client",
+        "method": "Client.Search",
+        "args": {
+          "query": "coffee"
+        }
+      },
+      "respond": {
+        "status": 400,
+        "json": {
+          "error": "bad request",
+          "code": "nm_scenario_TOKEN_must_never_leak"
+        }
+      },
+      "expectRequest": [
+        {
+          "method": "POST",
+          "path": "/v1/search"
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "retryable": false,
+        "statusCode": 400
+      }
+    },
+    {
       "id": "capture-ok",
       "call": {
         "class": "Client",

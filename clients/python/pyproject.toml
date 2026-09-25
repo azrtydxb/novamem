@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novamem"
+version = "0.1.0"
+description = "Python client for novamem, the tiered memory service for agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+# Standard library only (ADR 0009): nothing this SDK needs is worth a
+# version conflict in the application that imports it.
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/azrtydxb/novamem"
+Source = "https://github.com/azrtydxb/novamem/tree/main/clients/python"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+novamem = ["py.typed"]
+
+[tool.ruff]
+target-version = "py310"
+# Written by `go run ./clients/gen`; formatting them would fight the
+# generator, and the SDKs workflow's `generated` job would report drift on
+# every build. Change the template in clients/gen/templates instead.
+extend-exclude = ["src/novamem/_types.py", "tests/_dispatch.py"]
+# Apply the exclusion even when a tool passes these files by name, as the
+# commit gate does.
+force-exclude = true

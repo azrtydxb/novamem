@@ -883,6 +883,8 @@ func (c *Client) do(ctx context.Context, op, method, path string, body, out any)
 		// otherwise get it laundered into this client's logs. Cheap, and it
 		// removes the only path by which the token can reach an error string.
 		e.Message = strings.ReplaceAll(e.Message, c.token, "[redacted]")
+		// The code is quoted verbatim too, and Error() prints it.
+		e.Code = strings.ReplaceAll(e.Code, c.token, "[redacted]")
 		return e
 	}
 	if out == nil {

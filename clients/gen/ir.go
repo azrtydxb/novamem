@@ -49,6 +49,15 @@ type Type struct {
 	Doc    string
 }
 
+// IsObject, IsEnum and IsAlias let templates branch on Kind by name.
+func (t Type) IsObject() bool { return t.Kind == KObject }
+
+// IsEnum reports whether t is a closed set of strings.
+func (t Type) IsEnum() bool { return t.Kind == KEnum }
+
+// IsAlias reports whether t is a named array or map.
+func (t Type) IsAlias() bool { return t.Kind == KAlias }
+
 // Model is what every template receives.
 type Model struct {
 	Types   []Type
