@@ -16,7 +16,16 @@ from enum import Enum
 from typing import Any, ClassVar
 
 
-def _dt_to_wire(v: datetime) -> str:
+def _dt_to_wire(v: Any) -> Any:
+    # A timestamp given as a string is normalised too; one that does not
+    # parse is sent unchanged, and the server answers it.
+    if isinstance(v, str):
+        try:
+            v = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError:
+            return v
+    if not isinstance(v, datetime):
+        return v
     if v.tzinfo is None:
         v = v.replace(tzinfo=timezone.utc)
     return v.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
@@ -36,7 +45,7 @@ def _to_wire(value: Any, spec: tuple[str, Any]) -> Any:
     if value is None:
         return None
     if kind == "p":
-        return _dt_to_wire(value) if arg == "datetime" and isinstance(value, datetime) else value
+        return _dt_to_wire(value) if arg == "datetime" else value
     if kind == "n":
         if isinstance(value, Enum):
             return value.value

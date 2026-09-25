@@ -58,6 +58,23 @@ func (t Type) IsEnum() bool { return t.Kind == KEnum }
 // IsAlias reports whether t is a named array or map.
 func (t Type) IsAlias() bool { return t.Kind == KAlias }
 
+// DatetimeFields is the sorted, de-duplicated wire names of every
+// timestamp field, for SDKs that normalise timestamps at runtime.
+func (m Model) DatetimeFields() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range m.Types {
+		for _, f := range t.Fields {
+			if f.Ref.Prim == "datetime" && !seen[f.Wire] {
+				seen[f.Wire] = true
+				out = append(out, f.Wire)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Model is what every template receives.
 type Model struct {
 	Types   []Type

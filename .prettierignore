@@ -8,6 +8,10 @@ docs/api/openapi.json
 go/internal/httpapi/openapi.json
 go/internal/mcp/tooldefs.json
 conformance/reference/tools.snapshot.json
+# SDK wire types and scenario dispatch tables, written by
+# `go run ./clients/gen` from the same API document (ADR 0009).
+clients/typescript/src/types.ts
+clients/typescript/test/dispatch.ts
 # Vite build output synced from packages/admin-ui and embedded in the Go
 # binary (go/scripts/sync-admin-ui.sh).
 go/internal/httpapi/admin-ui/
