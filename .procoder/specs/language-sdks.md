@@ -331,8 +331,9 @@ non-empty `mismatches` fails the scenario.
 - `expect.messageContains` (optional) must appear in the error message, compared case-insensitively.
 - `respond` may also redirect: `{status: 302, redirect: "same"|"cross", to: "/path"}` answers with a Location back on the same scenario. `cross` names the server as `localhost` instead of `127.0.0.1`, a different origin that still reaches it. An `expectRequest` entry with `"auth": false` then requires that request to carry no `Authorization` header. Scenarios `redirect-cross-origin-drops-bearer` and `redirect-same-origin-keeps-bearer` hold every SDK to Go's redirect behaviour.
 - `expectRequest` is optional. When present, the runner asserts method,
-  path and JSON body (subset match), and always asserts
-  `Authorization: Bearer <token>`.
+  path and JSON body (subset match), and asserts
+  `Authorization: Bearer <token>` — unless the entry sets `"auth": false`,
+  in which case the header must be absent.
 - Minimum scenario set for version 1: one scenario per row of the error
   table above, for both a read op (`search`) and the write op
   (`capture`); the four `forget` cases (ok, 404 → not deleted, 500 →

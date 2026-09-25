@@ -31,6 +31,20 @@ final class ScenarioTests: XCTestCase {
         return (p, parts[1], String(parts[2].split(separator: "=")[1]))
     }
 
+    /// URLSession's async data(from:) is missing from Linux Foundation
+    /// before Swift 6, so the verdict is read through a data task.
+    func fetch(_ url: URL) async throws -> Data {
+        try await withCheckedThrowingContinuation { k in
+            URLSession.shared.dataTask(with: url) { d, _, e in
+                if let e {
+                    k.resume(throwing: e)
+                } else {
+                    k.resume(returning: d ?? Data())
+                }
+            }.resume()
+        }
+    }
+
     func isEmpty(_ d: Data) -> Bool {
         let o = try? JSONSerialization.jsonObject(with: d, options: [.fragmentsAllowed])
         if let a = o as? [Any] {
@@ -138,7 +152,7 @@ final class ScenarioTests: XCTestCase {
                 }
             }
             if try XCTUnwrap(call["class"] as? String) != "ctor" {
-                let (vd, _) = try await URLSession.shared.data(from: XCTUnwrap(URL(string: "\(url)/_verdict/\(id)")))
+                let vd = try await fetch(XCTUnwrap(URL(string: "\(url)/_verdict/\(id)")))
                 let v = try XCTUnwrap(try JSONSerialization.jsonObject(with: vd) as? [String: Any])
                 if try !XCTUnwrap((v["mismatches"] as? [Any])?.isEmpty) {
                     failures.append("\(id): mismatches \(v["mismatches"]!)")
