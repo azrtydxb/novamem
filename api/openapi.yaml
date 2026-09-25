@@ -56,6 +56,230 @@ components:
         Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax.
         Browsers attach it automatically.
   schemas:
+    RevokeResult:
+      type: object
+      properties:
+        revoked:
+          type: boolean
+      required:
+        - revoked
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+          nullable: true
+        role:
+          type: string
+        createdAt:
+          type: string
+        entryCount:
+          type: integer
+        tokenCount:
+          type: integer
+      required:
+        - id
+        - email
+        - name
+        - role
+        - createdAt
+        - entryCount
+        - tokenCount
+    AdminUserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUser"
+      required:
+        - users
+    ProvisionedUser:
+      type: object
+      properties:
+        userId:
+          type: string
+        email:
+          type: string
+        token:
+          type: string
+          description: Present only when tokenLabel was sent.
+      required:
+        - userId
+        - email
+    UserDeletion:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        entriesRemoved:
+          type: integer
+        tokensRemoved:
+          type: integer
+        projectsDeleted:
+          type: array
+          items:
+            type: string
+        coldCleanup:
+          type: array
+          items:
+            type: string
+        coldCleanupOk:
+          type: boolean
+      required:
+        - deleted
+        - entriesRemoved
+        - tokensRemoved
+        - projectsDeleted
+        - coldCleanup
+        - coldCleanupOk
+    UserDeletionPreview:
+      type: object
+      properties:
+        dryRun:
+          type: boolean
+        wouldDelete:
+          type: object
+          properties:
+            userId:
+              type: string
+            email:
+              type: string
+            entries:
+              type: integer
+            tokens:
+              type: integer
+            ownedProjects:
+              type: array
+              items:
+                type: string
+          required:
+            - userId
+            - entries
+            - tokens
+            - ownedProjects
+      required:
+        - dryRun
+        - wouldDelete
+    QuotaResult:
+      type: object
+      properties:
+        userId:
+          type: string
+        quota:
+          type: object
+          properties:
+            maxEntries:
+              type: integer
+              nullable: true
+            writesPerMinute:
+              type: integer
+              nullable: true
+          required:
+            - maxEntries
+            - writesPerMinute
+      required:
+        - userId
+        - quota
+    ContextPrefix:
+      type: object
+      properties:
+        prefix:
+          type: string
+      required:
+        - prefix
+    ExportedEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+          nullable: true
+        content:
+          type: string
+        namespace:
+          type: string
+        source:
+          type: string
+        agentName:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        sourceType:
+          type: string
+          nullable: true
+        capturedFrom:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - projectId
+        - content
+        - namespace
+        - source
+        - agentName
+        - metadata
+        - sourceType
+        - capturedFrom
+        - confidence
+        - createdAt
+        - updatedAt
+    ExportPage:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExportedEntry"
+        nextAfterId:
+          type: string
+          nullable: true
+      required:
+        - entries
+        - nextAfterId
+    ImportResult:
+      type: object
+      properties:
+        imported:
+          type: integer
+        deduplicated:
+          type: integer
+        failed:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              error:
+                type: string
+            required:
+              - index
+              - error
+      required:
+        - imported
+        - deduplicated
+        - failed
+    TokenDeleted:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+      required:
+        - deleted
     Error:
       type: object
       properties:
@@ -1568,7 +1792,11 @@ paths:
         - SessionCookie: []
       responses:
         "200":
-          description: a cacheable text prefix, not a JSON object
+          description: The cacheable observation-log prefix
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextPrefix"
         "401":
           description: Missing or invalid credentials
           content:
@@ -2318,7 +2546,11 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: revocation confirmation
+          description: The token was deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenDeleted"
         "401":
           description: Missing or invalid credentials
           content:
@@ -2810,7 +3042,11 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: a streamed NDJSON dump whose line shape is MemoryEntry
+          description: One page of the caller's entries, oldest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportPage"
         "401":
           description: Missing or invalid credentials
           content:
@@ -2819,8 +3055,10 @@ paths:
                 $ref: "#/components/schemas/Error"
       operationId: getV1MeExport
       description:
-        Stream every entry the caller owns as NDJSON, one `MemoryEntry` per line. Sized for
-        piping to a file, not for holding in memory.
+        One page of the entries the caller owns, oldest first, as a JSON object. `limit` is
+        1-1000 (default 500). Pass the previous page's `nextAfterId` as `afterId` to continue.
+        `nextAfterId` is set whenever the page holds entries, so keep paging until a page
+        comes back with an empty `entries` array.
   /v1/me/import:
     post:
       summary: Import entries (from an export or a migration) as new memories
@@ -2880,8 +3118,18 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: counts echoed from a streamed upload
+        "201":
+          description: Import outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "400":
+          description: Every entry failed; the body still reports each failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
         "401":
           description: Missing or invalid credentials
           content:
@@ -2890,8 +3138,11 @@ paths:
                 $ref: "#/components/schemas/Error"
       operationId: postV1MeImport
       description:
-        Restore entries from an NDJSON stream in the shape `/v1/me/export` produces. Applies
-        the same worthiness gate and dedup as a normal write unless forced.
+        Store 1-200 entries (the `entries` of `/v1/me/export` pages fit as-is). Each is
+        written unconditionally, as `/v1/remember` does, with no worthiness gate. Content-hash
+        dedup makes re-importing an export idempotent. Ids are not preserved, and a `project`
+        reference that doesn't resolve on this deployment is reported in `failed`. Answers
+        201, or 400 with the same body when every entry failed.
   /v1/me/usage:
     get:
       summary: The caller's stored-entry count and effective quotas
@@ -3090,7 +3341,11 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: revocation count
+          description: Whether a matching token existed and was revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeResult"
         "401":
           description: Missing or invalid credentials
           content:
@@ -3147,8 +3402,12 @@ paths:
         - SessionCookie: []
         - UserBearer: []
       responses:
-        "200":
-          description: created admin user
+        "201":
+          description: The provisioned user, plus a bearer when tokenLabel was sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionedUser"
         "401":
           description: Missing or invalid credentials
           content:
@@ -3168,7 +3427,11 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: admin user list
+          description: Every user with their entry and live-token counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserList"
         "401":
           description: Missing or invalid credentials
           content:
@@ -3200,7 +3463,13 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: deletion counts
+          description: The deletion outcome, or with dryRun=true what would be deleted
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/UserDeletion"
+                  - $ref: "#/components/schemas/UserDeletionPreview"
         "401":
           description: Missing or invalid credentials
           content:
@@ -3246,7 +3515,11 @@ paths:
         - UserBearer: []
       responses:
         "200":
-          description: the stored quota
+          description: The quota now in force for the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuotaResult"
         "401":
           description: Missing or invalid credentials
           content:

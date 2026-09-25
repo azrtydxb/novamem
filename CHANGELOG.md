@@ -4,6 +4,12 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## Unreleased
 
+### Fixed
+
+- **Nine routes documented no response body.** `POST /v1/admin/tokens/revoke`, `GET`/`POST /v1/admin/users`, `DELETE /v1/admin/users/{id}`, `PUT /v1/admin/users/{id}/quota`, `GET /v1/context-prefix`, `GET /v1/me/export`, `POST /v1/me/import` and `DELETE /v1/me/tokens/{hash}` now declare named response schemas in `api/openapi.yaml`, transcribed from their handlers. Handlers are unchanged.
+- **Two documented status codes were wrong.** `POST /v1/admin/users` answers 201, not 200. `POST /v1/me/import` answers 201, or 400 with the same result body when every entry failed.
+- **`clients/go` route map credited methods to the wrong class.** Decay, Evaluate, Hygiene, Observe and Adoption were listed under `Client` although they live on `Management`, and `GET /v1/me/today` pointed at a `Management.Today` that doesn't exist (it is now a declared non-goal). The new `TestRouteMapNamesRealMethods` fails on any row naming a method that doesn't exist.
+
 ## 1.1.2 - 2026-05-05
 
 ### Fixed

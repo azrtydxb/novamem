@@ -1,6 +1,6 @@
 # 0002 — Deprecate the @azrtydxb/novamem npm client
 
-Status: accepted
+Status: superseded-by-0009
 Date: 2026-08-20
 
 ## Context
