@@ -41,7 +41,7 @@ class Transport:
         self.base_url = base
         self._token = token
         self.timeout = timeout if timeout and timeout > 0 else DEFAULT_TIMEOUT
-        self._opener = opener or urllib.request.build_opener()
+        self._opener = opener or urllib.request.build_opener(_SameOriginAuth())
 
     def __repr__(self) -> str:
         return f"Transport(base_url={self.base_url!r}, token=[redacted], timeout={self.timeout})"
@@ -138,10 +138,11 @@ class Transport:
         if not message:
             text = raw.decode("utf-8", "replace").strip()
             message = text[:256] + "…" if len(text) > 256 else text
-        # The server's message is quoted verbatim, and a server that echoes
-        # the credential back ("bad token nm_…") would otherwise launder it
-        # into this client's logs.
+        # The server's message and code are quoted verbatim, and a server that
+        # echoes the credential back ("bad token nm_…") would otherwise
+        # launder it into this client's logs.
         message = self._redact(message)
+        code = self._redact(code)
         if status >= 500 or status == 429:
             return UnavailableError(
                 op, message, status_code=status, code=code, retryable=True
@@ -149,6 +150,26 @@ class Transport:
         if status == 404:
             return NotFoundError(op, message, status_code=status, code=code)
         return NovamemError(op, message, status_code=status, code=code)
+
+
+class _SameOriginAuth(urllib.request.HTTPRedirectHandler):
+    """Follows redirects, but never carries the bearer to another origin.
+
+    urllib's default handler copies every header onto the redirected
+    request, so a redirect to a different host would hand it the token. Go's
+    http.Client drops Authorization on a cross-origin redirect; so does this.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and _origin(new.full_url) != _origin(req.full_url):
+            new.remove_header("Authorization")
+        return new
+
+
+def _origin(url: str) -> tuple[str, str]:
+    p = urllib.parse.urlsplit(url)
+    return (p.scheme, p.netloc.lower())
 
 
 def _qs(v: Any) -> str:

@@ -33,3 +33,6 @@ target-version = "py310"
 # generator, and the SDKs workflow's `generated` job would report drift on
 # every build. Change the template in clients/gen/templates instead.
 extend-exclude = ["src/novamem/_types.py", "tests/_dispatch.py"]
+# Apply the exclusion even when a tool passes these files by name, as the
+# commit gate does.
+force-exclude = true

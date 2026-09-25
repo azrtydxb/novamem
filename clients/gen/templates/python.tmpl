@@ -3,8 +3,8 @@
 """Wire types for the novamem API, generated from docs/api/openapi.json.
 
 Every object type is a frozen dataclass with ``to_wire()`` (a JSON-ready
-dict: unset fields and empty optional strings are left out, datetimes are
-sent as UTC with a ``Z``) and ``from_wire(d)`` (unknown keys are ignored, so
+dict: unset and empty optional fields are left out, required ones are always
+present, datetimes are sent as UTC with a ``Z``) and ``from_wire(d)`` (unknown keys are ignored, so
 a newer server still decodes). Enum values the SDK does not know are kept as
 plain strings rather than rejected.
 """
@@ -73,7 +73,10 @@ class _Wire:
         out: dict[str, Any] = {}
         for name, wire, spec, required in self._FIELDS:
             v = getattr(self, name)
-            if v is None or (v == "" and not required):
+            # A required field is always sent, as null when it is None: the
+            # key's presence is part of the contract. Optional ones are left
+            # out when unset or empty.
+            if not required and (v is None or v == ""):
                 continue
             out[wire] = _to_wire(v, spec)
         return out
