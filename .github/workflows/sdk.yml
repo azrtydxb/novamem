@@ -184,3 +184,36 @@ jobs:
       - name: Loads with no gems installed
         working-directory: clients/ruby
         run: GEM_HOME="$RUNNER_TEMP/nogems" GEM_PATH="$RUNNER_TEMP/nogems" ruby -Ilib -e 'require "novamem"'
+
+  # PHP SDK (plan Task 14): the shared scenario suite on the oldest and a
+  # current PHP; nothing but platform extensions outside require-dev.
+  php:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.4"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json
+          tools: composer
+      - name: Scenario suite
+        working-directory: clients/php
+        run: composer install --no-interaction --no-progress && vendor/bin/phpunit
+      - name: Static analysis
+        working-directory: clients/php
+        run: vendor/bin/phpstan analyse --no-progress
+      - name: No runtime dependencies
+        working-directory: clients/php
+        run: |
+          rm -rf vendor && composer install --no-dev --no-interaction --no-progress
+          [ -z "$(composer show --no-dev)" ] || { composer show --no-dev; exit 1; }

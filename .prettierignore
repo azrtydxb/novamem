@@ -12,6 +12,8 @@ conformance/reference/tools.snapshot.json
 # `go run ./clients/gen` from the same API document (ADR 0009).
 clients/typescript/src/types.ts
 clients/typescript/test/dispatch.ts
+clients/php/src/Types.php
+clients/php/tests/Dispatch.php
 # Vite build output synced from packages/admin-ui and embedded in the Go
 # binary (go/scripts/sync-admin-ui.sh).
 go/internal/httpapi/admin-ui/

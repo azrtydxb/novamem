@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@prettier/plugin-php": "^0.25.0",
     "@types/node": "^26.5",
     "eslint": "^10.10.0",
     "typescript": "^7.0.2",

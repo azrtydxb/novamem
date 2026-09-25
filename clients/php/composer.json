@@ -1,0 +1,32 @@
+{
+  "name": "azrtydxb/novamem",
+  "description": "PHP client for novamem, the tiered memory service for agents",
+  "type": "library",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/azrtydxb/novamem",
+  "require": {
+    "php": ">=8.2",
+    "ext-curl": "*",
+    "ext-json": "*"
+  },
+  "require-dev": {
+    "phpstan/phpstan": "^2.1",
+    "phpunit/phpunit": "^11.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "Novamem\\": "src/"
+    },
+    "classmap": [
+      "src/Types.php"
+    ]
+  },
+  "autoload-dev": {
+    "classmap": [
+      "tests/"
+    ]
+  },
+  "config": {
+    "sort-packages": true
+  }
+}
