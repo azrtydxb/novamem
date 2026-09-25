@@ -70,7 +70,8 @@ final class Transport {
       payload = body == null ? null : Json.MAPPER.writeValueAsBytes(body);
     } catch (JsonProcessingException e) {
       return CompletableFuture.failedFuture(
-          new NovamemException(op, "encode request: " + e.getOriginalMessage()));
+          // The message can quote request values, and a revoke body holds a token.
+          new NovamemException(op, redact("encode request: " + e.getOriginalMessage())));
     }
     URI url = URI.create(cfg.baseUrl() + path + query(query));
 

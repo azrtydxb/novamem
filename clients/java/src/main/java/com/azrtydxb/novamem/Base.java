@@ -26,7 +26,7 @@ public abstract class Base {
   public String toString() {
     return getClass().getSimpleName()
         + "[baseUrl="
-        + transport.config().baseUrl()
+        + transport.config().redactedBaseUrl()
         + ", token=[redacted]]";
   }
 
