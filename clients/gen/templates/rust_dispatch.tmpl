@@ -27,7 +27,7 @@ fn req<T: DeserializeOwned + Default>(a: &Value) -> T {
 fn json<T: serde::Serialize>(v: T) -> Value {
     serde_json::to_value(v).unwrap_or(Value::Null)
 }
-{{define "rarg"}}{{if eq .Type "string"}}{{if .Required}}&arg::<String>(a, "{{.Name}}"){{else}}arg::<Option<String>>(a, "{{.Name}}").as_deref(){{end}}{{else if eq .Type "int32"}}{{if .Required}}arg::<i32>(a, "{{.Name}}"){{else}}arg::<Option<i32>>(a, "{{.Name}}"){{end}}{{else if eq .Type "int64"}}{{if .Required}}arg::<i64>(a, "{{.Name}}"){{else}}arg::<Option<i64>>(a, "{{.Name}}"){{end}}{{else if eq .Type "bool"}}arg::<Option<bool>>(a, "{{.Name}}"){{else}}arg::<Vec<Value>>(a, "{{.Name}}"){{end}}{{end}}
+{{define "rarg"}}{{if eq .Type "string"}}{{if .Required}}&arg::<String>(a, "{{.Name}}"){{else}}arg::<Option<String>>(a, "{{.Name}}").as_deref(){{end}}{{else if eq .Type "int32"}}{{if .Required}}arg::<i32>(a, "{{.Name}}"){{else}}arg::<Option<i32>>(a, "{{.Name}}"){{end}}{{else if eq .Type "int64"}}{{if .Required}}arg::<i64>(a, "{{.Name}}"){{else}}arg::<Option<i64>>(a, "{{.Name}}"){{end}}{{else if eq .Type "bool"}}{{if .Required}}arg::<bool>(a, "{{.Name}}"){{else}}arg::<Option<bool>>(a, "{{.Name}}"){{end}}{{else}}{{if .Required}}arg::<Vec<Value>>(a, "{{.Name}}"){{else}}arg::<Option<Vec<Value>>>(a, "{{.Name}}"){{end}}{{end}}{{end}}
 
 /// The routes.json method names this table serves.
 pub const METHODS: &[&str] = &[

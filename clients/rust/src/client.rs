@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 
-use crate::transport::{Call, Transport};
+use crate::transport::{Call, Resp, Transport};
 use crate::{time, types as t, Config, Error};
 
 fn seg(s: &str) -> String {
@@ -29,8 +29,10 @@ fn blank(s: &str) -> bool {
     s.trim().is_empty()
 }
 
-fn body<T: Serialize>(v: &T) -> Value {
-    serde_json::to_value(v).unwrap_or(Value::Null)
+/// A request as JSON. Fails rather than sending `null` when a value cannot
+/// be encoded (a NaN or infinite float, for one).
+fn body<T: Serialize>(op: &str, v: &T) -> Result<Value, Error> {
+    serde_json::to_value(v).map_err(|e| Error::new(op, format!("encode request: {e}")))
 }
 
 /// An object of the given fields, leaving out unset and empty ones.
@@ -48,14 +50,16 @@ fn fields(pairs: &[(&str, Value)]) -> Value {
     Value::Object(m)
 }
 
-fn decode<T: DeserializeOwned>(op: &str, v: Value) -> Result<T, Error> {
-    serde_json::from_value(v)
-        .map_err(|e| Error::unavailable(op, format!("malformed response body: {e}"), false))
+fn decode<T: DeserializeOwned>(op: &str, r: Resp) -> Result<T, Error> {
+    serde_json::from_value(r.body).map_err(|e| {
+        Error::unavailable(op, format!("malformed response body: {e}"), false).with_status(r.status)
+    })
 }
 
 /// A degraded answer with no results is an outage wearing the costume of an
 /// empty result set. A degraded answer WITH results is real data.
-fn degraded_empty(op: &str, v: &Value) -> Result<(), Error> {
+fn degraded_empty(op: &str, r: &Resp) -> Result<(), Error> {
+    let v = &r.body;
     let degraded = v.get("degraded").and_then(Value::as_bool).unwrap_or(false);
     let empty = v
         .get("results")
@@ -115,7 +119,9 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("capture", Method::POST, "/v1/capture").body(body(&request)))
+            .call(
+                Call::new("capture", Method::POST, "/v1/capture").body(body("capture", &request)?),
+            )
             .await?;
         decode("capture", v)
     }
@@ -126,7 +132,7 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("search", Method::POST, "/v1/search").body(body(&request)))
+            .call(Call::new("search", Method::POST, "/v1/search").body(body("search", &request)?))
             .await?;
         degraded_empty("search", &v)?;
         decode("search", v)
@@ -135,7 +141,7 @@ impl Client {
     pub async fn recent(&self, request: t::RecentRequest) -> Result<t::EntryList, Error> {
         let v = self
             .t
-            .call(Call::new("recent", Method::POST, "/v1/recent").body(body(&request)))
+            .call(Call::new("recent", Method::POST, "/v1/recent").body(body("recent", &request)?))
             .await?;
         degraded_empty("recent", &v)?;
         decode("recent", v)
@@ -157,7 +163,10 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("neighbors", Method::POST, "/v1/neighbors").body(body(&request)))
+            .call(
+                Call::new("neighbors", Method::POST, "/v1/neighbors")
+                    .body(body("neighbors", &request)?),
+            )
             .await?;
         degraded_empty("neighbors", &v)?;
         decode("neighbors", v)
@@ -175,13 +184,14 @@ impl Client {
         let path = format!("/v1/memories/{}", seg(id.trim()));
         let mut v = self
             .t
-            .call(Call::new("update", Method::PUT, path).body(body(&request)))
+            .call(Call::new("update", Method::PUT, path).body(body("update", &request)?))
             .await?;
-        if v.get("id")
+        if v.body
+            .get("id")
             .and_then(Value::as_str)
             .map_or(true, str::is_empty)
         {
-            if let Value::Object(m) = &mut v {
+            if let Value::Object(m) = &mut v.body {
                 m.insert("id".into(), json!(id.trim()));
             }
         }
@@ -196,7 +206,7 @@ impl Client {
         }
         match self
             .t
-            .call(Call::new("forget", Method::POST, "/v1/forget").body(body(&request)))
+            .call(Call::new("forget", Method::POST, "/v1/forget").body(body("forget", &request)?))
             .await
         {
             Ok(v) => decode("forget", v),
@@ -215,7 +225,10 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("remember", Method::POST, "/v1/remember").body(body(&request)))
+            .call(
+                Call::new("remember", Method::POST, "/v1/remember")
+                    .body(body("remember", &request)?),
+            )
             .await?;
         decode("remember", v)
     }
@@ -226,7 +239,9 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("context", Method::POST, "/v1/context").body(body(&request)))
+            .call(
+                Call::new("context", Method::POST, "/v1/context").body(body("context", &request)?),
+            )
             .await?;
         decode("context", v)
     }
@@ -238,7 +253,8 @@ impl Client {
         let v = self
             .t
             .call(
-                Call::new("session-recap", Method::POST, "/v1/session-recap").body(body(&request)),
+                Call::new("session-recap", Method::POST, "/v1/session-recap")
+                    .body(body("session-recap", &request)?),
             )
             .await?;
         decode("session-recap", v)
@@ -272,7 +288,7 @@ impl Client {
             .call(Call::new("health", Method::GET, "/health"))
             .await
         {
-            Ok(v) => Ok(v.get("ok").and_then(Value::as_bool).unwrap_or(false)),
+            Ok(v) => Ok(v.body.get("ok").and_then(Value::as_bool).unwrap_or(false)),
             Err(e) if e.status() == 503 => Ok(false),
             Err(e) => Err(e),
         }
@@ -283,7 +299,10 @@ impl Management {
     pub async fn mint_token(&self, request: t::MintTokenRequest) -> Result<t::MintedToken, Error> {
         let v = self
             .t
-            .call(Call::new("mint-token", Method::POST, "/v1/me/tokens").body(body(&request)))
+            .call(
+                Call::new("mint-token", Method::POST, "/v1/me/tokens")
+                    .body(body("context-prefix", &request)?),
+            )
             .await?;
         decode("mint-token", v)
     }
@@ -569,7 +588,10 @@ impl Admin {
         }
         let v = self
             .t
-            .call(Call::new("provision-user", Method::POST, "/v1/admin/users").body(body(&request)))
+            .call(
+                Call::new("provision-user", Method::POST, "/v1/admin/users")
+                    .body(body("list-tokens", &request)?),
+            )
             .await?;
         decode("provision-user", v)
     }
@@ -639,5 +661,31 @@ impl Admin {
                 .call(Call::new("set-user-quota", Method::PUT, path).body(b))
                 .await?,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Unencodable;
+
+    impl Serialize for Unencodable {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("cannot encode"))
+        }
+    }
+
+    // proved by: mapping a serialization error to Value::Null in body()
+    // fails this test. (serde_json writes NaN as null rather than failing,
+    // so a failing Serialize is the way to reach this path.)
+    #[test]
+    fn an_unencodable_request_fails_locally() {
+        let e = body("capture", &Unencodable).unwrap_err();
+        assert_eq!(e.op(), "capture");
+        assert!(
+            e.to_string().contains("encode request: cannot encode"),
+            "{e}"
+        );
     }
 }

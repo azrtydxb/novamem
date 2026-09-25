@@ -115,24 +115,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: ["1.80", stable]
+        rust: ["1.80", "1"]
+    # The official image brings the linker the ARC runner lacks.
+    container:
+      image: rust:${{ matrix.rust }}-bookworm
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
           cache: false
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.toolchain }}
-          components: clippy
       - name: Scenario suite
         working-directory: clients/rust
         run: cargo test --locked
       - name: Lint
-        if: matrix.toolchain == 'stable'
+        if: matrix.rust == '1'
         working-directory: clients/rust
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: rustup component add clippy && cargo clippy --locked --all-targets -- -D warnings
       - name: Runtime dependencies are the five ADR 0009 allows
         working-directory: clients/rust
         run: |

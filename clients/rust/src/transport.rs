@@ -59,6 +59,13 @@ impl fmt::Debug for Transport {
     }
 }
 
+/// A successful response: its status, kept so a body that decodes as JSON
+/// but not as the expected type can still report it.
+pub(crate) struct Resp {
+    pub status: u16,
+    pub body: Value,
+}
+
 pub(crate) struct Call<'a> {
     pub op: &'a str,
     pub method: Method,
@@ -142,14 +149,18 @@ impl Transport {
         s.replace(&self.token, "[redacted]")
     }
 
-    /// Performs one request and returns the decoded JSON body (`Null` when
-    /// the call expects none). Every call is bounded by the timeout.
-    pub async fn call(&self, c: Call<'_>) -> Result<Value, Error> {
+    /// Performs one request and returns its status and decoded JSON body
+    /// (`Null` when the call expects none). Every call is bounded by the
+    /// timeout.
+    pub async fn call(&self, c: Call<'_>) -> Result<Resp, Error> {
         let op = c.op;
         match tokio::time::timeout(self.timeout, self.exchange(&c)).await {
             Err(_) => Err(Error::unavailable(op, "timed out", true)),
             Ok(Err(e)) => Err(e),
-            Ok(Ok((status, raw))) => self.decode(op, status, &raw, c.expect_body),
+            Ok(Ok((status, raw))) => Ok(Resp {
+                status,
+                body: self.decode(op, status, &raw, c.expect_body)?,
+            }),
         }
     }
 
