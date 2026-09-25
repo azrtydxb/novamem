@@ -73,8 +73,39 @@ func TestCheckReportsStale(t *testing.T) {
 		t.Fatalf("stale = %v, want [x/types.txt]", stale)
 	}
 	opts.Langs = []string{"y"}
-	if stale, _ = Check(opts); len(stale) != 0 {
-		t.Fatalf("-lang y still checked lang x: %v", stale)
+	if _, err := Check(opts); err == nil || !strings.Contains(err.Error(), "no templates") {
+		t.Fatalf("a run that selects no template must fail, got %v", err)
+	}
+}
+
+// proved by: removing the orphan scan from Check fails this test.
+func TestCheckReportsOrphans(t *testing.T) {
+	dir := t.TempDir()
+	tmpl := filepath.Join(dir, "tmpl")
+	_ = os.MkdirAll(tmpl, 0o755)
+	src := "{{/* lang: x out: x/types.txt */}}// " + header + "\n{{range .Types}}{{.Name}}\n{{end}}"
+	_ = os.WriteFile(filepath.Join(tmpl, "x.tmpl"), []byte(src), 0o644)
+	out := filepath.Join(dir, "out")
+	opts := Options{Spec: "testdata/mini.json", Routes: "testdata/routes.json", Templates: tmpl, Out: out}
+	if err := Run(opts); err != nil {
+		t.Fatal(err)
+	}
+	// A leftover from a template that no longer exists, and a hand-written
+	// file that merely lives nearby: only the first is stale.
+	_ = os.WriteFile(filepath.Join(out, "x/old_types.txt"), []byte("// "+header+"\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(out, "x/handwritten.txt"), []byte("mine\n"), 0o644)
+	stale, err := Check(opts)
+	if err != nil || len(stale) != 1 || stale[0] != "x/old_types.txt" {
+		t.Fatalf("stale = %v %v, want [x/old_types.txt]", stale, err)
+	}
+}
+
+// proved by: letting named() return early for an already-seen name fails
+// this test.
+func TestNameCollisionFails(t *testing.T) {
+	_, err := BuildModel("testdata/collision.json", "testdata/routes.json")
+	if err == nil || !strings.Contains(err.Error(), "type name collision: SearchRequestContentMode") {
+		t.Fatalf("err = %v, want a SearchRequestContentMode collision", err)
 	}
 }
 

@@ -83,6 +83,10 @@ type document struct {
 type builder struct {
 	doc   document
 	types map[string]Type
+	// source is the schema each name was built from, so a second, different
+	// schema arriving at the same name is a collision rather than a silent
+	// first-one-wins.
+	source map[string]string
 	// building guards against self-referential schemas.
 	building map[string]bool
 }
@@ -98,7 +102,7 @@ func BuildModel(specPath, routesPath string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := &builder{types: map[string]Type{}, building: map[string]bool{}}
+	b := &builder{types: map[string]Type{}, source: map[string]string{}, building: map[string]bool{}}
 	if err := json.Unmarshal(raw, &b.doc); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", specPath, err)
 	}
@@ -180,7 +184,18 @@ func (b *builder) ref(ref, ptr string) (string, error) {
 
 // named registers s as the type called name.
 func (b *builder) named(name string, s *schema, ptr string) error {
-	if _, done := b.types[name]; done || b.building[name] {
+	src, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	if prev, seen := b.source[name]; seen {
+		if prev != string(src) {
+			return fmt.Errorf("type name collision: %s at %s differs from the schema already generated under that name", name, ptr)
+		}
+		return nil
+	}
+	b.source[name] = string(src)
+	if b.building[name] {
 		return nil
 	}
 	b.building[name] = true

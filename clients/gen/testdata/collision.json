@@ -58,6 +58,9 @@
           },
           "degraded": {
             "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/SearchRequestContentMode"
           }
         },
         "required": ["results"]
@@ -73,6 +76,10 @@
           }
         },
         "required": ["id"]
+      },
+      "SearchRequestContentMode": {
+        "type": "string",
+        "enum": ["full", "ids", "snippet"]
       }
     }
   }

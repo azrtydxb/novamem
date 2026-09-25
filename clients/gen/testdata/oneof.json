@@ -22,15 +22,10 @@
                   },
                   "contentMode": {
                     "type": "string",
-                    "enum": [
-                      "full",
-                      "snippet"
-                    ]
+                    "enum": ["full", "snippet"]
                   }
                 },
-                "required": [
-                  "query"
-                ]
+                "required": ["query"]
               }
             }
           }
@@ -69,9 +64,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "results"
-        ]
+        "required": ["results"]
       },
       "MemoryEntry": {
         "type": "object",
@@ -83,9 +76,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       }
     }
   }
