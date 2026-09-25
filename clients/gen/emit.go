@@ -88,15 +88,20 @@ var skipDirs = map[string]bool{
 	".build": true, "vendor": true, "dist": true, "build": true, "__pycache__": true,
 }
 
-// orphans returns generated files under root that are not in want.
-func orphans(root string, want map[string]bool) ([]string, error) {
+// orphans returns generated files under root that are not in want. The
+// templates directory is never scanned: templates print the header too.
+func orphans(root, templates string, want map[string]bool) ([]string, error) {
+	skip, err := filepath.Abs(templates)
+	if err != nil {
+		return nil, err
+	}
 	var out []string
-	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if skipDirs[d.Name()] {
+			if abs, _ := filepath.Abs(p); skipDirs[d.Name()] || abs == skip {
 				return filepath.SkipDir
 			}
 			return nil
@@ -158,7 +163,7 @@ func Check(opts Options) ([]string, error) {
 	// A template that was renamed or removed leaves its old output behind.
 	// Only a full run knows every file that should exist.
 	if len(opts.Langs) == 0 {
-		orphaned, err := orphans(opts.Out, want)
+		orphaned, err := orphans(opts.Out, opts.Templates, want)
 		if err != nil {
 			return nil, err
 		}

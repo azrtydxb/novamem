@@ -81,11 +81,13 @@ func TestCheckReportsStale(t *testing.T) {
 // proved by: removing the orphan scan from Check fails this test.
 func TestCheckReportsOrphans(t *testing.T) {
 	dir := t.TempDir()
-	tmpl := filepath.Join(dir, "tmpl")
+	// Templates live under the output root, as clients/gen/templates does
+	// under clients/: they carry the header too, and are not orphans.
+	out := filepath.Join(dir, "out")
+	tmpl := filepath.Join(out, "gen", "templates")
 	_ = os.MkdirAll(tmpl, 0o755)
 	src := "{{/* lang: x out: x/types.txt */}}// " + header + "\n{{range .Types}}{{.Name}}\n{{end}}"
 	_ = os.WriteFile(filepath.Join(tmpl, "x.tmpl"), []byte(src), 0o644)
-	out := filepath.Join(dir, "out")
 	opts := Options{Spec: "testdata/mini.json", Routes: "testdata/routes.json", Templates: tmpl, Out: out}
 	if err := Run(opts); err != nil {
 		t.Fatal(err)
