@@ -5,7 +5,7 @@ Created: 2026-09-25
 
 ## Description
 
-Create the language-neutral route map every SDK is checked against, move the Go routeMap into it, and fix the four entries that name the wrong class (plan Task 3, spec S-2).
+Create the language-neutral route map every SDK is checked against, move the Go routeMap into it, and fix the five entries that name the wrong class (plan Task 3, spec S-2).
 
 ## Acceptance criteria
 

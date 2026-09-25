@@ -59,10 +59,13 @@ to miss.
   method resolves to a public method in that SDK. Each method entry also
   names its request type (for example `SearchRequest`), which is the name
   the generator gives that operation's inline request body. The move also
-  corrects four existing entries that name the wrong class:
-  `Client.Decay`, `Client.Evaluate`, `Client.Hygiene` and `Client.Observe`
-  are `Management` methods, and `GET /v1/me/today` is not what
-  `Client.Today` calls. The current Go test never checked method names.
+  corrects five existing entries that name the wrong class:
+  `Client.Adoption`, `Client.Decay`, `Client.Evaluate`, `Client.Hygiene`
+  and `Client.Observe` are `Management` methods. `GET /v1/me/today`
+  pointed at a `Management.Today` that doesn't exist, and is now a non-goal.
+  These corrections landed first in `clients/go/routecoverage_test.go` (PR
+  #305, guarded by `TestRouteMapNamesRealMethods`); S-2 carries them into
+  `routes.json`.
 - [S-3] **Type generator.** `clients/gen`, a Go module added to the repo's Go workspace file.
   It reads `docs/api/openapi.json` (the generated JSON copy of
   `api/openapi.yaml`) and `clients/contract/routes.json`, and writes request/response types for all
@@ -449,6 +452,6 @@ config and the HTTP client.
 - [ ] [S-15] Each `clients/<lang>/README.md` has a quickstart that the SDK's CI job compiles or runs (`scripts/check-sdk-readmes.sh` extracts and runs it), an error-contract section, and an operations table naming all 41 methods (the same script counts them). `packages/docs-site` gains an SDKs page with one install line per language, linked from the root `README.md`. Fails if a quickstart doesn't compile or a method is missing from a table.
 
 - [ ] [S-16] `cd go && go run ./cmd/gen-contract && git diff --exit-code ../docs/api/openapi.json` is clean after the schemas are added, and `TestWrappedRoutesDeclareResponseSchema` in `clients/contract/contract_test.go` passes: every `clients/contract/routes.json` method entry with a non-null `response` names a schema present in `docs/api/openapi.json`. Fails if any of the 12 routes loses its schema.
-- [ ] [S-16] [S-13] `TestResponsesMatchSchemas` in `clients/smoke` calls the eight routes that answer without the LLM observer against the live server in the `sdk-smoke` job and validates the JSON against its schema; `GET /v1/context-prefix` is asserted to answer the documented 404 `Error` (observer disabled), and its 200 schema is verified by transcription review only. Fails if a schema was transcribed wrongly (for example a required field the handler never sends).
+- [ ] [S-16] [S-13] `TestResponsesMatchSchemas` in `clients/smoke` calls the eight routes that answer without the LLM observer (nine calls: `DELETE /v1/admin/users/{id}` is exercised in both its dry-run and real shapes) against the live server in the `sdk-smoke` job and validates the JSON against its schema; `GET /v1/context-prefix` is asserted to answer the documented 404 `Error` (observer disabled), and its 200 schema is verified by transcription review only. Fails if a schema was transcribed wrongly (for example a required field the handler never sends).
 
 ## Open questions

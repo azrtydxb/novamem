@@ -2888,7 +2888,7 @@
     },
     "/v1/me/export": {
       "get": {
-        "description": "Stream every entry the caller owns as NDJSON, one `MemoryEntry` per line. Sized for piping to a file, not for holding in memory.",
+        "description": "One page of the entries the caller owns, oldest first, as a JSON object. `limit` is 1-1000 (default 500). Pass the previous page's `nextAfterId` as `afterId` to continue. `nextAfterId` is set whenever the page holds entries, so keep paging until a page comes back with an empty `entries` array.",
         "operationId": "getV1MeExport",
         "parameters": [
           {
@@ -2950,7 +2950,7 @@
     },
     "/v1/me/import": {
       "post": {
-        "description": "Restore entries from an NDJSON stream in the shape `/v1/me/export` produces. Applies the same worthiness gate and dedup as a normal write unless forced.",
+        "description": "Store 1-200 entries (the `entries` of `/v1/me/export` pages fit as-is). Each is written unconditionally, as `/v1/remember` does, with no worthiness gate. Content-hash dedup makes re-importing an export idempotent. Ids are not preserved, and a `project` reference that doesn't resolve on this deployment is reported in `failed`. Answers 201, or 400 with the same body when every entry failed.",
         "operationId": "postV1MeImport",
         "requestBody": {
           "content": {
