@@ -55,6 +55,12 @@ type Response struct {
 	// Fault is "timeout", "reset", "oversize" or "refused". "refused" never
 	// reaches the server: the runner dials the closed port instead.
 	Fault string `json:"fault,omitempty"`
+	// Redirect answers Status with a Location for RedirectTo, back on this
+	// same scenario: "same" keeps the request's own origin, "cross" names
+	// this server as localhost instead of 127.0.0.1 — another origin that
+	// still reaches it, so the scenario can see whether the bearer followed.
+	Redirect   string `json:"redirect,omitempty"`
+	RedirectTo string `json:"to,omitempty"`
 }
 
 // ExpectedRequest is what the SDK must have sent.
@@ -64,6 +70,9 @@ type ExpectedRequest struct {
 	JSON   json.RawMessage   `json:"json,omitempty"`
 	Query  map[string]string `json:"query,omitempty"`
 	NoBody bool              `json:"noBody,omitempty"`
+	// Auth false means the request must carry no Authorization header (a
+	// redirect to another origin); unset means it must carry the bearer.
+	Auth *bool `json:"auth,omitempty"`
 }
 
 // Expectation is the outcome the SDK must classify the call as.
@@ -204,6 +213,16 @@ func (s *server) replay(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	resp := sc.Respond[min(n, len(sc.Respond)-1)]
+	if resp.Redirect != "" {
+		host := r.Host
+		if resp.Redirect == "cross" {
+			_, port, _ := strings.Cut(r.Host, ":")
+			host = "localhost:" + port
+		}
+		w.Header().Set("Location", "http://"+host+"/s/"+id+resp.RedirectTo)
+		w.WriteHeader(resp.Status)
+		return
+	}
 	switch resp.Fault {
 	case "timeout":
 		select {
@@ -252,7 +271,12 @@ func writeBody(w http.ResponseWriter, status int, body []byte) {
 // returns one line per difference.
 func (s *server) check(sc *Scenario, n int, r *http.Request, body []byte) []string {
 	var out []string
-	if got, want := r.Header.Get("Authorization"), "Bearer "+s.f.Token; got != want {
+	withoutAuth := sc.ExpectRequest != nil && n < len(*sc.ExpectRequest) &&
+		(*sc.ExpectRequest)[n].Auth != nil && !*(*sc.ExpectRequest)[n].Auth
+	switch got := r.Header.Get("Authorization"); {
+	case withoutAuth && got != "":
+		out = append(out, fmt.Sprintf("request %d: carried an Authorization header across origins", n))
+	case !withoutAuth && got != "Bearer "+s.f.Token:
 		out = append(out, fmt.Sprintf("request %d: Authorization header is not the scenario bearer", n))
 	}
 	if got := r.Header.Get("Accept"); !strings.Contains(got, "application/json") {
