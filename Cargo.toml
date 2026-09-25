@@ -2,5 +2,5 @@
 # share a lockfile, and so tools that expect a crate at the repository root
 # (the commit gate's clippy) find one.
 [workspace]
-members = ["clients/rust"]
+members = ["clients/rust", "clients/c/novamem-ffi"]
 resolver = "2"
