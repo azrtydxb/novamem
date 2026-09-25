@@ -92,6 +92,16 @@ impl<'a> Call<'a> {
         self
     }
 
+    /// The request as its JSON body. Fails under this call's own op, rather
+    /// than sending `null`, when a value cannot be encoded (a NaN or infinite
+    /// float, for one).
+    pub fn json<T: serde::Serialize>(mut self, v: &T) -> Result<Self, Error> {
+        let value = serde_json::to_value(v)
+            .map_err(|e| Error::new(self.op, format!("encode request: {e}")))?;
+        self.body = Some(value);
+        Ok(self)
+    }
+
     pub fn query(mut self, k: &'a str, v: Option<impl ToString>) -> Self {
         if let Some(v) = v {
             let v = v.to_string();
