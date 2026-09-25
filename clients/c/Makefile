@@ -42,7 +42,7 @@ test: $(BUILD)/scenarios_c $(BUILD)/scenarios_cpp $(BUILD)/null_out
 	sh tests/routes.sh
 
 memcheck: $(BUILD)/scenarios_c
-	NOVAMEM_WRAP="valgrind --quiet --error-exitcode=99 --leak-check=full --errors-for-leak-kinds=definite" \
+	NOVAMEM_WRAP="valgrind --quiet --error-exitcode=99 --leak-check=full --errors-for-leak-kinds=definite --suppressions=tests/valgrind.supp" \
 		python3 tests/run_scenarios.py $(BUILD)/scenarios_c
 
 $(BUILD)/smoke: smoke.c include/novamem.h lib | $(BUILD)

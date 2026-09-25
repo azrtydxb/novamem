@@ -41,12 +41,13 @@ func render(opts Options) ([]rendered, error) {
 	sort.Strings(files)
 	funcs := template.FuncMap{
 		"pascal": pascal, "camel": camel, "snake": snake, "upperSnake": upperSnake,
-		"wire":      func(f Field) string { return f.Wire },
-		"join":      strings.Join,
-		"pyident":   pyident,
-		"rustident": rustident,
-		"cident":    cident,
-		"list":      func(v ...string) []string { return v },
+		"wire":       func(f Field) string { return f.Wire },
+		"join":       strings.Join,
+		"pyident":    pyident,
+		"rustident":  rustident,
+		"cident":     cident,
+		"swiftident": swiftident,
+		"list":       func(v ...string) []string { return v },
 		// dict builds a map for passing several values to a sub-template.
 		"dict": func(kv ...any) (map[string]any, error) {
 			if len(kv)%2 != 0 {

@@ -1060,7 +1060,7 @@ import { DISPATCH } from "./dispatch.js";
 
 const CLIENTS = new URL("../../../", import.meta.url);
 const SCEN = JSON.parse(
-  readFileSync(new URL("contract/scenarios.json", CLIENTS), "utf8")
+  readFileSync(new URL("contract/scenarios.json", CLIENTS), "utf8"),
 );
 let proc: ChildProcess,
   url = "",
@@ -1073,10 +1073,10 @@ before(async () => {
     {
       cwd: new URL("contract/", CLIENTS),
       stdio: ["ignore", "pipe", "inherit"],
-    }
+    },
   );
   const line: string = await new Promise((res) =>
-    createInterface({ input: proc.stdout! }).once("line", res)
+    createInterface({ input: proc.stdout! }).once("line", res),
   );
   const [, u, c] = line.split(" ");
   url = u;
@@ -1141,7 +1141,7 @@ for (const s of SCEN.scenarios) {
         !String(err).includes(SCEN.token) &&
           !inspect(err).includes(SCEN.token) &&
           !JSON.stringify(err).includes(SCEN.token),
-        "token leaked"
+        "token leaked",
       );
       if ("retryable" in s.expect)
         assert.equal(err.retryable ?? false, s.expect.retryable);
@@ -1168,8 +1168,8 @@ import * as nm from "../src/index.js";
 const ROUTES = JSON.parse(
   readFileSync(
     new URL("../../../contract/routes.json", import.meta.url),
-    "utf8"
-  )
+    "utf8",
+  ),
 );
 const camel = (s: string) => s[0].toLowerCase() + s.slice(1);
 
@@ -1181,7 +1181,7 @@ test("every routes.json method resolves", () => {
       assert.equal(
         typeof (nm as any)[cls].prototype[camel(meth)],
         "function",
-        `${key} ${m.name}`
+        `${key} ${m.name}`,
       );
     }
   }
@@ -2034,88 +2034,131 @@ use PHPUnit\Framework\TestCase;
 
 final class ScenarioTest extends TestCase
 {
-    private static $proc;
-    private static string $url = '';
-    private static string $closed = '';
-    private static array $scen = [];
+  private static $proc;
+  private static string $url = "";
+  private static string $closed = "";
+  private static array $scen = [];
 
-    public static function setUpBeforeClass(): void
-    {
-        $contract = realpath(__DIR__ . '/../../contract');
-        self::$scen = json_decode(file_get_contents("$contract/scenarios.json"), true);
-        self::$proc = proc_open(['sh', 'scenario-server.sh', '-scenarios', 'scenarios.json'],
-            [1 => ['pipe', 'w']], $pipes, $contract);
-        [, self::$url, $closed] = explode(' ', trim(fgets($pipes[1])));
-        self::$closed = explode('=', $closed)[1];
+  public static function setUpBeforeClass(): void
+  {
+    $contract = realpath(__DIR__ . "/../../contract");
+    self::$scen = json_decode(
+      file_get_contents("$contract/scenarios.json"),
+      true,
+    );
+    self::$proc = proc_open(
+      ["sh", "scenario-server.sh", "-scenarios", "scenarios.json"],
+      [1 => ["pipe", "w"]],
+      $pipes,
+      $contract,
+    );
+    [, self::$url, $closed] = explode(" ", trim(fgets($pipes[1])));
+    self::$closed = explode("=", $closed)[1];
+  }
+
+  public static function tearDownAfterClass(): void
+  {
+    proc_terminate(self::$proc, 9);
+  }
+
+  public static function ids(): array
+  {
+    $s = json_decode(
+      file_get_contents(__DIR__ . "/../../contract/scenarios.json"),
+      true,
+    );
+    return array_map(fn($x) => [$x["id"]], $s["scenarios"]);
+  }
+
+  private static function isEmpty(mixed $r): bool
+  {
+    $w = is_object($r) && method_exists($r, "toArray") ? $r->toArray() : $r;
+    return $w === [] ||
+      (is_array($w) && array_key_exists("results", $w) && $w["results"] === []);
+  }
+
+  // proved by: removing the degraded-empty check in Client::search fails search-degraded-empty-is-unavailable.
+  #[DataProvider("ids")]
+  public function testScenarios(string $id): void
+  {
+    $s = array_values(
+      array_filter(self::$scen["scenarios"], fn($x) => $x["id"] === $id),
+    )[0];
+    if (in_array("cancel", $s["requires"] ?? [], true)) {
+      $this->markTestSkipped("php has no cancellation primitive: $id");
     }
-
-    public static function tearDownAfterClass(): void
-    {
-        proc_terminate(self::$proc, 9);
+    $call = $s["call"];
+    $token = self::$scen["token"];
+    $r = null;
+    $e = null;
+    if ($call["class"] === "ctor") {
+      try {
+        new Client(
+          new Config(
+            baseUrl: str_replace(
+              "<server>",
+              self::$url,
+              $call["args"]["baseUrl"],
+            ),
+            token: $call["args"]["token"],
+          ),
+        );
+      } catch (\InvalidArgumentException | NovamemException $err) {
+        $e = $err;
+      }
+    } else {
+      $base = str_contains(json_encode($s["respond"]), '"refused"')
+        ? "http://127.0.0.1:" . self::$closed . "/s/$id"
+        : self::$url . "/s/$id";
+      $cfg = new Config(
+        baseUrl: $base,
+        token: $token,
+        timeoutMs: self::$scen["timeoutMs"],
+      );
+      $clients = [
+        "Client" => new Client($cfg),
+        "Management" => new Management($cfg),
+        "Admin" => new Admin($cfg),
+      ];
+      try {
+        $r = Dispatch::table()[$call["method"]]($clients, $call["args"]);
+      } catch (NovamemException $err) {
+        $e = $err;
+      }
     }
-
-    public static function ids(): array
-    {
-        $s = json_decode(file_get_contents(__DIR__ . '/../../contract/scenarios.json'), true);
-        return array_map(fn($x) => [$x['id']], $s['scenarios']);
-    }
-
-    private static function isEmpty(mixed $r): bool
-    {
-        $w = is_object($r) && method_exists($r, 'toArray') ? $r->toArray() : $r;
-        return $w === [] || (is_array($w) && array_key_exists('results', $w) && $w['results'] === []);
-    }
-
-    // proved by: removing the degraded-empty check in Client::search fails search-degraded-empty-is-unavailable.
-    #[DataProvider('ids')]
-    public function testScenarios(string $id): void
-    {
-        $s = array_values(array_filter(self::$scen['scenarios'], fn($x) => $x['id'] === $id))[0];
-        if (in_array('cancel', $s['requires'] ?? [], true)) {
-            $this->markTestSkipped("php has no cancellation primitive: $id");
+    $outcome = match (true) {
+      $e === null => self::isEmpty($r) ? "empty" : "ok",
+      $e instanceof NovamemException && $e->isUnavailable() => "unavailable",
+      $e instanceof NovamemException && $e->isNotFound() => "not_found",
+      default => "error",
+    };
+    $exp = $s["expect"];
+    $this->assertSame(
+      $exp["outcome"],
+      $outcome,
+      "$id: " . ($e?->getMessage() ?? ""),
+    );
+    if ($e !== null) {
+      $this->assertStringNotContainsString($token, (string) $e);
+      $this->assertStringNotContainsString($token, print_r($e, true));
+      if ($e instanceof NovamemException) {
+        if (array_key_exists("retryable", $exp)) {
+          $this->assertSame($exp["retryable"], $e->isRetryable());
         }
-        $call = $s['call'];
-        $token = self::$scen['token'];
-        $r = null;
-        $e = null;
-        if ($call['class'] === 'ctor') {
-            try {
-                new Client(new Config(baseUrl: str_replace('<server>', self::$url, $call['args']['baseUrl']), token: $call['args']['token']));
-            } catch (\InvalidArgumentException | NovamemException $err) {
-                $e = $err;
-            }
-        } else {
-            $base = str_contains(json_encode($s['respond']), '"refused"')
-                ? 'http://127.0.0.1:' . self::$closed . "/s/$id" : self::$url . "/s/$id";
-            $cfg = new Config(baseUrl: $base, token: $token, timeoutMs: self::$scen['timeoutMs']);
-            $clients = ['Client' => new Client($cfg), 'Management' => new Management($cfg), 'Admin' => new Admin($cfg)];
-            try {
-                $r = Dispatch::table()[$call['method']]($clients, $call['args']);
-            } catch (NovamemException $err) {
-                $e = $err;
-            }
+        if (array_key_exists("statusCode", $exp)) {
+          $this->assertSame($exp["statusCode"], $e->statusCode());
         }
-        $outcome = match (true) {
-            $e === null => self::isEmpty($r) ? 'empty' : 'ok',
-            $e instanceof NovamemException && $e->isUnavailable() => 'unavailable',
-            $e instanceof NovamemException && $e->isNotFound() => 'not_found',
-            default => 'error',
-        };
-        $exp = $s['expect'];
-        $this->assertSame($exp['outcome'], $outcome, "$id: " . ($e?->getMessage() ?? ''));
-        if ($e !== null) {
-            $this->assertStringNotContainsString($token, (string) $e);
-            $this->assertStringNotContainsString($token, print_r($e, true));
-            if ($e instanceof NovamemException) {
-                if (array_key_exists('retryable', $exp)) $this->assertSame($exp['retryable'], $e->isRetryable());
-                if (array_key_exists('statusCode', $exp)) $this->assertSame($exp['statusCode'], $e->statusCode());
-                if (array_key_exists('code', $exp)) $this->assertSame($exp['code'], $e->code());
-            }
+        if (array_key_exists("code", $exp)) {
+          $this->assertSame($exp["code"], $e->code());
         }
-        $v = json_decode(file_get_contents(self::$url . "/_verdict/$id"), true);
-        $this->assertSame([], $v['mismatches']);
-        if (($s['expectRequest'] ?? null) === []) $this->assertSame(0, $v['requests']);
+      }
     }
+    $v = json_decode(file_get_contents(self::$url . "/_verdict/$id"), true);
+    $this->assertSame([], $v["mismatches"]);
+    if (($s["expectRequest"] ?? null) === []) {
+      $this->assertSame(0, $v["requests"]);
+    }
+  }
 }
 ```
 
@@ -2129,17 +2172,23 @@ use PHPUnit\Framework\TestCase;
 
 final class RouteTest extends TestCase
 {
-    // proved by: renaming Novamem\Client::sessionRecap fails this test.
-    public function testEveryRouteIsAccounted(): void
-    {
-        $routes = json_decode(file_get_contents(__DIR__ . '/../../contract/routes.json'), true);
-        foreach ($routes as $key => $r) {
-            foreach ($r['methods'] ?? [] as $m) {
-                [$cls, $meth] = explode('.', $m['name']);
-                $this->assertTrue(method_exists("Novamem\\$cls", lcfirst($meth)), "$key $cls::" . lcfirst($meth));
-            }
-        }
+  // proved by: renaming Novamem\Client::sessionRecap fails this test.
+  public function testEveryRouteIsAccounted(): void
+  {
+    $routes = json_decode(
+      file_get_contents(__DIR__ . "/../../contract/routes.json"),
+      true,
+    );
+    foreach ($routes as $key => $r) {
+      foreach ($r["methods"] ?? [] as $m) {
+        [$cls, $meth] = explode(".", $m["name"]);
+        $this->assertTrue(
+          method_exists("Novamem\\$cls", lcfirst($meth)),
+          "$key $cls::" . lcfirst($meth),
+        );
+      }
     }
+  }
 }
 ```
 
@@ -2164,6 +2213,13 @@ Run `cd clients/php && composer install && vendor/bin/phpunit`: expect FAIL with
 - [ ] Commit `feat(sdk-php): novamem PHP package held to the shared scenario suite`.
 
 ## Task 15: Swift SDK
+
+Status: built on `feat/sdk-swift`. Where the build differs from the steps below, the build is right:
+
+- Int is `Int` (int64 is `Int64`), and enum-typed fields are plain `String`, with the values as static constants on a namespace enum, so an unknown value is kept. Keyword identifiers are backticked (`import`, `public`) by the generator's `swiftident`.
+- The transport wraps `dataTask` in a continuation with a cancellation handler (no reliance on the async `data(for:)`, which differs between Darwin and swift-corelibs). A session delegate handles redirects: URLSession drops `Authorization` on every redirect, so the delegate re-adds it for same-origin hops and leaves it off otherwise.
+- The redirect guarantee is tested through two new shared scenarios (`redirect-cross-origin-drops-bearer` and `redirect-same-origin-keeps-bearer`, added to `clients/contract` on this branch) rather than a Swift-only server. Every SDK now runs them, and they caught Swift dropping the bearer on a same-origin hop.
+- CI runs in the official `swift:5.9-jammy` and `swift:6.3-noble` images. `.swiftformat` excludes the generated files and disables the test-unwrap rule, which rewrote casts into code that doesn't compile.
 
 Files:
 

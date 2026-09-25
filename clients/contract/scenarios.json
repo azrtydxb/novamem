@@ -1131,6 +1131,81 @@
       }
     },
     {
+      "id": "redirect-cross-origin-drops-bearer",
+      "call": {
+        "class": "Client",
+        "method": "Client.Health",
+        "args": {}
+      },
+      "respond": [
+        {
+          "status": 302,
+          "redirect": "cross",
+          "to": "/health"
+        },
+        {
+          "status": 200,
+          "json": {
+            "ok": true
+          }
+        }
+      ],
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/health",
+          "noBody": true
+        },
+        {
+          "method": "GET",
+          "path": "/health",
+          "noBody": true,
+          "auth": false
+        }
+      ],
+      "expect": {
+        "outcome": "ok",
+        "result": true
+      }
+    },
+    {
+      "id": "redirect-same-origin-keeps-bearer",
+      "call": {
+        "class": "Client",
+        "method": "Client.Health",
+        "args": {}
+      },
+      "respond": [
+        {
+          "status": 302,
+          "redirect": "same",
+          "to": "/health"
+        },
+        {
+          "status": 200,
+          "json": {
+            "ok": true
+          }
+        }
+      ],
+      "expectRequest": [
+        {
+          "method": "GET",
+          "path": "/health",
+          "noBody": true
+        },
+        {
+          "method": "GET",
+          "path": "/health",
+          "noBody": true
+        }
+      ],
+      "expect": {
+        "outcome": "ok",
+        "result": true
+      }
+    },
+    {
       "id": "today-since-24h",
       "call": {
         "class": "Client",

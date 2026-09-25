@@ -82,9 +82,10 @@ def main():
                 check=False,  # the exit code is inspected below
             )
             if r.returncode != 0:
-                failures.append(
-                    f"{sid}: runner exited {r.returncode}: {r.stderr.strip()[-400:]}"
-                )
+                # Under memcheck the whole report is the evidence: its tail
+                # holds only the outermost frames.
+                detail = r.stderr.strip() if memcheck else r.stderr.strip()[-400:]
+                failures.append(f"{sid}: runner exited {r.returncode}: {detail}")
                 continue
             if memcheck:
                 # Drain the verdict so the next scenario starts clean; its

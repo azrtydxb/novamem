@@ -137,7 +137,8 @@ func TestErrorTableIsCovered(t *testing.T) {
 	}
 	for _, id := range []string{
 		"search-degraded-empty-is-unavailable", "search-degraded-with-results-is-data",
-		"token-echoed-in-401-is-redacted", "token-echoed-in-code-is-redacted", "forget-ok", "forget-404-not-deleted",
+		"token-echoed-in-401-is-redacted", "token-echoed-in-code-is-redacted",
+		"redirect-cross-origin-drops-bearer", "redirect-same-origin-keeps-bearer", "forget-ok", "forget-404-not-deleted",
 		"forget-500-error", "forget-blank-id-local", "capture-blank-content-local",
 		"health-ok-false", "health-503-is-false", "observe-503-observer-disabled",
 		"today-since-24h", "stats-get-sends-no-body", "ctor-blank-token",

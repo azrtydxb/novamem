@@ -225,3 +225,29 @@ jobs:
         run: |
           rm -rf vendor && composer install --no-dev --no-interaction --no-progress
           [ -z "$(composer show --no-dev)" ] || { composer show --no-dev; exit 1; }
+
+  # Swift SDK (plan Task 15): the shared scenario suite on Linux, on the
+  # floor and a current Swift, in the official images (Linux only, by
+  # decision: Apple platforms are not exercised in CI).
+  swift:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        swift: ["5.9-jammy", "6.3-noble"]
+    container:
+      image: swift:${{ matrix.swift }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - name: Scenario suite
+        working-directory: clients/swift
+        run: swift test
+      - name: No dependencies
+        working-directory: clients/swift
+        run: swift package show-dependencies | tee /dev/stderr | grep -q "No external dependencies found"
