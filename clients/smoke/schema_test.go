@@ -93,12 +93,14 @@ func TestResponsesMatchSchemas(t *testing.T) {
 	check("GET /v1/me/export", "ExportPage", st, 200, v)
 
 	st, minted := call("POST", "/v1/me/tokens", userToken, map[string]any{"label": "smoke-2"})
+	check("POST /v1/me/tokens", "MintedToken", st, 201, minted)
 	if st != 201 {
-		t.Fatalf("mint second token: %d %v", st, minted)
+		t.FailNow()
 	}
 	st, list := call("GET", "/v1/me/tokens", userToken, nil)
+	check("GET /v1/me/tokens", "TokenList", st, 200, list)
 	if st != 200 {
-		t.Fatalf("list tokens: %d", st)
+		t.FailNow()
 	}
 	var hash string
 	for _, tok := range list.(map[string]any)["tokens"].([]any) {
