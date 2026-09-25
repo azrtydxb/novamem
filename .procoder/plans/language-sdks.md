@@ -1378,15 +1378,15 @@ Run `cd clients/dotnet && dotnet test`: expect FAIL with `error CS0246: The type
 
 Files:
 
-- `clients/gen/templates/java.tmpl` (created; out: `java/src/main/java/com/azrtydxb/novamem/types/Types.java`). One file holds `public final class Types` with a `public record` per object type, annotated `@JsonInclude(JsonInclude.Include.NON_NULL)` and `@JsonIgnoreProperties(ignoreUnknown = true)`, with `@JsonProperty("<wire>")` on each component. Enums use `@JsonValue` on the wire string. `datetime` becomes `java.time.Instant`, `int64` becomes `Long`, `int32` becomes `Integer`, and maps become `Map<String, Object>`. All records are nested in one generated file, so the generator writes one path per language. That file matches the spec's `types/*.java` path.
-- `clients/gen/templates/java_dispatch.tmpl` (created; out: `java/src/test/java/com/azrtydxb/novamem/Dispatch.java`): `static final Map<String, Dispatch.Fn> TABLE`, where `interface Fn { Object call(Clients c, JsonNode args, boolean async, long cancelAfterMs) throws Exception; }`. With `async` set it calls the `…Async` variant, cancels the future after `cancelAfterMs` when that's above 0, then calls `join()`.
+- `clients/gen/templates/java.tmpl` (created; out: `java/src/main/java/com/azrtydxb/novamem/types/Types.java`). One file holds `public final class Types` with a `public record` per object type, annotated `@JsonInclude(JsonInclude.Include.NON_NULL)` and `@JsonIgnoreProperties(ignoreUnknown = true)`, with `@JsonProperty("<wire>")` on each component. Enums use `@JsonValue` on the wire string, plus an `UNKNOWN` constant marked `@JsonEnumDefaultValue` so a value this version does not know still reads. Every record carries a `builder()` / `toBuilder()`. Required fields are `@JsonInclude(ALWAYS)` (and `required = true` when not nullable); optional strings are `NON_EMPTY`. The directive names `fmt: google-java-format`: the generator pipes the output through it, because gjf lays lines out by length and no template can match it alone. `datetime` becomes `java.time.Instant`, `int64` becomes `Long`, `int32` becomes `Integer`, and maps become `Map<String, Object>`. All records are nested in one generated file, so the generator writes one path per language. That file matches the spec's `types/*.java` path.
+- `clients/gen/templates/java_dispatch.tmpl` (created; out: `java/src/test/java/com/azrtydxb/novamem/Dispatch.java`): `static final Map<String, Dispatch.Fn> TABLE` and the nested `record Clients(Client client, Management management, Admin admin)`, where `interface Fn { Object call(Clients c, JsonNode args, boolean async, long cancelAfterMs) throws Exception; }`. With `async` set it calls the `…Async` variant, cancels the future after `cancelAfterMs` when that's above 0, then calls `join()`.
 - `clients/java/pom.xml` (created):
   - `groupId com.azrtydxb`, `artifactId novamem`, `version 0.1.0`, `maven.compiler.release 17`.
-  - Dependency `com.fasterxml.jackson.core:jackson-databind:2.20.0` (plus `jackson-datatype-jsr310` is NOT added; `Instant` is serialised through a small hand-written serializer and deserializer registered on the client's `ObjectMapper`, which keeps the one-dependency rule).
+  - Dependency `com.fasterxml.jackson.core:jackson-databind:2.22.3` (plus `jackson-datatype-jsr310` is NOT added; `Instant` is serialised through a small hand-written serializer and deserializer registered on the client's `ObjectMapper`, which keeps the one-dependency rule).
   - Test dependency `org.junit.jupiter:junit-jupiter:5.13.4`.
   - Plugins `maven-surefire-plugin:3.5.3`, `maven-source-plugin:3.3.1`, `maven-javadoc-plugin:3.11.2`, `maven-gpg-plugin:3.2.8` and `org.sonatype.central:central-publishing-maven-plugin:0.8.0`, the last two in a `release` profile only.
 - `clients/java/src/main/java/com/azrtydxb/novamem/{Client,Management,Admin,NovamemConfig,NovamemException,Transport,InstantCodec}.java` (created)
-- `clients/java/src/test/java/com/azrtydxb/novamem/{ScenarioTest,RouteTest}.java` (created)
+- `clients/java/src/test/java/com/azrtydxb/novamem/{ScenarioTest,RouteTest,TransportTest}.java` (created). TransportTest covers what no shared scenario reaches: a body that stalls after its headers still times out, cancelling a mapped future cancels its source, and a network-path `Location` is another origin.
 - `clients/java/src/test/java/com/azrtydxb/novamem/Smoke.java` (created; run as `java -cp "$(cat cp.txt):target/classes:target/test-classes" com.azrtydxb.novamem.Smoke <up|down>`, where `cp.txt` comes from `mvn -q dependency:build-classpath -Dmdep.outputFile=cp.txt`)
 
 Interfaces:
@@ -1471,7 +1471,7 @@ class ScenarioTest {
           ? "http://127.0.0.1:" + closed + "/s/" + id : url + "/s/" + id;
       NovamemConfig cfg = NovamemConfig.builder().baseUrl(base).token(token)
           .timeout(Duration.ofMillis(scen.get("timeoutMs").asLong())).build();
-      Clients c = new Clients(new Client(cfg), new Management(cfg), new Admin(cfg));
+      Dispatch.Clients c = new Dispatch.Clients(new Client(cfg), new Management(cfg), new Admin(cfg));
       boolean cancel = call.has("cancelAfterMs");
       try {
         result = Dispatch.TABLE.get(call.get("method").asText())
@@ -1531,6 +1531,8 @@ class RouteTest {
         String[] p = m.get("name").asText().split("\\.");
         Class<?> cls = Class.forName("com.azrtydxb.novamem." + p[0]);
         String name = Character.toLowerCase(p[1].charAt(0)) + p[1].substring(1);
+        // "import" is a Java keyword (clients/gen javamethod).
+        name = name.equals("import") ? "importEntries" : name;
         for (String n : new String[] {name, name + "Async"})
           assertTrue(Arrays.stream(cls.getMethods()).anyMatch(x -> x.getName().equals(n)), e.getKey() + " " + p[0] + "." + n);
       }
@@ -1547,7 +1549,8 @@ Run `cd clients/java && mvn -B verify`: expect FAIL with `cannot find symbol` / 
   - `IOException` is unavailable and retryable.
   - `JsonProcessingException` is unavailable (`malformed response body`).
   - Status handling follows the Constraints, and every message is redacted.
-  - The async variant uses `sendAsync`. The returned future is the `sendAsync` future piped through `thenApply(decode)`, and `cancel(true)` on it cancels the exchange.
+  - Every call is async at the core (`sendAsync`); the blocking method waits on the async one. The body is read by a `BodySubscriber` that cancels once 8 MiB is crossed. The call's own deadline (HttpRequest.timeout stops at the headers) completes the future with `timed out`. Redirects are followed by hand with `Redirect.NEVER`. Cancelling the returned future — or any future mapped from it through `Base.then` — cancels the exchange in flight.
+  - `Management.Import` is `importEntries` (`import` is a Java keyword; clients/gen `javamethod`).
 - [ ] Implement the 41 methods, sync and async, with the special rules from Task 7 and camelCase names.
 - [ ] Run `cd clients/java && mvn -B verify` on Java 17 and Java 21: expect PASS (`Tests run: <n>, Failures: 0, Errors: 0`).
 - [ ] Mutation check: remove the 404 handling in `forget` and re-run. Expect FAIL on `forget-404-not-deleted` (`expected: <ok> but was: <not_found>`). Revert.
@@ -1555,7 +1558,8 @@ Run `cd clients/java && mvn -B verify`: expect FAIL with `cannot find symbol` / 
 - [ ] Write `Smoke.java` (up/down, prefix `java`).
 - [ ] Add a `java` job to `.github/workflows/sdk.yml`:
   - `runs-on: arc-azrtydxb-amd64`, `timeout-minutes: 20`, `needs: [generated]`.
-  - A matrix of `java: [17, 21]`, using `actions/setup-java@v5` with `distribution: temurin` and `cache: maven`, plus `actions/setup-go@v6`.
+  - A matrix of `java: [17, 21]`, run in the `maven:3.9-eclipse-temurin-<java>` image (the runner has no Maven), plus `actions/setup-go`.
+  - The `generated` job installs google-java-format 1.36.1 (the version Homebrew ships), because `-check` runs the Java templates through it.
   - Run: `cd clients/java && mvn -B verify`.
 - [ ] Commit `feat(sdk-java): novamem Java SDK held to the shared scenario suite`.
 
