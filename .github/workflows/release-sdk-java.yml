@@ -1,0 +1,66 @@
+name: Release SDK (Java)
+
+# Publishes clients/java when a clients/java/vX.Y.Z tag is pushed
+# (ADR 0009: independent semver per SDK). verify runs the whole SDK
+# workflow at the tag, live smoke included; publish needs it and the version check.
+on:
+  push:
+    tags: ["clients/java/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-java-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/sdk.yml
+
+  version-matches-tag:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: The manifest version is the tag's
+        run: |
+          want="${GITHUB_REF_NAME#clients/java/v}"
+          got=$(sh scripts/sdk-version.sh java)
+          [ "$got" = "$want" ] || { echo "manifest version $got, tag $want"; exit 1; }
+
+  publish:
+    needs: [verify, version-matches-tag]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 30
+    # The runner has no Maven; the image brings it and the JDK.
+    container:
+      image: maven:3.9-eclipse-temurin-21
+    steps:
+      - uses: actions/checkout@v7
+      - name: Signing key and Central credentials
+        env:
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+        run: |
+          apt-get update -qq && apt-get install -y -qq gnupg
+          printf '%s\n' "$MAVEN_GPG_PRIVATE_KEY" | gpg --batch --import
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'XML'
+          <settings>
+            <servers>
+              <server>
+                <id>central</id>
+                <username>${env.MAVEN_CENTRAL_USERNAME}</username>
+                <password>${env.MAVEN_CENTRAL_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          XML
+      - name: Deploy com.azrtydxb:novamem
+        working-directory: clients/java
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        # verify already ran the suite at this tag.
+        run: mvn -B -P release -DskipTests deploy

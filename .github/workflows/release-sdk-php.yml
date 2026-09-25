@@ -1,0 +1,53 @@
+name: Release SDK (PHP)
+
+# Publishes clients/php when a clients/php/vX.Y.Z tag is pushed
+# (ADR 0009: independent semver per SDK). verify runs the whole SDK
+# workflow at the tag, live smoke included; publish needs it and the version check.
+on:
+  push:
+    tags: ["clients/php/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-php-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/sdk.yml
+
+  version-matches-tag:
+    # PHP has no manifest version: the mirror's tag is the version, so
+    # this only insists the tag is X.Y.Z.
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    steps:
+      - name: The tag is X.Y.Z
+        run: |
+          v="${GITHUB_REF_NAME#clients/php/v}"
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag version $v is not X.Y.Z"; exit 1; }
+
+  publish:
+    needs: [verify, version-matches-tag]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # subtree split walks the whole history
+      # Composer reads a package from its own repository's root, so
+      # clients/php is split into the read-only mirror azrtydxb/novamem-php
+      # (ADR 0010); Packagist picks up the mirror's tag through its hook.
+      - name: Push clients/php to the mirror and tag it
+        env:
+          MIRROR_TOKEN: ${{ secrets.SDK_MIRROR_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          v="${VERSION#clients/php/v}"
+          remote="https://x-access-token:${MIRROR_TOKEN}@github.com/azrtydxb/novamem-php"
+          git subtree split --prefix clients/php -b php-split
+          git push "$remote" php-split:main
+          git tag "v$v" php-split
+          git push "$remote" "v$v"

@@ -1,0 +1,8 @@
+{
+  "name": "novamem",
+  "version": "0.1.0",
+  "description": "C and C++ SDK for the novamem memory service (prebuilt archive).",
+  "homepage": "https://github.com/azrtydxb/novamem",
+  "license": "Apache-2.0",
+  "supports": "linux & (x64 | arm64)"
+}

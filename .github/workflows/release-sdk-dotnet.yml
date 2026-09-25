@@ -1,0 +1,48 @@
+name: Release SDK (.NET)
+
+# Publishes clients/dotnet when a clients/dotnet/vX.Y.Z tag is pushed
+# (ADR 0009: independent semver per SDK). verify runs the whole SDK
+# workflow at the tag, live smoke included; publish needs it and the version check.
+on:
+  push:
+    tags: ["clients/dotnet/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sdk-dotnet-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/sdk.yml
+
+  version-matches-tag:
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: The manifest version is the tag's
+        run: |
+          want="${GITHUB_REF_NAME#clients/dotnet/v}"
+          got=$(sh scripts/sdk-version.sh dotnet)
+          [ "$got" = "$want" ] || { echo "manifest version $got, tag $want"; exit 1; }
+
+  publish:
+    needs: [verify, version-matches-tag]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:8.0
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Pack and push Novamem
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet pack -c Release clients/dotnet/src/Novamem -o out
+          dotnet nuget push out/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
