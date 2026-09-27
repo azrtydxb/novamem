@@ -1,0 +1,15 @@
+# Sync uses the existing Scout credential, copied to this namespace out of band.
+apiVersion: sync.kuvryn.io/v1alpha1
+kind: Repository
+metadata:
+  name: novamem
+  namespace: novamem
+spec:
+  type: git
+  git:
+    url: https://github.com/azrtydxb/novamem.git
+    revision: main
+    auth:
+      secretRef:
+        name: novamem-git
+  pollInterval: 60s

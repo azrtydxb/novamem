@@ -1,0 +1,32 @@
+apiVersion: sync.kuvryn.io/v1alpha1
+kind: Application
+metadata:
+  name: novamem
+  namespace: novamem
+spec:
+  serviceAccountName: kuvryn-sync-deployer
+  source:
+    repositoryRef:
+      name: novamem
+    revision: main
+    path: deploy/overlays/kw
+    render:
+      type: kustomize
+  destination:
+    namespace: novamem
+  sync:
+    automatic: true
+    prune: true
+    selfHeal: true
+    conflictPolicy: fail
+  strategy:
+    type: rolling
+    failurePolicy:
+      action: rollback
+      timeout: 10m
+      maxAttempts: 2
+  health:
+    timeout: 10m
+  history:
+    limit: 10
+  deletionPolicy: Orphan

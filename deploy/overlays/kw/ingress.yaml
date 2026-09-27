@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: novamem
+  namespace: novamem
+  annotations:
+    # Override the live letsencrypt-prod annotation during SSA handover.
+    cert-manager.io/cluster-issuer: cluster-ca
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  tls:
+    - hosts:
+        - novamem.kw.watteel.lab
+      secretName: novamem-tls
+  rules:
+    - host: novamem.kw.watteel.lab
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: novamem
+                port:
+                  number: 7778
