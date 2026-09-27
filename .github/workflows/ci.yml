@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    # CI records the published image here for Kuvryn Sync. Deployment-only
+    # changes do not need another image build.
+    paths-ignore:
+      - "deploy/**"
     # Tag pushes also trigger CI so the docker job can publish semver
     # image tags (`:vX.Y.Z`, `:X.Y.Z`). Server releases are tagged
     # `vX.Y.Z` on the merge commit; without this trigger we'd only ever
@@ -12,10 +16,10 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel superseded runs on the same ref so PR pushes don't queue stale work.
+# Match Scout: finish main builds so each can publish and record its image.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege by default. `packages: write` is granted per-job to the
 # two jobs that actually publish container images (docker, manifest)
@@ -27,6 +31,20 @@ env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/novamem
 
 jobs:
+  gitops:
+    name: GitOps deployment checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/test-record-kw-image.py
+      - name: Keep credentials and namespace outside application sync
+        run: |
+          kubectl kustomize deploy/overlays/kw > /tmp/kw-rendered.yaml
+          if grep -Eq '^kind: (Secret|Namespace)$' /tmp/kw-rendered.yaml; then
+            echo 'The kw overlay must not manage Secrets or Namespaces' >&2
+            exit 1
+          fi
   # ── Native test matrix ────────────────────────────────────────────────
   # CI tests run once on the amd64 ARC scale set (novanas). ARM64
   # validation happens in the Docker build job below on KW ARC, where the
@@ -348,14 +366,20 @@ jobs:
   # Stitches the two per-arch GHCR images into single multi-arch indexes.
   manifest:
     name: manifest (multi-arch)
-    needs: [docker]
+    needs: [docker, audit, gitops]
     permissions:
-      contents: read
+      contents: write # record the verified image for Kuvryn Sync on main
       packages: write # push the multi-arch manifest to ghcr.io
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # Existing Scout credential, stored separately as a repository secret.
+          # Main uses it for CI's deployment commit; tags need only read access.
+          token: ${{ github.ref == 'refs/heads/main' && secrets.KW_GITOPS_TOKEN || github.token }}
       - uses: docker/setup-buildx-action@v4
       - name: Login to ghcr.io
         uses: docker/login-action@v4
@@ -399,3 +423,27 @@ jobs:
           docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }} \
             ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-amd64 \
             ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-arm64
+      - name: Verify the kw image resolves for both architectures
+        if: github.ref == 'refs/heads/main'
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}
+        run: |
+          for attempt in $(seq 1 12); do
+            if docker buildx imagetools inspect "$IMAGE" --raw | jq -e '
+              [.manifests[].platform | select(.os == "linux") | .architecture]
+              | (index("amd64") != null and index("arm64") != null)
+            ' >/dev/null; then
+              exit 0
+            fi
+            echo "Waiting for both image architectures (attempt $attempt)"
+            sleep 5
+          done
+          echo "Published image $IMAGE does not resolve for both architectures" >&2
+          exit 1
+      - name: Record the verified image for Kuvryn Sync
+        if: github.ref == 'refs/heads/main'
+        env:
+          IMAGE_TAG: sha-${{ steps.sha.outputs.short }}
+        run: |
+          cp scripts/record-kw-image.sh "$RUNNER_TEMP/record-kw-image.sh"
+          bash "$RUNNER_TEMP/record-kw-image.sh"

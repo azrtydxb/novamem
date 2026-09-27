@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: novamem
+  namespace: novamem
+  annotations:
+    configmap.reloader.stakater.com/reload: novamem-config
+    secret.reloader.stakater.com/reload: novamem-secrets
+spec:
+  replicas: 3
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: novamem
+      containers:
+        - name: novamem
+          image: ghcr.io/azrtydxb/novamem:sha-ed8b56d # managed by CI after publication and registry verification
+          imagePullPolicy: IfNotPresent
