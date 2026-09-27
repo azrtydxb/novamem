@@ -28,8 +28,10 @@ restarts the app when its ConfigMap or Secret changes.
    tests, scans, and publication of the multi-architecture image succeed.
 2. Preserve the existing `novamem` namespace and `novamem-secrets` Secret.
    Neither is rendered or overwritten. Take current PostgreSQL and Qdrant
-   backups before upgrading the app: automatic image rollback cannot undo a
-   forward-only schema migration.
+   backups before upgrading the app. Restore the PostgreSQL archive into a
+   disposable database and compare counts; verify the Qdrant snapshot checksum
+   and archive contents. Automatic image rollback cannot undo a forward-only
+   schema migration.
 3. Clients must trust the cluster CA and use
    `https://novamem.kw.watteel.lab/mcp`. HTTP redirects are not a substitute
    for changing an MCP POST endpoint.

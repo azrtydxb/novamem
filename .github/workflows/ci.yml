@@ -31,6 +31,20 @@ env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/novamem
 
 jobs:
+  gitops:
+    name: GitOps deployment checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/test-record-kw-image.py
+      - name: Keep credentials and namespace outside application sync
+        run: |
+          kubectl kustomize deploy/overlays/kw > /tmp/kw-rendered.yaml
+          if grep -Eq '^kind: (Secret|Namespace)$' /tmp/kw-rendered.yaml; then
+            echo 'The kw overlay must not manage Secrets or Namespaces' >&2
+            exit 1
+          fi
   # ── Native test matrix ────────────────────────────────────────────────
   # CI tests run once on the amd64 ARC scale set (novanas). ARM64
   # validation happens in the Docker build job below on KW ARC, where the
@@ -352,7 +366,7 @@ jobs:
   # Stitches the two per-arch GHCR images into single multi-arch indexes.
   manifest:
     name: manifest (multi-arch)
-    needs: [docker]
+    needs: [docker, audit, gitops]
     permissions:
       contents: write # record the verified image for Kuvryn Sync on main
       packages: write # push the multi-arch manifest to ghcr.io
