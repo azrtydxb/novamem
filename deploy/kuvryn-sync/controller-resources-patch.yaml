@@ -1,0 +1,14 @@
+# Apply separately with kubectl patch, never as an application resource.
+# Novamem Git fetches exhausted the original 128 MiB controller limit on kw.
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

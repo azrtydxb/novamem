@@ -21,6 +21,19 @@ restarts the app when its ConfigMap or Secret changes.
 
 ## One-time handover
 
+The kw Sync controller needs enough memory to fetch this repository. Its old
+128 MiB limit caused OOM restarts during the first Novamem fetch. The verified
+kw setting is a 256 MiB request / 1 GiB limit (100m / 1 CPU). The accompanying
+patch records that live setting; apply it to the existing controller separately
+and preserve it during future controller upgrades:
+
+```sh
+kubectl --context kw -n kuvryn-sync-system patch deployment \
+  kuvryn-sync-controller-manager --type=strategic \
+  --patch-file=deploy/kuvryn-sync/controller-resources-patch.yaml
+kubectl --context kw -n kuvryn-sync-system rollout status deployment/kuvryn-sync-controller-manager
+```
+
 1. Merge the deployment files, image-recording script, and CI changes into
    `main`. Provision `KW_GITOPS_TOKEN` and the `novamem-git` Kubernetes Secret
    before activation. The CI credential needs permission to push its deployment
@@ -62,6 +75,13 @@ restarts the app when its ConfigMap or Secret changes.
 6. Hand over only the rendered resources, then enable Sync:
 
    ```sh
+   # Clear legacy field ownership, not resource values. Force-applying an
+   # unchanged image alone leaves kubectl-set as a co-owner, which blocks
+   # the first subsequent image update under conflictPolicy: fail.
+   for resource in $(kubectl --context kw -n novamem get -f /tmp/novamem-kw.yaml -o name); do
+     kubectl --context kw -n novamem patch "$resource" --type=merge \
+       -p '{"metadata":{"managedFields":[{}]}}'
+   done
    kubectl --context kw apply --server-side --field-manager=kuvryn-sync \
      --force-conflicts -f /tmp/novamem-kw.yaml
    kubectl --context kw -n novamem rollout status deployment/novamem --timeout=10m
