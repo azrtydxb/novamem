@@ -709,3 +709,54 @@ Since #284 every MCP tool declares an `outputSchema`, but tool results carry onl
 - Leave it for now
 
 **Decision (2026-09-30, owner):** add structuredContent, with a test covering every tool that declares an outputSchema.
+
+## Raise the Nexus idle timeout for cold docker pulls?
+
+On 2026-09-30 five SDK jobs on #319 failed pulling images through the Nexus registry mirror (192.168.10.131): a large uncached Docker Hub layer stalled past Jetty's 30 s idle timeout, and the runner saw "connection reset by peer". Shared infrastructure, so the owner decides.
+
+- Raise the Nexus Jetty idle timeout (and the nginx tls sidecar's proxy timeouts to match), e.g. to 300 s (recommended)
+- Leave it; re-run failed jobs when the cache is cold
+
+**Decision (2026-09-30, owner):** raise the timeout.
+
+## Remove the stale kube-vip VIP bindings on kw?
+
+Found 2026-09-30 while debugging CI image pulls: kube-vip leaves a service's VIP bound on bond0 after its instance loses leadership. The kernel still answers ARP for it there, so one TCP flow's packets reach nodes that hold no state for it and get reset — every large pull through the Nexus (192.168.10.131) fails mid-transfer, while the same blob fetched straight from the nginx sidecar completes (180 MB in 3 s). Stale copies: .131 nexus (lease master-12; also on master-11, master-13), .125 fastllm-proxy (lease master-12; also master-11), .124 novaforge-dev/minio (lease master-13; also master-11). Separately, .130 is claimed by two services (buildkit/buildkit and novaforge/novaforge-git-platform).
+
+- Remove the stale copies (`ip addr del <vip>/32 dev bond0` on the non-lease-holder nodes only); leave .130 for the owner (recommended)
+- Restart the kube-vip DaemonSet pods instead, to let them resync
+- Leave it
+
+**Decision (2026-09-30, owner):** restart the kube-vip DaemonSet pods to let them resync.
+
+## The two kube-vip leftovers after the restart
+
+After restarting kube-vip-ds (2026-09-30), .131/.124 are fixed. Left: .125 (fastllm/fastllm-proxy) is still bound on master-11 as well as master-12 (lease holder), so its flows can still be reset; and .130 is claimed by two services (buildkit/buildkit and novaforge/novaforge-git-platform), bound once only because both leases happen to sit on master-12.
+
+- Remove the stale .125 copy on master-11 (`ip addr del 192.168.10.125/32 dev bond0`); leave .130 to its owner (recommended)
+- Remove the .125 copy and also move one of the .130 services to a free IP
+- Leave both
+
+**Decision (2026-09-30, owner):** remove the stale .125 copy on master-11; leave .130 to its owner.
+
+**Decision (2026-09-30, owner):** move novaforge-git-platform off .130. Done: pinned to 192.168.10.141 in NovaForge (chart option loadBalancerIP), certificate and LFS URL moved with it; .130 is BuildKit only, no VIP bound twice.
+
+## How to continue the Cilium L2 migration after the pool outage
+
+2026-09-30: creating an LB-IPAM pool (even with a service selector) cleared the address of every LoadBalancer service it did not select, taking all VIPs down for ~2 minutes before I reverted. Cilium now has L2 announcements enabled but no pool or policy; kube-vip still announces everything. Details: internal-lab/kubernetes/cilium/l2-migration.md.
+
+- Per-service: set defaultLBServiceIPAM=none, then recreate each service with loadBalancerClass io.cilium/l2-announcer, one at a time (short outage per service, in a window you choose) (recommended)
+- Single cutover: annotate every service with its address, add a selector-less pool, turn kube-vip services mode off (all VIPs move at once, in a window)
+- Stop here: keep kube-vip (restart it when a stale VIP appears) and revert the Cilium L2 setting
+
+**Decision (2026-09-30, owner):** per-service cutover. Done for 18 of 20 services on 2026-09-30 (all but the two DNS VIPs), each owner's source updated.
+
+## How the LAN DNS VIPs (.136, .139) move off kube-vip
+
+Both are nexora-dns services with externalTrafficPolicy Local, and they are the DNS servers DHCP hands out. Cilium L2 announcements do not handle eTP Local: the leader can be a node with no engine pod, which drops the traffic.
+
+- Pin announcers to pod nodes: one CiliumL2AnnouncementPolicy per service whose nodeSelector matches exactly the two masters running its engines; keeps client IPs (recommended)
+- Switch to eTP Cluster: no blackhole case, but nexora sees node IPs instead of client IPs
+- Keep DNS on kube-vip, with its service mode enabled only for these two
+
+**Decision (2026-09-30, owner):** pin announcers to pod nodes.
