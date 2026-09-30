@@ -26,5 +26,5 @@ spec:
               app: novamem
       containers:
         - name: novamem
-          image: ghcr.io/azrtydxb/novamem:sha-5f6c440 # managed by CI after publication and registry verification
+          image: ghcr.io/azrtydxb/novamem:sha-fa73b13 # managed by CI after publication and registry verification
           imagePullPolicy: IfNotPresent
