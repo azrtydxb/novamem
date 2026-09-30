@@ -2,7 +2,20 @@
 
 Claude Code speaks remote MCP natively, so you point it at `/mcp` directly — no shim, no `npx` for the runtime.
 
-## One-shot installer (recommended)
+## Plugin (recommended)
+
+The repo is a Claude Code plugin marketplace. In a Claude Code session:
+
+```
+/plugin marketplace add azrtydxb/novamem
+/plugin install novamem@novamem
+```
+
+Claude Code asks for your server URL (default `http://localhost:7778`) and an `nm_…` bearer from the dashboard's API Tokens page. It keeps the token in the OS credential store. The plugin installs the MCP server, the `novamem` and `session-recap` skills and the slash commands below, for every project. Change the settings later with `/plugin configure novamem@novamem`.
+
+`/mcp` lists the server as `plugin:novamem:novamem`, and its tools are named `mcp__plugin_novamem_novamem__…`. Use those names in permission rules.
+
+## One-shot installer
 
 ```bash
 npx @azrtydxb/novamem-init

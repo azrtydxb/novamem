@@ -19,15 +19,25 @@ cp /path/to/novamem/integrations/claude-code/CLAUDE.md \
 cp /path/to/novamem/integrations/claude-code/commands/*.md \
    .kilocode/commands/
 
-# MCP server config goes in Kilo's MCP json. Either copy the .mcp.json
-# verbatim into your project root (Kilo respects the same file Claude
-# Code does) or paste the `mcpServers.novamem` block into your existing
-# .kilocode/mcp.json.
-cp /path/to/novamem/integrations/claude-code/.mcp.json ./
 ```
 
-Set `NOVAMEM_TOKEN` in the env Kilo launches MCP servers under, then
-restart.
+Then add the MCP server to `.kilocode/mcp.json`. The Claude Code
+`.mcp.json` uses `${VAR:-default}` expansion, so write the values in
+directly here instead of copying that file:
+
+```json
+{
+  "mcpServers": {
+    "novamem": {
+      "type": "streamable-http",
+      "url": "http://localhost:7778/mcp",
+      "headers": { "Authorization": "Bearer nm_..." }
+    }
+  }
+}
+```
+
+Restart Kilo.
 
 ## Notes
 

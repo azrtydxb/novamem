@@ -4,8 +4,13 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## Unreleased
 
+### Added
+
+- **Claude Code plugin.** The repo root is now a plugin marketplace (`.claude-plugin/marketplace.json`) serving `plugins/novamem/`: the MCP server over streamable HTTP, the `novamem` and `session-recap` skills, and the slash commands. Install with `/plugin marketplace add azrtydxb/novamem` then `/plugin install novamem@novamem`. It asks for the server URL and bearer (the bearer goes in the OS credential store). `cmd/gen-contract` generates the plugin's skills and commands from `skills/` and `integrations/claude-code/commands/`, and rewrites the commands to use plugin tool names (`mcp__plugin_novamem_novamem__…`). The CI drift gate covers the copies.
+
 ### Fixed
 
+- **`integrations/claude-code/.mcp.json` launched a shim that is no longer published.** It ran `npx -y @azrtydxb/novamem-mcp`, which ADR 0001 dropped. It now points Claude Code at the server's streamable HTTP endpoint (`${NOVAMEM_BASE_URL:-http://localhost:7778}/mcp`), the same entry `novamem-init` writes.
 - **Nine routes documented no response body.** `POST /v1/admin/tokens/revoke`, `GET`/`POST /v1/admin/users`, `DELETE /v1/admin/users/{id}`, `PUT /v1/admin/users/{id}/quota`, `GET /v1/context-prefix`, `GET /v1/me/export`, `POST /v1/me/import` and `DELETE /v1/me/tokens/{hash}` now declare named response schemas in `api/openapi.yaml`, transcribed from their handlers. Handlers are unchanged.
 - **Two documented status codes were wrong.** `POST /v1/admin/users` answers 201, not 200. `POST /v1/me/import` answers 201, or 400 with the same result body when every entry failed.
 - **`clients/go` route map credited methods to the wrong class.** Decay, Evaluate, Hygiene, Observe and Adoption were listed under `Client` although they live on `Management`, and `GET /v1/me/today` pointed at a `Management.Today` that doesn't exist (it is now a declared non-goal). The new `TestRouteMapNamesRealMethods` fails on any row naming a method that doesn't exist.

@@ -60,7 +60,23 @@ const (
 	// The installer's slash-command bundle, same story.
 	commandsSrc = "../integrations/claude-code/commands"
 	commandsDst = "internal/initcli/assets/commands"
+	// The Claude Code plugin (plugins/novamem/, published through the
+	// repo-root marketplace). An installed plugin is copied out of the
+	// repo, so it can reach nothing outside its own directory — it
+	// carries copies of the skills and commands rather than links.
+	pluginDir = "../plugins/novamem"
 )
+
+// pluginSkills are the skills the plugin ships, each mirrored from
+// ../skills/<name>.
+var pluginSkills = []string{"novamem", "session-recap"}
+
+// Claude Code namespaces a plugin's MCP tools as
+// mcp__plugin_<plugin>_<server>__<tool>, so the plugin's copy of the
+// commands names them that way. Left as mcp__novamem__…, `allowed-tools`
+// would pre-approve a tool that does not exist and every command would
+// stop on a permission prompt.
+var pluginToolName = strings.NewReplacer("mcp__novamem__", "mcp__plugin_novamem_novamem__")
 
 // A tool definition is passed through whole rather than parsed into a
 // struct. `annotations` (readOnlyHint, idempotentHint, title,
@@ -114,9 +130,15 @@ func main() {
 	writeRoutes(routesGoPath, routes)
 	syncTree(skillSrc, skillDst)
 	syncTree(commandsSrc, commandsDst)
+	syncTreeWith(commandsSrc, filepath.Join(pluginDir, "commands"), func(b []byte) []byte {
+		return []byte(pluginToolName.Replace(string(b)))
+	})
+	for _, name := range pluginSkills {
+		syncTree(filepath.Join("../skills", name), filepath.Join(pluginDir, "skills", name))
+	}
 
-	fmt.Printf("synced %s and %s; wrote %s, %s, %s, %s and %s (%d operations, %d tools)\n",
-		skillDst, commandsDst, docJSONPath, embedJSONPath, toolDefsPath, snapshotPath, routesGoPath, len(routes), len(tools))
+	fmt.Printf("synced %s, %s and %s; wrote %s, %s, %s, %s and %s (%d operations, %d tools)\n",
+		skillDst, commandsDst, pluginDir, docJSONPath, embedJSONPath, toolDefsPath, snapshotPath, routesGoPath, len(routes), len(tools))
 }
 
 type route struct {
@@ -487,7 +509,11 @@ func writeSnapshot(path string, tools []mcpTool) {
 // has that src does not removed. The --delete half matters — without it a
 // skill file deleted upstream lives on inside the binary and keeps being
 // shipped to clients.
-func syncTree(src, dst string) {
+func syncTree(src, dst string) { syncTreeWith(src, dst, nil) }
+
+// syncTreeWith is syncTree with each file's bytes passed through rewrite
+// (when non-nil) on the way to dst.
+func syncTreeWith(src, dst string, rewrite func([]byte) []byte) {
 	want := map[string]bool{}
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -501,6 +527,9 @@ func syncTree(src, dst string) {
 		body, err := os.ReadFile(p)
 		if err != nil {
 			return err
+		}
+		if rewrite != nil {
+			body = rewrite(body)
 		}
 		out := filepath.Join(dst, rel)
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
