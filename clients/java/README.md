@@ -73,6 +73,8 @@ restarting. Every failure of a call is a `NovamemException` (unchecked): thrown
 by the blocking form, and the cause the `…Async` future completes with.
 
 ```java
+import com.azrtydxb.novamem.NovamemException;
+
 try {
   SearchResult res = c.search(SearchRequest.builder().query(q).build());
   if (res.results().isEmpty()) {

@@ -64,7 +64,7 @@ try {
   if ($res->results === []) {
     // Nothing is stored about that. This one is knowledge.
   }
-} catch (NovamemException $e) {
+} catch (\Novamem\NovamemException $e) {
   if ($e->isUnavailable()) {
     // Could not look. Say so; do not claim ignorance.
   } else {
