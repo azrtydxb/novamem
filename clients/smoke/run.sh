@@ -26,6 +26,9 @@ build() {
 		# connection (curl error 7 within milliseconds), so this retries.
 		(cd clients/php && for i in 1 2 3; do
 			composer install --no-dev --no-interaction --no-progress && exit 0
+			# Record what refused, so the next failure names its source.
+			curl -sv --connect-timeout 5 -o /dev/null https://repo.packagist.org/packages.json 2>&1 | grep '^\*' || true
+			curl -4 -sv --connect-timeout 5 -o /dev/null https://repo.packagist.org/packages.json 2>&1 | grep '^\*' || true
 			[ "$i" = 3 ] || sleep 10
 		done && exit 1)
 		;;
