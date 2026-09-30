@@ -1,0 +1,20 @@
+{
+  "name": "novamem",
+  "owner": {
+    "name": "azrtydxb",
+    "url": "https://github.com/azrtydxb"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for NovaMem, self-hosted long-term memory for AI agents."
+  },
+  "plugins": [
+    {
+      "name": "novamem",
+      "source": "./plugins/novamem",
+      "description": "Long-term memory for Claude Code: the NovaMem MCP server, the novamem and session-recap skills, and /remember, /recall, /today and friends.",
+      "category": "productivity",
+      "homepage": "https://github.com/azrtydxb/novamem",
+      "license": "Apache-2.0"
+    }
+  ]
+}
