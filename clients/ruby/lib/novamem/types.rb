@@ -404,6 +404,79 @@ module Novamem
     end
   end
 
+  ContextResult = Struct.new(:context_pack, :guidance, :recent, :relevant, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class ContextResult
+    FIELDS = [
+      [:context_pack, "contextPack", [:m, [:p, "any"]], false],
+      [:guidance, "guidance", [:p, "string"], false],
+      [:recent, "recent", [:n, "ContextResultRecent"], true],
+      [:relevant, "relevant", [:n, "ContextResultRelevant"], true],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
+  ContextResultRecent = Struct.new(:results, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class ContextResultRecent
+    FIELDS = [
+      [:results, "results", [:a, [:n, "MemoryEntry"]], true],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
+  ContextResultRelevant = Struct.new(:degraded, :results, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class ContextResultRelevant
+    FIELDS = [
+      [:degraded, "degraded", [:p, "bool"], false],
+      [:results, "results", [:a, [:n, "MemoryEntry"]], true],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
   DecayResult = Struct.new(:demoted, :expired, :promoted, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a

@@ -775,6 +775,159 @@ final readonly class ContextRequestWeights
     }
 }
 
+final readonly class ContextResult
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['contextPack', 'contextPack', ['m', ['p', 'any']], false],
+        ['guidance', 'guidance', ['p', 'string'], false],
+        ['recent', 'recent', ['n', 'ContextResultRecent'], true],
+        ['relevant', 'relevant', ['n', 'ContextResultRelevant'], true],
+    ];
+
+    public function __construct(
+        public ContextResultRecent $recent,
+        public ContextResultRelevant $relevant,
+        public ?array $contextPack = null,
+        public ?string $guidance = null,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
+            'recent' => ContextResultRecent::fromArray([]),
+            'relevant' => ContextResultRelevant::fromArray([]),
+        ];
+    }
+}
+
+final readonly class ContextResultRecent
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['results', 'results', ['a', ['n', 'MemoryEntry']], true],
+    ];
+
+    public function __construct(
+        public array $results,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
+            'results' => [],
+        ];
+    }
+}
+
+final readonly class ContextResultRelevant
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['degraded', 'degraded', ['p', 'bool'], false],
+        ['results', 'results', ['a', ['n', 'MemoryEntry']], true],
+    ];
+
+    public function __construct(
+        public array $results,
+        public ?bool $degraded = null,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
+            'results' => [],
+        ];
+    }
+}
+
 final readonly class DecayResult
 {
     /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */

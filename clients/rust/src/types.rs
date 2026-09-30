@@ -242,6 +242,32 @@ pub struct ContextRequestWeights {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextResult {
+    #[serde(rename = "contextPack", default, skip_serializing_if = "Option::is_none")]
+    pub context_pack: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(rename = "guidance", default, skip_serializing_if = "none_or_empty")]
+    pub guidance: Option<String>,
+    #[serde(rename = "recent", default)]
+    pub recent: ContextResultRecent,
+    #[serde(rename = "relevant", default)]
+    pub relevant: ContextResultRelevant,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextResultRecent {
+    #[serde(rename = "results", default)]
+    pub results: Vec<MemoryEntry>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextResultRelevant {
+    #[serde(rename = "degraded", default, skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<bool>,
+    #[serde(rename = "results", default)]
+    pub results: Vec<MemoryEntry>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DecayResult {
     #[serde(rename = "demoted", default)]
     pub demoted: f64,

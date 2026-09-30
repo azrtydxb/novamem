@@ -688,6 +688,135 @@ pub unsafe extern "C" fn novamem_context_request_weights_free(p: *mut novamem_co
 }
 
 #[repr(C)]
+pub struct novamem_context_result {
+    pub context_pack: *mut c_char,
+    pub guidance: *mut c_char,
+    pub recent: *mut novamem_context_result_recent,
+    pub relevant: *mut novamem_context_result_relevant,
+}
+
+impl novamem_context_result {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::ContextResult {
+        types::ContextResult {
+            context_pack: c_json(self.context_pack),
+            guidance: c_str(self.guidance),
+            recent: self.recent.as_ref().map(|p| p.to_rust()).unwrap_or_default(),
+            relevant: self.relevant.as_ref().map(|p| p.to_rust()).unwrap_or_default(),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::ContextResult) -> Self {
+        Self {
+            context_pack: json_to_c(v.context_pack.as_ref()),
+            guidance: str_to_c(v.guidance.as_deref()),
+            recent: boxed(novamem_context_result_recent::to_c(&v.recent)),
+            relevant: boxed(novamem_context_result_relevant::to_c(&v.relevant)),
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+        free_str(self.context_pack);
+        free_str(self.guidance);
+        novamem_context_result_recent_free(self.recent);
+        novamem_context_result_relevant_free(self.relevant);
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_context_result_free(p: *mut novamem_context_result) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
+pub struct novamem_context_result_recent {
+    pub results: *mut novamem_memory_entry,
+    pub results_len: usize,
+}
+
+impl novamem_context_result_recent {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::ContextResultRecent {
+        types::ContextResultRecent {
+            results: c_obj_array(self.results, self.results_len, |x| x.to_rust()).unwrap_or_default(),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::ContextResultRecent) -> Self {
+        let (results_ptr, results_len) = obj_array_to_c(Some(&v.results[..]), novamem_memory_entry::to_c);
+        Self {
+            results: results_ptr,
+            results_len,
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+        free_obj_array(self.results, self.results_len, |x| x.free_fields());
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_context_result_recent_free(p: *mut novamem_context_result_recent) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
+pub struct novamem_context_result_relevant {
+    pub has_degraded: bool,
+    pub degraded: bool,
+    pub results: *mut novamem_memory_entry,
+    pub results_len: usize,
+}
+
+impl novamem_context_result_relevant {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::ContextResultRelevant {
+        types::ContextResultRelevant {
+            degraded: if self.has_degraded { Some(self.degraded) } else { None },
+            results: c_obj_array(self.results, self.results_len, |x| x.to_rust()).unwrap_or_default(),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::ContextResultRelevant) -> Self {
+        let (results_ptr, results_len) = obj_array_to_c(Some(&v.results[..]), novamem_memory_entry::to_c);
+        Self {
+            has_degraded: v.degraded.is_some(),
+            degraded: v.degraded.unwrap_or_default(),
+            results: results_ptr,
+            results_len,
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+
+        free_obj_array(self.results, self.results_len, |x| x.free_fields());
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_context_result_relevant_free(p: *mut novamem_context_result_relevant) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
 pub struct novamem_decay_result {
     pub demoted: f64,
     pub expired: f64,

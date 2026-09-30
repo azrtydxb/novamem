@@ -218,7 +218,7 @@ impl Client {
         decode("remember", v)
     }
 
-    pub async fn context(&self, request: t::ContextRequest) -> Result<t::SearchResult, Error> {
+    pub async fn context(&self, request: t::ContextRequest) -> Result<t::ContextResult, Error> {
         if blank(&request.message) {
             return Err(Error::new("context", "message is required"));
         }
