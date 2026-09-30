@@ -72,77 +72,168 @@
     },
     "name": "memory_context",
     "outputSchema": {
+      "description": "Relevant hits and recent entries in one answer, plus the entries grouped into a context pack — the same answer over HTTP and MCP.",
       "properties": {
-        "degraded": {
-          "description": "True when a tier (cold store or graph) was unreachable, so these hits may be partial.",
-          "type": "boolean"
+        "contextPack": {
+          "description": "The same entries grouped by section (decisions, current setup, pitfalls, …).",
+          "type": "object"
         },
-        "results": {
-          "items": {
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "id": {
-                "type": "string"
-              },
-              "metadata": {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              "namespace": {
-                "type": "string"
-              },
-              "project": {
-                "nullable": true,
-                "type": "string"
-              },
-              "score": {
-                "type": "number"
-              },
-              "signals": {
-                "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+        "guidance": {
+          "type": "string"
+        },
+        "recent": {
+          "properties": {
+            "results": {
+              "items": {
                 "properties": {
-                  "entity": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "namespace": {
+                    "type": "string"
+                  },
+                  "project": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "score": {
                     "type": "number"
                   },
-                  "graph": {
-                    "type": "number"
+                  "signals": {
+                    "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                    "properties": {
+                      "entity": {
+                        "type": "number"
+                      },
+                      "graph": {
+                        "type": "number"
+                      },
+                      "keyword": {
+                        "type": "number"
+                      },
+                      "recency": {
+                        "type": "number"
+                      },
+                      "vector": {
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
                   },
-                  "keyword": {
-                    "type": "number"
+                  "source": {
+                    "type": "string"
                   },
-                  "recency": {
-                    "type": "number"
-                  },
-                  "vector": {
-                    "type": "number"
+                  "tier": {
+                    "enum": [
+                      "warm",
+                      "cold"
+                    ],
+                    "type": "string"
                   }
                 },
+                "required": [
+                  "id",
+                  "content"
+                ],
                 "type": "object"
               },
-              "source": {
-                "type": "string"
-              },
-              "tier": {
-                "enum": [
-                  "warm",
-                  "cold"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "content"
-            ],
-            "type": "object"
+              "type": "array"
+            }
           },
-          "type": "array"
+          "required": [
+            "results"
+          ],
+          "type": "object"
+        },
+        "relevant": {
+          "properties": {
+            "degraded": {
+              "type": "boolean"
+            },
+            "results": {
+              "items": {
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "namespace": {
+                    "type": "string"
+                  },
+                  "project": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "signals": {
+                    "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                    "properties": {
+                      "entity": {
+                        "type": "number"
+                      },
+                      "graph": {
+                        "type": "number"
+                      },
+                      "keyword": {
+                        "type": "number"
+                      },
+                      "recency": {
+                        "type": "number"
+                      },
+                      "vector": {
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "tier": {
+                    "enum": [
+                      "warm",
+                      "cold"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "content"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "results"
+          ],
+          "type": "object"
         }
       },
       "required": [
-        "results"
+        "relevant",
+        "recent"
       ],
       "type": "object"
     }
@@ -216,32 +307,50 @@
     },
     "name": "memory_capture",
     "outputSchema": {
+      "description": "Over MCP a capture answers in the session-recap shape — `saved` (0 or 1) and a one-item `results` — where the HTTP route answers the bare CaptureResult. A declined capture is `saved: 0` with a null id.",
       "properties": {
-        "deduplicated": {
-          "type": "boolean"
-        },
-        "embedded": {
-          "type": "boolean"
-        },
-        "id": {
-          "nullable": true,
-          "type": "string"
-        },
-        "rejected": {
-          "type": "string"
-        },
-        "superseded": {
+        "results": {
           "items": {
-            "type": "string"
+            "properties": {
+              "deduplicated": {
+                "type": "boolean"
+              },
+              "embedded": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rejected": {
+                "type": "string"
+              },
+              "superseded": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "updated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
           },
           "type": "array"
         },
-        "updated": {
-          "type": "boolean"
+        "saved": {
+          "type": "number"
         }
       },
       "required": [
-        "id"
+        "saved",
+        "results"
       ],
       "type": "object"
     }
@@ -364,8 +473,10 @@
                 "type": "boolean"
               },
               "id": {
-                "nullable": true,
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "rejected": {
                 "type": "string"
@@ -702,8 +813,10 @@
                 "type": "string"
               },
               "project": {
-                "nullable": true,
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "score": {
                 "type": "number"
@@ -818,8 +931,10 @@
           "type": "boolean"
         },
         "id": {
-          "nullable": true,
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "rejected": {
           "type": "string"
@@ -900,37 +1015,76 @@
     },
     "name": "memory_today",
     "outputSchema": {
+      "description": "The last 24 hours, newest first — the memory_recent shape, not the HTTP route's event feed.",
       "properties": {
-        "events": {
+        "results": {
           "items": {
             "properties": {
-              "at": {
+              "content": {
                 "type": "string"
               },
-              "kind": {
-                "enum": [
-                  "remember",
-                  "token",
-                  "project",
-                  "audit"
-                ],
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "namespace": {
                 "type": "string"
               },
               "project": {
-                "nullable": true,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "score": {
+                "type": "number"
+              },
+              "signals": {
+                "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                "properties": {
+                  "entity": {
+                    "type": "number"
+                  },
+                  "graph": {
+                    "type": "number"
+                  },
+                  "keyword": {
+                    "type": "number"
+                  },
+                  "recency": {
+                    "type": "number"
+                  },
+                  "vector": {
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "source": {
                 "type": "string"
               },
-              "text": {
+              "tier": {
+                "enum": [
+                  "warm",
+                  "cold"
+                ],
                 "type": "string"
               }
             },
+            "required": [
+              "id",
+              "content"
+            ],
             "type": "object"
           },
           "type": "array"
         }
       },
       "required": [
-        "events"
+        "results"
       ],
       "type": "object"
     }
@@ -1007,8 +1161,10 @@
                 "type": "string"
               },
               "project": {
-                "nullable": true,
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "score": {
                 "type": "number"
@@ -1123,8 +1279,10 @@
                 "type": "string"
               },
               "project": {
-                "nullable": true,
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "score": {
                 "type": "number"
@@ -1328,8 +1486,10 @@
           "type": "object"
         },
         "lastDecayAt": {
-          "nullable": true,
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "totalCold": {
           "type": "number"
@@ -1474,8 +1634,10 @@
           "items": {
             "type": "string"
           },
-          "nullable": true,
-          "type": "array"
+          "type": [
+            "array",
+            "null"
+          ]
         },
         "deleted": {
           "type": "boolean"
@@ -1518,7 +1680,6 @@
     "outputSchema": {
       "properties": {
         "active": {
-          "nullable": true,
           "properties": {
             "id": {
               "type": "string"
@@ -1527,7 +1688,10 @@
               "type": "string"
             }
           },
-          "type": "object"
+          "type": [
+            "object",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1556,8 +1720,10 @@
       "properties": {
         "active": {
           "description": "Always null — the active project has been cleared.",
-          "nullable": true,
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

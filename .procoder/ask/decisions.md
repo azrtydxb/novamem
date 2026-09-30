@@ -690,3 +690,22 @@ Options:
 - Generate with a breaking clients/go/v2.
 
 **Decision (2026-09-25, owner):** keep hand-written. The spec's out-of-scope line stands.
+
+## Point ~/.mcp.json at the kw novamem's new address?
+
+kw moved to `https://novamem.kw.watteel.lab` in #322; `~/.mcp.json` (which overrides `~/.claude.json`) still says `http://novamem.kw.local/mcp`, so the novamem MCP server times out although the service is healthy (2026-09-30).
+
+- Update ~/.mcp.json to https://novamem.kw.watteel.lab/mcp (recommended)
+- Leave it; the owner will change it
+
+**Decision (2026-09-30, owner):** update it. Done: ~/.mcp.json now points at https://novamem.kw.watteel.lab/mcp (backup ~/.mcp.json.bak-2026-09-30); an MCP initialize with the configured token returns 200.
+
+## Fix the MCP tools' missing structuredContent?
+
+Since #284 every MCP tool declares an `outputSchema`, but tool results carry only text `content`, never `structuredContent`. Spec-strict clients (Claude Code) reject every call: "has an output schema but did not return structured content". Found 2026-09-30 on kw (sha-b4cc672).
+
+- Return `structuredContent` (the parsed result object) alongside the text on success, with a test that every tool with an outputSchema does so (recommended)
+- Stop advertising `outputSchema` on tools
+- Leave it for now
+
+**Decision (2026-09-30, owner):** add structuredContent, with a test covering every tool that declares an outputSchema.

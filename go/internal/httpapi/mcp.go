@@ -480,7 +480,14 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 			return nil, err
 		}
 		req.Project = project
-		return s.engine.Update(ctx, userID, id, req)
+		r, err := s.engine.Update(ctx, userID, id, req)
+		if err != nil {
+			return nil, err
+		}
+		// The id, as the HTTP route answers it: the tool's outputSchema
+		// is that route's response and requires it. Over MCP a miss is
+		// updated: false rather than a 404.
+		return obj{{"id", id}, {"updated", r.Updated}, {"embeddingChanged", r.EmbeddingChanged}}, nil
 
 	case "memory_stats":
 		checkStrict(c)
