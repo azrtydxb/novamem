@@ -257,6 +257,14 @@ jobs:
         run: |
           for i in 1 2 3; do
             composer install --no-interaction --no-progress && break
+            # The failures refuse within ~4 ms, while packagist's edge is
+            # ~115 ms away: something local answers. Record what, so the
+            # next one names its source instead of being retried blind.
+            echo "::group::packagist diagnostics (attempt $i)"
+            getent ahosts repo.packagist.org || true
+            curl -sv --connect-timeout 5 -o /dev/null https://repo.packagist.org/packages.json 2>&1 | grep -E '^\*' || true
+            composer diagnose || true
+            echo "::endgroup::"
             [ "$i" = 3 ] && exit 1
             sleep 10
           done
