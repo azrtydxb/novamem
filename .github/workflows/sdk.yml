@@ -44,6 +44,22 @@ jobs:
           # clients/gen and clients/contract are stdlib-only: no go.sum to key a cache on.
           cache: false
       - run: cd clients/gen && go vet ./... && go test -count=1 ./...
+      # The Java template names google-java-format as its formatter (the
+      # layout depends on line length, so no template can match it alone).
+      # Pinned to the version contributors get from Homebrew: a different
+      # release may lay lines out differently and fail the check below.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: google-java-format 1.36.1
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/gjf.jar" \
+            https://github.com/google/google-java-format/releases/download/v1.36.1/google-java-format-1.36.1-all-deps.jar
+          printf '#!/bin/sh\nexec java -jar "%s" "$@"\n' "$RUNNER_TEMP/gjf.jar" > "$RUNNER_TEMP/bin/google-java-format"
+          chmod +x "$RUNNER_TEMP/bin/google-java-format"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       # Regenerate every SDK's types and compare with what is checked in: an
       # API change that was not regenerated fails here, naming each file.
       - run: go run ./clients/gen -spec docs/api/openapi.json -routes clients/contract/routes.json -out clients -check
@@ -281,3 +297,38 @@ jobs:
       - name: Smoke program builds
         working-directory: clients/dotnet
         run: dotnet build smoke
+
+  # Java SDK (plan Task 10): the shared scenario suite plus the transport
+  # tests on the Java 17 floor and the current LTS. The maven images carry
+  # both toolchains; the runner has no Maven.
+  java:
+    needs: [generated]
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["17", "21"]
+    container:
+      image: maven:3.9-eclipse-temurin-${{ matrix.java }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false
+      - name: Scenario suite
+        working-directory: clients/java
+        run: mvn -B verify
+      - name: Runtime dependencies are Jackson only
+        working-directory: clients/java
+        run: |
+          mvn -B -q dependency:tree -Dscope=runtime -DoutputType=text -DoutputFile=deps.txt
+          cat deps.txt
+          ! grep -v -E '^com\.azrtydxb:novamem|com\.fasterxml\.jackson\.core:jackson-(databind|core|annotations):' deps.txt
+      - name: Smoke program runs
+        working-directory: clients/java
+        run: |
+          mvn -B -q dependency:build-classpath -Dmdep.outputFile=cp.txt
+          NOVAMEM_SMOKE_URL=http://127.0.0.1:1 NOVAMEM_SMOKE_TOKEN=nm_x \
+            java -cp "$(cat cp.txt):target/classes:target/test-classes" com.azrtydxb.novamem.Smoke down
