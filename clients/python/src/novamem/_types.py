@@ -388,6 +388,41 @@ class ContextRequestWeights(_Wire):
 
 
 @dataclass(frozen=True)
+class ContextResult(_Wire):
+    recent: ContextResultRecent
+    relevant: ContextResultRelevant
+    context_pack: dict[str, Any] | None = None
+    guidance: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("context_pack", "contextPack", ("m", ("p", "any")), False),
+        ("guidance", "guidance", ("p", "string"), False),
+        ("recent", "recent", ("n", "ContextResultRecent"), True),
+        ("relevant", "relevant", ("n", "ContextResultRelevant"), True),
+    )
+
+
+@dataclass(frozen=True)
+class ContextResultRecent(_Wire):
+    results: list[MemoryEntry]
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("results", "results", ("a", ("n", "MemoryEntry")), True),
+    )
+
+
+@dataclass(frozen=True)
+class ContextResultRelevant(_Wire):
+    results: list[MemoryEntry]
+    degraded: bool | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("degraded", "degraded", ("p", "bool"), False),
+        ("results", "results", ("a", ("n", "MemoryEntry")), True),
+    )
+
+
+@dataclass(frozen=True)
 class DecayResult(_Wire):
     demoted: float
     expired: float
@@ -1188,6 +1223,9 @@ __all__ = [
     "ContextRequest",
     "ContextRequestMaxSensitivity",
     "ContextRequestWeights",
+    "ContextResult",
+    "ContextResultRecent",
+    "ContextResultRelevant",
     "DecayResult",
     "EntryList",
     "EvaluateReport",

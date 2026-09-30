@@ -623,6 +623,102 @@ public struct ContextRequestWeights: Codable, Sendable, Equatable {
     }
 }
 
+public struct ContextResult: Codable, Sendable, Equatable {
+    public var contextPack: [String: JSONValue]?
+    public var guidance: String?
+    public var recent: ContextResultRecent
+    public var relevant: ContextResultRelevant
+
+    public init(
+        contextPack: [String: JSONValue]? = nil,
+        guidance: String? = nil,
+        recent: ContextResultRecent,
+        relevant: ContextResultRelevant
+    ) {
+        self.contextPack = contextPack
+        self.guidance = guidance
+        self.recent = recent
+        self.relevant = relevant
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case contextPack = "contextPack"
+        case guidance = "guidance"
+        case recent = "recent"
+        case relevant = "relevant"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        contextPack = try c.decodeIfPresent([String: JSONValue].self, forKey: .contextPack)
+        guidance = try c.decodeIfPresent(String.self, forKey: .guidance)
+        recent = try c.decode(ContextResultRecent.self, forKey: .recent)
+        relevant = try c.decode(ContextResultRelevant.self, forKey: .relevant)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = contextPack { try c.encode(v, forKey: .contextPack) }
+        if let v = guidance, !v.isEmpty { try c.encode(v, forKey: .guidance) }
+        try c.encode(recent, forKey: .recent)
+        try c.encode(relevant, forKey: .relevant)
+    }
+}
+
+public struct ContextResultRecent: Codable, Sendable, Equatable {
+    public var results: [MemoryEntry]
+
+    public init(
+        results: [MemoryEntry]
+    ) {
+        self.results = results
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case results = "results"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        results = try c.decode([MemoryEntry].self, forKey: .results)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(results, forKey: .results)
+    }
+}
+
+public struct ContextResultRelevant: Codable, Sendable, Equatable {
+    public var degraded: Bool?
+    public var results: [MemoryEntry]
+
+    public init(
+        degraded: Bool? = nil,
+        results: [MemoryEntry]
+    ) {
+        self.degraded = degraded
+        self.results = results
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case degraded = "degraded"
+        case results = "results"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        degraded = try c.decodeIfPresent(Bool.self, forKey: .degraded)
+        results = try c.decode([MemoryEntry].self, forKey: .results)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = degraded { try c.encode(v, forKey: .degraded) }
+        try c.encode(results, forKey: .results)
+    }
+}
+
 public struct DecayResult: Codable, Sendable, Equatable {
     public var demoted: Double
     public var expired: Double

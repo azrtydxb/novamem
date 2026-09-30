@@ -112,6 +112,22 @@ export interface ContextRequestWeights {
   vector?: number;
 }
 
+export interface ContextResult {
+  contextPack?: Record<string, unknown>;
+  guidance?: string;
+  recent: ContextResultRecent;
+  relevant: ContextResultRelevant;
+}
+
+export interface ContextResultRecent {
+  results: Array<MemoryEntry>;
+}
+
+export interface ContextResultRelevant {
+  degraded?: boolean;
+  results: Array<MemoryEntry>;
+}
+
 export interface DecayResult {
   demoted: number;
   expired: number;

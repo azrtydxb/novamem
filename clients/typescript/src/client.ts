@@ -76,7 +76,7 @@ export class Client extends Base {
    * A declined worthiness gate is not an error: check `result.id`. */
   async capture(
     request: t.CaptureRequest,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.CaptureResult> {
     if (blank(request?.content))
       throw new NovamemError({ op: "capture", message: "content is required" });
@@ -88,7 +88,7 @@ export class Client extends Base {
 
   async search(
     request: t.SearchRequest,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.SearchResult> {
     if (blank(request?.query))
       throw new NovamemError({ op: "search", message: "query is required" });
@@ -102,7 +102,7 @@ export class Client extends Base {
 
   async recent(
     request: t.RecentRequest = {},
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.EntryList> {
     const body = await this.t.call("recent", "POST", "/v1/recent", {
       body: clean(request),
@@ -115,17 +115,17 @@ export class Client extends Base {
   /** `recent` over the last 24 hours. */
   async today(
     request: t.RecentRequest = {},
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.EntryList> {
     return this.recent(
       { ...request, since: new Date(Date.now() - 24 * 3600 * 1000) },
-      o
+      o,
     );
   }
 
   async neighbors(
     request: t.NeighborsRequest,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.SearchResult> {
     if (blank(request?.id))
       throw new NovamemError({ op: "neighbors", message: "id is required" });
@@ -141,7 +141,7 @@ export class Client extends Base {
   async update(
     id: string,
     request: t.UpdateRequest = {},
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.UpdateResult> {
     if (blank(id))
       throw new NovamemError({ op: "update", message: "id is required" });
@@ -152,7 +152,7 @@ export class Client extends Base {
       {
         body: clean(request),
         signal: o.signal,
-      }
+      },
     );
     return body && !body.id ? { ...body, id: id.trim() } : body;
   }
@@ -161,7 +161,7 @@ export class Client extends Base {
    * scope comes back `deleted: false` with no error. */
   async forget(
     request: t.ForgetRequest,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ForgetResult> {
     if (blank(request?.id))
       throw new NovamemError({ op: "forget", message: "id is required" });
@@ -180,7 +180,7 @@ export class Client extends Base {
   /** Unconditional store: no worthiness gate, no dedup pass. */
   async remember(
     request: t.CaptureRequest,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.RememberResult> {
     if (blank(request?.content))
       throw new NovamemError({
@@ -195,8 +195,8 @@ export class Client extends Base {
 
   async context(
     request: t.ContextRequest,
-    o: CallOptions = {}
-  ): Promise<t.SearchResult> {
+    o: CallOptions = {},
+  ): Promise<t.ContextResult> {
     if (blank(request?.message))
       throw new NovamemError({ op: "context", message: "message is required" });
     return this.t.call("context", "POST", "/v1/context", {
@@ -207,7 +207,7 @@ export class Client extends Base {
 
   async sessionRecap(
     request: t.SessionRecapRequest,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.SessionRecapResult> {
     return this.t.call("session-recap", "POST", "/v1/session-recap", {
       body: clean(request),
@@ -218,7 +218,7 @@ export class Client extends Base {
   /** A notFound error here means the server's observer is disabled. */
   async contextPrefix(
     project?: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ContextPrefix> {
     return this.t.call("context-prefix", "GET", "/v1/context-prefix", {
       query: { project },
@@ -250,7 +250,7 @@ export class Client extends Base {
 export class Management extends Base {
   async mintToken(
     request: t.MintTokenRequest = {},
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.MintedToken> {
     return this.t.call("mint-token", "POST", "/v1/me/tokens", {
       body: clean(request),
@@ -266,7 +266,7 @@ export class Management extends Base {
 
   async revokeToken(
     hash: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.TokenDeleted> {
     if (blank(hash))
       throw new NovamemError({
@@ -277,7 +277,7 @@ export class Management extends Base {
       "revoke-token",
       "DELETE",
       "/v1/me/tokens/" + seg(hash.trim()),
-      { signal: o.signal }
+      { signal: o.signal },
     );
   }
 
@@ -301,7 +301,7 @@ export class Management extends Base {
 
   async deleteProject(
     id: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ProjectDeleted> {
     if (blank(id))
       throw new NovamemError({
@@ -312,13 +312,13 @@ export class Management extends Base {
       "delete-project",
       "DELETE",
       "/v1/me/projects/" + seg(id),
-      { signal: o.signal }
+      { signal: o.signal },
     );
   }
 
   async listProjectMembers(
     id: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.MemberList> {
     if (blank(id))
       throw new NovamemError({ op: "list-members", message: "id is required" });
@@ -326,7 +326,7 @@ export class Management extends Base {
       "list-members",
       "GET",
       `/v1/me/projects/${seg(id)}/members`,
-      { signal: o.signal }
+      { signal: o.signal },
     );
   }
 
@@ -336,7 +336,7 @@ export class Management extends Base {
     id: string,
     email: string,
     role?: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.MemberAdded> {
     if (blank(id) || blank(email))
       throw new NovamemError({
@@ -350,14 +350,14 @@ export class Management extends Base {
       {
         body: clean({ username: email, role }),
         signal: o.signal,
-      }
+      },
     );
   }
 
   async removeProjectMember(
     id: string,
     userId: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.MemberRemoved> {
     if (blank(id) || blank(userId)) {
       throw new NovamemError({
@@ -371,14 +371,14 @@ export class Management extends Base {
       `/v1/me/projects/${seg(id)}/members/${seg(userId)}`,
       {
         signal: o.signal,
-      }
+      },
     );
   }
 
   async removeProjectMemberByUsername(
     id: string,
     username: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.MemberRemoved> {
     if (blank(id) || blank(username)) {
       throw new NovamemError({
@@ -404,7 +404,7 @@ export class Management extends Base {
 
   async setActiveProject(
     project: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ActiveProject> {
     if (blank(project))
       throw new NovamemError({
@@ -422,13 +422,13 @@ export class Management extends Base {
       "clear-active-project",
       "DELETE",
       "/v1/me/active-project",
-      { expectBody: false, signal: o.signal }
+      { expectBody: false, signal: o.signal },
     );
   }
 
   async decay(
     effectiveDays?: number,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.DecayResult> {
     return this.t.call("decay", "POST", "/v1/decay", {
       body: clean({ effectiveDays }),
@@ -445,7 +445,7 @@ export class Management extends Base {
 
   async evaluate(
     suite?: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.EvaluateReport> {
     return this.t.call("evaluate", "POST", "/v1/evaluate", {
       body: clean({ suite }),
@@ -455,7 +455,7 @@ export class Management extends Base {
 
   async adoption(
     client?: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.AdoptionReport> {
     return this.t.call("adoption", "POST", "/v1/adoption", {
       body: clean({ client }),
@@ -468,7 +468,7 @@ export class Management extends Base {
   async observe(
     project?: string,
     limit?: number,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ObserveResult> {
     try {
       return await this.t.call("observe", "POST", "/v1/observe", {
@@ -492,7 +492,7 @@ export class Management extends Base {
     since?: string,
     afterSeq?: number,
     limit?: number,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ChangeFeed> {
     return this.t.call("changes", "GET", "/v1/me/changes", {
       query: {
@@ -513,7 +513,7 @@ export class Management extends Base {
   async export(
     afterId?: string,
     limit?: number,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ExportPage> {
     return this.t.call("export", "GET", "/v1/me/export", {
       query: { afterId, limit },
@@ -525,7 +525,7 @@ export class Management extends Base {
    * unconditionally, deduplicated by content hash. */
   async import(
     entries: Array<Record<string, unknown>>,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ImportResult> {
     if (!entries?.length)
       throw new NovamemError({ op: "import", message: "entries are required" });
@@ -541,7 +541,7 @@ export class Management extends Base {
 export class Admin extends Base {
   async provisionUser(
     request: t.ProvisionUserRequest,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.ProvisionedUser> {
     if (blank(request?.email) || !request?.password) {
       throw new NovamemError({
@@ -558,7 +558,7 @@ export class Admin extends Base {
   /** Revoke a bearer by presenting its plaintext. */
   async revokeUserToken(
     token: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.RevokeResult> {
     if (blank(token))
       throw new NovamemError({
@@ -579,7 +579,7 @@ export class Admin extends Base {
 
   async previewDeleteUser(
     id: string,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.UserDeletionPreview> {
     if (blank(id))
       throw new NovamemError({
@@ -593,7 +593,7 @@ export class Admin extends Base {
       {
         query: { dryRun: true },
         signal: o.signal,
-      }
+      },
     );
   }
 
@@ -613,7 +613,7 @@ export class Admin extends Base {
     id: string,
     maxEntries?: number | null,
     writesPerMinute?: number | null,
-    o: CallOptions = {}
+    o: CallOptions = {},
   ): Promise<t.QuotaResult> {
     if (blank(id))
       throw new NovamemError({
@@ -630,7 +630,7 @@ export class Admin extends Base {
           writesPerMinute: writesPerMinute ?? null,
         },
         signal: o.signal,
-      }
+      },
     );
   }
 }

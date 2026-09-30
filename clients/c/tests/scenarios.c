@@ -30,8 +30,8 @@ int main(int argc, char **argv) {
         st = novamem_test_call_by_name(base, token, timeout, method, args, &result, &err);
     }
     if (st == NOVAMEM_OK) {
-        int empty = result && (strcmp(result, "[]") == 0 || strstr(result, "\"results\":[]") != NULL);
-        printf("%s 0 0 - %s\n", empty ? "empty" : "ok", result ? result : "null");
+        /* The harness parses the result and decides whether it is empty. */
+        printf("ok 0 0 - %s\n", result ? result : "null");
     } else {
         const char *o = err.unavailable ? "unavailable" : err.not_found ? "not_found" : "error";
         printf("%s %d %d %s %s\n", o, err.retryable ? 1 : 0, err.status_code, err.code[0] ? err.code : "-",

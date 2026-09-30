@@ -60,6 +60,9 @@ typedef struct novamem_change_feed_changes_item novamem_change_feed_changes_item
 typedef struct novamem_context_prefix novamem_context_prefix;
 typedef struct novamem_context_request novamem_context_request;
 typedef struct novamem_context_request_weights novamem_context_request_weights;
+typedef struct novamem_context_result novamem_context_result;
+typedef struct novamem_context_result_recent novamem_context_result_recent;
+typedef struct novamem_context_result_relevant novamem_context_result_relevant;
 typedef struct novamem_decay_result novamem_decay_result;
 typedef struct novamem_entry_list novamem_entry_list;
 typedef struct novamem_evaluate_report novamem_evaluate_report;
@@ -244,6 +247,28 @@ struct novamem_context_request_weights {
     double vector;
 };
 void novamem_context_request_weights_free(novamem_context_request_weights *p);
+
+struct novamem_context_result {
+    const char *context_pack;
+    const char *guidance;
+    struct novamem_context_result_recent *recent;
+    struct novamem_context_result_relevant *relevant;
+};
+void novamem_context_result_free(novamem_context_result *p);
+
+struct novamem_context_result_recent {
+    struct novamem_memory_entry *results;
+    size_t results_len;
+};
+void novamem_context_result_recent_free(novamem_context_result_recent *p);
+
+struct novamem_context_result_relevant {
+    bool has_degraded;
+    bool degraded;
+    struct novamem_memory_entry *results;
+    size_t results_len;
+};
+void novamem_context_result_relevant_free(novamem_context_result_relevant *p);
 
 struct novamem_decay_result {
     double demoted;
@@ -764,7 +789,7 @@ novamem_status novamem_admin_provision_user(const novamem_admin *h, const novame
 novamem_status novamem_admin_revoke_user_token(const novamem_admin *h, const char *token, novamem_revoke_result **out, novamem_error *err);
 novamem_status novamem_admin_set_user_quota(const novamem_admin *h, const char *id, const int32_t *max_entries, const int32_t *writes_per_minute, novamem_quota_result **out, novamem_error *err);
 novamem_status novamem_client_capture(const novamem_client *h, const novamem_capture_request *request, novamem_capture_result **out, novamem_error *err);
-novamem_status novamem_client_context(const novamem_client *h, const novamem_context_request *request, novamem_search_result **out, novamem_error *err);
+novamem_status novamem_client_context(const novamem_client *h, const novamem_context_request *request, novamem_context_result **out, novamem_error *err);
 novamem_status novamem_client_context_prefix(const novamem_client *h, const char *project, novamem_context_prefix **out, novamem_error *err);
 novamem_status novamem_client_forget(const novamem_client *h, const novamem_forget_request *request, novamem_forget_result **out, novamem_error *err);
 novamem_status novamem_client_health(const novamem_client *h, bool *out, novamem_error *err);

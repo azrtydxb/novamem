@@ -96,6 +96,17 @@ def main():
             outcome, retryable, status, code, rest = (
                 r.stdout.rstrip("\n").split(" ", 4) + [""] * 5
             )[:5]
+            if outcome == "ok":
+                # "Empty" is decided on the parsed result, as every other
+                # SDK's runner does: a top-level [] or a top-level
+                # `results: []`. A text search would also match a nested
+                # list (context's recent.results).
+                try:
+                    body = json.loads(rest)
+                except ValueError:
+                    body = None
+                if body == [] or (isinstance(body, dict) and body.get("results") == []):
+                    outcome = "empty"
             if outcome != exp["outcome"]:
                 failures.append(
                     f"{sid}: outcome {outcome} ({rest}), want {exp['outcome']}"

@@ -1023,6 +1023,154 @@ public final class Types {
     }
   }
 
+  /** The ContextResult schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record ContextResult(
+      @JsonProperty(value = "contextPack") Map<String, Object> contextPack,
+      @JsonProperty(value = "guidance") @JsonInclude(JsonInclude.Include.NON_EMPTY) String guidance,
+      @JsonProperty(value = "recent", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          ContextResultRecent recent,
+      @JsonProperty(value = "relevant", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          ContextResultRelevant relevant) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.contextPack = contextPack;
+      b.guidance = guidance;
+      b.recent = recent;
+      b.relevant = relevant;
+      return b;
+    }
+
+    /** Builds ContextResult records. */
+    public static final class Builder {
+      private Map<String, Object> contextPack;
+      private String guidance;
+      private ContextResultRecent recent;
+      private ContextResultRelevant relevant;
+
+      private Builder() {}
+
+      /** Sets contextPack. */
+      public Builder contextPack(Map<String, Object> contextPack) {
+        this.contextPack = contextPack;
+        return this;
+      }
+
+      /** Sets guidance. */
+      public Builder guidance(String guidance) {
+        this.guidance = guidance;
+        return this;
+      }
+
+      /** Sets recent. */
+      public Builder recent(ContextResultRecent recent) {
+        this.recent = recent;
+        return this;
+      }
+
+      /** Sets relevant. */
+      public Builder relevant(ContextResultRelevant relevant) {
+        this.relevant = relevant;
+        return this;
+      }
+
+      /** The record. */
+      public ContextResult build() {
+        return new ContextResult(contextPack, guidance, recent, relevant);
+      }
+    }
+  }
+
+  /** The ContextResultRecent schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record ContextResultRecent(
+      @JsonProperty(value = "results", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          List<MemoryEntry> results) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.results = results;
+      return b;
+    }
+
+    /** Builds ContextResultRecent records. */
+    public static final class Builder {
+      private List<MemoryEntry> results;
+
+      private Builder() {}
+
+      /** Sets results. */
+      public Builder results(List<MemoryEntry> results) {
+        this.results = results;
+        return this;
+      }
+
+      /** The record. */
+      public ContextResultRecent build() {
+        return new ContextResultRecent(results);
+      }
+    }
+  }
+
+  /** The ContextResultRelevant schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record ContextResultRelevant(
+      @JsonProperty(value = "degraded") Boolean degraded,
+      @JsonProperty(value = "results", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          List<MemoryEntry> results) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.degraded = degraded;
+      b.results = results;
+      return b;
+    }
+
+    /** Builds ContextResultRelevant records. */
+    public static final class Builder {
+      private Boolean degraded;
+      private List<MemoryEntry> results;
+
+      private Builder() {}
+
+      /** Sets degraded. */
+      public Builder degraded(Boolean degraded) {
+        this.degraded = degraded;
+        return this;
+      }
+
+      /** Sets results. */
+      public Builder results(List<MemoryEntry> results) {
+        this.results = results;
+        return this;
+      }
+
+      /** The record. */
+      public ContextResultRelevant build() {
+        return new ContextResultRelevant(degraded, results);
+      }
+    }
+  }
+
   /** The DecayResult schema. */
   @JsonInclude(JsonInclude.Include.NON_NULL)
   @JsonIgnoreProperties(ignoreUnknown = true)

@@ -329,6 +329,43 @@ public sealed record ContextRequestWeights
     public double? Vector { get; init; }
 }
 
+public sealed record ContextResult
+{
+    [JsonPropertyName("contextPack")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, JsonElement>? ContextPack { get; init; }
+
+    [JsonPropertyName("guidance")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Guidance { get; init; }
+
+    [JsonPropertyName("recent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required ContextResultRecent Recent { get; init; }
+
+    [JsonPropertyName("relevant")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required ContextResultRelevant Relevant { get; init; }
+}
+
+public sealed record ContextResultRecent
+{
+    [JsonPropertyName("results")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required List<MemoryEntry> Results { get; init; }
+}
+
+public sealed record ContextResultRelevant
+{
+    [JsonPropertyName("degraded")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Degraded { get; init; }
+
+    [JsonPropertyName("results")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required List<MemoryEntry> Results { get; init; }
+}
+
 public sealed record DecayResult
 {
     [JsonPropertyName("demoted")]
