@@ -112,7 +112,9 @@
             <artifactId>maven-gpg-plugin</artifactId>
             <version>3.2.8</version>
             <configuration>
-              <!-- CI has no terminal: the passphrase comes from MAVEN_GPG_PASSPHRASE. -->
+              <!-- CI has no terminal: the passphrase comes from MAVEN_GPG_PASSPHRASE
+                   (3.2.x reads that variable by default; named here so it is explicit). -->
+              <passphraseEnvName>MAVEN_GPG_PASSPHRASE</passphraseEnvName>
               <gpgArguments>
                 <arg>--pinentry-mode</arg>
                 <arg>loopback</arg>

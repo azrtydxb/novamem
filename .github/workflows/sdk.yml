@@ -15,6 +15,8 @@ on:
         "scripts/check-sdk-tag-triggers.sh",
         ".github/workflows/sdk.yml",
         ".github/workflows/release-sdk-*.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release-binaries.yml",
       ]
   push:
     branches: [main]
@@ -28,6 +30,8 @@ on:
         "scripts/check-sdk-tag-triggers.sh",
         ".github/workflows/sdk.yml",
         ".github/workflows/release-sdk-*.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release-binaries.yml",
       ]
   # Each release-sdk-<lang>.yml runs this whole workflow as its verify job:
   # nothing is published from a tag whose suite (and live smoke) is red.

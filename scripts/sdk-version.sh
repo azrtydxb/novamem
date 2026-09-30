@@ -24,7 +24,7 @@ php | swift)
 	exit 3
 	;;
 *)
-	echo "usage: sdk-version.sh <python|typescript|dotnet|java|rust|c|ruby>" >&2
+	echo "usage: sdk-version.sh <python|typescript|dotnet|java|rust|c|ruby|php|swift> (php and swift exit 3)" >&2
 	exit 2
 	;;
 esac

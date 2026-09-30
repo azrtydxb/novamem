@@ -30,9 +30,21 @@ sed -i.bak \
 	-e "s/^\(    \"armv8\": \"\)[^\"]*\(\",  # pin:linux-aarch64\)$/\1$arm\2/" \
 	conan/conanfile.py
 rm -f vcpkg/portfile.cmake.bak vcpkg/vcpkg.json.bak conan/conanfile.py.bak
-# Every pin must have landed: a recipe that still says "unpinned" would
-# publish a hash check that can never pass.
-if grep -n "unpinned.*# pin:" vcpkg/portfile.cmake conan/conanfile.py; then
-	echo "pin.sh: a pin line did not match" >&2
-	exit 1
-fi
+# Every pin must have landed. A line whose shape drifted makes its sed
+# expression match nothing, silently keeping the old version or hash —
+# so each expected line is checked exactly, not just for "unpinned".
+missing=0
+expect() {
+	grep -qxF -- "$2" "$1" || {
+		echo "pin.sh: $1 has no line: $2" >&2
+		missing=1
+	}
+}
+expect vcpkg/portfile.cmake "set(NOVAMEM_VERSION \"$v\")  # pin:version"
+expect vcpkg/portfile.cmake "    set(SHA512 \"$x86\")  # pin:linux-x86_64"
+expect vcpkg/portfile.cmake "    set(SHA512 \"$arm\")  # pin:linux-aarch64"
+expect vcpkg/vcpkg.json "  \"version\": \"$v\","
+expect conan/conanfile.py "    version = \"$v\"  # pin:version"
+expect conan/conanfile.py "    \"x86_64\": \"$x86\",  # pin:linux-x86_64"
+expect conan/conanfile.py "    \"armv8\": \"$arm\",  # pin:linux-aarch64"
+exit $missing

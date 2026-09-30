@@ -53,5 +53,7 @@ jobs:
           remote="https://x-access-token:${MIRROR_TOKEN}@github.com/azrtydxb/novamem-swift"
           git subtree split --prefix clients/swift -b swift-split
           git push "$remote" swift-split:main
-          git tag "$v" swift-split
-          git push "$remote" "$v"
+          # Straight to the mirror's tag ref: this checkout has the whole
+          # repository's tags, and the server's own v0.1.0 would collide
+          # with a local tag of the same name.
+          git push "$remote" "swift-split:refs/tags/$v"

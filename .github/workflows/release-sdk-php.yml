@@ -49,5 +49,7 @@ jobs:
           remote="https://x-access-token:${MIRROR_TOKEN}@github.com/azrtydxb/novamem-php"
           git subtree split --prefix clients/php -b php-split
           git push "$remote" php-split:main
-          git tag "v$v" php-split
-          git push "$remote" "v$v"
+          # Straight to the mirror's tag ref: this checkout has the whole
+          # repository's tags, and the server's own v0.1.0 would collide
+          # with a local tag of the same name.
+          git push "$remote" "php-split:refs/tags/v$v"
