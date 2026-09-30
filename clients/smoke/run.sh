@@ -21,7 +21,14 @@ build() {
 	java) (cd clients/java && mvn -B -q test-compile dependency:build-classpath -Dmdep.outputFile=cp.txt) ;;
 	rust) cargo build --manifest-path clients/rust/Cargo.toml --example smoke ;;
 	c) make -C clients/c build/smoke ;;
-	php) (cd clients/php && composer install --no-dev --no-interaction --no-progress) ;;
+	php)
+		# The ARC runners' egress to repo.packagist.org drops the odd
+		# connection (curl error 7 within milliseconds), so this retries.
+		(cd clients/php && for i in 1 2 3; do
+			composer install --no-dev --no-interaction --no-progress && exit 0
+			[ "$i" = 3 ] || sleep 10
+		done && exit 1)
+		;;
 	swift) swift build --package-path clients/swift --product novamem-smoke ;;
 	*) return 2 ;;
 	esac
