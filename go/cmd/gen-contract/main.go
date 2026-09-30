@@ -365,9 +365,8 @@ func jsonSchema(node map[string]any, where string) map[string]any {
 		if enum, ok := out["enum"].([]any); ok {
 			out["enum"] = append(enum, nil)
 		}
-	} else if _, has := out["nullable"]; has {
-		delete(out, "nullable") // nullable: false is the default
 	}
+	delete(out, "nullable") // nullable: false is JSON Schema's default anyway
 	return out
 }
 

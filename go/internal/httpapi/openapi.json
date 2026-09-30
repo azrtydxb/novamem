@@ -203,6 +203,54 @@
         ],
         "type": "object"
       },
+      "ContextResult": {
+        "description": "Relevant hits and recent entries in one answer, plus the entries grouped into a context pack — the same answer over HTTP and MCP.",
+        "properties": {
+          "contextPack": {
+            "description": "The same entries grouped by section (decisions, current setup, pitfalls, …).",
+            "type": "object"
+          },
+          "guidance": {
+            "type": "string"
+          },
+          "recent": {
+            "properties": {
+              "results": {
+                "items": {
+                  "$ref": "#/components/schemas/MemoryEntry"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "results"
+            ],
+            "type": "object"
+          },
+          "relevant": {
+            "properties": {
+              "degraded": {
+                "type": "boolean"
+              },
+              "results": {
+                "items": {
+                  "$ref": "#/components/schemas/MemoryEntry"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "results"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "relevant",
+          "recent"
+        ],
+        "type": "object"
+      },
       "DecayResult": {
         "properties": {
           "demoted": {
@@ -2321,11 +2369,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SearchResult"
+                  "$ref": "#/components/schemas/ContextResult"
                 }
               }
             },
-            "description": "SearchResult"
+            "description": "ContextResult"
           },
           "401": {
             "content": {

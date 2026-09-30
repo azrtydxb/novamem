@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -27,14 +28,18 @@ func advertisedTools(t *testing.T) []string {
 	if err := json.Unmarshal(ToolDefinitions(), &defs); err != nil {
 		t.Fatal(err)
 	}
-	var names []string
+	var names, without []string
 	for _, d := range defs {
 		if len(d.OutputSchema) > 0 {
 			names = append(names, d.Name)
+		} else {
+			without = append(without, d.Name)
 		}
 	}
-	if len(names) == 0 {
-		t.Fatal("no tool declares an outputSchema")
+	// The premise is that every tool declares one; a tool that lost its
+	// schema would otherwise just drop out of this test.
+	if len(names) == 0 || len(without) > 0 {
+		t.Fatalf("tools without an outputSchema: %v (of %d)", without, len(defs))
 	}
 	return names
 }
@@ -112,9 +117,11 @@ func TestEveryToolResultCarriesStructuredContent(t *testing.T) {
 }
 
 // A result that is not a JSON object cannot be structuredContent (the
-// spec requires an object); it stays text only rather than breaking the
-// call.
-func TestANonObjectResultStaysTextOnly(t *testing.T) {
+// spec requires an object), and a text-only success would be rejected
+// by the client anyway: it is reported as a tool error.
+//
+// proved by: returning the text as a success again fails this test.
+func TestANonObjectResultIsAToolError(t *testing.T) {
 	s := testServer(t, Options{
 		CookieSecret: testCookieSecret,
 		Call: func(context.Context, string, string, map[string]any) (any, error) {
@@ -122,7 +129,7 @@ func TestANonObjectResultStaysTextOnly(t *testing.T) {
 		},
 	})
 	res := s.callTool(context.Background(), "u", "memory_stats", nil)
-	if res.IsError || res.StructuredContent != nil || res.Content[0].Text != "[1,2]" {
+	if !res.IsError || res.StructuredContent != nil || !strings.Contains(res.Content[0].Text, "not an object") {
 		t.Fatalf("result = %+v", res)
 	}
 }

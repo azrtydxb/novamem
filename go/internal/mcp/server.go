@@ -371,12 +371,17 @@ func (s *Server) callTool(ctx context.Context, userID, name string, args map[str
 			s.log.Error("mcp: tool result marshal failed", "tool", name, "err", mErr)
 			return textResult("error: internal serialization failure", true)
 		}
-		res := textResult(string(text), false)
-		// The spec requires structuredContent to be an object; every
-		// tool's outputSchema is one. Anything else stays text only.
-		if bytes.HasPrefix(bytes.TrimSpace(text), []byte("{")) {
-			res.StructuredContent = text
+		// Every tool declares an object outputSchema, so a success must
+		// carry structuredContent, and the spec requires that to be an
+		// object. A dispatcher answering anything else is a server bug:
+		// say so as a tool error rather than send a success the client
+		// is bound to reject.
+		if !bytes.HasPrefix(bytes.TrimSpace(text), []byte("{")) {
+			s.log.Error("mcp: tool result is not a JSON object", "tool", name)
+			return textResult("error: internal: the tool's result is not an object", true)
 		}
+		res := textResult(string(text), false)
+		res.StructuredContent = text
 		return res
 	case errors.Is(err, ErrUnknownTool):
 		return textResult(fmt.Sprintf("unknown tool: %s", name), true)

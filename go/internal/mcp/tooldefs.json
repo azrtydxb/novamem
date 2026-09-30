@@ -72,7 +72,7 @@
     },
     "name": "memory_context",
     "outputSchema": {
-      "description": "Relevant hits and recent entries in one answer, plus the entries grouped into a context pack. Over MCP the two lists are wrapped (`relevant`, `recent`); the HTTP route answers a flat search result.",
+      "description": "Relevant hits and recent entries in one answer, plus the entries grouped into a context pack — the same answer over HTTP and MCP.",
       "properties": {
         "contextPack": {
           "description": "The same entries grouped by section (decisions, current setup, pitfalls, …).",

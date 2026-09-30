@@ -56,6 +56,40 @@ components:
         Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax.
         Browsers attach it automatically.
   schemas:
+    ContextResult:
+      type: object
+      description:
+        "Relevant hits and recent entries in one answer, plus the entries grouped into a context
+        pack — the same answer over HTTP and MCP."
+      properties:
+        relevant:
+          type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/MemoryEntry"
+            degraded:
+              type: boolean
+          required:
+            - results
+        recent:
+          type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/MemoryEntry"
+          required:
+            - results
+        contextPack:
+          type: object
+          description: The same entries grouped by section (decisions, current setup, pitfalls, …).
+        guidance:
+          type: string
+      required:
+        - relevant
+        - recent
     RevokeResult:
       type: object
       properties:
@@ -1231,11 +1265,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "200":
-          description: SearchResult
+          description: ContextResult
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SearchResult"
+                $ref: "#/components/schemas/ContextResult"
       x-mcp-tool:
         name: memory_context
         description:
@@ -1293,41 +1327,6 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 0
-        outputSchema:
-          type: object
-          description:
-            "Relevant hits and recent entries in one answer, plus the entries grouped into a context
-            pack. Over MCP the two lists are wrapped (`relevant`, `recent`); the HTTP route answers a
-            flat search result."
-          properties:
-            relevant:
-              type: object
-              properties:
-                results:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/MemoryEntry"
-                degraded:
-                  type: boolean
-              required:
-                - results
-            recent:
-              type: object
-              properties:
-                results:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/MemoryEntry"
-              required:
-                - results
-            contextPack:
-              type: object
-              description: The same entries grouped by section (decisions, current setup, pitfalls, …).
-            guidance:
-              type: string
-          required:
-            - relevant
-            - recent
       operationId: postV1Context
   /v1/capture:
     post:

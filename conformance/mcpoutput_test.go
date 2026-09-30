@@ -97,10 +97,19 @@ func TestMCPToolResultsMatchOutputSchemas(t *testing.T) {
 	} else {
 		t.Error("memory_remember returned no id: memory_neighbors, memory_update and memory_forget not exercised")
 	}
-	if id, _ := captured["id"].(string); id != "" {
-		if _, rpcErr := s.callTool(t, "memory_forget", map[string]any{"id": id}); rpcErr != nil {
-			t.Logf("cleanup: forget %s: %v", id, rpcErr)
+	// Over MCP a capture answers in the session-recap shape: the id is in
+	// its one result.
+	if results, _ := captured["results"].([]any); len(results) == 1 {
+		first, _ := results[0].(map[string]any)
+		if id, _ := first["id"].(string); id != "" {
+			if _, rpcErr := s.callTool(t, "memory_forget", map[string]any{"id": id}); rpcErr != nil {
+				t.Errorf("cleanup: forget %s: %v", id, rpcErr)
+			}
+		} else {
+			t.Errorf("memory_capture (force) saved nothing: %v", captured)
 		}
+	} else {
+		t.Errorf("memory_capture: want one result, got %v", captured)
 	}
 
 	project := check("project_create", map[string]any{"name": "conf-mcp-output-" + shelf})
