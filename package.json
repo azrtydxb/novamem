@@ -21,12 +21,12 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@prettier/plugin-php": "^0.25.0",
-    "@types/node": "^26.5",
-    "eslint": "^10.10.0",
+    "@types/node": "^26.6",
+    "eslint": "^10.11.0",
     "typescript": "^7.0.2",
-    "typescript-eslint": "^8.70.0",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.11",
-    "vue": "^3.5.42"
+    "vue": "^3.5.43"
   },
   "engines": {
     "node": ">=22"
