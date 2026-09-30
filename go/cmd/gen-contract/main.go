@@ -235,10 +235,14 @@ func collect(paths, doc map[string]any) ([]mcpTool, []route) {
 				// over MCP and an object over HTTP). Where they differ, the
 				// source says so rather than the generator publishing a
 				// schema that rejects the tool's real answer.
-				if _, authored := t["outputSchema"]; !authored {
-					if out := responseSchema(op, doc); out != nil {
-						t["outputSchema"] = out
-					}
+				if authored, ok := t["outputSchema"].(map[string]any); ok {
+					// An authored schema may name components too; the
+					// client has no document to resolve them against.
+					// Its own keys (a description, say) sit beside the
+					// $ref and win over the component's.
+					t["outputSchema"] = resolveAuthored(authored, doc)
+				} else if out := responseSchema(op, doc); out != nil {
+					t["outputSchema"] = out
 				}
 				// An operation that backs a tool gets the tool's own
 				// description unless it has written its own. The tool text
@@ -250,6 +254,14 @@ func collect(paths, doc map[string]any) ([]mcpTool, []route) {
 				if _, has := op["description"]; !has {
 					if d, ok := t["description"].(string); ok {
 						op["description"] = d
+					}
+				}
+				// MCP clients validate these as JSON Schema, which has no
+				// `nullable`: a nullable field answering null would fail a
+				// plain `type: string`, and the client drops the result.
+				for _, k := range []string{"inputSchema", "outputSchema"} {
+					if sch, ok := t[k].(map[string]any); ok {
+						t[k] = jsonSchema(sch, t.name()+"."+k)
 					}
 				}
 				tools = append(tools, t)
@@ -280,6 +292,83 @@ func collect(paths, doc map[string]any) ([]mcpTool, []route) {
 		seenName[t.name()] = true
 	}
 	return tools, routes
+}
+
+// resolveAuthored inlines an authored tool schema's $refs. At the top
+// level, keys written beside the $ref are laid over the component —
+// OpenAPI 3.0 ignores siblings of $ref, and dropping an authored
+// description silently would be the worse surprise.
+func resolveAuthored(node, doc map[string]any) map[string]any {
+	ref, isRef := node["$ref"]
+	if !isRef {
+		return resolve(node, doc, 0)
+	}
+	out := resolve(map[string]any{"$ref": ref}, doc, 0)
+	for k, v := range node {
+		if k == "$ref" {
+			continue
+		}
+		if vm, ok := v.(map[string]any); ok {
+			out[k] = resolve(vm, doc, 0)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// jsonSchema rewrites an OpenAPI 3.0 schema into the JSON Schema an MCP
+// client validates against: `nullable: true` becomes a "null" member of
+// `type` (and of `enum`, which would otherwise still exclude it). The
+// published OpenAPI document keeps its own dialect; only the tool
+// surface is rewritten. A nullable schema with no `type` stops the run
+// rather than being published with a null that no validator accepts.
+func jsonSchema(node map[string]any, where string) map[string]any {
+	out := make(map[string]any, len(node))
+	for k, v := range node {
+		switch vv := v.(type) {
+		case map[string]any:
+			if k == "properties" {
+				props := make(map[string]any, len(vv))
+				for name, ps := range vv {
+					if pm, ok := ps.(map[string]any); ok {
+						props[name] = jsonSchema(pm, where+"."+name)
+					} else {
+						props[name] = ps
+					}
+				}
+				out[k] = props
+			} else {
+				out[k] = jsonSchema(vv, where+"."+k)
+			}
+		case []any:
+			list := make([]any, len(vv))
+			for i, e := range vv {
+				if em, ok := e.(map[string]any); ok {
+					list[i] = jsonSchema(em, fmt.Sprintf("%s.%s[%d]", where, k, i))
+				} else {
+					list[i] = e
+				}
+			}
+			out[k] = list
+		default:
+			out[k] = v
+		}
+	}
+	if nullable, _ := out["nullable"].(bool); nullable {
+		delete(out, "nullable")
+		typ, ok := out["type"].(string)
+		if !ok {
+			fail("%s: nullable schema without a single `type` has no JSON Schema form here", where)
+		}
+		out["type"] = []any{typ, "null"}
+		if enum, ok := out["enum"].([]any); ok {
+			out["enum"] = append(enum, nil)
+		}
+	} else if _, has := out["nullable"]; has {
+		delete(out, "nullable") // nullable: false is the default
+	}
+	return out
 }
 
 func toTool(x any, method, path string) mcpTool {

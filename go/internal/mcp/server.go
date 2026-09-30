@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -290,7 +291,11 @@ type toolContent struct {
 
 type toolCallResult struct {
 	Content []toolContent `json:"content"`
-	IsError bool          `json:"isError,omitempty"`
+	// StructuredContent is the same result as a JSON object. Every tool
+	// declares an outputSchema, and the spec then requires it on success;
+	// clients that enforce that reject a call without it.
+	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
+	IsError           bool            `json:"isError,omitempty"`
 }
 
 func textResult(text string, isError bool) toolCallResult {
@@ -366,7 +371,13 @@ func (s *Server) callTool(ctx context.Context, userID, name string, args map[str
 			s.log.Error("mcp: tool result marshal failed", "tool", name, "err", mErr)
 			return textResult("error: internal serialization failure", true)
 		}
-		return textResult(string(text), false)
+		res := textResult(string(text), false)
+		// The spec requires structuredContent to be an object; every
+		// tool's outputSchema is one. Anything else stays text only.
+		if bytes.HasPrefix(bytes.TrimSpace(text), []byte("{")) {
+			res.StructuredContent = text
+		}
+		return res
 	case errors.Is(err, ErrUnknownTool):
 		return textResult(fmt.Sprintf("unknown tool: %s", name), true)
 	default:

@@ -227,6 +227,9 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 		}
 		res := s.callTool(r.Context(), userID, p.Name, p.Arguments)
 		out := rpcObj{{"resultType", resultTypeComplete}, {"content", res.Content}}
+		if res.StructuredContent != nil {
+			out = append(out, rpcKV{"structuredContent", res.StructuredContent})
+		}
 		if res.IsError {
 			out = append(out, rpcKV{"isError", true})
 		}

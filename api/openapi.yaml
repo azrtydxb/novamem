@@ -1293,6 +1293,41 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 0
+        outputSchema:
+          type: object
+          description:
+            "Relevant hits and recent entries in one answer, plus the entries grouped into a context
+            pack. Over MCP the two lists are wrapped (`relevant`, `recent`); the HTTP route answers a
+            flat search result."
+          properties:
+            relevant:
+              type: object
+              properties:
+                results:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/MemoryEntry"
+                degraded:
+                  type: boolean
+              required:
+                - results
+            recent:
+              type: object
+              properties:
+                results:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/MemoryEntry"
+              required:
+                - results
+            contextPack:
+              type: object
+              description: The same entries grouped by section (decisions, current setup, pitfalls, …).
+            guidance:
+              type: string
+          required:
+            - relevant
+            - recent
       operationId: postV1Context
   /v1/capture:
     post:
@@ -1433,6 +1468,12 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 1
+        outputSchema:
+          $ref: "#/components/schemas/SessionRecapResult"
+          description:
+            "Over MCP a capture answers in the session-recap shape — `saved` (0 or 1) and a one-item
+            `results` — where the HTTP route answers the bare CaptureResult. A declined capture is
+            `saved: 0` with a null id."
       operationId: postV1Capture
   /v1/session-recap:
     post:
@@ -3292,6 +3333,9 @@ paths:
           idempotentHint: true
           openWorldHint: false
         x-order: 8
+        outputSchema:
+          $ref: "#/components/schemas/EntryList"
+          description: The last 24 hours, newest first — the memory_recent shape, not the HTTP route's event feed.
       operationId: getV1MeToday
   /v1/me/onboarding:
     get:
