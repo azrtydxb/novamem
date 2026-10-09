@@ -382,6 +382,11 @@ func TestOnBehalfOfToken(t *testing.T) {
 				t.Errorf("%s %v: status %d %v, want 403", c.path, c.body, code, out)
 			}
 		}
+		// GET with the project in the query: this route once passed it
+		// straight to the store without any access check.
+		if code, out := e.do("GET", "/v1/context-prefix?project=p", acmeAlice, nil); code != http.StatusForbidden {
+			t.Errorf("/v1/context-prefix?project=p: status %d %v, want 403", code, out)
+		}
 	})
 
 	t.Run("rejected tokens", func(t *testing.T) {
