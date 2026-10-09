@@ -355,6 +355,7 @@ final readonly class CaptureRequest
         ['project', 'project', ['p', 'string'], false],
         ['sensitivity', 'sensitivity', ['n', 'CaptureRequestSensitivity'], false],
         ['source', 'source', ['p', 'string'], false],
+        ['sourceRefs', 'sourceRefs', ['a', ['p', 'string']], false],
         ['sourceType', 'sourceType', ['p', 'string'], false],
     ];
 
@@ -370,6 +371,7 @@ final readonly class CaptureRequest
         public ?string $project = null,
         public ?string $sensitivity = null,
         public ?string $source = null,
+        public ?array $sourceRefs = null,
         public ?string $sourceType = null,
     ) {
     }
@@ -1165,13 +1167,15 @@ final readonly class ForgetRequest
 {
     /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
     private const FIELDS = [
-        ['id', 'id', ['p', 'string'], true],
+        ['id', 'id', ['p', 'string'], false],
         ['project', 'project', ['p', 'string'], false],
+        ['sourceRef', 'sourceRef', ['p', 'string'], false],
     ];
 
     public function __construct(
-        public string $id,
+        public ?string $id = null,
         public ?string $project = null,
+        public ?string $sourceRef = null,
     ) {
     }
 
@@ -1206,7 +1210,6 @@ final readonly class ForgetRequest
     private static function defaults(): array
     {
         return [
-            'id' => '',
         ];
     }
 }

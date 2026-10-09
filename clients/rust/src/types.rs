@@ -99,6 +99,8 @@ pub struct CaptureRequest {
     pub sensitivity: Option<CaptureRequestSensitivity>,
     #[serde(rename = "source", default, skip_serializing_if = "none_or_empty")]
     pub source: Option<String>,
+    #[serde(rename = "sourceRefs", default, skip_serializing_if = "Option::is_none")]
+    pub source_refs: Option<Vec<String>>,
     #[serde(rename = "sourceType", default, skip_serializing_if = "none_or_empty")]
     pub source_type: Option<String>,
 }
@@ -325,10 +327,12 @@ pub struct ExportedEntry {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ForgetRequest {
-    #[serde(rename = "id", default)]
-    pub id: String,
+    #[serde(rename = "id", default, skip_serializing_if = "none_or_empty")]
+    pub id: Option<String>,
     #[serde(rename = "project", default, skip_serializing_if = "none_or_empty")]
     pub project: Option<String>,
+    #[serde(rename = "sourceRef", default, skip_serializing_if = "none_or_empty")]
+    pub source_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
