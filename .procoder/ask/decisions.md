@@ -756,3 +756,11 @@ The gate runs phpstan on the staged Types.php alone. phpstan.neon excludes that 
 - Remove Types.php from the phpstan exclusion and fix the 244 findings in the PHP template
 
 **Decision (2026-10-09, owner):** file a procoder issue; the owner commits this regeneration from a terminal.
+
+## Merging #339 and #341 (2026-10-10)
+
+Both are green on the full rollup with no review comments. Merging to main is the kw deploy (GitOps): it runs migrations 0012 (organization_id on memory_entries, service_keys) and 0013 (memory_entry_source_refs) against the kw database and ships on-behalf-of tokens and forget-by-source. #341 is stacked on #339. Both issues also ask for a tagged release of the server and clients/go.
+
+- Merge #339, retarget #341 to main and merge it once its CI reruns green, let GitOps deploy, run conformance against kw; release tag decided separately (recommended)
+- Merge both and also cut the release tag
+- Hold the merges
