@@ -216,6 +216,11 @@ type Config struct {
 	// Token is the long-lived opaque bearer (`nm_…`). Sent as
 	// "Authorization: Bearer <token>" and never included in an error.
 	Token string
+	// TokenSource, when set, supplies the bearer for every call instead of
+	// Token — for credentials that expire, such as an on-behalf-of JWT
+	// (see [NewOBOTokenSource]). It is called once per request, so it must
+	// be cheap and safe for concurrent use. When set, Token is ignored.
+	TokenSource func(ctx context.Context) (string, error)
 	// Timeout bounds a single call. Zero means DefaultTimeout.
 	Timeout time.Duration
 	// HTTPClient is optional. When nil the client builds its own with a
@@ -233,7 +238,7 @@ type Config struct {
 // connections, so a client per call would forfeit keep-alive.
 type Client struct {
 	baseURL string
-	token   string
+	token   func(ctx context.Context) (string, error)
 	timeout time.Duration
 	http    *http.Client
 }
@@ -253,10 +258,15 @@ func New(cfg Config) (*Client, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("novamem: BaseURL %q is not an absolute http(s) URL", cfg.BaseURL)
 	}
-	if strings.TrimSpace(cfg.Token) == "" {
-		// Says only that it is missing, never what was passed — an error
-		// about a credential must not quote the credential.
-		return nil, errors.New("novamem: Token is required")
+	tokenFn := cfg.TokenSource
+	if tokenFn == nil {
+		if strings.TrimSpace(cfg.Token) == "" {
+			// Says only that it is missing, never what was passed — an error
+			// about a credential must not quote the credential.
+			return nil, errors.New("novamem: Token is required")
+		}
+		static := cfg.Token
+		tokenFn = func(context.Context) (string, error) { return static, nil }
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
@@ -274,7 +284,7 @@ func New(cfg Config) (*Client, error) {
 		}
 		hc = &http.Client{Transport: transport}
 	}
-	return &Client{baseURL: base, token: cfg.Token, timeout: timeout, http: hc}, nil
+	return &Client{baseURL: base, token: tokenFn, timeout: timeout, http: hc}, nil
 }
 
 // ─── Wire types ────────────────────────────────────────────────────────────
@@ -857,7 +867,14 @@ func (c *Client) do(ctx context.Context, op, method, path string, body, out any)
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	token, err := c.token(ctx)
+	if err == nil && strings.TrimSpace(token) == "" {
+		err = errors.New("token source returned an empty token")
+	}
+	if err != nil {
+		return &Error{Op: op, Message: "obtain token: " + err.Error(), cause: err}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -882,9 +899,9 @@ func (c *Client) do(ctx context.Context, op, method, path string, body, out any)
 		// echoes the credential back in an error ("bad token nm_…") would
 		// otherwise get it laundered into this client's logs. Cheap, and it
 		// removes the only path by which the token can reach an error string.
-		e.Message = strings.ReplaceAll(e.Message, c.token, "[redacted]")
+		e.Message = strings.ReplaceAll(e.Message, token, "[redacted]")
 		// The code is quoted verbatim too, and Error() prints it.
-		e.Code = strings.ReplaceAll(e.Code, c.token, "[redacted]")
+		e.Code = strings.ReplaceAll(e.Code, token, "[redacted]")
 		return e
 	}
 	if out == nil {
