@@ -119,6 +119,15 @@ type projectScope struct {
 // false when it already sent the response.
 func (s *server) checkProjectAccess(w http.ResponseWriter, r *http.Request, userID string, body *projectScope, unionWithActive bool) bool {
 	ctx := r.Context()
+	if callerOf(r).obo != nil {
+		// No projects for a service identity: not by name, not by id, and
+		// not through an active-project default (it has none).
+		if body.Project != nil || len(body.IncludeProjects) > 0 {
+			s.sendError(w, http.StatusForbidden, errOBOProjects)
+			return false
+		}
+		return true
+	}
 	if tok := callerOf(r).token; tok != nil && tok.ProjectID != nil {
 		return s.confineToTokenProject(w, r, userID, *tok.ProjectID, body)
 	}

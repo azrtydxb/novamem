@@ -55,6 +55,16 @@ components:
       description:
         Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax.
         Browsers attach it automatically.
+    ServiceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description:
+        "On-behalf-of service token: an EdDSA JWT a registered service signs itself (header
+        alg=EdDSA, kid=service key id; claims sub, org, aud=novamem, iat, exp with exp-iat at
+        most 15 minutes). Acts as user `sub` within the key's one organization on the
+        memory data plane only; projects, accounts, tokens and the admin surface answer 403.
+        Accepted only in user auth mode. See ADR 0011."
   schemas:
     ContextResult:
       type: object
@@ -145,6 +155,32 @@ components:
       required:
         - userId
         - email
+    ServiceKey:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The `kid` for the JWT header.
+        name:
+          type: string
+        organizationId:
+          type: string
+        publicKey:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        revokedAt:
+          nullable: true
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - organizationId
+        - publicKey
+        - createdAt
+        - revokedAt
     UserDeletion:
       type: object
       properties:
@@ -840,6 +876,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -901,6 +938,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -952,6 +990,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -1082,6 +1121,7 @@ paths:
                 - query
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1256,6 +1296,7 @@ paths:
                 - message
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1389,6 +1430,7 @@ paths:
                 - content
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1572,6 +1614,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1741,6 +1784,7 @@ paths:
                 - content
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1829,6 +1873,7 @@ paths:
           required: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2005,6 +2050,7 @@ paths:
           required: true
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2162,6 +2208,7 @@ paths:
                     - ids
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2283,6 +2330,7 @@ paths:
                 - id
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -2361,6 +2409,7 @@ paths:
                 - id
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2412,6 +2461,7 @@ paths:
         - lifecycle
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -3573,6 +3623,134 @@ paths:
       description:
         Set per-user ceilings on stored entries and writes per minute. Null clears a ceiling
         rather than setting it to zero.
+  /v1/admin/service-keys:
+    post:
+      summary: Register a service's Ed25519 public key for on-behalf-of tokens
+      tags:
+        - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                organizationId:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+                  description: The one organization this key may act for. "default" is refused.
+                publicKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  description: Raw 32-byte Ed25519 public key, base64url.
+              required:
+                - name
+                - organizationId
+                - publicKey
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "201":
+          description: The registered key. Its id is the `kid` the service puts in its JWT header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceKey"
+        "400":
+          description: Invalid body, or the organization is "default"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      operationId: postV1AdminServiceKeys
+      description:
+        Register the public half of a key a service signs on-behalf-of tokens with. NovaMem
+        never holds the private key. Admin only.
+    get:
+      summary: List service keys, revoked ones included
+      tags:
+        - admin
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "200":
+          description: Every registered key, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ServiceKey"
+                required:
+                  - keys
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      operationId: getV1AdminServiceKeys
+      description: Admin only.
+  /v1/admin/service-keys/{id}:
+    delete:
+      summary: Revoke a service key
+      tags:
+        - admin
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          in: path
+          name: id
+          required: true
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "200":
+          description: Revoked. Tokens signed by the key stop verifying immediately.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+                required:
+                  - revoked
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No such active service key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      operationId: deleteV1AdminServiceKeysById
+      description: Admin only. Idempotent only in effect; a second revoke answers 404.
   /v1/admin/audit-log:
     get:
       summary: Tail the audit log

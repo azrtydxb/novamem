@@ -12,12 +12,15 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/mcp"
+	"github.com/azrtydxb/novamem/go/internal/tenant"
 )
 
 func (s *server) registerMCP(mux *routeMux) *mcp.Server {
@@ -62,6 +65,12 @@ func firstIssue(c *v) error {
 // includeProjects so reads union with user-global; false (writes)
 // targets the active project directly.
 func (s *server) resolveScopeMCP(ctx context.Context, userID string, project *string, includeProjects []string, unionWithActive bool) (*string, []string, error) {
+	if tenant.IsOBO(userID) {
+		if project != nil || len(includeProjects) > 0 {
+			return nil, nil, errors.New(errOBOProjects)
+		}
+		return nil, nil, nil
+	}
 	if project == nil && len(includeProjects) == 0 {
 		active, err := s.warm.GetActiveProject(ctx, userID)
 		if err != nil {
@@ -123,6 +132,9 @@ func jsTime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000
 
 func (s *server) callTool(ctx context.Context, userID, name string, args map[string]any) (any, error) {
 	c := &v{m: args}
+	if tenant.IsOBO(userID) && strings.HasPrefix(name, "project_") {
+		return nil, errors.New(errOBOProjects)
+	}
 	switch name {
 
 	case "memory_context":
