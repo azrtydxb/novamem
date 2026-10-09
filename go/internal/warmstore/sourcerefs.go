@@ -2,6 +2,7 @@ package warmstore
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -10,14 +11,29 @@ import (
 
 // AddSourceRefs merges refs into an existing entry (#338). Idempotent:
 // a ref the entry already carries is left alone. The insert is a
-// SELECT from memory_entries so a ref is never written for an entry that
-// is gone (a forget racing a dedupe hit) and so the stored organization
-// is the entry's own, not the caller's claim.
+// SELECT from memory_entries so a ref is only written for an entry that
+// exists when the statement runs, and so the stored organization is the
+// entry's own, not the caller's claim.
+//
+// That SELECT does not close the race with a forget: under READ
+// COMMITTED the row can be visible to the SELECT and be deleted by a
+// concurrent forget that commits before the foreign key is checked,
+// which surfaces as 23503. That is treated as a no-op. The write was a
+// dedupe hit or an in-place update of an entry that has since been
+// forgotten, which is a valid ordering (write, then forget): the entry
+// and its refs are gone, as the forget asked. Retrying as a fresh insert
+// would instead resurrect content a forget just removed, which is the
+// one outcome a revocation must not have.
 func (s *Store) AddSourceRefs(ctx context.Context, entryID string, refs []string) error {
 	if len(refs) == 0 {
 		return nil
 	}
-	return addSourceRefs(ctx, s.Pool, entryID, refs)
+	err := addSourceRefs(ctx, s.Pool, entryID, refs)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" { // foreign_key_violation
+		return nil
+	}
+	return err
 }
 
 // execer is satisfied by both the pool and an open transaction.
