@@ -36,6 +36,10 @@ type InsertEntryArgs struct {
 	// nil when the corresponding feature is unconfigured.
 	FactsPendingAt *time.Time
 	GraphPendingAt *time.Time
+	// SourceRefs are merged into the entry's source references in the
+	// same transaction as the row (#338). On a lost dedupe race they are
+	// merged into the concurrent winner, same as an exact-dup hit.
+	SourceRefs []string
 }
 
 // InsertEntry writes the three-row transaction: memory_entries +
@@ -84,9 +88,15 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 		if err != nil {
 			return "", err
 		}
+		if err := addSourceRefs(ctx, tx, winner, a.SourceRefs); err != nil {
+			return "", err
+		}
 		return winner, tx.Commit(ctx)
 	}
 	if err != nil {
+		return "", err
+	}
+	if err := addSourceRefs(ctx, tx, winner, a.SourceRefs); err != nil {
 		return "", err
 	}
 	if _, err := tx.Exec(ctx, `
