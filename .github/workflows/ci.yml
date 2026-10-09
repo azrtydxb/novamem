@@ -102,7 +102,28 @@ jobs:
   go:
     name: go (build + vet + test)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # A real Postgres for the tests that skip without one — above all
+    # TestOnBehalfOfToken, which proves organization isolation (#337, ADR
+    # 0011) and must not be a test that quietly skips in CI. The pgvector
+    # image is the one the pgvector cold store runs on; the tag is pinned.
+    # The test fails (rather than skips) when CI is set and this is unset.
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.1-pg16
+        env:
+          POSTGRES_USER: novamem
+          POSTGRES_PASSWORD: novamem
+          POSTGRES_DB: novamem_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novamem"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NOVAMEM_TEST_DATABASE_URL: postgres://novamem:novamem@localhost:5432/novamem_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
