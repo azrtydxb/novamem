@@ -115,3 +115,35 @@ func TestEveryToolKeepsItsAnnotations(t *testing.T) {
 		}
 	}
 }
+
+// MCP requires every tool's inputSchema and outputSchema to be a JSON
+// Schema whose root is `"type": "object"`; a strict client rejects the
+// whole tools/list response when one is missing (a bare `oneOf` on
+// memory_forget did exactly that).
+//
+// proved by: deleting `type: object` from the /v1/forget 200 response
+// in api/openapi.yaml (and regenerating) fails this test for memory_forget.
+func TestEveryToolSchemaHasObjectRoot(t *testing.T) {
+	var defs []struct {
+		Name         string         `json:"name"`
+		InputSchema  map[string]any `json:"inputSchema"`
+		OutputSchema map[string]any `json:"outputSchema"`
+	}
+	if err := json.Unmarshal(ToolDefinitions(), &defs); err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) == 0 {
+		t.Fatal("no tools")
+	}
+	for _, d := range defs {
+		for kind, sch := range map[string]map[string]any{"inputSchema": d.InputSchema, "outputSchema": d.OutputSchema} {
+			if sch == nil {
+				t.Errorf("%s: no %s", d.Name, kind)
+				continue
+			}
+			if sch["type"] != "object" {
+				t.Errorf("%s: %s root type = %v, want \"object\"", d.Name, kind, sch["type"])
+			}
+		}
+	}
+}

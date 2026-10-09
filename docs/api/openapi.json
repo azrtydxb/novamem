@@ -2905,7 +2905,7 @@
     },
     "/v1/forget": {
       "post": {
-        "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.",
+        "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly. With `source_ref`, every memory stored with that source reference is deleted; with an active project and no `project` argument that covers only the active project, not user-wide entries.",
         "operationId": "postV1Forget",
         "requestBody": {
           "content": {
@@ -2948,7 +2948,8 @@
                     {
                       "$ref": "#/components/schemas/ForgetBySourceResult"
                     }
-                  ]
+                  ],
+                  "type": "object"
                 }
               }
             },
