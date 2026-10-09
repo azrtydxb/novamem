@@ -405,7 +405,7 @@ type CaptureRequest struct {
 	// no control characters. When the write dedupes onto or updates an
 	// existing entry the refs are merged into it. ForgetBySource later
 	// removes every entry that carries one.
-	SourceRefs []string `json:"source_refs,omitempty"`
+	SourceRefs []string `json:"sourceRefs,omitempty"`
 }
 
 // CaptureResult is the outcome of a write.
@@ -690,7 +690,7 @@ func (c *Client) ForgetBySource(ctx context.Context, sourceRef string) (ForgetBy
 		return out, &Error{Op: "forgetBySource", Message: "sourceRef is required"}
 	}
 	body := struct {
-		SourceRef string `json:"source_ref"`
+		SourceRef string `json:"sourceRef"`
 	}{sourceRef}
 	if err := c.do(ctx, "forgetBySource", http.MethodPost, "/v1/forget", body, &out); err != nil {
 		return ForgetBySourceResult{}, err

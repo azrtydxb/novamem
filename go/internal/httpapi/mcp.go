@@ -453,13 +453,13 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 
 	case "memory_forget":
 		id, hasID := c.str("id", false, 1, 128)
-		sourceRef, hasRef := c.str("source_ref", false, 1, MaxSourceRefLen)
+		sourceRef, hasRef := c.str("sourceRef", false, 1, MaxSourceRefLen)
 		if hasRef && !validSourceRef(sourceRef) {
-			c.add("source_ref", sourceRefMessage, "invalid_format")
+			c.add("sourceRef", sourceRefMessage, "invalid_format")
 		}
 		project, _ := c.projectRef("project")
 		if len(c.issues) == 0 && hasID == hasRef {
-			c.add("id", "Provide exactly one of id or source_ref", "custom")
+			c.add("id", "Provide exactly one of id or sourceRef", "custom")
 		}
 		if err := firstIssue(c); err != nil {
 			return nil, err

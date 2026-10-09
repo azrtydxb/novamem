@@ -245,8 +245,8 @@ func TestHappyPath(t *testing.T) {
 			},
 		},
 		{
-			name: "forget by source sends source_ref and returns the receipt", wantPath: "/v1/forget", wantMethod: http.MethodPost,
-			wantBody: []string{`"source_ref":"sp://doc/1"`},
+			name: "forget by source sends sourceRef and returns the receipt", wantPath: "/v1/forget", wantMethod: http.MethodPost,
+			wantBody: []string{`"sourceRef":"sp://doc/1"`},
 			status:   http.StatusOK,
 			respond:  ForgetBySourceResult{SourceRef: "sp://doc/1", IDs: []string{"01A", "01B"}, Count: 2, ColdDeleteOk: true},
 			check: func(t *testing.T, c *Client) {
@@ -261,7 +261,7 @@ func TestHappyPath(t *testing.T) {
 		},
 		{
 			name: "forget by source of an unknown ref is count 0, not an error", wantPath: "/v1/forget", wantMethod: http.MethodPost,
-			wantBody: []string{`"source_ref":"gone"`},
+			wantBody: []string{`"sourceRef":"gone"`},
 			status:   http.StatusOK,
 			respond:  map[string]any{"sourceRef": "gone", "ids": nil, "count": 0, "coldDeleteOk": true},
 			check: func(t *testing.T, c *Client) {

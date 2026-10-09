@@ -104,7 +104,7 @@ func parseWriteBody(c *v) engine.RememberRequest {
 	}
 	req.Force, _ = c.boolean("force")
 	req.ExpiresAt, _ = c.datetime("expiresAt", "")
-	req.SourceRefs, _ = c.strArray("source_refs", MaxSourceRefs, 1, MaxSourceRefLen, validSourceRef, sourceRefMessage)
+	req.SourceRefs, _ = c.strArray("sourceRefs", MaxSourceRefs, 1, MaxSourceRefLen, validSourceRef, sourceRefMessage)
 	return req
 }
 
@@ -406,13 +406,13 @@ func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {
 	}
 	c := &v{m: m}
 	id, hasID := c.str("id", false, 1, 128)
-	sourceRef, hasRef := c.str("source_ref", false, 1, MaxSourceRefLen)
+	sourceRef, hasRef := c.str("sourceRef", false, 1, MaxSourceRefLen)
 	if hasRef && !validSourceRef(sourceRef) {
-		c.add("source_ref", sourceRefMessage, "invalid_format")
+		c.add("sourceRef", sourceRefMessage, "invalid_format")
 	}
 	project, _ := c.projectRef("project")
 	if len(c.issues) == 0 && hasID == hasRef {
-		c.add("id", "Provide exactly one of id or source_ref", "custom")
+		c.add("id", "Provide exactly one of id or sourceRef", "custom")
 	}
 	if len(c.issues) > 0 {
 		s.sendIssues(w, c.issues)

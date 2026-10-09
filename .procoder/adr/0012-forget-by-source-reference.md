@@ -28,7 +28,7 @@ user delete) removes the refs with the entry and none needed to change.
 
 ### Write: refs merge, never replace
 
-`source_refs` (at most 32, each 1-512 characters, no control characters, not
+`sourceRefs` (at most 32, each 1-512 characters, no control characters, not
 blank) is accepted on remember and capture over HTTP and MCP. When a write
 dedupes onto an existing entry (exact hash, a lost insert race, or capture's
 in-place update of a near duplicate) the new refs are added to that entry. The
@@ -39,9 +39,9 @@ entry with the new refs and leaves the superseded one with its own. Refs are
 not returned on reads: that would add a join or an aggregate to every search,
 recent and neighbors path, and nothing needs it.
 
-### Forget: `source_ref` beside `id`
+### Forget: `sourceRef` beside `id`
 
-`POST /v1/forget` takes exactly one of `id` and `source_ref` (400 otherwise);
+`POST /v1/forget` takes exactly one of `id` and `sourceRef` (400 otherwise);
 MCP `memory_forget` mirrors it. The receipt is `{sourceRef, ids, count,
 coldDeleteOk}`; no match is `count: 0`, status 200.
 

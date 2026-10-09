@@ -12,10 +12,10 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
-// forgetBySource posts {"source_ref": ref} and returns the receipt.
+// forgetBySource posts {"sourceRef": ref} and returns the receipt.
 func (e *oboEnv) forgetBySource(token, ref string) (int, map[string]any) {
 	e.t.Helper()
-	return e.do("POST", "/v1/forget", token, map[string]any{"source_ref": ref})
+	return e.do("POST", "/v1/forget", token, map[string]any{"sourceRef": ref})
 }
 
 func receiptIDs(t *testing.T, out map[string]any) []string {
@@ -81,14 +81,14 @@ func TestForgetBySource(t *testing.T) {
 	// Alice (acme): A carries two refs, B one of them, C an unrelated one.
 	const q = "wombat"
 	cA, cB, cC := q+" alpha leave policy text", q+" beta leave policy text", q+" gamma unrelated text"
-	idA := e.remember(alice, cA, map[string]any{"source_refs": []string{shared, "jira:HR-42"}})
-	idB := e.remember(alice, cB, map[string]any{"source_refs": []string{shared}})
-	idC := e.remember(alice, cC, map[string]any{"source_refs": []string{"sharepoint://sites/hr/other.docx"}})
+	idA := e.remember(alice, cA, map[string]any{"sourceRefs": []string{shared, "jira:HR-42"}})
+	idB := e.remember(alice, cB, map[string]any{"sourceRefs": []string{shared}})
+	idC := e.remember(alice, cC, map[string]any{"sourceRefs": []string{"sharepoint://sites/hr/other.docx"}})
 	// The same ref string held by other tenants and users.
 	cBob, cGlobex, cDefault := q+" bob note about it", q+" globex note about it", q+" default note about it"
-	idBob := e.remember(bob, cBob, map[string]any{"source_refs": []string{shared}})
-	idGlobex := e.remember(globexAlice, cGlobex, map[string]any{"source_refs": []string{shared}})
-	idDefault := e.remember(e.userToken, cDefault, map[string]any{"source_refs": []string{shared}})
+	idBob := e.remember(bob, cBob, map[string]any{"sourceRefs": []string{shared}})
+	idGlobex := e.remember(globexAlice, cGlobex, map[string]any{"sourceRefs": []string{shared}})
+	idDefault := e.remember(e.userToken, cDefault, map[string]any{"sourceRefs": []string{shared}})
 
 	t.Run("refs are stored per entry, in the entry's org", func(t *testing.T) {
 		refs, err := e.warm.SourceRefsOf(ctx, idA)
@@ -101,15 +101,15 @@ func TestForgetBySource(t *testing.T) {
 		}
 	})
 
-	t.Run("exactly one of id and source_ref", func(t *testing.T) {
+	t.Run("exactly one of id and sourceRef", func(t *testing.T) {
 		for name, body := range map[string]map[string]any{
-			"both":    {"id": idA, "source_ref": shared},
+			"both":    {"id": idA, "sourceRef": shared},
 			"neither": {},
-			"blank":   {"source_ref": "   "},
-			"control": {"source_ref": "a\x01b"},
-			"empty":   {"source_ref": ""},
-			"toolong": {"source_ref": strings.Repeat("x", 513)},
-			"number":  {"source_ref": 7},
+			"blank":   {"sourceRef": "   "},
+			"control": {"sourceRef": "a\x01b"},
+			"empty":   {"sourceRef": ""},
+			"toolong": {"sourceRef": strings.Repeat("x", 513)},
+			"number":  {"sourceRef": 7},
 		} {
 			if code, out := e.do("POST", "/v1/forget", alice, body); code != http.StatusBadRequest {
 				t.Errorf("%s: status %d %v, want 400", name, code, out)
@@ -120,7 +120,7 @@ func TestForgetBySource(t *testing.T) {
 		}
 	})
 
-	t.Run("source_refs are validated on write", func(t *testing.T) {
+	t.Run("sourceRefs are validated on write", func(t *testing.T) {
 		many := make([]string, 33)
 		for i := range many {
 			many[i] = "r" + strings.Repeat("x", i)
@@ -135,7 +135,7 @@ func TestForgetBySource(t *testing.T) {
 			"not strings": []int{1},
 		} {
 			for _, path := range []string{"/v1/remember", "/v1/capture"} {
-				code, out := e.do("POST", path, alice, map[string]any{"content": "valid content for refs check", "source_refs": refs})
+				code, out := e.do("POST", path, alice, map[string]any{"content": "valid content for refs check", "sourceRefs": refs})
 				if code != http.StatusBadRequest {
 					t.Errorf("%s %s: %d %v, want 400", path, name, code, out)
 				}
@@ -256,9 +256,9 @@ func TestForgetBySource(t *testing.T) {
 			t.Fatalf("project has no id: %v", out)
 		}
 		const c = "quokka project note with a ref"
-		id := e.remember(e.userToken, c, map[string]any{"project": pid, "source_refs": []string{"proj-ref"}})
+		id := e.remember(e.userToken, c, map[string]any{"project": pid, "sourceRefs": []string{"proj-ref"}})
 		// A user-wide entry with the same ref must survive the project forget.
-		idWide := e.remember(e.userToken, "quokka user wide note with a ref", map[string]any{"source_refs": []string{"proj-ref"}})
+		idWide := e.remember(e.userToken, "quokka user wide note with a ref", map[string]any{"sourceRefs": []string{"proj-ref"}})
 		// Clear the active-project default so the bare forget below is the
 		// "no project" branch; an active project would default into it,
 		// exactly as forget-by-id does.
@@ -272,7 +272,7 @@ func TestForgetBySource(t *testing.T) {
 		if !e.entryExists(id) {
 			t.Fatal("a user-scope forget removed a project entry")
 		}
-		code, out = e.do("POST", "/v1/forget", e.userToken, map[string]any{"source_ref": "proj-ref", "project": pid})
+		code, out = e.do("POST", "/v1/forget", e.userToken, map[string]any{"sourceRef": "proj-ref", "project": pid})
 		if code != 200 || !reflect.DeepEqual(receiptIDs(t, out), []string{id}) {
 			t.Fatalf("project-scoped forget = %d %v", code, out)
 		}
@@ -281,7 +281,7 @@ func TestForgetBySource(t *testing.T) {
 	t.Run("org filters hold on their own (defense in depth)", func(t *testing.T) {
 		// Corrupt the entry's org: user_id and the ref still match, so only
 		// the entry's own organization_id keeps the forget out.
-		idE := e.remember(alice, q+" epsilon canary entry text", map[string]any{"source_refs": []string{"canary-ref"}})
+		idE := e.remember(alice, q+" epsilon canary entry text", map[string]any{"sourceRefs": []string{"canary-ref"}})
 		if _, err := e.pool.Exec(ctx, `UPDATE memory_entries SET organization_id = 'globex' WHERE id = $1`, idE); err != nil {
 			t.Fatal(err)
 		}
@@ -289,7 +289,7 @@ func TestForgetBySource(t *testing.T) {
 			t.Fatalf("entry-org filter missing: %d %v", code, out)
 		}
 		// Corrupt only the ref's org.
-		idF := e.remember(alice, q+" zeta canary entry text", map[string]any{"source_refs": []string{"canary-ref-2"}})
+		idF := e.remember(alice, q+" zeta canary entry text", map[string]any{"sourceRefs": []string{"canary-ref-2"}})
 		if _, err := e.pool.Exec(ctx, `UPDATE memory_entry_source_refs SET organization_id = 'globex' WHERE entry_id = $1`, idF); err != nil {
 			t.Fatal(err)
 		}
@@ -300,10 +300,10 @@ func TestForgetBySource(t *testing.T) {
 
 	t.Run("dedupe merges refs into the existing entry", func(t *testing.T) {
 		const c = "narwhal merged refs content is identical"
-		id1 := e.remember(bob, c, map[string]any{"source_refs": []string{"src-1"}})
+		id1 := e.remember(bob, c, map[string]any{"sourceRefs": []string{"src-1"}})
 		for _, path := range []string{"/v1/remember", "/v1/capture"} {
 			ref := "src-via-" + strings.TrimPrefix(path, "/v1/")
-			code, out := e.do("POST", path, bob, map[string]any{"content": c, "source_refs": []string{ref, "src-1"}})
+			code, out := e.do("POST", path, bob, map[string]any{"content": c, "sourceRefs": []string{ref, "src-1"}})
 			if (code != 200 && code != 201) || out["id"] != id1 || out["deduplicated"] != true {
 				t.Fatalf("%s: %d %v, want a dedupe onto %s", path, code, out, id1)
 			}
@@ -329,7 +329,7 @@ func TestForgetBySource(t *testing.T) {
 	})
 
 	t.Run("forget by id still works and removes the refs", func(t *testing.T) {
-		id := e.remember(bob, "by id forget keeps working text", map[string]any{"source_refs": []string{"byid"}})
+		id := e.remember(bob, "by id forget keeps working text", map[string]any{"sourceRefs": []string{"byid"}})
 		code, out := e.do("POST", "/v1/forget", bob, map[string]any{"id": id})
 		if code != 200 || out["deleted"] != true || e.refCount(id) != 0 {
 			t.Fatalf("%d %v refs=%d", code, out, e.refCount(id))
@@ -338,13 +338,13 @@ func TestForgetBySource(t *testing.T) {
 
 	t.Run("MCP memory_forget mirrors the HTTP receipt", func(t *testing.T) {
 		s := &server{engine: e.eng, warm: e.warm}
-		id := e.remember(bob, "mcp forget by source text here", map[string]any{"source_refs": []string{"mcp-ref"}})
-		for _, args := range []map[string]any{{}, {"id": id, "source_ref": "mcp-ref"}} {
+		id := e.remember(bob, "mcp forget by source text here", map[string]any{"sourceRefs": []string{"mcp-ref"}})
+		for _, args := range []map[string]any{{}, {"id": id, "sourceRef": "mcp-ref"}} {
 			if _, err := s.callTool(ctx, "org:acme/bob", "memory_forget", args); err == nil {
 				t.Fatalf("memory_forget %v accepted", args)
 			}
 		}
-		got, err := s.callTool(ctx, "org:acme/bob", "memory_forget", map[string]any{"source_ref": "mcp-ref"})
+		got, err := s.callTool(ctx, "org:acme/bob", "memory_forget", map[string]any{"sourceRef": "mcp-ref"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -397,7 +397,7 @@ func TestMemberForgetRemovesTheWritersDerivedFacts(t *testing.T) {
 	// The facts are inserted the way the extractor stores them (facts.go):
 	// the writer's user_id, the source's project, a source_chunk_id link.
 	writeWithFact := func(content, ref string) (srcID, factID string) {
-		srcID = e.remember(e.userToken, content, map[string]any{"project": pid, "source_refs": []string{ref}})
+		srcID = e.remember(e.userToken, content, map[string]any{"project": pid, "sourceRefs": []string{ref}})
 		var writer string
 		if err := e.pool.QueryRow(ctx, `SELECT user_id FROM memory_entries WHERE id = $1`, srcID).Scan(&writer); err != nil {
 			t.Fatal(err)
@@ -426,7 +426,7 @@ func TestMemberForgetRemovesTheWritersDerivedFacts(t *testing.T) {
 
 	t.Run("forget by source", func(t *testing.T) {
 		src, fact := writeWithFact("axolotl member forget by source note", "fact-ref")
-		code, out := e.do("POST", "/v1/forget", bobTok, map[string]any{"source_ref": "fact-ref", "project": pid})
+		code, out := e.do("POST", "/v1/forget", bobTok, map[string]any{"sourceRef": "fact-ref", "project": pid})
 		if code != http.StatusOK || !reflect.DeepEqual(receiptIDs(t, out), []string{src}) {
 			t.Fatalf("member forget = %d %v", code, out)
 		}

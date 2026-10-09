@@ -68,7 +68,7 @@ Preferred agent-facing durable write after meaningful work. Same input shape as 
   "project": "id or name",
   "metadata": {},
   "sensitivity": "public|internal|private|sensitive",
-  "source_refs": ["sharepoint://sites/hr/policy.docx", "jira:HR-42"],
+  "sourceRefs": ["sharepoint://sites/hr/policy.docx", "jira:HR-42"],
   "force": false
 }
 ```
@@ -83,7 +83,7 @@ Responses:
 
 Superseded entries are marked in metadata and hidden from normal search/context results; they are not hard-deleted.
 
-`source_refs` (optional, at most 32 strings of 1-512 characters, no control characters) names the external sources the entry derives from. They are stored per entry, scoped to the caller's organization, and later let you remove everything derived from a source with `POST /v1/forget {"source_ref": ...}`. If the write dedupes onto, or (capture) updates in place, an existing entry, the new refs are **merged** into it rather than replacing its refs, so forgetting any one of its sources removes the entry. A contradiction-supersede stores a new entry carrying the new refs and leaves the superseded entry with its own. Refs are not returned on read responses.
+`sourceRefs` (optional, at most 32 strings of 1-512 characters, no control characters) names the external sources the entry derives from. They are stored per entry, scoped to the caller's organization, and later let you remove everything derived from a source with `POST /v1/forget {"sourceRef": ...}`. If the write dedupes onto, or (capture) updates in place, an existing entry, the new refs are **merged** into it rather than replacing its refs, so forgetting any one of its sources removes the entry. A contradiction-supersede stores a new entry carrying the new refs and leaves the superseded entry with its own. Refs are not returned on read responses.
 
 Captured entries are also annotated with typed metadata when possible:
 
@@ -142,14 +142,14 @@ Raw write of a new entry. Worthiness gate + exact SHA dedup applied. For normal 
   "project": "id or name",
   "metadata": {},
   "sensitivity": "public|internal|private|sensitive",
-  "source_refs": ["sharepoint://sites/hr/policy.docx", "jira:HR-42"],
+  "sourceRefs": ["sharepoint://sites/hr/policy.docx", "jira:HR-42"],
   "force": false
 }
 ```
 
 Response: `{ id }` on success, `{ id: null, rejected: "<reason>" }` on gate failure, `{ id, deduplicated: true }` on exact duplicate.
 
-`source_refs` (optional, at most 32 strings of 1-512 characters, no control characters) names the external sources the entry derives from. They are stored per entry, scoped to the caller's organization, and later let you remove everything derived from a source with `POST /v1/forget {"source_ref": ...}`. If the write dedupes onto, or (capture) updates in place, an existing entry, the new refs are **merged** into it rather than replacing its refs, so forgetting any one of its sources removes the entry. A contradiction-supersede stores a new entry carrying the new refs and leaves the superseded entry with its own. Refs are not returned on read responses.
+`sourceRefs` (optional, at most 32 strings of 1-512 characters, no control characters) names the external sources the entry derives from. They are stored per entry, scoped to the caller's organization, and later let you remove everything derived from a source with `POST /v1/forget {"sourceRef": ...}`. If the write dedupes onto, or (capture) updates in place, an existing entry, the new refs are **merged** into it rather than replacing its refs, so forgetting any one of its sources removes the entry. A contradiction-supersede stores a new entry carrying the new refs and leaves the superseded entry with its own. Refs are not returned on read responses.
 
 ## `POST /v1/recent`
 
@@ -188,18 +188,18 @@ Returns `{ results: SearchResult[], degraded: boolean }`. Path-product aggregati
 
 ## `POST /v1/forget`
 
-Hard delete, by id or by source reference. Give exactly one of `id` and `source_ref` (400 otherwise).
+Hard delete, by id or by source reference. Give exactly one of `id` and `sourceRef` (400 otherwise).
 
 ```json
 { "id": "ULID", "project": "scope check" }
-{ "source_ref": "sharepoint://sites/hr/policy.docx", "project": "optional" }
+{ "sourceRef": "sharepoint://sites/hr/policy.docx", "project": "optional" }
 ```
 
 Cascades: warm row + FTS shadow + cold vector + graph node + edges + source refs.
 
 **By id** returns `{ deleted, coldDeleteOk }`. Idempotent — second call returns `{deleted: false}`.
 
-**By `source_ref`** removes every entry carrying that reference (see `source_refs` on `remember`/`capture`) and returns a receipt:
+**By `sourceRef`** removes every entry carrying that reference (see `sourceRefs` on `remember`/`capture`) and returns a receipt:
 
 ```json
 {
@@ -215,7 +215,7 @@ Cascades: warm row + FTS shadow + cold vector + graph node + edges + source refs
 - Matching is exact and case-sensitive, so two organizations can use the same reference string without interfering.
 - Ordering: all warm rows of every match go in one transaction, then the cold vectors. Retrieval resolves every hit through the warm rows, so once the transaction commits no match is retrievable even if the server dies before the cold cleanup; a vector whose delete fails is queued for the orphan reaper (`coldDeleteOk: false`). A crash can therefore never leave one match deleted and a sibling retrievable.
 
-Over MCP, `memory_forget` takes `source_ref` as an alternative to `id` and answers with the same receipt.
+Over MCP, `memory_forget` takes `sourceRef` as an alternative to `id` and answers with the same receipt.
 
 ## `PUT /v1/memories/{id}`
 
