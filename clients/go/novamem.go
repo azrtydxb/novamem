@@ -400,6 +400,12 @@ type CaptureRequest struct {
 	// hidden from every read immediately and hard-deleted by the server's
 	// reaper. Zero value = no expiry.
 	ExpiresAt string `json:"expiresAt,omitempty"`
+	// SourceRefs name the external sources this entry derives from (a
+	// document URL, a ticket key). At most 32, each 1-512 characters with
+	// no control characters. When the write dedupes onto or updates an
+	// existing entry the refs are merged into it. ForgetBySource later
+	// removes every entry that carries one.
+	SourceRefs []string `json:"source_refs,omitempty"`
 }
 
 // CaptureResult is the outcome of a write.
@@ -532,6 +538,20 @@ type ForgetResult struct {
 	ColdDeleteOk bool `json:"coldDeleteOk"`
 }
 
+// ForgetBySourceResult is the receipt of a forget by source reference.
+type ForgetBySourceResult struct {
+	// SourceRef echoes the reference that was forgotten.
+	SourceRef string `json:"sourceRef"`
+	// IDs are the entries removed. Empty (never nil) when nothing matched.
+	IDs []string `json:"ids"`
+	// Count is len(IDs). 0 on an idempotent repeat.
+	Count int `json:"count"`
+	// ColdDeleteOk is false when at least one vector copy survived; the
+	// server queues those for its reaper. The entries are already
+	// unretrievable either way — retrieval resolves through the primary rows.
+	ColdDeleteOk bool `json:"coldDeleteOk"`
+}
+
 // ─── Operations ────────────────────────────────────────────────────────────
 
 // Capture stores a durable fact, deduplicating and superseding as it goes.
@@ -652,6 +672,31 @@ func (c *Client) Forget(ctx context.Context, req ForgetRequest) (ForgetResult, e
 			return ForgetResult{Deleted: false, ColdDeleteOk: true}, nil
 		}
 		return ForgetResult{}, err
+	}
+	return out, nil
+}
+
+// ForgetBySource permanently deletes every memory stored with sourceRef
+// (see CaptureRequest.SourceRefs): the caller's own entries, inside the
+// caller's organization. Use it when a source document is deleted or access
+// to it is revoked.
+//
+// It is idempotent: forgetting a reference nothing carries — including the
+// second call for the same reference — returns Count 0 and no error. Check
+// ColdDeleteOk as with Forget.
+func (c *Client) ForgetBySource(ctx context.Context, sourceRef string) (ForgetBySourceResult, error) {
+	var out ForgetBySourceResult
+	if strings.TrimSpace(sourceRef) == "" {
+		return out, &Error{Op: "forgetBySource", Message: "sourceRef is required"}
+	}
+	body := struct {
+		SourceRef string `json:"source_ref"`
+	}{sourceRef}
+	if err := c.do(ctx, "forgetBySource", http.MethodPost, "/v1/forget", body, &out); err != nil {
+		return ForgetBySourceResult{}, err
+	}
+	if out.IDs == nil {
+		out.IDs = []string{}
 	}
 	return out, nil
 }
