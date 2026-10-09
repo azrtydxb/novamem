@@ -427,6 +427,24 @@ func (s *Store) DeleteEntry(ctx context.Context, id string, entryProjectID *stri
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+	// LOCK ORDER: memory_entries row first, then memory_fts, then the
+	// rest. DeleteEntriesBySourceRef and DeleteDerivedFacts select
+	// their entries FOR UPDATE before touching memory_fts; taking the
+	// fts row first here would let a forget-by-id and a forget-by-source
+	// of the same entry each hold one and wait on the other (deadlock).
+	// Every path that deletes an entry must lock the entries row first.
+	var locked string
+	err = tx.QueryRow(ctx,
+		`SELECT id FROM memory_entries WHERE id = $1 AND `+scope+` AND organization_id = $3 FOR UPDATE`,
+		id, scopeValue, tenant.OrgOf(userID)).Scan(&locked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Gone already, or not in the caller's scope or organization:
+		// nothing to delete, and no shadow rows are touched.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM memory_fts WHERE entry_id = $1 AND `+scope, id, scopeValue); err != nil {
 		return err
 	}
