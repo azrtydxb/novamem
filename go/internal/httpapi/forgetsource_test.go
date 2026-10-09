@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
 // forgetBySource posts {"source_ref": ref} and returns the receipt.
@@ -359,4 +361,94 @@ func sprintJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// A project entry's derived facts are stored under the user who wrote
+// it. When another member forgets the entry, those facts must go too:
+// filtering the cleanup on the forgetter's user_id left the writer's
+// facts behind, answering for an entry that no longer existed.
+//
+// proved by: restoring the `user_id = <forgetter>` filter in
+// warmstore.DeleteDerivedFacts fails both subtests.
+func TestMemberForgetRemovesTheWritersDerivedFacts(t *testing.T) {
+	e := newOBOEnv(t)
+	ctx := context.Background()
+
+	code, out := e.do("POST", "/v1/me/projects", e.userToken, map[string]any{"name": "factproj"})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create project: %d %v", code, out)
+	}
+	pid, _ := out["id"].(string)
+
+	// B: a second user in the same org, made a member of A's project.
+	label := "t"
+	bu, err := e.warm.CreateBAUser(ctx, "member-b@example.test", "b", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobTok, _, err := e.warm.CreateUserToken(ctx, bu.ID, &label, "full", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.warm.AddProjectMember(ctx, pid, bu.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The facts are inserted the way the extractor stores them (facts.go):
+	// the writer's user_id, the source's project, a source_chunk_id link.
+	writeWithFact := func(content, ref string) (srcID, factID string) {
+		srcID = e.remember(e.userToken, content, map[string]any{"project": pid, "source_refs": []string{ref}})
+		var writer string
+		if err := e.pool.QueryRow(ctx, `SELECT user_id FROM memory_entries WHERE id = $1`, srcID).Scan(&writer); err != nil {
+			t.Fatal(err)
+		}
+		if writer == bu.ID {
+			t.Fatal("test setup: writer and forgetter are the same user")
+		}
+		st, conf := "fact", 1.0
+		factID, err := e.warm.InsertEntry(ctx, "FACT"+srcID, warmstore.InsertEntryArgs{
+			UserID:     writer,
+			ProjectID:  &pid,
+			Content:    "[fact] derived from " + content,
+			Namespace:  "general",
+			Metadata:   map[string]any{"source_chunk_id": srcID, "fact": map[string]any{"object": "x"}},
+			SourceType: &st,
+			Confidence: &conf,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !e.entryExists(factID) {
+			t.Fatal("test setup: fact row was not stored")
+		}
+		return srcID, factID
+	}
+
+	t.Run("forget by source", func(t *testing.T) {
+		src, fact := writeWithFact("axolotl member forget by source note", "fact-ref")
+		code, out := e.do("POST", "/v1/forget", bobTok, map[string]any{"source_ref": "fact-ref", "project": pid})
+		if code != http.StatusOK || !reflect.DeepEqual(receiptIDs(t, out), []string{src}) {
+			t.Fatalf("member forget = %d %v", code, out)
+		}
+		if e.entryExists(src) {
+			t.Fatal("the source entry survived")
+		}
+		if e.entryExists(fact) {
+			t.Fatal("the writer's derived fact survived the member's forget")
+		}
+	})
+
+	t.Run("forget by id", func(t *testing.T) {
+		src, fact := writeWithFact("axolotl member forget by id note", "fact-ref-2")
+		code, out := e.do("POST", "/v1/forget", bobTok, map[string]any{"id": src, "project": pid})
+		if code != http.StatusOK {
+			t.Fatalf("member forget = %d %v", code, out)
+		}
+		if e.entryExists(src) {
+			t.Fatal("the source entry survived")
+		}
+		if e.entryExists(fact) {
+			t.Fatal("the writer's derived fact survived the member's forget")
+		}
+	})
 }
