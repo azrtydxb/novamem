@@ -764,3 +764,5 @@ Both are green on the full rollup with no review comments. Merging to main is th
 - Merge #339, retarget #341 to main and merge it once its CI reruns green, let GitOps deploy, run conformance against kw; release tag decided separately (recommended)
 - Merge both and also cut the release tag
 - Hold the merges
+
+**Decision (2026-10-10, owner):** merge and deploy both, no release tag yet.
