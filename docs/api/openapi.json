@@ -978,6 +978,41 @@
         ],
         "type": "object"
       },
+      "ServiceKey": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The `kid` for the JWT header.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "organizationId",
+          "publicKey",
+          "createdAt",
+          "revokedAt"
+        ],
+        "type": "object"
+      },
       "SessionRecapResult": {
         "properties": {
           "results": {
@@ -1214,6 +1249,12 @@
       }
     },
     "securitySchemes": {
+      "ServiceBearer": {
+        "bearerFormat": "JWT",
+        "description": "On-behalf-of service token: an EdDSA JWT a registered service signs itself (header alg=EdDSA, kid=service key id; claims sub, org, aud=novamem, iat, exp with exp-iat at most 15 minutes). Acts as user `sub` within the key's one organization on the memory data plane only; projects, accounts, tokens and the admin surface answer 403. Accepted only in user auth mode. See ADR 0011.",
+        "scheme": "bearer",
+        "type": "http"
+      },
       "SessionCookie": {
         "description": "Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax. Browsers attach it automatically.",
         "in": "cookie",
@@ -1708,6 +1749,210 @@
         ]
       }
     },
+    "/v1/admin/service-keys": {
+      "get": {
+        "description": "Admin only.",
+        "operationId": "getV1AdminServiceKeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "keys": {
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceKey"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "keys"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Every registered key, newest first"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "List service keys, revoked ones included",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Register the public half of a key a service signs on-behalf-of tokens with. NovaMem never holds the private key. Admin only.",
+        "operationId": "postV1AdminServiceKeys",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "organizationId": {
+                    "description": "The one organization this key may act for. \"default\" is refused.",
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                    "type": "string"
+                  },
+                  "publicKey": {
+                    "description": "Raw 32-byte Ed25519 public key, base64url.",
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "organizationId",
+                  "publicKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceKey"
+                }
+              }
+            },
+            "description": "The registered key. Its id is the `kid` the service puts in its JWT header."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid body, or the organization is \"default\""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "Register a service's Ed25519 public key for on-behalf-of tokens",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/service-keys/{id}": {
+      "delete": {
+        "description": "Admin only. Idempotent only in effect; a second revoke answers 404.",
+        "operationId": "deleteV1AdminServiceKeysById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "revoked"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Revoked. Tokens signed by the key stop verifying immediately."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No such active service key"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "Revoke a service key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/tokens/revoke": {
       "post": {
         "description": "Revoke a bearer by presenting its plaintext. The server hashes the input and deletes the matching row, so a token pasted from a leaked config can be killed without knowing which user it belongs to.",
@@ -2099,6 +2344,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -2249,6 +2497,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -2391,6 +2642,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -2441,6 +2695,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -2598,6 +2855,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -2664,6 +2924,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -2721,6 +2984,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -3920,6 +4186,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -4024,6 +4293,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -4238,6 +4510,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -4349,6 +4624,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -4514,6 +4792,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -4675,6 +4956,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -4713,6 +4997,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []

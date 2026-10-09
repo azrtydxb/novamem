@@ -38,10 +38,14 @@ type Entry struct {
 	ContentHash  *string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	// OrganizationID is the tenant the row belongs to (ADR 0011);
+	// "default" for every row an ordinary user owns.
+	OrganizationID string
 }
 
 const entryColumns = `id, user_id, project_id, content, namespace, source, agent_name,
-	metadata, cold, source_type, captured_from, confidence, content_hash, created_at, updated_at`
+	metadata, cold, source_type, captured_from, confidence, content_hash, created_at, updated_at,
+	organization_id`
 
 // scanEntry matches entryColumns order.
 type rowScanner interface{ Scan(dest ...any) error }
@@ -50,7 +54,7 @@ func scanEntry(r rowScanner) (*Entry, error) {
 	var e Entry
 	err := r.Scan(&e.ID, &e.UserID, &e.ProjectID, &e.Content, &e.Namespace, &e.Source,
 		&e.AgentName, &e.Metadata, &e.Cold, &e.SourceType, &e.CapturedFrom, &e.Confidence,
-		&e.ContentHash, &e.CreatedAt, &e.UpdatedAt)
+		&e.ContentHash, &e.CreatedAt, &e.UpdatedAt, &e.OrganizationID)
 	if err != nil {
 		return nil, err
 	}

@@ -709,3 +709,20 @@ Since #284 every MCP tool declares an `outputSchema`, but tool results carry onl
 - Leave it for now
 
 **Decision (2026-09-30, owner):** add structuredContent, with a test covering every tool that declares an outputSchema.
+
+## On-behalf-of token format (#337)
+
+Atlas (multi-tenant) must act for a user inside an org. The Go server already hand-rolls EdDSA JWTs (bajwt.go, stdlib ed25519); go.mod has no JWT library.
+
+- Service-signed EdDSA JWT: an admin registers the service's Ed25519 public key bound to one org; the service mints short-lived JWTs (sub=user, org, exp ≤ 15m, aud=novamem) itself; NovaMem holds no service secret (recommended)
+- NovaMem-minted JWT: admin issues an opaque `nm_svc_` key bound to an org; the service exchanges it per user at a token endpoint for a short-lived NovaMem-signed JWT
+- Opaque `nm_svc_` key bound to an org plus an `X-Novamem-On-Behalf-Of: <user>` header; user is not a signed claim and has no per-call expiry
+
+**Decision (2026-10-09, owner):** service-signed EdDSA JWT.
+
+## Who the on-behalf-of user is (#337)
+
+- Free-form subject scoped by org: the claim's user id is Atlas's own id, NovaMem stores it as-is with organization_id; no NovaMem user row needed (recommended)
+- Must be an existing NovaMem user: Atlas provisions each user through POST /v1/admin/users first; tokens for unknown users are rejected
+
+**Decision (2026-10-09, owner):** free-form subject scoped by org.

@@ -474,15 +474,21 @@ func (s *server) handleAdoption(w http.ResponseWriter, r *http.Request) {
 // this answers 404 {"error":"observer disabled"}, exactly as TS does
 // (routes/data-plane.ts /v1/context-prefix).
 func (s *server) handleContextPrefix(w http.ResponseWriter, r *http.Request) {
-	// `project` is used verbatim as the scope key, without the
-	// project-ref resolution the write routes perform — TS passes the raw
-	// query value straight through to getContextPrefix.
+	// An explicit `project` goes through the same access check as every
+	// other read: without it any caller who knew a project id could read
+	// that project's observation. No `project` keeps the unscoped prefix
+	// (no active-project default), as before.
+	userID := s.userID(r)
 	var project *string
 	if q := r.URL.Query(); q.Has("project") {
 		raw := q.Get("project")
-		project = &raw
+		scope := projectScope{Project: &raw}
+		if !s.checkProjectAccess(w, r, userID, &scope, false) {
+			return
+		}
+		project = scope.Project
 	}
-	prefix, err := s.engine.GetContextPrefix(r.Context(), s.userID(r), project)
+	prefix, err := s.engine.GetContextPrefix(r.Context(), userID, project)
 	if err != nil {
 		s.sendEngineErr(w, r, err)
 		return

@@ -57,3 +57,36 @@ func TestEveryRouteIsAccounted(t *testing.T) {
 		t.Fatal("routes.json names no methods — wrong file?")
 	}
 }
+
+// The service-key admin routes are Go-only for now: routes.json records
+// them as a nonGoal for the other SDKs, so nothing above checks that the Go
+// methods the nonGoal text points at really exist.
+//
+// proved by: renaming Admin.RevokeServiceKey fails this test.
+func TestServiceKeyAdminMethodsExist(t *testing.T) {
+	adm := reflect.TypeFor[*Admin]()
+	for _, m := range []string{"RegisterServiceKey", "ListServiceKeys", "RevokeServiceKey"} {
+		if _, ok := adm.MethodByName(m); !ok {
+			t.Errorf("Admin has no method %s", m)
+		}
+	}
+	raw, err := os.ReadFile("../contract/routes.json")
+	if err != nil {
+		t.Skipf("routes.json not readable outside the monorepo: %v", err)
+	}
+	var routes map[string]struct {
+		NonGoal string `json:"nonGoal"`
+	}
+	if err := json.Unmarshal(raw, &routes); err != nil {
+		t.Fatal(err)
+	}
+	for key, method := range map[string]string{
+		"POST /v1/admin/service-keys":        "Admin.RegisterServiceKey",
+		"GET /v1/admin/service-keys":         "Admin.ListServiceKeys",
+		"DELETE /v1/admin/service-keys/{id}": "Admin.RevokeServiceKey",
+	} {
+		if !strings.Contains(routes[key].NonGoal, method) {
+			t.Errorf("%s: nonGoal should name %s, got %q", key, method, routes[key].NonGoal)
+		}
+	}
+}

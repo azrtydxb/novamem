@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/azrtydxb/novamem/go/internal/tenant"
 )
 
 type InsertEntryArgs struct {
@@ -57,12 +59,14 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 	err = tx.QueryRow(ctx, `
 		INSERT INTO memory_entries
 			(id, user_id, project_id, content, namespace, source, agent_name, metadata,
-			 source_type, captured_from, confidence, content_hash, facts_pending_at, graph_pending_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11::real, 1.0),$12,$13,$14)
+			 source_type, captured_from, confidence, content_hash, facts_pending_at, graph_pending_at,
+			 organization_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11::real, 1.0),$12,$13,$14,$15)
 		ON CONFLICT DO NOTHING
 		RETURNING id`,
 		id, a.UserID, a.ProjectID, a.Content, a.Namespace, a.Source, a.AgentName, metadata,
 		a.SourceType, a.CapturedFrom, a.Confidence, a.ContentHash, a.FactsPendingAt, a.GraphPendingAt,
+		tenant.OrgOf(a.UserID),
 	).Scan(&winner)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Lost the race — return the concurrent writer's id (dedup hit).
@@ -72,7 +76,8 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 			WHERE user_id = $1
 			  AND content_hash IS NOT DISTINCT FROM $2
 			  AND project_id IS NOT DISTINCT FROM $3
-			LIMIT 1`, a.UserID, a.ContentHash, a.ProjectID).Scan(&winner)
+			  AND organization_id = $4
+			LIMIT 1`, a.UserID, a.ContentHash, a.ProjectID, tenant.OrgOf(a.UserID)).Scan(&winner)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("insertEntry: conflict with no resolvable existing row")
 		}
@@ -102,7 +107,8 @@ func (s *Store) FindByContentHash(ctx context.Context, userID string, projectID 
 	err = s.Pool.QueryRow(ctx, `
 		SELECT id, namespace FROM memory_entries
 		WHERE user_id = $1 AND content_hash = $2 AND project_id IS NOT DISTINCT FROM $3
-		LIMIT 1`, userID, hash, projectID).Scan(&id, &namespace)
+		  AND organization_id = $4
+		LIMIT 1`, userID, hash, projectID, tenant.OrgOf(userID)).Scan(&id, &namespace)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", false, nil
 	}
@@ -124,6 +130,11 @@ func (s *Store) GetEntry(ctx context.Context, userID, id string, projectID *stri
 	}
 	if err != nil {
 		return nil, err
+	}
+	// Defense in depth (ADR 0011): the composite user id already embeds
+	// the org, but a row from another organization is never in scope.
+	if e.OrganizationID != tenant.OrgOf(userID) {
+		return nil, nil
 	}
 	if projectID != nil {
 		if e.ProjectID == nil || *e.ProjectID != *projectID {
@@ -218,17 +229,22 @@ func (s *Store) SetEmbeddedAt(ctx context.Context, id string, at *time.Time) err
 // which Postgres rejects outright ("could not determine data type of
 // parameter $1").
 func scopeClause(userID string, projectID *string, includeProjects []string, args *[]any) string {
+	// Every branch is confined to the caller's organization (ADR 0011).
+	// Project rows are written by real users, so they carry "default",
+	// which is also the org of every real caller.
+	*args = append(*args, tenant.OrgOf(userID))
+	org := fmt.Sprintf(`organization_id = $%d AND `, len(*args))
 	if len(includeProjects) > 0 {
 		*args = append(*args, userID, includeProjects)
 		n := len(*args)
-		return fmt.Sprintf(`((user_id = $%d AND project_id IS NULL) OR project_id = ANY($%d))`, n-1, n)
+		return org + fmt.Sprintf(`((user_id = $%d AND project_id IS NULL) OR project_id = ANY($%d))`, n-1, n)
 	}
 	if projectID != nil {
 		*args = append(*args, *projectID)
-		return fmt.Sprintf(`project_id = $%d`, len(*args))
+		return org + fmt.Sprintf(`project_id = $%d`, len(*args))
 	}
 	*args = append(*args, userID)
-	return fmt.Sprintf(`(user_id = $%d AND project_id IS NULL)`, len(*args))
+	return org + fmt.Sprintf(`(user_id = $%d AND project_id IS NULL)`, len(*args))
 }
 
 // ListNamespaces — distinct namespaces with entries visible in scope
@@ -324,7 +340,7 @@ func (s *Store) UpdateEntry(ctx context.Context, a UpdateEntryArgs) (bool, error
 	}
 
 	set := []string{"updated_at = now()"}
-	args := []any{a.ID}
+	args := []any{a.ID, tenant.OrgOf(a.UserID)}
 	add := func(col string, v any) {
 		args = append(args, v)
 		set = append(set, fmt.Sprintf("%s = $%d", col, len(args)))
@@ -356,9 +372,13 @@ func (s *Store) UpdateEntry(ctx context.Context, a UpdateEntryArgs) (bool, error
 		return false, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := tx.Exec(ctx,
-		`UPDATE memory_entries SET `+strings.Join(set, ", ")+` WHERE id = $1`, args...); err != nil {
+	tag, err := tx.Exec(ctx,
+		`UPDATE memory_entries SET `+strings.Join(set, ", ")+` WHERE id = $1 AND organization_id = $2`, args...)
+	if err != nil {
 		return false, err
+	}
+	if tag.RowsAffected() == 0 {
+		return false, nil // not in the caller's organization
 	}
 	if a.Content != nil || a.Namespace != nil {
 		fset := []string{}
@@ -407,8 +427,15 @@ func (s *Store) DeleteEntry(ctx context.Context, id string, entryProjectID *stri
 		`DELETE FROM memory_relations WHERE (from_id = $1 OR to_id = $1) AND `+scope, id, scopeValue); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM memory_entries WHERE id = $1 AND `+scope, id, scopeValue); err != nil {
+	tag, err := tx.Exec(ctx,
+		`DELETE FROM memory_entries WHERE id = $1 AND `+scope+` AND organization_id = $3`,
+		id, scopeValue, tenant.OrgOf(userID))
+	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() == 0 {
+		// Not in the caller's organization: undo the shadow-row deletes.
+		return nil
 	}
 	return tx.Commit(ctx)
 	// slice 3: the TS server then deletes the cold-store vector, parking
