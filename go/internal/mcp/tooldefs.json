@@ -298,6 +298,13 @@
         "sourceType": {
           "description": "chat | email | code-review | doc | inference | observation | system | manual",
           "type": "string"
+        },
+        "source_refs": {
+          "description": "External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `source_ref` removes every entry that carries one.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -914,6 +921,13 @@
         "sourceType": {
           "description": "chat | email | code-review | doc | inference | observation | system | manual",
           "type": "string"
+        },
+        "source_refs": {
+          "description": "External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `source_ref` removes every entry that carries one.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -1346,33 +1360,64 @@
     "inputSchema": {
       "properties": {
         "id": {
-          "description": "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200.",
+          "description": "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200. Give exactly one of `id` or `source_ref`.",
           "type": "string"
         },
         "project": {
           "description": "Project id or name (scope check).",
           "type": "string"
+        },
+        "source_ref": {
+          "description": "Delete every memory that was stored with this source reference (see `source_refs` on `memory_remember` / `memory_capture`), for example when the source document is deleted or access to it is revoked. Replies `{ids, count}`; count 0 when nothing matched. Give exactly one of `id` or `source_ref`.",
+          "type": "string"
         }
       },
-      "required": [
-        "id"
-      ],
       "type": "object"
     },
     "name": "memory_forget",
     "outputSchema": {
-      "properties": {
-        "coldDeleteOk": {
-          "type": "boolean"
+      "oneOf": [
+        {
+          "properties": {
+            "coldDeleteOk": {
+              "type": "boolean"
+            },
+            "deleted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "deleted"
+          ],
+          "type": "object"
         },
-        "deleted": {
-          "type": "boolean"
+        {
+          "properties": {
+            "coldDeleteOk": {
+              "type": "boolean"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sourceRef": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sourceRef",
+            "ids",
+            "count",
+            "coldDeleteOk"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "deleted"
-      ],
-      "type": "object"
+      ]
     }
   },
   {

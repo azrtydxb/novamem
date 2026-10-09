@@ -104,6 +104,7 @@ func parseWriteBody(c *v) engine.RememberRequest {
 	}
 	req.Force, _ = c.boolean("force")
 	req.ExpiresAt, _ = c.datetime("expiresAt", "")
+	req.SourceRefs, _ = c.strArray("source_refs", MaxSourceRefs, 1, MaxSourceRefLen, validSourceRef, sourceRefMessage)
 	return req
 }
 
@@ -404,8 +405,15 @@ func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := &v{m: m}
-	id, _ := c.str("id", true, 1, 128)
+	id, hasID := c.str("id", false, 1, 128)
+	sourceRef, hasRef := c.str("source_ref", false, 1, MaxSourceRefLen)
+	if hasRef && !validSourceRef(sourceRef) {
+		c.add("source_ref", sourceRefMessage, "invalid_format")
+	}
 	project, _ := c.projectRef("project")
+	if len(c.issues) == 0 && hasID == hasRef {
+		c.add("id", "Provide exactly one of id or source_ref", "custom")
+	}
 	if len(c.issues) > 0 {
 		s.sendIssues(w, c.issues)
 		return
@@ -413,6 +421,18 @@ func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {
 	userID := s.userID(r)
 	scope := projectScope{Project: project}
 	if !s.checkProjectAccess(w, r, userID, &scope, false) {
+		return
+	}
+	if hasRef {
+		// Same scope rules as forget-by-id: the caller's own user-wide
+		// entries, or, with a project (explicit or active-defaulted and
+		// membership-checked above), that project's entries.
+		receipt, err := s.engine.ForgetBySource(r.Context(), userID, scope.Project, sourceRef)
+		if err != nil {
+			s.sendEngineErr(w, r, err)
+			return
+		}
+		writeJSONValue(w, http.StatusOK, receipt)
 		return
 	}
 	// Defence in depth (routes/data-plane.ts /v1/forget): resolve the

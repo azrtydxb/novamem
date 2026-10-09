@@ -445,6 +445,32 @@
         ],
         "type": "object"
       },
+      "ForgetBySourceResult": {
+        "properties": {
+          "coldDeleteOk": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceRef": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceRef",
+          "ids",
+          "count",
+          "coldDeleteOk"
+        ],
+        "type": "object"
+      },
       "ForgetResult": {
         "properties": {
           "coldDeleteOk": {
@@ -2459,6 +2485,16 @@
                   "sourceType": {
                     "maxLength": 64,
                     "type": "string"
+                  },
+                  "source_refs": {
+                    "description": "External sources this entry derives from (document URL, ticket key, ...). Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget {source_ref}. Exact, case-sensitive match; scoped to the caller's organization.",
+                    "items": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
                   }
                 },
                 "required": [
@@ -2886,11 +2922,14 @@
                     "minLength": 1,
                     "nullable": true,
                     "type": "string"
+                  },
+                  "source_ref": {
+                    "description": "Forget every entry carrying this source reference, in the caller's organization and scope. Mutually exclusive with `id`; exactly one is required (400 otherwise). Idempotent — a repeat answers count 0.",
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
                   }
                 },
-                "required": [
-                  "id"
-                ],
                 "type": "object"
               }
             }
@@ -2902,11 +2941,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ForgetResult"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ForgetResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ForgetBySourceResult"
+                    }
+                  ]
                 }
               }
             },
-            "description": "ForgetResult"
+            "description": "ForgetResult for `id`, ForgetBySourceResult for `source_ref`"
           },
           "401": {
             "content": {
@@ -2930,7 +2976,7 @@
             "SessionCookie": []
           }
         ],
-        "summary": "Delete a memory entry by id",
+        "summary": "Delete a memory entry by id, or every entry from a source reference",
         "tags": [
           "memory"
         ]
@@ -4588,6 +4634,16 @@
                   "sourceType": {
                     "maxLength": 64,
                     "type": "string"
+                  },
+                  "source_refs": {
+                    "description": "External sources this entry derives from (document URL, ticket key, ...). Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget {source_ref}. Exact, case-sensitive match; scoped to the caller's organization.",
+                    "items": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
                   }
                 },
                 "required": [

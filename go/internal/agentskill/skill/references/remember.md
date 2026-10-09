@@ -84,9 +84,12 @@ If you are merely saving the new durable outcome of a task, skip the manual sear
 
 Removes the warm row, FTS row, cold vector, and any graph edges. There is no undo.
 
-Inputs:
+Inputs (exactly one of `id` or `source_ref`):
 
-- `id` (required, string)
+- `id` (string) — one entry
+- `source_ref` (string) — every entry stored with that reference in `source_refs` (a source document was deleted or access to it was revoked). Replies `{ ids, count }`; `count: 0` when nothing matched.
+
+`memory_remember` / `memory_capture` accept `source_refs` (array of strings) to tag what an entry was derived from.
 
 Use when:
 

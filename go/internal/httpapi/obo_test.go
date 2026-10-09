@@ -31,6 +31,8 @@ type oboEnv struct {
 	pool       *pgxpool.Pool
 	adminToken string
 	userToken  string // an ordinary nm_ user (org "default")
+	eng        *engine.Engine
+	warm       *warmstore.Store
 }
 
 // newOBOEnv skips without NOVAMEM_TEST_DATABASE_URL, except in CI, where
@@ -89,7 +91,7 @@ func newOBOEnv(t *testing.T) *oboEnv {
 		Metrics: coll, Pool: pool, Log: log, Engine: eng, Warm: warm,
 		AuthMode: "user", CookieSecret: strings.Repeat("s", 32),
 	})
-	env := &oboEnv{t: t, h: h, pool: pool}
+	env := &oboEnv{t: t, h: h, pool: pool, eng: eng, warm: warm}
 
 	mkToken := func(email, role string) string {
 		u, err := warm.CreateBAUser(ctx, email, "t", "", role)
