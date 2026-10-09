@@ -726,3 +726,13 @@ Atlas (multi-tenant) must act for a user inside an org. The Go server already ha
 - Must be an existing NovaMem user: Atlas provisions each user through POST /v1/admin/users first; tokens for unknown users are rejected
 
 **Decision (2026-10-09, owner):** free-form subject scoped by org.
+
+## MCP ignores project-confined tokens (found reviewing #338)
+
+`resolveScopeMCP` (go/internal/httpapi/mcp.go) never checks the token's `ProjectID`, so a full-scope project-confined `nm_` token can read or forget the user's user-wide entries and other projects' entries over `/mcp`. HTTP enforces it (`confineToTokenProject`). Pre-existing on main.
+
+- File an issue and fix it in its own PR right after #339/#338 (recommended)
+- Fix it inside #338
+- File the issue only
+
+**Decision (2026-10-09, owner):** file an issue and fix it in its own PR after #339/#338.
