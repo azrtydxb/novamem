@@ -1923,5 +1923,286 @@
       ],
       "type": "object"
     }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List users"
+    },
+    "description": "Read-only deployment-wide user inventory and entry/token counts. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_list_users",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "users": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "users"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List projects"
+    },
+    "description": "Read-only deployment-wide project inventory. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_list_projects",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "projects": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ownerUserId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "ownerUserId",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List token metadata"
+    },
+    "description": "Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_list_tokens",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tokens"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Service health"
+    },
+    "description": "Read-only dependency and service health snapshot. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_health",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Service statistics"
+    },
+    "description": "Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_stats",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Recent audit entries"
+    },
+    "description": "Read-only recent administrative audit entries, newest first. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "Maximum number of entries; defaults to 100.",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "admin_audit_recent",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Operations job status"
+    },
+    "description": "Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_ops_status",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "additionalProperties": false,
+          "properties": {
+            "decay": {
+              "additionalProperties": false,
+              "properties": {
+                "lastRunAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "runs": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lastRunAt",
+                "runs"
+              ],
+              "type": "object"
+            },
+            "dream": {
+              "additionalProperties": false,
+              "properties": {
+                "lastRunAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "lastRunAt"
+              ],
+              "type": "object"
+            },
+            "reaper": {
+              "additionalProperties": false,
+              "properties": {
+                "lastRunAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "runs": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lastRunAt",
+                "runs"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "decay",
+            "dream",
+            "reaper"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "jobs"
+      ],
+      "type": "object"
+    }
   }
 ]

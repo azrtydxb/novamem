@@ -846,6 +846,79 @@ components:
         removed: *id007
       required:
         - removed
+x-mcp-tools:
+  - name: admin_list_users
+    description: Read-only deployment-wide user inventory and entry/token counts. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, properties: {users: {type: array, items: {type: object, additionalProperties: true}}}, required: [users], additionalProperties: false}
+    annotations: {title: List users, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 22
+  - name: admin_list_projects
+    description: Read-only deployment-wide project inventory. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, properties: {projects: {type: array, items: {type: object, properties: {id: {type: string}, name: {type: string}, ownerUserId: {type: string}, createdAt: {type: string, format: date-time}}, required: [id, name, ownerUserId, createdAt], additionalProperties: false}}}, required: [projects], additionalProperties: false}
+    annotations: {title: List projects, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 23
+  - name: admin_list_tokens
+    description: Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, properties: {tokens: {type: array, items: {type: object, additionalProperties: true}}}, required: [tokens], additionalProperties: false}
+    annotations: {title: List token metadata, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 24
+  - name: admin_health
+    description: Read-only dependency and service health snapshot. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, additionalProperties: true}
+    annotations: {title: Service health, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 25
+  - name: admin_stats
+    description: Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, additionalProperties: true}
+    annotations: {title: Service statistics, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 26
+  - name: admin_audit_recent
+    description: Read-only recent administrative audit entries, newest first. Admin callers only.
+    inputSchema: {type: object, properties: {limit: {type: integer, minimum: 1, maximum: 500, description: Maximum number of entries; defaults to 100.}}, additionalProperties: false}
+    outputSchema: {type: object, properties: {entries: {type: array, items: {type: object, additionalProperties: true}}}, required: [entries], additionalProperties: false}
+    annotations: {title: Recent audit entries, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 27
+  - name: admin_ops_status
+    description: Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema:
+      type: object
+      properties:
+        jobs:
+          type: object
+          properties:
+            decay:
+              type: object
+              properties:
+                lastRunAt: {type: [string, 'null'], format: date-time}
+                runs: {type: integer}
+              required: [lastRunAt, runs]
+              additionalProperties: false
+            dream:
+              type: object
+              properties:
+                lastRunAt: {type: [string, 'null'], format: date-time}
+              required: [lastRunAt]
+              additionalProperties: false
+            reaper:
+              type: object
+              properties:
+                lastRunAt: {type: [string, 'null'], format: date-time}
+                runs: {type: integer}
+              required: [lastRunAt, runs]
+              additionalProperties: false
+          required: [decay, dream, reaper]
+          additionalProperties: false
+      required: [jobs]
+      additionalProperties: false
+    annotations: {title: Operations job status, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 28
+
 paths:
   /v1/auth/rotate-token:
     post:

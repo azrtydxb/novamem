@@ -114,6 +114,31 @@ type ProjectMembership struct {
 	CreatedAt   time.Time
 }
 
+// AdminProject is the read-only deployment-wide project inventory.
+type AdminProject struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	OwnerUserID string    `json:"ownerUserId"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+func (s *Store) ListAllProjects(ctx context.Context) ([]AdminProject, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id, name, owner_user_id, created_at FROM projects ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminProject{}
+	for rows.Next() {
+		var p AdminProject
+		if err := rows.Scan(&p.ID, &p.Name, &p.OwnerUserID, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // ListProjectsForUser — every project the user is a member of, oldest first.
 func (s *Store) ListProjectsForUser(ctx context.Context, userID string) ([]ProjectMembership, error) {
 	rows, err := s.Pool.Query(ctx, `

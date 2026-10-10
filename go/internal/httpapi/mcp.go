@@ -70,6 +70,29 @@ func ctxToken(ctx context.Context) *warmstore.TokenInfo {
 	return nil
 }
 
+// requireAdminMCP mirrors the role check used by /v1/admin/* without
+// going through HTTP. Restricted credentials and OBO identities do not
+// inherit an administrator role through their subject.
+func (s *server) requireAdminMCP(ctx context.Context, userID string) error {
+	if tenant.IsOBO(userID) {
+		return errors.New("admin only")
+	}
+	if tok := ctxToken(ctx); tok != nil && tok.Restricted() {
+		return errors.New("admin only")
+	}
+	if userID == "" || userID == warmstore.SystemUser {
+		return errors.New("admin only")
+	}
+	u, err := s.warm.FindUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if u == nil || u.Role != "admin" {
+		return errors.New("admin only")
+	}
+	return nil
+}
+
 // resolveScopeMCP — mcp-tools.ts resolveScope: canonicalize project +
 // includeProjects refs (id or name) with membership checks, falling
 // back to the caller's active project when no scope was supplied.
@@ -161,6 +184,11 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 	if tenant.IsOBO(userID) && strings.HasPrefix(name, "project_") {
 		return nil, errors.New(errOBOProjects)
 	}
+	if strings.HasPrefix(name, "admin_") {
+		if err := s.requireAdminMCP(ctx, userID); err != nil {
+			return nil, err
+		}
+	}
 	// A project-confined token is held to its project on every tool that
 	// takes a scope (resolveScopeMCP). The rest either manage projects or
 	// read across the user's whole store, so they are refused outright.
@@ -173,6 +201,92 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		}
 	}
 	switch name {
+	case "admin_list_users":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		rows, err := s.warm.ListUsers(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"users": rows}, nil
+	case "admin_list_projects":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		rows, err := s.warm.ListAllProjects(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"projects": rows}, nil
+	case "admin_list_tokens":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		rows, err := s.warm.ListAllUserTokens(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"tokens": rows}, nil
+	case "admin_health":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		return s.engine.Health(ctx), nil
+	case "admin_stats":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		return orderedMetrics(s.metrics.Snapshot(ctx)), nil
+	case "admin_audit_recent":
+		limit, set := c.positiveInt("limit", 200)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		if !set {
+			limit = 100
+		}
+		if limit > 500 {
+			return nil, errors.New("invalid argument 'limit': must be at most 500")
+		}
+		rows, err := s.warm.ListAuditLog(ctx, limit)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"entries": rows}, nil
+	case "admin_ops_status":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		metrics := s.metrics.Snapshot(ctx)
+		gauges, _ := metrics["gauges"].(map[string]any)
+		counters, _ := metrics["counters"].(map[string]any)
+		dreamAt, err := s.warm.GetEngineState(ctx, warmstore.EngineStateLastDreamRun)
+		if err != nil {
+			return nil, err
+		}
+		reaperAt, err := s.warm.GetEngineState(ctx, warmstore.EngineStateLastReaperRun)
+		if err != nil {
+			return nil, err
+		}
+		var dreamLastRun, reaperLastRun any
+		if dreamAt != "" {
+			dreamLastRun = dreamAt
+		}
+		if reaperAt != "" {
+			reaperLastRun = reaperAt
+		}
+		return map[string]any{"jobs": map[string]any{
+			"decay":  map[string]any{"lastRunAt": gauges["last_decay_run_iso"], "runs": counters["decay_runs_total"]},
+			"dream":  map[string]any{"lastRunAt": dreamLastRun},
+			"reaper": map[string]any{"lastRunAt": reaperLastRun, "runs": counters["orphans_reaped_total"]},
+		}}, nil
 
 	case "memory_context":
 		message, _ := c.str("message", true, 1, 8*1024)

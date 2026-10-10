@@ -15,7 +15,7 @@ import "testing"
 // no longer exists; the pin's job now is to make an accidental edit
 // impossible to merge unnoticed.
 func TestInstructionsHashIsPinned(t *testing.T) {
-	const want = "d5335bd09a480f91e90579b9f1729bda74666ca13ed9367a1a3f1673f4548f29"
+	const want = "38234fd6dce4c2747b59899d3b41d8524a59493dc3840143205bece2ad825981"
 	got := sha256HexStr(novamemInstructions)
 	if got != want {
 		t.Fatalf("instructions changed.\n got  %s\n want %s\n"+
@@ -27,8 +27,8 @@ func TestInstructionsHashIsPinned(t *testing.T) {
 func TestAdoptionReportShape(t *testing.T) {
 	report := buildAdoptionReport(adoptionOptions{})
 	mcp := report.get("mcp").(obj)
-	if mcp.get("toolCount") != 21 {
-		t.Fatalf("toolCount %v, want 21 (14 memory_* + 7 project_*)", mcp.get("toolCount"))
+	if mcp.get("toolCount") != 28 {
+		t.Fatalf("toolCount %v, want 28 (14 memory_* + 7 project_* + 7 admin_*)", mcp.get("toolCount"))
 	}
 	if report.get("requestedClient") != "generic" {
 		t.Fatalf("requestedClient %v", report.get("requestedClient"))

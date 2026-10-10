@@ -24,6 +24,12 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
+func recordLastRun(ctx context.Context, warm *warmstore.Store, key string, log *slog.Logger) {
+	if err := warm.SetEngineState(ctx, key, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		log.Warn("record background job status", "key", key, "err", err)
+	}
+}
+
 type Config struct {
 	Engine  *engine.Engine
 	Warm    *warmstore.Store
@@ -96,6 +102,7 @@ func Run(ctx context.Context, cfg Config) {
 			cfg.Log.Error("decay/reap loop error", "err", err)
 			return
 		}
+		recordLastRun(ctx, cfg.Warm, warmstore.EngineStateLastReaperRun, cfg.Log)
 		if reap.Attempted > 0 {
 			cfg.Log.Info("reaped orphans", "attempted", reap.Attempted, "cleared", reap.Cleared,
 				"abandoned", reap.Abandoned, "pending", reap.Pending, "total", reap.Total)
@@ -111,6 +118,7 @@ func Run(ctx context.Context, cfg Config) {
 			cfg.Log.Error("dream cycle error", "err", err)
 			return
 		}
+		recordLastRun(ctx, cfg.Warm, warmstore.EngineStateLastDreamRun, cfg.Log)
 		if r.Merged > 0 || r.EdgesPromoted > 0 {
 			cfg.Log.Info("dream cycle", "walked", r.Walked, "merged", r.Merged,
 				"edgesPromoted", r.EdgesPromoted, "durationMs", r.DurationMs)

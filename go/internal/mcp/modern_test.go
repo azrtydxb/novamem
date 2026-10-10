@@ -405,7 +405,7 @@ func TestModernUnknownToolIsAProtocolError(t *testing.T) {
 	}
 }
 
-// This server returns all 21 tools in one page and never issues a
+// This server returns all 28 tools in one page and never issues a
 // `nextCursor`, so any cursor a client sends is one it never got from
 // here. Ignoring it and serving page one again would leave a paging
 // client looping over the same page forever.
