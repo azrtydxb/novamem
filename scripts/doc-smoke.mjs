@@ -461,7 +461,7 @@ async function checkApiReferenceVersionsAgree() {
 async function checkMonorepoVersionMatchesOpenAPI() {
   const apiFile = "api/openapi.yaml";
   const api = await readFile(join(ROOT, apiFile), "utf8");
-  const canonical = /^  version: ([^\n]+)$/m.exec(api)?.[1]?.trim();
+  const canonical = /^\x20{2}version: ([^\n]+)$/m.exec(api)?.[1]?.trim();
   for (const file of ["package.json", "packages/admin-ui/package.json"]) {
     const pkg = JSON.parse(await readFile(join(ROOT, file), "utf8"));
     if (!canonical || pkg.version !== canonical) {
