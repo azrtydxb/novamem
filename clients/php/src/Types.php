@@ -1318,11 +1318,11 @@ final readonly class HygieneReport
 {
     /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
     private const FIELDS = [
-        ['contradictionCandidates', 'contradictionCandidates', ['a', ['p', 'any']], false],
-        ['duplicateClusters', 'duplicateClusters', ['a', ['p', 'any']], false],
-        ['lowValue', 'lowValue', ['a', ['p', 'any']], false],
-        ['orphanCandidates', 'orphanCandidates', ['a', ['p', 'any']], false],
-        ['stale', 'stale', ['a', ['p', 'any']], false],
+        ['contradictionCandidates', 'contradictionCandidates', ['a', ['n', 'HygieneReportContradictionCandidatesItem']], false],
+        ['duplicateClusters', 'duplicateClusters', ['a', ['n', 'HygieneReportDuplicateClustersItem']], false],
+        ['lowValue', 'lowValue', ['a', ['n', 'HygieneReportLowValueItem']], false],
+        ['orphanCandidates', 'orphanCandidates', ['a', ['n', 'HygieneReportOrphanCandidatesItem']], false],
+        ['stale', 'stale', ['a', ['n', 'HygieneReportStaleItem']], false],
         ['summary', 'summary', ['n', 'HygieneReportSummary'], true],
     ];
 
@@ -1368,6 +1368,253 @@ final readonly class HygieneReport
     {
         return [
             'summary' => HygieneReportSummary::fromArray([]),
+        ];
+    }
+}
+
+final readonly class HygieneReportContradictionCandidatesItem
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['ids', 'ids', ['a', ['p', 'string']], false],
+        ['reason', 'reason', ['p', 'string'], false],
+    ];
+
+    public function __construct(
+        public ?array $ids = null,
+        public ?string $reason = null,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
+        ];
+    }
+}
+
+final readonly class HygieneReportDuplicateClustersItem
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['ids', 'ids', ['a', ['p', 'string']], false],
+        ['reason', 'reason', ['p', 'string'], false],
+    ];
+
+    public function __construct(
+        public ?array $ids = null,
+        public ?string $reason = null,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
+        ];
+    }
+}
+
+final readonly class HygieneReportLowValueItem
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['content', 'content', ['p', 'string'], false],
+        ['id', 'id', ['p', 'string'], false],
+        ['reason', 'reason', ['p', 'string'], false],
+    ];
+
+    public function __construct(
+        public ?string $content = null,
+        public ?string $id = null,
+        public ?string $reason = null,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
+        ];
+    }
+}
+
+final readonly class HygieneReportOrphanCandidatesItem
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['id', 'id', ['p', 'string'], false],
+        ['reason', 'reason', ['p', 'string'], false],
+    ];
+
+    public function __construct(
+        public ?string $id = null,
+        public ?string $reason = null,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
+        ];
+    }
+}
+
+final readonly class HygieneReportStaleItem
+{
+    /** @var list<array{0: string, 1: string, 2: array<int, mixed>, 3: bool}> */
+    private const FIELDS = [
+        ['id', 'id', ['p', 'string'], false],
+        ['reason', 'reason', ['p', 'string'], false],
+    ];
+
+    public function __construct(
+        public ?string $id = null,
+        public ?string $reason = null,
+    ) {
+    }
+
+    /** @param array<string, mixed> $a */
+    public static function fromArray(array $a): self
+    {
+        $args = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = Wire::fromWire($a[$wire] ?? null, $spec);
+            if ($v !== null || !$required) {
+                $args[$prop] = $v;
+            }
+        }
+        return new self(...$args + self::defaults());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        $out = [];
+        foreach (self::FIELDS as [$prop, $wire, $spec, $required]) {
+            $v = $this->{$prop};
+            if (!$required && ($v === null || $v === '')) {
+                continue;
+            }
+            $out[$wire] = Wire::toWire($v, $spec);
+        }
+        return $out;
+    }
+
+    /** @return array<string, mixed> Zero values for required fields a server left out. */
+    private static function defaults(): array
+    {
+        return [
         ];
     }
 }

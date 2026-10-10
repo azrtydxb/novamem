@@ -46,7 +46,7 @@ Running keyword (FTS) + vector (cosine) in parallel, normalising each score, the
 
 ## init / `novamem-init`
 
-The CLI (`@azrtydxb/novamem-init`) that signs into a server, mints a bearer, detects every supported AI host on your machine, and writes the per-host config.
+The Go CLI that configures supported AI hosts to connect to a novamem server. It is distributed as a release binary.
 
 ## member
 
@@ -88,9 +88,9 @@ A Better Auth session — HttpOnly cookie + DB-backed token. Carries the user id
 
 Server-Sent Events. Used by the `GET /mcp` stream, which the server holds open with `: ping` keepalive frames every 25 s so a client body-read timeout does not close it. The standalone HTTP+SSE _transport_ (`/mcp/sse` + `/mcp/messages`) was a different thing, and was removed in ADR 0007.
 
-## stdio shim
+## stdio bridge
 
-The `@azrtydxb/novamem-mcp` package — a tiny Node CLI that proxies stdio JSON-RPC ↔ remote SSE for hosts that don't support remote MCP yet.
+The Go `novamem-mcp` binary bridges local stdio MCP clients to the server’s `/mcp` endpoint.
 
 ## tenant
 

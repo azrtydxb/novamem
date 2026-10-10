@@ -24,6 +24,12 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
+func recordLastRun(ctx context.Context, warm *warmstore.Store, key string, log *slog.Logger) {
+	if err := warm.SetEngineState(ctx, key, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		log.Warn("record background job status", "key", key, "err", err)
+	}
+}
+
 type Config struct {
 	Engine  *engine.Engine
 	Warm    *warmstore.Store
@@ -38,6 +44,29 @@ type Config struct {
 	// NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS / _BATCH.
 	ReconcileInterval time.Duration
 	ReconcileBatch    int
+	RetentionEnabled  bool
+	RetentionMaxAge   time.Duration
+	RetentionBatch    int
+	RetentionInterval time.Duration
+	RetentionDryRun   bool
+}
+
+// scheduleRetention registers the retention ticker only when the feature is
+// enabled. Keeping this boundary explicit also makes the default-off behavior
+// testable without starting background workers.
+func scheduleRetention(cfg Config, loop func(time.Duration, func(context.Context))) {
+	if !cfg.RetentionEnabled {
+		return
+	}
+	loop(cfg.RetentionInterval, func(ctx context.Context) {
+		r, err := cfg.Engine.ApplyRetention(ctx, cfg.RetentionMaxAge, cfg.RetentionBatch, cfg.RetentionDryRun)
+		if err != nil {
+			cfg.Log.Error("retention error", "err", err)
+			return
+		}
+		cfg.Log.Info("retention batch", "selected", r.Selected, "deleted", r.Deleted,
+			"entryIds", r.EntryIDs, "dryRun", r.DryRun)
+	})
 }
 
 // Run starts every loop and blocks until ctx is cancelled and all
@@ -73,11 +102,13 @@ func Run(ctx context.Context, cfg Config) {
 			cfg.Log.Error("decay/reap loop error", "err", err)
 			return
 		}
+		recordLastRun(ctx, cfg.Warm, warmstore.EngineStateLastReaperRun, cfg.Log)
 		if reap.Attempted > 0 {
 			cfg.Log.Info("reaped orphans", "attempted", reap.Attempted, "cleared", reap.Cleared,
 				"abandoned", reap.Abandoned, "pending", reap.Pending, "total", reap.Total)
 		}
 	})
+	scheduleRetention(cfg, loop)
 
 	// Dream cycle — daily. The heavy work is the per-entry vector lookup;
 	// firing it more often than once per cold-write batch buys nothing.
@@ -87,6 +118,7 @@ func Run(ctx context.Context, cfg Config) {
 			cfg.Log.Error("dream cycle error", "err", err)
 			return
 		}
+		recordLastRun(ctx, cfg.Warm, warmstore.EngineStateLastDreamRun, cfg.Log)
 		if r.Merged > 0 || r.EdgesPromoted > 0 {
 			cfg.Log.Info("dream cycle", "walked", r.Walked, "merged", r.Merged,
 				"edgesPromoted", r.EdgesPromoted, "durationMs", r.DurationMs)

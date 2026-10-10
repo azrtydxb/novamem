@@ -52,36 +52,6 @@ func (s *server) registerAuthRoutes(mux *routeMux) {
 	mux.HandleFunc("/api/auth/", s.handleAuthDeny)
 }
 
-// baAllowlist is routes/auth.ts's exactPaths, verbatim. A path on it
-// that reaches handleAuthDeny did so with an unmounted method.
-var baAllowlist = map[string]bool{
-	"/api/auth/sign-in/email":              true,
-	"/api/auth/sign-out":                   true,
-	"/api/auth/get-session":                true,
-	"/api/auth/token":                      true,
-	"/api/auth/jwks":                       true,
-	"/api/auth/change-password":            true,
-	"/api/auth/list-sessions":              true,
-	"/api/auth/revoke-session":             true,
-	"/api/auth/forget-password":            true,
-	"/api/auth/reset-password":             true,
-	"/api/auth/verify-email":               true,
-	"/api/auth/send-verification-email":    true,
-	"/api/auth/admin/list-users":           true,
-	"/api/auth/admin/create-user":          true,
-	"/api/auth/admin/update-user":          true,
-	"/api/auth/admin/set-role":             true,
-	"/api/auth/admin/set-user-password":    true,
-	"/api/auth/admin/remove-user":          true,
-	"/api/auth/admin/ban-user":             true,
-	"/api/auth/admin/unban-user":           true,
-	"/api/auth/admin/list-user-sessions":   true,
-	"/api/auth/admin/revoke-user-session":  true,
-	"/api/auth/admin/revoke-user-sessions": true,
-	"/api/auth/admin/impersonate-user":     true,
-	"/api/auth/admin/stop-impersonating":   true,
-}
-
 func (s *server) handleAuthDeny(w http.ResponseWriter, r *http.Request) {
 	if baAllowlist[r.URL.Path] {
 		// better-call's own "no such route" answer: 404, empty body.

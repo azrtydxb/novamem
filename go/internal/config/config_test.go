@@ -129,6 +129,11 @@ func TestDefaults(t *testing.T) {
 		DecayEffectiveDays:         7,
 		ReconcileIntervalMs:        60000,
 		ReconcileBatch:             400,
+		RetentionEnabled:           false,
+		RetentionMaxAgeDays:        365,
+		RetentionBatch:             100,
+		RetentionIntervalMinutes:   60,
+		RetentionDryRun:            false,
 		RateLimitPerMinute:         600,
 		AdminDashboard:             true,
 		RerankPoolMult:             4,
@@ -320,7 +325,7 @@ func TestAuthModeNoneNeedsNoCookieSecret(t *testing.T) {
 func TestCoercedBooleansKeepTheirQuirk(t *testing.T) {
 	c, err := loadWith(t, map[string]string{
 		"NOVAMEM_EXTRACTION_ENABLED":  "false",
-		"NOVAMEM_EXTRACTION_ENDPOINT": "http://llm:8000/v1",
+		"NOVAMEM_EXTRACTION_ENDPOINT": "http://192.168.10.125:8000/v1",
 		"NOVAMEM_EXTRACTION_MODEL":    "qwen",
 	})
 	if err != nil {
@@ -429,11 +434,11 @@ func TestColdURLFollowsTheProvider(t *testing.T) {
 		t.Errorf("qdrant cold URL = %q, want the local Qdrant", c.ColdURL)
 	}
 	// An explicit value wins over both.
-	c, err = loadWith(t, map[string]string{"NOVAMEM_COLD_URL": "http://qdrant.svc:6333"})
+	c, err = loadWith(t, map[string]string{"NOVAMEM_COLD_URL": "http://192.168.10.125:6333"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ColdURL != "http://qdrant.svc:6333" {
+	if c.ColdURL != "http://192.168.10.125:6333" {
 		t.Errorf("explicit cold URL = %q, want it to win", c.ColdURL)
 	}
 }
@@ -461,17 +466,13 @@ func TestBaseURLFollowsHostAndPort(t *testing.T) {
 }
 
 // TestDeprecatedDecayAlias — the canonical name wins when both are set,
-// and the alias still works alone. Deployments picked up the Go-only
-// spelling; dropping it would change their decay half-life silently.
+// and using the deprecated alias alone fails with migration guidance.
 func TestDeprecatedDecayAlias(t *testing.T) {
-	c, err := loadWith(t, map[string]string{"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := loadWith(t, map[string]string{"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14"})
+	if err == nil || !strings.Contains(err.Error(), "set NOVAMEM_DECAY_DAYS instead") {
+		t.Fatalf("deprecated alias did not explain the replacement: %v", err)
 	}
-	if c.DecayEffectiveDays != 14 {
-		t.Errorf("the deprecated alias alone gave %v, want 14", c.DecayEffectiveDays)
-	}
-	c, err = loadWith(t, map[string]string{
+	c, err := loadWith(t, map[string]string{
 		"NOVAMEM_DECAY_DAYS":                   "3",
 		"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14",
 	})

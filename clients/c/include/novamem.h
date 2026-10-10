@@ -71,6 +71,11 @@ typedef struct novamem_forget_request novamem_forget_request;
 typedef struct novamem_forget_result novamem_forget_result;
 typedef struct novamem_health novamem_health;
 typedef struct novamem_hygiene_report novamem_hygiene_report;
+typedef struct novamem_hygiene_report_contradiction_candidates_item novamem_hygiene_report_contradiction_candidates_item;
+typedef struct novamem_hygiene_report_duplicate_clusters_item novamem_hygiene_report_duplicate_clusters_item;
+typedef struct novamem_hygiene_report_low_value_item novamem_hygiene_report_low_value_item;
+typedef struct novamem_hygiene_report_orphan_candidates_item novamem_hygiene_report_orphan_candidates_item;
+typedef struct novamem_hygiene_report_stale_item novamem_hygiene_report_stale_item;
 typedef struct novamem_hygiene_report_summary novamem_hygiene_report_summary;
 typedef struct novamem_import_result novamem_import_result;
 typedef struct novamem_import_result_failed_item novamem_import_result_failed_item;
@@ -331,14 +336,52 @@ struct novamem_health {
 void novamem_health_free(novamem_health *p);
 
 struct novamem_hygiene_report {
-    const char *contradiction_candidates;
-    const char *duplicate_clusters;
-    const char *low_value;
-    const char *orphan_candidates;
-    const char *stale;
+    struct novamem_hygiene_report_contradiction_candidates_item *contradiction_candidates;
+    size_t contradiction_candidates_len;
+    struct novamem_hygiene_report_duplicate_clusters_item *duplicate_clusters;
+    size_t duplicate_clusters_len;
+    struct novamem_hygiene_report_low_value_item *low_value;
+    size_t low_value_len;
+    struct novamem_hygiene_report_orphan_candidates_item *orphan_candidates;
+    size_t orphan_candidates_len;
+    struct novamem_hygiene_report_stale_item *stale;
+    size_t stale_len;
     struct novamem_hygiene_report_summary *summary;
 };
 void novamem_hygiene_report_free(novamem_hygiene_report *p);
+
+struct novamem_hygiene_report_contradiction_candidates_item {
+    const char **ids;
+    size_t ids_len;
+    const char *reason;
+};
+void novamem_hygiene_report_contradiction_candidates_item_free(novamem_hygiene_report_contradiction_candidates_item *p);
+
+struct novamem_hygiene_report_duplicate_clusters_item {
+    const char **ids;
+    size_t ids_len;
+    const char *reason;
+};
+void novamem_hygiene_report_duplicate_clusters_item_free(novamem_hygiene_report_duplicate_clusters_item *p);
+
+struct novamem_hygiene_report_low_value_item {
+    const char *content;
+    const char *id;
+    const char *reason;
+};
+void novamem_hygiene_report_low_value_item_free(novamem_hygiene_report_low_value_item *p);
+
+struct novamem_hygiene_report_orphan_candidates_item {
+    const char *id;
+    const char *reason;
+};
+void novamem_hygiene_report_orphan_candidates_item_free(novamem_hygiene_report_orphan_candidates_item *p);
+
+struct novamem_hygiene_report_stale_item {
+    const char *id;
+    const char *reason;
+};
+void novamem_hygiene_report_stale_item_free(novamem_hygiene_report_stale_item *p);
 
 struct novamem_hygiene_report_summary {
     bool has_contradiction_candidates;

@@ -1,6 +1,6 @@
 ---
 name: novamem
-description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 21 MCP tools — hybrid search, time-windowed recall, graph traversal, store/update/forget with worthiness gate and provenance, and project (sub-brain) lifecycle including share/activate.
+description: Persistent long-term memory via the novamem MCP server. Use when the user references prior work or past decisions, mentions a preference / convention / constraint they didn't restate this turn, asks you to remember or save something, asks what was discussed yesterday or what's stored, or you're about to make a non-trivial design call where a similar one may already exist. Covers all 28 MCP tools — memory operations, projects, and read-only admin/ops visibility.
 license: Apache-2.0
 compatibility: Requires a reachable novamem MCP server (default http://localhost:7778) and a user bearer token (nm_…). See https://github.com/azrtydxb/novamem.
 metadata:
@@ -34,7 +34,7 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 
 ## Tool map
 
-21 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
+28 MCP tools, grouped by purpose. Full detail for each group is in `references/`:
 
 **Read / recall** — see [references/search.md](references/search.md):
 
@@ -63,6 +63,16 @@ Use `memory_search` for deeper targeted recall after `memory_context`; use `memo
 - `project_delete` — owner-only purge
 - `project_activate` / `project_deactivate` — set or clear the active project; `memory_*` calls then default to it
 - `project_share` / `project_unshare` — owner adds / removes members by **exact email address**
+
+**Admin and operations (read-only)** — admin callers only:
+- `admin_list_users` — deployment-wide user inventory and footprint counts
+- `admin_list_projects` — deployment-wide project inventory
+- `admin_list_tokens` — token metadata only; no bearer secrets
+- `admin_health` / `admin_stats` — dependency health and global service statistics
+- `admin_audit_recent` — recent audit entries, newest first
+- `admin_ops_status` — decay, dream-cycle, and orphan-reaper last-run status; timestamps are null until each job succeeds once
+
+This first admin slice is read-only. User deletion, token revocation, configuration changes, user or token creation, and quota changes remain follow-up work.
 
 ## When to call `memory_search`
 

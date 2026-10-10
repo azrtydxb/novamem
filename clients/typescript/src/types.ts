@@ -178,12 +178,38 @@ export interface Health {
 }
 
 export interface HygieneReport {
-  contradictionCandidates?: Array<unknown>;
-  duplicateClusters?: Array<unknown>;
-  lowValue?: Array<unknown>;
-  orphanCandidates?: Array<unknown>;
-  stale?: Array<unknown>;
+  contradictionCandidates?: Array<HygieneReportContradictionCandidatesItem>;
+  duplicateClusters?: Array<HygieneReportDuplicateClustersItem>;
+  lowValue?: Array<HygieneReportLowValueItem>;
+  orphanCandidates?: Array<HygieneReportOrphanCandidatesItem>;
+  stale?: Array<HygieneReportStaleItem>;
   summary: HygieneReportSummary;
+}
+
+export interface HygieneReportContradictionCandidatesItem {
+  ids?: Array<string>;
+  reason?: string;
+}
+
+export interface HygieneReportDuplicateClustersItem {
+  ids?: Array<string>;
+  reason?: string;
+}
+
+export interface HygieneReportLowValueItem {
+  content?: string;
+  id?: string;
+  reason?: string;
+}
+
+export interface HygieneReportOrphanCandidatesItem {
+  id?: string;
+  reason?: string;
+}
+
+export interface HygieneReportStaleItem {
+  id?: string;
+  reason?: string;
 }
 
 export interface HygieneReportSummary {

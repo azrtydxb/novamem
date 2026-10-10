@@ -458,6 +458,18 @@ async function checkApiReferenceVersionsAgree() {
   }
 }
 
+async function checkMonorepoVersionMatchesOpenAPI() {
+  const apiFile = "api/openapi.yaml";
+  const api = await readFile(join(ROOT, apiFile), "utf8");
+  const canonical = /^  version: ([^\n]+)$/m.exec(api)?.[1]?.trim();
+  for (const file of ["package.json", "packages/admin-ui/package.json"]) {
+    const pkg = JSON.parse(await readFile(join(ROOT, file), "utf8"));
+    if (!canonical || pkg.version !== canonical) {
+      fail(file, 1, `version ${pkg.version} does not match OpenAPI version ${canonical}`);
+    }
+  }
+}
+
 // The tool catalogue in docs/api/mcp-tools.md is GENERATED from
 // tooldefs.json (`go run ./cmd/gen-tool-docs`, with a CI drift gate), so
 // it cannot disagree with the surface and needs no check here.
@@ -546,6 +558,7 @@ async function main() {
 
   await checkNoSecondCopyOfDocs();
   await checkApiReferenceVersionsAgree();
+  await checkMonorepoVersionMatchesOpenAPI();
   await checkToolProseNamesNoPhantomTools();
 
   for (const file of docFiles) {

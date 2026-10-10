@@ -34,8 +34,8 @@ func TestToolDefsMatchConformanceSnapshot(t *testing.T) {
 	if err := json.Unmarshal(ToolDefinitions(), &defs); err != nil {
 		t.Fatal(err)
 	}
-	if len(defs) != 21 {
-		t.Fatalf("expected 21 tools, got %d", len(defs))
+	if len(defs) != 28 {
+		t.Fatalf("expected 28 tools, got %d", len(defs))
 	}
 
 	names := make([]string, 0, len(defs))
@@ -79,7 +79,7 @@ func TestToolDefsMatchConformanceSnapshot(t *testing.T) {
 // flows from api/openapi.yaml through cmd/gen-contract, and the first
 // version of that generator decoded each tool into a struct of
 // name/description/inputSchema — which silently dropped annotations from
-// all 21 tools and regenerated a file that looked fine. Nothing in the
+// all 28 tools and regenerated a file that looked fine. Nothing in the
 // suite noticed, because nothing pinned them.
 //
 // This pins them. A future regression to field-by-field decoding fails
