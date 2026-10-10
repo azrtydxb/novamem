@@ -101,19 +101,18 @@ jobs:
   # ── Go modules (server rewrite + shared client) ───────────────────────
   go:
     name: go (build + vet + test)
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 15
     # A real Postgres for the tests that skip without one — above all
     # TestOnBehalfOfToken, which proves organization isolation (#337, ADR
     # 0011) and must not be a test that quietly skips in CI. The pgvector
     # image is the one the pgvector cold store runs on; the tag is pinned.
     # The test fails (rather than skips) when CI is set and this is unset.
-    # Pulled from mirror.gcr.io (Google's Docker Hub mirror): this job runs
-    # on GitHub-hosted runners, where a direct Docker Hub pull from the shared
-    # IP hits the anonymous rate limit, and the in-cluster Nexus is unreachable.
+    # Pulled through the in-cluster Nexus (it proxies docker.io): a direct
+    # Docker Hub pull hits the anonymous rate limit.
     services:
       postgres:
-        image: mirror.gcr.io/pgvector/pgvector:0.8.1-pg16
+        image: 192.168.10.131/pgvector/pgvector:0.8.1-pg16
         env:
           POSTGRES_USER: novamem
           POSTGRES_PASSWORD: novamem
