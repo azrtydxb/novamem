@@ -4091,6 +4091,7 @@ paths:
                         enum:
                           - ok
                           - unreachable
+                          - failing
                       graph:
                         type: string
                         enum:
@@ -4150,6 +4151,7 @@ paths:
                         enum:
                           - ok
                           - unreachable
+                          - failing
                       graph:
                         type: string
                         enum:
