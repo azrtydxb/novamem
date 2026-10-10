@@ -1018,5 +1018,28 @@ func (e *Engine) rerankVisible(ctx context.Context, req SearchArgs, k int, visib
 				return ia < ib
 			}
 		})
+		// `score` is the scalar consumers use to interpret the returned
+		// ordering. Once reranking succeeds, expose that rank consistently
+		// instead of leaving the fused score attached to a relevance-sorted
+		// result. Unscored candidates remain after scored ones and share the
+		// lowest rerank score, preserving monotonicity without implying that
+		// their fused score is comparable to the cross-encoder's scale.
+		var lowest *float64
+		for i := 0; i < pool; i++ {
+			if score := scores[order[visible[i]]]; score != nil && (lowest == nil || *score < *lowest) {
+				lowest = score
+			}
+		}
+		if lowest != nil {
+			for _, item := range visible {
+				idx := order[item]
+				rankScore := lowest
+				if idx < pool && scores[idx] != nil {
+					rankScore = scores[idx]
+				}
+				item.score = *rankScore
+				item.result["score"] = *rankScore
+			}
+		}
 	}
 }
