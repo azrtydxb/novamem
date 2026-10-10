@@ -166,7 +166,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: ["1.80", "1"]
+        rust: ["1.85", "1"]
     # The official image brings the linker the ARC runner lacks.
     container:
       image: rust:${{ matrix.rust }}-bookworm
