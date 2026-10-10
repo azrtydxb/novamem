@@ -64,7 +64,8 @@ func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 	// Exercise the float64 storage path against PostgreSQL, including the
 	// Store row scanner used by normal entry reads.
 	const precise = 0.1234567890123
-	if _, err := pool.Exec(ctx, `INSERT INTO memory_entries (id, content, confidence) VALUES ('precision-test', 'test', $1)`, precise); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO memory_entries (id, content, confidence) VALUES ('precision-test', 'test', $1)
+		ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, confidence = EXCLUDED.confidence`, precise); err != nil {
 		t.Fatalf("insert precise confidence: %v", err)
 	}
 	entry, err := scanEntry(pool.QueryRow(ctx, `SELECT `+entryColumns+` FROM memory_entries WHERE id = 'precision-test'`))
@@ -78,7 +79,8 @@ func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO decay_runs (effective_days) VALUES ($1) RETURNING effective_days`, precise).Scan(&effectiveDays); err != nil {
 		t.Fatalf("effective_days round-trip: %v", err)
 	}
-	if err := pool.QueryRow(ctx, `INSERT INTO memory_relations (from_id, to_id, strength) VALUES ('precision-a', 'precision-b', $1) RETURNING strength`, precise).Scan(&strength); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO memory_relations (from_id, to_id, strength) VALUES ('precision-a', 'precision-b', $1)
+		ON CONFLICT (from_id, to_id, relation) DO UPDATE SET strength = EXCLUDED.strength RETURNING strength`, precise).Scan(&strength); err != nil {
 		t.Fatalf("strength round-trip: %v", err)
 	}
 	if effectiveDays != precise || strength != precise {
