@@ -83,6 +83,22 @@ func LatestMigration() int64 {
 // Better Auth tables, the drizzle migration set, then the Postgres-only
 // FTS extras drizzle's schema DSL can't express.
 func Migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
+	// Migrate is called by multiple server processes and by independent test
+	// packages against the same database. Serialize the bootstrap sequence so
+	// concurrent callers cannot race on CREATE TYPE/TABLE before IF NOT EXISTS
+	// can protect the catalog changes.
+	lockConn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquiring migration lock connection: %w", err)
+	}
+	defer lockConn.Release()
+	if _, err := lockConn.Exec(ctx, `SELECT pg_advisory_lock(360377)`); err != nil {
+		return fmt.Errorf("acquiring migration lock: %w", err)
+	}
+	defer func() {
+		_, _ = lockConn.Exec(context.Background(), `SELECT pg_advisory_unlock(360377)`)
+	}()
+
 	for _, stmt := range legacyCleanups {
 		if _, err := pool.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("legacy cleanup: %w", err)
