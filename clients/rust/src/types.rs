@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub(crate) fn none_or_empty(v: &Option<String>) -> bool {
-    v.as_deref().map_or(true, str::is_empty)
+    v.as_deref().is_none_or(str::is_empty)
 }
 
 

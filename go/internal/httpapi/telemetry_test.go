@@ -11,6 +11,13 @@ import (
 func TestAdminTelemetryAggregatesWithoutContentAndRequiresAdmin(t *testing.T) {
 	e := newOBOEnv(t)
 	ctx := context.Background()
+	// Migration 0016 enforces project references for new entries. Give the
+	// telemetry fixture a real project owned by the test user before
+	// inserting rows that refer to it.
+	if _, err := e.pool.Exec(ctx, `INSERT INTO projects (id, name, owner_user_id)
+		SELECT 'project-opaque', 'Telemetry fixture', id FROM "user" WHERE email = 'user@example.test'`); err != nil {
+		t.Fatal(err)
+	}
 	created := time.Now().UTC().Add(-24 * time.Hour)
 	for _, row := range []struct {
 		id, namespace, project, agent, sens string

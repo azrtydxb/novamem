@@ -318,6 +318,9 @@ var notServerConfig = map[string]string{
 	"NOVAMEM_TEST_TOKEN": "conformance credential, read by the conformance module",
 	"NOVAMEM_BIN_DIR":    "install location, read by the install script",
 	"NOVAMEM_VERSION":    "release tag, read by the install script",
+	"NOVAMEM_DATABASE_URL": "database connection string, read by the backup and restore-verification scripts",
+	"NOVAMEM_BACKUP_DIR": "backup destination, read by the backup and restore-verification scripts",
+	"NOVAMEM_TEST_DATABASE_URL": "throwaway database connection string, read by Go integration tests",
 }
 
 // historical are paths whose job is to record what was true at a point

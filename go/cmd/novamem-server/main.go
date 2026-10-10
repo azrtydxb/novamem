@@ -201,7 +201,8 @@ func run() error {
 			MaxConcurrent:    cfg.ExtractionMaxConcurrent,
 		})
 		log.Info("fact extraction configured", "model", cfg.ExtractionModel,
-			"maxFacts", cfg.ExtractionMaxFacts, "maxConcurrent", cfg.ExtractionMaxConcurrent)
+			"maxFacts", cfg.ExtractionMaxFacts, "maxConcurrent", cfg.ExtractionMaxConcurrent,
+			"piiRedaction", cfg.ExtractionRedact)
 	}
 	var decomposer *llm.QueryDecomposer
 	if cfg.QueryDecompEnabled && cfg.QueryDecompEndpoint != "" && cfg.QueryDecompModel != "" {
@@ -270,6 +271,7 @@ func run() error {
 		Extractor:          extractor,
 		ExtractorMaxFacts:  cfg.ExtractionMaxFacts,
 		ExtractorTimeoutMs: cfg.ExtractionTimeoutMs,
+		ExtractorRedact:    &cfg.ExtractionRedact,
 		Decomposer:         decomposer,
 		Observer:           observer,
 		Log:                log,
