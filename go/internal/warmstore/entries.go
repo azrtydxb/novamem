@@ -72,7 +72,7 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 		a.SourceType, a.CapturedFrom, a.Confidence, a.ContentHash, a.FactsPendingAt, a.GraphPendingAt,
 		tenant.OrgOf(a.UserID),
 	).Scan(&winner)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if noRows(err) {
 		// Lost the race — return the concurrent writer's id (dedup hit).
 		// IS NOT DISTINCT FROM matches the TS null-branch handling.
 		err = tx.QueryRow(ctx, `
@@ -82,7 +82,7 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 			  AND project_id IS NOT DISTINCT FROM $3
 			  AND organization_id = $4
 			LIMIT 1`, a.UserID, a.ContentHash, a.ProjectID, tenant.OrgOf(a.UserID)).Scan(&winner)
-		if errors.Is(err, pgx.ErrNoRows) {
+		if noRows(err) {
 			return "", fmt.Errorf("insertEntry: conflict with no resolvable existing row")
 		}
 		if err != nil {
@@ -119,7 +119,7 @@ func (s *Store) FindByContentHash(ctx context.Context, userID string, projectID 
 		WHERE user_id = $1 AND content_hash = $2 AND project_id IS NOT DISTINCT FROM $3
 		  AND organization_id = $4
 		LIMIT 1`, userID, hash, projectID, tenant.OrgOf(userID)).Scan(&id, &namespace)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if noRows(err) {
 		return "", "", false, nil
 	}
 	if err != nil {
@@ -135,7 +135,7 @@ func (s *Store) FindByContentHash(ctx context.Context, userID string, projectID 
 func (s *Store) GetEntry(ctx context.Context, userID, id string, projectID *string) (*Entry, error) {
 	e, err := scanEntry(s.Pool.QueryRow(ctx,
 		`SELECT `+entryColumns+` FROM memory_entries WHERE id = $1`, id))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if noRows(err) {
 		return nil, nil
 	}
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *Store) EntryContentHash(ctx context.Context, id string) (hash string, f
 	var h *string
 	err = s.Pool.QueryRow(ctx,
 		`SELECT content_hash FROM memory_entries WHERE id = $1 LIMIT 1`, id).Scan(&h)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if noRows(err) {
 		return "", false, nil
 	}
 	if err != nil {
@@ -193,7 +193,7 @@ func (s *Store) GetEntryScope(ctx context.Context, id string) (userID string, pr
 	err = s.Pool.QueryRow(ctx,
 		`SELECT user_id, project_id FROM memory_entries WHERE id = $1 LIMIT 1`, id,
 	).Scan(&userID, &projectID)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if noRows(err) {
 		return "", nil, false, nil
 	}
 	if err != nil {
@@ -218,7 +218,7 @@ func (s *Store) IsEmbedded(ctx context.Context, id string) (bool, error) {
 	err := s.Pool.QueryRow(ctx,
 		`SELECT embedded_at IS NOT NULL FROM memory_entries WHERE id = $1 LIMIT 1`, id,
 	).Scan(&embedded)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if noRows(err) {
 		return false, nil
 	}
 	return embedded, err
@@ -437,7 +437,7 @@ func (s *Store) DeleteEntry(ctx context.Context, id string, entryProjectID *stri
 	err = tx.QueryRow(ctx,
 		`SELECT id FROM memory_entries WHERE id = $1 AND `+scope+` AND organization_id = $3 FOR UPDATE`,
 		id, scopeValue, tenant.OrgOf(userID)).Scan(&locked)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if noRows(err) {
 		// Gone already, or not in the caller's scope or organization:
 		// nothing to delete, and no shadow rows are touched.
 		return nil
@@ -504,8 +504,11 @@ func (s *Store) Stats(ctx context.Context, userID string) ([]StatsRow, *time.Tim
 	var lastDecay *time.Time
 	err = s.Pool.QueryRow(ctx,
 		`SELECT finished_at FROM decay_runs ORDER BY id DESC LIMIT 1`).Scan(&lastDecay)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil && !noRows(err) {
 		return nil, nil, err
 	}
 	return out, lastDecay, nil
 }
+
+// noRows reports whether a query found no matching row.
+func noRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
