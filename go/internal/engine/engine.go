@@ -402,164 +402,159 @@ func (e *Engine) Remember(ctx context.Context, userID string, req RememberReques
 // embedded the content to find near-duplicates, and passing it through
 // halves the embedder calls on the agent-facing write path.
 func (e *Engine) remember(ctx context.Context, userID string, req RememberRequest, precomputed []float64) (RememberResult, error) {
-	if err := e.enforceWriteQuota(ctx, userID); err != nil {
+	req, namespace, contentHash, rejected, err := e.prepareRemember(ctx, userID, req)
+	if err != nil {
 		return RememberResult{}, err
+	}
+	if rejected != nil {
+		return *rejected, nil
+	}
+
+	duplicate, found, err := e.dedupeRemember(ctx, userID, req, contentHash)
+	if err != nil {
+		return RememberResult{}, err
+	}
+	if found {
+		return duplicate, nil
+	}
+
+	id, source, err := e.persistRemember(ctx, userID, req, namespace, contentHash)
+	if err != nil {
+		return RememberResult{}, err
+	}
+
+	embedding, embedderDown := e.embedRemember(ctx, req.Content, id, precomputed)
+	embedded, err := e.persistRememberVector(ctx, userID, id, namespace, source, req, embedding, embedderDown)
+	if err != nil {
+		return RememberResult{}, err
+	}
+	e.enrichRemember(ctx, userID, id, namespace, source, req)
+	return RememberResult{ID: &id, Embedded: boolPtr(embedded)}, nil
+}
+
+// prepareRemember performs the ordered quota, content, and metadata preparation checks.
+func (e *Engine) prepareRemember(ctx context.Context, userID string, req RememberRequest) (RememberRequest, string, string, *RememberResult, error) {
+	if err := e.enforceWriteQuota(ctx, userID); err != nil {
+		return req, "", "", nil, err
 	}
 	if !req.Force {
 		if reason := ShouldReject(req.Content); reason != "" {
-			return RememberResult{Rejected: reason}, nil
+			result := RememberResult{Rejected: reason}
+			return req, "", "", &result, nil
 		}
 	}
 	if reason := ContentTooLong(req.Content, e.maxContentChars); reason != "" {
-		return RememberResult{Rejected: reason}, nil
+		result := RememberResult{Rejected: reason}
+		return req, "", "", &result, nil
 	}
 	req = withSensitivityMetadata(req)
 	namespace := req.Namespace
 	if namespace == "" {
 		namespace = "default"
 	}
-	contentHash := sha256Hex(strings.TrimSpace(req.Content))
+	return req, namespace, sha256Hex(strings.TrimSpace(req.Content)), nil, nil
+}
 
-	// Exact-duplicate fast-path: return the existing id, bump hits, and
-	// self-heal a missing vector — the insert side's repair path, the
-	// twin of the delete side's cold_orphans queue.
+// dedupeRemember handles the exact-duplicate path, including its hit bump and vector repair.
+func (e *Engine) dedupeRemember(ctx context.Context, userID string, req RememberRequest, contentHash string) (RememberResult, bool, error) {
 	existingID, existingNamespace, found, err := e.warm.FindByContentHash(ctx, userID, req.Project, contentHash)
 	if err != nil {
-		return RememberResult{}, err
+		return RememberResult{}, false, err
 	}
-	if found {
-		if err := e.warm.BumpHits(ctx, existingID); err != nil {
-			return RememberResult{}, err
-		}
-		if err := e.warm.AddSourceRefs(ctx, existingID, req.SourceRefs); err != nil {
-			return RememberResult{}, err
-		}
-		// Repaired in the namespace the entry actually lives in: dedup
-		// matches on (user, project, hash) with namespace excluded, and
-		// using the request's namespace indexed the vector under a shelf
-		// the entry was never written to (a cross-shelf leak).
-		e.backfillMissingVector(ctx, userID, req.Project, existingID, existingNamespace, req)
-		embedded, err := e.warm.IsEmbedded(ctx, existingID)
-		if err != nil {
-			return RememberResult{}, err
-		}
-		return RememberResult{ID: &existingID, Deduplicated: true, Embedded: boolPtr(embedded)}, nil
+	if !found {
+		return RememberResult{}, false, nil
 	}
+	if err := e.warm.BumpHits(ctx, existingID); err != nil {
+		return RememberResult{}, false, err
+	}
+	if err := e.warm.AddSourceRefs(ctx, existingID, req.SourceRefs); err != nil {
+		return RememberResult{}, false, err
+	}
+	// Dedup excludes namespace, so repair the vector on the existing entry's shelf.
+	e.backfillMissingVector(ctx, userID, req.Project, existingID, existingNamespace, req)
+	embedded, err := e.warm.IsEmbedded(ctx, existingID)
+	if err != nil {
+		return RememberResult{}, false, err
+	}
+	return RememberResult{ID: &existingID, Deduplicated: true, Embedded: boolPtr(embedded)}, true, nil
+}
 
+// persistRemember inserts the warm row and its durable enrichment debt markers.
+func (e *Engine) persistRemember(ctx context.Context, userID string, req RememberRequest, namespace, contentHash string) (string, string, error) {
 	source := req.Source
 	if source == "" {
 		source = "manual"
 	}
-	// graph_pending_at is written in the same statement as the row: this
-	// entry owes vector-neighbour edges, and the debt must survive a
-	// crash in the window between INSERT and the async attempt below.
 	var graphPendingAt *time.Time
 	if e.graphLinkFanout > 0 {
 		now := e.now()
 		graphPendingAt = &now
 	}
-	// Same in-transaction debt rule: this chunk owes a fact-extraction
-	// pass, and the marker must survive a crash in the window between
-	// INSERT and the fire-and-forget schedule below. Without it a pod
-	// restart mid-drain silently lost the facts of every in-flight chunk.
 	var factsPendingAt *time.Time
 	if e.extractor != nil {
 		now := e.now()
 		factsPendingAt = &now
 	}
 	id, err := e.warm.InsertEntry(ctx, NewULID(), warmstore.InsertEntryArgs{
-		UserID:         userID,
-		ProjectID:      req.Project,
-		Content:        req.Content,
-		Namespace:      namespace,
-		Source:         source,
-		AgentName:      req.AgentName,
-		Metadata:       req.Metadata,
-		SourceType:     req.SourceType,
-		CapturedFrom:   req.CapturedFrom,
-		Confidence:     req.Confidence,
-		ContentHash:    &contentHash,
-		FactsPendingAt: factsPendingAt,
-		GraphPendingAt: graphPendingAt,
-		SourceRefs:     req.SourceRefs,
+		UserID: userID, ProjectID: req.Project, Content: req.Content, Namespace: namespace,
+		Source: source, AgentName: req.AgentName, Metadata: req.Metadata,
+		SourceType: req.SourceType, CapturedFrom: req.CapturedFrom, Confidence: req.Confidence,
+		ContentHash: &contentHash, FactsPendingAt: factsPendingAt, GraphPendingAt: graphPendingAt,
+		SourceRefs: req.SourceRefs,
 	})
-	if err != nil {
-		return RememberResult{}, err
-	}
+	return id, source, err
+}
 
-	// The row is already committed. If the embedder is unreachable we
-	// keep it that way and leave embedded_at NULL: losing the memory
-	// outright is a worse failure than a memory that is temporarily
-	// findable by keyword and graph only, and the NULL is what lets the
-	// reconciler finish the job later.
+// embedRemember obtains the vector after the row is committed; failures leave it repairable.
+func (e *Engine) embedRemember(ctx context.Context, content, id string, precomputed []float64) ([]float64, bool) {
 	embedding := precomputed
-	embedderDown := false
-	if embedding == nil {
-		if !e.vectorTierReady() {
-			embedderDown = true
-		} else if vec, err := e.embedWithTracking(ctx, req.Content, "remember", id); err != nil {
-			embedderDown = true
-		} else {
-			embedding = vec
-		}
+	if embedding != nil {
+		return embedding, false
 	}
+	if !e.vectorTierReady() {
+		return nil, true
+	}
+	vec, err := e.embedWithTracking(ctx, content, "remember", id)
+	if err != nil {
+		return nil, true
+	}
+	return vec, false
+}
 
+// persistRememberVector writes the vector and schedules graph enrichment when available.
+func (e *Engine) persistRememberVector(ctx context.Context, userID, id, namespace, source string, req RememberRequest, embedding []float64, embedderDown bool) (bool, error) {
 	embedded := false
 	switch {
 	case len(embedding) > 0 && e.cold != nil:
-		// If the vector write fails the warm row is already committed.
-		// Park it so the reaper can finish the job instead of leaving a
-		// memory keyword search can find and vector search cannot.
 		if err := e.cold.Upsert(ctx, coldstore.UpsertArgs{
-			UserID:    userID,
-			ProjectID: req.Project,
-			ID:        id,
-			Namespace: namespace,
-			Embedding: embedding,
-			Payload:   e.vectorPayload(source, req.AgentName),
+			UserID: userID, ProjectID: req.Project, ID: id, Namespace: namespace,
+			Embedding: embedding, Payload: e.vectorPayload(source, req.AgentName),
 		}); err != nil {
 			e.recordVectorStoreFailure(err, "remember", id)
 			e.parkMissingVector(ctx, userID, req.Project, id, namespace, err)
-			return RememberResult{}, err
+			return false, err
 		}
 		e.recordVectorStoreSuccess()
-		// Stamped only after the vector is durably in the cold store: the
-		// marker means "a vector exists", so ordering it after the upsert
-		// is what keeps it from lying when cold is the tier that failed.
 		stampedAt := e.now()
 		if err := e.warm.SetEmbeddedAt(ctx, id, &stampedAt); err != nil {
-			return RememberResult{}, err
+			return false, err
 		}
 		embedded = true
 		e.scheduleEnrichment(userID, req.Project, id, namespace, embedding)
 	case !embedderDown:
-		// The embedder answered but handed back nothing — a bad response,
-		// not an outage, so the reaper's repair queue is the right owner.
-		// A genuine outage is deliberately NOT parked: every write during
-		// a multi-day failure would enqueue an orphan and the reaper would
-		// burn its bounded attempt budget against a dead host. The NULL
-		// embedded_at left on the row is the outage queue.
-		e.parkMissingVector(ctx, userID, req.Project, id, namespace,
-			errors.New("embedder returned no vector"))
+		// An empty response is repairable; an embedder outage stays on the outage queue.
+		e.parkMissingVector(ctx, userID, req.Project, id, namespace, errors.New("embedder returned no vector"))
 	}
+	return embedded, nil
+}
 
-	// Schedule LLM fact extraction in the background. Fire-and-forget —
-	// never blocks the write; errors are logged only.
-	// The EXPLICIT request field, not the inferred metadata value: TS
-	// captures `req.sensitivity` here, so a fact only carries a
-	// sensitivity stamp when the caller asked for one.
+// enrichRemember schedules fact extraction and records the successful write.
+func (e *Engine) enrichRemember(ctx context.Context, userID, id, namespace, source string, req RememberRequest) {
 	e.scheduleFactExtraction(storeFactsArgs{
-		userID:       userID,
-		projectID:    req.Project,
-		chunkID:      id,
-		chunkContent: req.Content,
-		namespace:    namespace,
-		sensitivity:  req.Sensitivity,
-		parentSource: source,
+		userID: userID, projectID: req.Project, chunkID: id, chunkContent: req.Content,
+		namespace: namespace, sensitivity: req.Sensitivity, parentSource: source,
 	})
-
 	e.logChange(ctx, userID, req.Project, id, "created", map[string]any{"source": source})
-	return RememberResult{ID: &id, Embedded: boolPtr(embedded)}, nil
 }
 
 // vectorPayload — the cold-store point payload the TS server writes.
