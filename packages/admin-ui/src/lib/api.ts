@@ -99,6 +99,28 @@ export interface HealthSnapshot {
   coldProvider: "pgvector" | "qdrant" | "none";
 }
 
+export interface TelemetryGroup { key: string; count: number }
+export interface TelemetrySnapshot {
+  totalEntries: number;
+  embeddedEntries: number;
+  pendingEmbeddings: number;
+  pendingExtractions: number;
+  pendingColdOrphans: number;
+  byNamespace: TelemetryGroup[];
+  byProject: TelemetryGroup[];
+  bySensitivity: TelemetryGroup[];
+  byTier: TelemetryGroup[];
+  createdPerDay: { date: string; count: number }[];
+  topAgents: { name: string; count: number }[];
+  lastDecayAt: string | null;
+  health: {
+    ok: boolean;
+    deps: { warm: "ok" | "unreachable"; cold: "ok" | "unreachable" | "failing"; embedder: "ok" | "failing" };
+    coldProvider: "pgvector" | "qdrant" | "none";
+    pendingEmbeddings: number | null;
+  };
+}
+
 export interface MetricsSnapshot {
   counters: {
     queries_total: number;

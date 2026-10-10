@@ -1195,6 +1195,22 @@
         ],
         "type": "object"
       },
+      "TelemetryGroup": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "count"
+        ],
+        "type": "object"
+      },
       "TodayFeed": {
         "properties": {
           "events": {
@@ -2078,6 +2094,204 @@
           }
         ],
         "summary": "Revoke a service key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/telemetry": {
+      "get": {
+        "description": "Admin-only aggregate view. Daily growth and sensitivity distribution are limited to the last 30 days because created_at and metadata sensitivity have no general-purpose index; project values are opaque ids and no memory content or user identifiers are returned.",
+        "operationId": "getV1AdminTelemetry",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "byNamespace": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "byProject": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "bySensitivity": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "byTier": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "createdPerDay": {
+                      "items": {
+                        "properties": {
+                          "count": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "date": {
+                            "format": "date",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "embeddedEntries": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "health": {
+                      "properties": {
+                        "coldProvider": {
+                          "enum": [
+                            "pgvector",
+                            "qdrant",
+                            "none"
+                          ],
+                          "type": "string"
+                        },
+                        "deps": {
+                          "properties": {
+                            "cold": {
+                              "enum": [
+                                "ok",
+                                "unreachable",
+                                "failing"
+                              ],
+                              "type": "string"
+                            },
+                            "embedder": {
+                              "enum": [
+                                "ok",
+                                "failing"
+                              ],
+                              "type": "string"
+                            },
+                            "warm": {
+                              "enum": [
+                                "ok",
+                                "unreachable"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "warm",
+                            "cold",
+                            "embedder"
+                          ],
+                          "type": "object"
+                        },
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "pendingEmbeddings": {
+                          "nullable": true,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "deps",
+                        "coldProvider",
+                        "pendingEmbeddings"
+                      ],
+                      "type": "object"
+                    },
+                    "lastDecayAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "pendingColdOrphans": {
+                      "type": "integer"
+                    },
+                    "pendingEmbeddings": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "pendingExtractions": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "topAgents": {
+                      "items": {
+                        "properties": {
+                          "count": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "totalEntries": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "totalEntries",
+                    "embeddedEntries",
+                    "pendingEmbeddings",
+                    "pendingExtractions",
+                    "pendingColdOrphans",
+                    "byNamespace",
+                    "byProject",
+                    "bySensitivity",
+                    "byTier",
+                    "createdPerDay",
+                    "topAgents",
+                    "lastDecayAt",
+                    "health"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Aggregate-only memory volume, distribution, growth and operational health. Memory content and user identifiers are never returned. Sensitivity distribution and daily growth are limited to 30 days because there is no general created-at/sensitivity index."
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "description": "Authenticated user is not an admin"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "Aggregate memory telemetry",
         "tags": [
           "admin"
         ]
