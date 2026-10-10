@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/azrtydxb/novamem/go/internal/tenant"
 )
 
 // pointID derives a deterministic UUID-shaped string from any id. Qdrant
@@ -156,13 +159,27 @@ func collectionFor(userID, namespace string, projectID *string) string {
 	if projectID != nil {
 		return "novamem_p_" + *projectID + "_" + namespace
 	}
-	return "novamem_u_" + userID + "_" + namespace
+	return "novamem_u_" + userKey(userID) + "_" + namespace
+}
+
+// userKey is the user component of a collection name. An on-behalf-of
+// caller's id is `org:<org>/<sub>` (ADR 0011): its `/` would split the
+// `/collections/<name>` URL path and Qdrant answers 404, so it is hashed
+// to a fixed, path-safe token. Lowercase hex after "obo" cannot collide
+// with a real user id (upper-case ULIDs, or "public"). Real ids pass
+// through unchanged, so existing collections keep their names.
+func userKey(userID string) string {
+	if !tenant.IsOBO(userID) {
+		return userID
+	}
+	sum := sha256.Sum256([]byte(userID))
+	return "obo" + hex.EncodeToString(sum[:16])
 }
 
 // legacyUserCollectionFor — the pre-issue-#20 unprefixed name. Read/delete
 // fallback only; never written to.
 func legacyUserCollectionFor(userID, namespace string) string {
-	return "novamem_" + userID + "_" + namespace
+	return "novamem_" + userKey(userID) + "_" + namespace
 }
 
 func (s *qdrantStore) listCollections(ctx context.Context) (map[string]bool, error) {
@@ -443,7 +460,7 @@ func (s *qdrantStore) dropPrefix(ctx context.Context, prefix string) ([]string, 
 // projects are per-point rows this collection-level API cannot reach —
 // the warm teardown parks those ids in cold_orphans for the reaper.
 func (s *qdrantStore) DeleteAllForUser(ctx context.Context, userID string) ([]string, error) {
-	return s.dropPrefix(ctx, "novamem_u_"+userID+"_")
+	return s.dropPrefix(ctx, "novamem_u_"+userKey(userID)+"_")
 }
 
 func (s *qdrantStore) DeleteAllForProject(ctx context.Context, projectID string) ([]string, error) {

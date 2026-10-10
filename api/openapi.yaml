@@ -971,6 +971,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and this report is account-wide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_hygiene
         description:
@@ -1019,6 +1025,12 @@ paths:
                 $ref: "#/components/schemas/EvaluateReport"
         "401":
           description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and this evaluation is account-wide
           content:
             application/json:
               schema:
@@ -1126,6 +1138,8 @@ paths:
                   type: boolean
                 rerank:
                   type: boolean
+                  description:
+                    Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.
                 minVectorScore:
                   type: number
                   minimum: 0
@@ -1223,6 +1237,10 @@ paths:
               description:
                 '"snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids"
                 omits content and metadata (rank first, hydrate later). Default "full".'
+            rerank:
+              type: boolean
+              description:
+                Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.
           required:
             - query
         annotations:
@@ -1305,6 +1323,10 @@ paths:
                   type: boolean
                 expandSourceChunks:
                   type: boolean
+                rerank:
+                  type: boolean
+                  description:
+                    Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.
                 maxTokens:
                   type: integer
                   minimum: 0
@@ -1378,6 +1400,10 @@ paths:
                 graph:
                   type: number
               description: Per-signal weight overrides. Omit to use defaults.
+            rerank:
+              type: boolean
+              description:
+                Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.
           required:
             - message
         annotations:
@@ -2547,6 +2573,12 @@ paths:
                 $ref: "#/components/schemas/Stats"
         "401":
           description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and these stats are account-wide
           content:
             application/json:
               schema:
@@ -4091,6 +4123,7 @@ paths:
                         enum:
                           - ok
                           - unreachable
+                          - failing
                       graph:
                         type: string
                         enum:
@@ -4150,6 +4183,7 @@ paths:
                         enum:
                           - ok
                           - unreachable
+                          - failing
                       graph:
                         type: string
                         enum:

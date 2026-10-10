@@ -84,6 +84,11 @@ property of the deployed embedding model — on bge-m3, relevant and irrelevant
 hits both land around 0.45-0.65, so no fixed cutoff tells them apart. Treat a
 result as a miss when nothing in the returned text answers the question.
 
+When the server has a reranker configured, `memory_search` and `memory_context`
+rerank the fused candidates with a cross-encoder by default. Pass
+`rerank: false` to skip it for one call and keep the fused order — for example
+for exact id / symbol lookups where literal overlap should decide the ranking.
+
 ## When to call `memory_capture`
 
 Use `memory_capture` for things that will still matter next session. Use raw `memory_remember` only for explicit direct inserts or compatibility commands:

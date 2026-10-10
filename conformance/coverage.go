@@ -112,6 +112,11 @@ var Coverage = map[string]string{
 	"DELETE /v1/admin/users/{id}":    "60-admin",
 	"PUT /v1/admin/users/{id}/quota": "60-admin",
 
+	// 61-service-keys — Ed25519 keys for on-behalf-of tokens (ADR 0011)
+	"POST /v1/admin/service-keys":        "61-service-keys",
+	"GET /v1/admin/service-keys":         "61-service-keys",
+	"DELETE /v1/admin/service-keys/{id}": "61-service-keys",
+
 	// 72-oauth-metadata — RFC 9728 discovery, the start of the MCP
 	// authorization flow
 	"GET /.well-known/oauth-protected-resource": "72-oauth-metadata",

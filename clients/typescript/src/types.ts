@@ -100,6 +100,7 @@ export interface ContextRequest {
   message: string;
   namespace?: string;
   project?: string | null;
+  rerank?: boolean;
   weights?: ContextRequestWeights;
 }
 

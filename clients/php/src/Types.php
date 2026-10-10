@@ -658,6 +658,7 @@ final readonly class ContextRequest
         ['message', 'message', ['p', 'string'], true],
         ['namespace', 'namespace', ['p', 'string'], false],
         ['project', 'project', ['p', 'string'], false],
+        ['rerank', 'rerank', ['p', 'bool'], false],
         ['weights', 'weights', ['n', 'ContextRequestWeights'], false],
     ];
 
@@ -673,6 +674,7 @@ final readonly class ContextRequest
         public ?int $maxTokens = null,
         public ?string $namespace = null,
         public ?string $project = null,
+        public ?bool $rerank = null,
         public ?ContextRequestWeights $weights = null,
     ) {
     }

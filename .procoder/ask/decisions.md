@@ -796,3 +796,21 @@ The go job moved to arc-azrtydxb-amd64 on owner instruction. Still on GitHub-hos
 - Only the go job
 
 **Decision (2026-10-10, owner):** move only ci.yml's jobs (gitops, audit, package, manifest) to ARC; leave Pages deploy, release binaries and Dependabot auto-merge on GitHub-hosted.
+
+## Embedding redundancy for novamem (2026-10-10)
+
+novamem already calls fastllm's pooled `bge-m3` frontend (pool `cacheaffinity-bge-m3`), but the pool has one member: a single Kuvryn-placed vLLM workload on gx10-48f4 (:8890). The reranker (`bge-reranker-v2-m3`, :8891) is also only on gx10-48f4. gx10-9c17 runs Qwen3.6-35B-A3B and an audio engine.
+
+- Deploy a second bge-m3 on gx10-9c17 through Kuvryn and add it to the pool (recommended; owner confirms GPU headroom / how Kuvryn places it)
+- Also add a second reranker the same way
+- Leave one instance
+
+## Reranking is never used (2026-10-10)
+
+Reranking is opt-in per request (`rerank: true` on POST /v1/search, engine/search.go:435). MCP memory_search / memory_context have no such parameter, so no agent search has ever been reranked; fastllm shows 0 rerank requests. Config, endpoint and auth are correct (direct call returns 200). The benchmark docs credit reranking with +21pp at ~+500 ms p95.
+
+- Rerank by default when a reranker is configured, with a per-request `rerank: false` opt-out on HTTP and MCP (recommended)
+- Keep it opt-in, but expose `rerank` on the MCP search/context tools
+- Leave as is
+
+**Decision (2026-10-10, owner):** rerank by default when a reranker is configured, with a per-request rerank:false opt-out on HTTP and MCP.

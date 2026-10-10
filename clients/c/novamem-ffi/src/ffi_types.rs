@@ -559,6 +559,8 @@ pub struct novamem_context_request {
     pub message: *mut c_char,
     pub namespace: *mut c_char,
     pub project: *mut c_char,
+    pub has_rerank: bool,
+    pub rerank: bool,
     pub weights: *mut novamem_context_request_weights,
 }
 
@@ -577,6 +579,7 @@ impl novamem_context_request {
             message: c_str(self.message).unwrap_or_default(),
             namespace: c_str(self.namespace),
             project: c_str(self.project),
+            rerank: if self.has_rerank { Some(self.rerank) } else { None },
             weights: self.weights.as_ref().map(|p| p.to_rust()),
         }
     }
@@ -603,6 +606,8 @@ impl novamem_context_request {
             message: str_to_c(Some(v.message.as_str())),
             namespace: str_to_c(v.namespace.as_deref()),
             project: str_to_c(v.project.as_deref()),
+            has_rerank: v.rerank.is_some(),
+            rerank: v.rerank.unwrap_or_default(),
             weights: v.weights.as_ref().map_or(std::ptr::null_mut(), |x| boxed(novamem_context_request_weights::to_c(x))),
         }
     }
@@ -620,6 +625,7 @@ impl novamem_context_request {
         free_str(self.message);
         free_str(self.namespace);
         free_str(self.project);
+
         novamem_context_request_weights_free(self.weights);
     }
 }

@@ -150,6 +150,10 @@
           "description": "Project id or human name.",
           "type": "string"
         },
+        "rerank": {
+          "description": "Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.",
+          "type": "boolean"
+        },
         "weights": {
           "description": "Per-signal weight overrides. Omit to use defaults.",
           "properties": {
@@ -372,6 +376,10 @@
         "query": {
           "description": "What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.",
           "type": "string"
+        },
+        "rerank": {
+          "description": "Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.",
+          "type": "boolean"
         },
         "weights": {
           "description": "Per-signal weight overrides. Omit to use defaults.",
