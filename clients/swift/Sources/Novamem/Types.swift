@@ -495,6 +495,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
     public var message: String
     public var namespace: String?
     public var project: String?
+    public var rerank: Bool?
     public var weights: ContextRequestWeights?
 
     public init(
@@ -509,6 +510,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         message: String,
         namespace: String? = nil,
         project: String? = nil,
+        rerank: Bool? = nil,
         weights: ContextRequestWeights? = nil
     ) {
         self.asOf = asOf
@@ -522,6 +524,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         self.message = message
         self.namespace = namespace
         self.project = project
+        self.rerank = rerank
         self.weights = weights
     }
 
@@ -537,6 +540,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         case message = "message"
         case namespace = "namespace"
         case project = "project"
+        case rerank = "rerank"
         case weights = "weights"
     }
 
@@ -553,6 +557,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         message = try c.decode(String.self, forKey: .message)
         namespace = try c.decodeIfPresent(String.self, forKey: .namespace)
         project = try c.decodeIfPresent(String.self, forKey: .project)
+        rerank = try c.decodeIfPresent(Bool.self, forKey: .rerank)
         weights = try c.decodeIfPresent(ContextRequestWeights.self, forKey: .weights)
     }
 
@@ -569,6 +574,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         try c.encode(message, forKey: .message)
         if let v = namespace, !v.isEmpty { try c.encode(v, forKey: .namespace) }
         if let v = project, !v.isEmpty { try c.encode(v, forKey: .project) }
+        if let v = rerank { try c.encode(v, forKey: .rerank) }
         if let v = weights { try c.encode(v, forKey: .weights) }
     }
 }

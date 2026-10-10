@@ -296,6 +296,10 @@ public sealed record ContextRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Project { get; init; }
 
+    [JsonPropertyName("rerank")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Rerank { get; init; }
+
     [JsonPropertyName("weights")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ContextRequestWeights? Weights { get; init; }

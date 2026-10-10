@@ -354,6 +354,7 @@ class ContextRequest(_Wire):
     max_tokens: int | None = None
     namespace: str | None = None
     project: str | None = None
+    rerank: bool | None = None
     weights: ContextRequestWeights | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
@@ -368,6 +369,7 @@ class ContextRequest(_Wire):
         ("message", "message", ("p", "string"), True),
         ("namespace", "namespace", ("p", "string"), False),
         ("project", "project", ("p", "string"), False),
+        ("rerank", "rerank", ("p", "bool"), False),
         ("weights", "weights", ("n", "ContextRequestWeights"), False),
     )
 

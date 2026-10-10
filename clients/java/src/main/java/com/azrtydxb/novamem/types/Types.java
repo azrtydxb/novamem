@@ -806,6 +806,7 @@ public final class Types {
       @JsonProperty(value = "namespace") @JsonInclude(JsonInclude.Include.NON_EMPTY)
           String namespace,
       @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project,
+      @JsonProperty(value = "rerank") Boolean rerank,
       @JsonProperty(value = "weights") ContextRequestWeights weights) {
     /** A builder with every field unset. */
     public static Builder builder() {
@@ -826,6 +827,7 @@ public final class Types {
       b.message = message;
       b.namespace = namespace;
       b.project = project;
+      b.rerank = rerank;
       b.weights = weights;
       return b;
     }
@@ -843,6 +845,7 @@ public final class Types {
       private String message;
       private String namespace;
       private String project;
+      private Boolean rerank;
       private ContextRequestWeights weights;
 
       private Builder() {}
@@ -913,6 +916,12 @@ public final class Types {
         return this;
       }
 
+      /** Sets rerank. */
+      public Builder rerank(Boolean rerank) {
+        this.rerank = rerank;
+        return this;
+      }
+
       /** Sets weights. */
       public Builder weights(ContextRequestWeights weights) {
         this.weights = weights;
@@ -933,6 +942,7 @@ public final class Types {
             message,
             namespace,
             project,
+            rerank,
             weights);
       }
     }
