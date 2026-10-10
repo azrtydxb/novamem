@@ -2890,6 +2890,16 @@
               }
             },
             "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Token is confined to a project and this evaluation is account-wide"
           }
         },
         "security": [
@@ -3032,6 +3042,16 @@
               }
             },
             "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Token is confined to a project and this report is account-wide"
           }
         },
         "security": [
@@ -5056,6 +5076,16 @@
               }
             },
             "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Token is confined to a project and these stats are account-wide"
           }
         },
         "security": [

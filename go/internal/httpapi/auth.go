@@ -263,6 +263,17 @@ func (s *server) restrictedDenied(w http.ResponseWriter, r *http.Request, c *cal
 	return false
 }
 
+// projectConfinedDenied rejects account-wide reads that cannot honor a
+// token's project boundary. Project-scoped memory routes use
+// checkProjectAccess instead.
+func (s *server) projectConfinedDenied(w http.ResponseWriter, r *http.Request) bool {
+	if tok := callerOf(r).token; tok != nil && tok.ProjectID != nil {
+		s.sendError(w, http.StatusForbidden, "token is confined to its project")
+		return true
+	}
+	return false
+}
+
 // resolveOBO authenticates an on-behalf-of service token. Any failure to
 // verify is a bare 401: the reason (unknown kid, bad signature, wrong
 // org, expired ...) is logged, never returned, so the response does not

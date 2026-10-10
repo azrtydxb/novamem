@@ -542,6 +542,9 @@ func (s *server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if s.projectConfinedDenied(w, r) {
+		return
+	}
 	stats, err := s.engine.GetStats(r.Context(), s.userID(r))
 	if err != nil {
 		s.sendEngineErr(w, r, err)

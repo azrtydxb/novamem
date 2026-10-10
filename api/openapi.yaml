@@ -971,6 +971,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and this report is account-wide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       x-mcp-tool:
         name: memory_hygiene
         description:
@@ -1019,6 +1025,12 @@ paths:
                 $ref: "#/components/schemas/EvaluateReport"
         "401":
           description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and this evaluation is account-wide
           content:
             application/json:
               schema:
@@ -2561,6 +2573,12 @@ paths:
                 $ref: "#/components/schemas/Stats"
         "401":
           description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and these stats are account-wide
           content:
             application/json:
               schema:
