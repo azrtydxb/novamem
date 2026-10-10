@@ -311,13 +311,16 @@ var novamemVar = regexp.MustCompile(`NOVAMEM_[A-Z0-9_]*[A-Z0-9](_\*)?`)
 // them. Each says who does, so the list cannot quietly become a
 // dumping ground for whatever the audit happens to trip on.
 var notServerConfig = map[string]string{
-	"NOVAMEM_TOKEN":      "client credential, read by cmd/novamem-mcp",
-	"NOVAMEM_PASSWORD":   "client credential, read by cmd/novamem-init",
-	"NOVAMEM_MCP_BIN":    "client shim path, read by internal/initcli",
-	"NOVAMEM_URL":        "conformance target, read by the conformance module",
-	"NOVAMEM_TEST_TOKEN": "conformance credential, read by the conformance module",
-	"NOVAMEM_BIN_DIR":    "install location, read by the install script",
-	"NOVAMEM_VERSION":    "release tag, read by the install script",
+	"NOVAMEM_TOKEN":             "client credential, read by cmd/novamem-mcp",
+	"NOVAMEM_PASSWORD":          "client credential, read by cmd/novamem-init",
+	"NOVAMEM_MCP_BIN":           "client shim path, read by internal/initcli",
+	"NOVAMEM_URL":               "conformance target, read by the conformance module",
+	"NOVAMEM_TEST_TOKEN":        "conformance credential, read by the conformance module",
+	"NOVAMEM_BIN_DIR":           "install location, read by the install script",
+	"NOVAMEM_VERSION":           "release tag, read by the install script",
+	"NOVAMEM_BACKUP_DIR":        "backup destination, read by scripts/backup/backup.sh and scripts/backup/verify.sh",
+	"NOVAMEM_DATABASE_URL":      "source database connection, read by scripts/backup/backup.sh",
+	"NOVAMEM_TEST_DATABASE_URL": "disposable integration-test database connection, read by Go tests",
 }
 
 // historical are paths whose job is to record what was true at a point

@@ -83,7 +83,7 @@ jobs:
       # layout depends on line length, so no template can match it alone).
       # Pinned to the version contributors get from Homebrew: a different
       # release may lay lines out differently and fail the check below.
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -166,7 +166,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: ["1.80", "1"]
+        rust: ["1.85", "1"]
     # The official image brings the linker the ARC runner lacks.
     container:
       image: rust:${{ matrix.rust }}-bookworm

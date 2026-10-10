@@ -1014,19 +1014,19 @@ public struct Health: Codable, Sendable, Equatable {
 }
 
 public struct HygieneReport: Codable, Sendable, Equatable {
-    public var contradictionCandidates: [JSONValue]?
-    public var duplicateClusters: [JSONValue]?
-    public var lowValue: [JSONValue]?
-    public var orphanCandidates: [JSONValue]?
-    public var stale: [JSONValue]?
+    public var contradictionCandidates: [HygieneReportContradictionCandidatesItem]?
+    public var duplicateClusters: [HygieneReportDuplicateClustersItem]?
+    public var lowValue: [HygieneReportLowValueItem]?
+    public var orphanCandidates: [HygieneReportOrphanCandidatesItem]?
+    public var stale: [HygieneReportStaleItem]?
     public var summary: HygieneReportSummary
 
     public init(
-        contradictionCandidates: [JSONValue]? = nil,
-        duplicateClusters: [JSONValue]? = nil,
-        lowValue: [JSONValue]? = nil,
-        orphanCandidates: [JSONValue]? = nil,
-        stale: [JSONValue]? = nil,
+        contradictionCandidates: [HygieneReportContradictionCandidatesItem]? = nil,
+        duplicateClusters: [HygieneReportDuplicateClustersItem]? = nil,
+        lowValue: [HygieneReportLowValueItem]? = nil,
+        orphanCandidates: [HygieneReportOrphanCandidatesItem]? = nil,
+        stale: [HygieneReportStaleItem]? = nil,
         summary: HygieneReportSummary
     ) {
         self.contradictionCandidates = contradictionCandidates
@@ -1048,11 +1048,11 @@ public struct HygieneReport: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        contradictionCandidates = try c.decodeIfPresent([JSONValue].self, forKey: .contradictionCandidates)
-        duplicateClusters = try c.decodeIfPresent([JSONValue].self, forKey: .duplicateClusters)
-        lowValue = try c.decodeIfPresent([JSONValue].self, forKey: .lowValue)
-        orphanCandidates = try c.decodeIfPresent([JSONValue].self, forKey: .orphanCandidates)
-        stale = try c.decodeIfPresent([JSONValue].self, forKey: .stale)
+        contradictionCandidates = try c.decodeIfPresent([HygieneReportContradictionCandidatesItem].self, forKey: .contradictionCandidates)
+        duplicateClusters = try c.decodeIfPresent([HygieneReportDuplicateClustersItem].self, forKey: .duplicateClusters)
+        lowValue = try c.decodeIfPresent([HygieneReportLowValueItem].self, forKey: .lowValue)
+        orphanCandidates = try c.decodeIfPresent([HygieneReportOrphanCandidatesItem].self, forKey: .orphanCandidates)
+        stale = try c.decodeIfPresent([HygieneReportStaleItem].self, forKey: .stale)
         summary = try c.decode(HygieneReportSummary.self, forKey: .summary)
     }
 
@@ -1064,6 +1064,162 @@ public struct HygieneReport: Codable, Sendable, Equatable {
         if let v = orphanCandidates { try c.encode(v, forKey: .orphanCandidates) }
         if let v = stale { try c.encode(v, forKey: .stale) }
         try c.encode(summary, forKey: .summary)
+    }
+}
+
+public struct HygieneReportContradictionCandidatesItem: Codable, Sendable, Equatable {
+    public var ids: [String]?
+    public var reason: String?
+
+    public init(
+        ids: [String]? = nil,
+        reason: String? = nil
+    ) {
+        self.ids = ids
+        self.reason = reason
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ids = "ids"
+        case reason = "reason"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ids = try c.decodeIfPresent([String].self, forKey: .ids)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = ids { try c.encode(v, forKey: .ids) }
+        if let v = reason, !v.isEmpty { try c.encode(v, forKey: .reason) }
+    }
+}
+
+public struct HygieneReportDuplicateClustersItem: Codable, Sendable, Equatable {
+    public var ids: [String]?
+    public var reason: String?
+
+    public init(
+        ids: [String]? = nil,
+        reason: String? = nil
+    ) {
+        self.ids = ids
+        self.reason = reason
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ids = "ids"
+        case reason = "reason"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ids = try c.decodeIfPresent([String].self, forKey: .ids)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = ids { try c.encode(v, forKey: .ids) }
+        if let v = reason, !v.isEmpty { try c.encode(v, forKey: .reason) }
+    }
+}
+
+public struct HygieneReportLowValueItem: Codable, Sendable, Equatable {
+    public var content: String?
+    public var id: String?
+    public var reason: String?
+
+    public init(
+        content: String? = nil,
+        id: String? = nil,
+        reason: String? = nil
+    ) {
+        self.content = content
+        self.id = id
+        self.reason = reason
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case content = "content"
+        case id = "id"
+        case reason = "reason"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = content, !v.isEmpty { try c.encode(v, forKey: .content) }
+        if let v = id, !v.isEmpty { try c.encode(v, forKey: .id) }
+        if let v = reason, !v.isEmpty { try c.encode(v, forKey: .reason) }
+    }
+}
+
+public struct HygieneReportOrphanCandidatesItem: Codable, Sendable, Equatable {
+    public var id: String?
+    public var reason: String?
+
+    public init(
+        id: String? = nil,
+        reason: String? = nil
+    ) {
+        self.id = id
+        self.reason = reason
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case reason = "reason"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = id, !v.isEmpty { try c.encode(v, forKey: .id) }
+        if let v = reason, !v.isEmpty { try c.encode(v, forKey: .reason) }
+    }
+}
+
+public struct HygieneReportStaleItem: Codable, Sendable, Equatable {
+    public var id: String?
+    public var reason: String?
+
+    public init(
+        id: String? = nil,
+        reason: String? = nil
+    ) {
+        self.id = id
+        self.reason = reason
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case reason = "reason"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = id, !v.isEmpty { try c.encode(v, forKey: .id) }
+        if let v = reason, !v.isEmpty { try c.encode(v, forKey: .reason) }
     }
 }
 

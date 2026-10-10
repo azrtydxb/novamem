@@ -175,6 +175,7 @@
                   "type": "string"
                 },
                 "seq": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 }
               },
@@ -254,12 +255,15 @@
       "DecayResult": {
         "properties": {
           "demoted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "expired": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "promoted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -273,24 +277,31 @@
       "DreamCycleResult": {
         "properties": {
           "durationMs": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "edgesPromoted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "factClustersJudged": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "factsSuperseded": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "factsWalked": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "merged": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "walked": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -346,12 +357,15 @@
           "summary": {
             "properties": {
               "failed": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "passed": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "total": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               }
             },
@@ -500,43 +514,108 @@
       "HygieneReport": {
         "properties": {
           "contradictionCandidates": {
-            "items": {},
+            "items": {
+              "properties": {
+                "ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "duplicateClusters": {
-            "items": {},
+            "items": {
+              "properties": {
+                "ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "lowValue": {
-            "items": {},
+            "items": {
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "orphanCandidates": {
-            "items": {},
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "stale": {
-            "items": {},
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "summary": {
             "properties": {
               "contradictionCandidates": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "duplicateClusters": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "lowValue": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "orphanCandidates": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "scanned": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "stale": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               }
             },
@@ -660,24 +739,30 @@
             "type": "string"
           },
           "score": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "signals": {
-            "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+            "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
             "properties": {
               "entity": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "graph": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "keyword": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "recency": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "vector": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               }
             },
@@ -703,15 +788,18 @@
       "MetricsHistory": {
         "properties": {
           "hours": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "samples": {
             "items": {
               "properties": {
                 "queries": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 },
                 "remembers": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 },
                 "sampledAt": {
@@ -759,9 +847,11 @@
       "ObserveResult": {
         "properties": {
           "logChars": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "observed": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "reflected": {
@@ -928,18 +1018,23 @@
       "ReapOrphansResult": {
         "properties": {
           "abandoned": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "attempted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "cleared": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "pending": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "total": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -1048,6 +1143,7 @@
             "type": "array"
           },
           "saved": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -1063,9 +1159,11 @@
             "additionalProperties": {
               "properties": {
                 "cold": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 },
                 "warm": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 }
               },
@@ -1078,12 +1176,15 @@
             "type": "string"
           },
           "totalCold": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "totalWarm": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "uptimeMs": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -1091,6 +1192,22 @@
           "byNamespace",
           "totalWarm",
           "totalCold"
+        ],
+        "type": "object"
+      },
+      "TelemetryGroup": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "count"
         ],
         "type": "object"
       },
@@ -1177,6 +1294,7 @@
       "Usage": {
         "properties": {
           "entries": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "quota": {
@@ -1976,6 +2094,204 @@
           }
         ],
         "summary": "Revoke a service key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/telemetry": {
+      "get": {
+        "description": "Admin-only aggregate view. Daily growth and sensitivity distribution are limited to the last 30 days because created_at and metadata sensitivity have no general-purpose index; project values are opaque ids and no memory content or user identifiers are returned.",
+        "operationId": "getV1AdminTelemetry",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "byNamespace": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "byProject": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "bySensitivity": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "byTier": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "createdPerDay": {
+                      "items": {
+                        "properties": {
+                          "count": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "date": {
+                            "format": "date",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "embeddedEntries": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "health": {
+                      "properties": {
+                        "coldProvider": {
+                          "enum": [
+                            "pgvector",
+                            "qdrant",
+                            "none"
+                          ],
+                          "type": "string"
+                        },
+                        "deps": {
+                          "properties": {
+                            "cold": {
+                              "enum": [
+                                "ok",
+                                "unreachable",
+                                "failing"
+                              ],
+                              "type": "string"
+                            },
+                            "embedder": {
+                              "enum": [
+                                "ok",
+                                "failing"
+                              ],
+                              "type": "string"
+                            },
+                            "warm": {
+                              "enum": [
+                                "ok",
+                                "unreachable"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "warm",
+                            "cold",
+                            "embedder"
+                          ],
+                          "type": "object"
+                        },
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "pendingEmbeddings": {
+                          "nullable": true,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "deps",
+                        "coldProvider",
+                        "pendingEmbeddings"
+                      ],
+                      "type": "object"
+                    },
+                    "lastDecayAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "pendingColdOrphans": {
+                      "type": "integer"
+                    },
+                    "pendingEmbeddings": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "pendingExtractions": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "topAgents": {
+                      "items": {
+                        "properties": {
+                          "count": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "totalEntries": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "totalEntries",
+                    "embeddedEntries",
+                    "pendingEmbeddings",
+                    "pendingExtractions",
+                    "pendingColdOrphans",
+                    "byNamespace",
+                    "byProject",
+                    "bySensitivity",
+                    "byTier",
+                    "createdPerDay",
+                    "topAgents",
+                    "lastDecayAt",
+                    "health"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Aggregate-only memory volume, distribution, growth and operational health. Memory content and user identifiers are never returned. Sensitivity distribution and daily growth are limited to 30 days because there is no general created-at/sensitivity index."
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "description": "Authenticated user is not an admin"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "Aggregate memory telemetry",
         "tags": [
           "admin"
         ]
@@ -5152,6 +5468,296 @@
     {
       "description": "Health checks",
       "name": "liveness"
+    }
+  ],
+  "x-mcp-tools": [
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List users"
+      },
+      "description": "Read-only deployment-wide user inventory and entry/token counts. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_list_users",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "users": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "type": "object"
+      },
+      "x-order": 22
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List projects"
+      },
+      "description": "Read-only deployment-wide project inventory. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_list_projects",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "projects": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ownerUserId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "ownerUserId",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "x-order": 23
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List token metadata"
+      },
+      "description": "Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_list_tokens",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "x-order": 24
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Service health"
+      },
+      "description": "Read-only dependency and service health snapshot. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_health",
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "x-order": 25
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Service statistics"
+      },
+      "description": "Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_stats",
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "x-order": 26
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Recent audit entries"
+      },
+      "description": "Read-only recent administrative audit entries, newest first. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Maximum number of entries; defaults to 100.",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "admin_audit_recent",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "x-order": 27
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Operations job status"
+      },
+      "description": "Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_ops_status",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "jobs": {
+            "additionalProperties": false,
+            "properties": {
+              "decay": {
+                "additionalProperties": false,
+                "properties": {
+                  "lastRunAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "runs": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "lastRunAt",
+                  "runs"
+                ],
+                "type": "object"
+              },
+              "dream": {
+                "additionalProperties": false,
+                "properties": {
+                  "lastRunAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "lastRunAt"
+                ],
+                "type": "object"
+              },
+              "reaper": {
+                "additionalProperties": false,
+                "properties": {
+                  "lastRunAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "runs": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "lastRunAt",
+                  "runs"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "decay",
+              "dream",
+              "reaper"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "x-order": 28
     }
   ]
 }

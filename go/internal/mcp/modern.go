@@ -188,7 +188,7 @@ func (s *Server) serveModern(w http.ResponseWriter, r *http.Request, userID stri
 		writeJSON(w, http.StatusOK, okResponse(req.ID, s.discoverResult()))
 	case "tools/list":
 		// tools/list supports pagination, and this server never
-		// paginates: 21 compile-time tools go out in one page with no
+		// paginates: 28 compile-time tools go out in one page with no
 		// `nextCursor`, which the spec reads as end-of-results. So any
 		// cursor a client sends is one this server never issued, and
 		// "invalid cursors SHOULD result in an error with code -32602".

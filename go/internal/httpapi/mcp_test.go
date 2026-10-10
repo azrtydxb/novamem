@@ -64,7 +64,7 @@ func TestCallToolAdoptionReport(t *testing.T) {
 		t.Fatalf("report type %T", r)
 	}
 	mcpInfo := report.get("mcp").(obj)
-	if mcpInfo.get("toolCount") != 21 {
+	if mcpInfo.get("toolCount") != 28 {
 		t.Fatalf("toolCount = %v", mcpInfo.get("toolCount"))
 	}
 	if report.get("requestedClient") != "claude-code" {

@@ -5,7 +5,7 @@ Claude Code speaks remote MCP natively, so you point it at `/mcp` directly — n
 ## One-shot installer (recommended)
 
 ```bash
-npx @azrtydxb/novamem-init
+novamem-init
 ```
 
 Asks for the server URL + your dashboard email/password, mints a fresh `nm_…` bearer, detects Claude Code on your machine, and writes `.mcp.json` + the `commands/` bundle + the `CLAUDE.md` fragment for you. Idempotent — won't clobber existing config.
@@ -69,7 +69,3 @@ Claude should call `memory_context` before answering, then `memory_capture` to s
 - **`novamem` not listed** → check the bearer is valid (`curl -fsS -H "authorization: Bearer nm_..." http://localhost:7778/v1/me/tokens`). A revoked token shows up as a 401, the SSE handshake silently drops it.
 - **Tools listed but every call returns 401** → bearer was revoked or the user was deleted. Mint a new one.
 - **Connection refused** → verify the server is reachable from where Claude Code runs (e.g. inside WSL, `localhost` maps differently).
-
-## Stdio fallback
-
-If you need to point Claude Code at a host that can't reach the SSE endpoint directly, the stdio shim still works — see [Other clients + Skills](./others.md) for the shim config.

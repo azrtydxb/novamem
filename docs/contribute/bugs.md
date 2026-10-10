@@ -9,7 +9,7 @@ Open issues at <https://github.com/azrtydxb/novamem/issues/new>. Include:
 ## Reproduce
 
 ```
-1. Set up: docker compose up / kubectl apply / npx init …
+1. Set up: docker compose up / kubectl apply / novamem-init …
 2. The exact command / curl / dashboard click that triggers the bug.
 3. The expected result.
 4. The actual result.
@@ -26,14 +26,8 @@ ghcr.io/azrtydxb/novamem:<tag>      # docker
 git rev-parse HEAD                   # source
 
 # CLI
-npx @azrtydxb/novamem-init --version
+novamem-init --version
 
-# Stdio shim
-npx @azrtydxb/novamem-mcp --version
-
-# Node + pnpm
-node --version
-pnpm --version
 ```
 
 ## Logs

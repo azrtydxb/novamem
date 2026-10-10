@@ -183,6 +183,10 @@ var Vars = []Var{
 		Description: "`user` is the default: dashboard sessions plus per-user `nm_…` bearers for MCP. `bearer` is a single shared token. `none` disables authentication entirely and makes every request the public tenant — development only.",
 	},
 	{
+		Name: "NOVAMEM_REQUIRE_AUTH", Kind: KindBool, Default: false, Section: secAuth,
+		Description: "Refuses startup when `NOVAMEM_AUTH_MODE=none`. Set to `1` in deployments that must never run without authentication.",
+	},
+	{
 		Name: "NOVAMEM_AUTH_TOKEN", Kind: KindString, Section: secAuth, Secret: true,
 		Required:    "`NOVAMEM_AUTH_MODE=bearer`",
 		Description: "The shared bearer token for `bearer` mode. Useful for a single-process deployment that wants one static credential.",
@@ -214,6 +218,10 @@ var Vars = []Var{
 	{
 		Name: "NOVAMEM_ADMIN_DASHBOARD", Kind: KindDisableBool, Default: true, Section: secAuth,
 		Description: "Master switch for the admin surface. Set `0` to 404 `/v1/admin/metrics` and `/v1/admin/metrics/prom`.",
+	},
+	{
+		Name: "NOVAMEM_ALLOW_INSECURE_ENDPOINTS", Kind: KindBool, Default: false, Section: secOps,
+		Description: "Allows configured endpoints, including the cold store, to use public HTTP. HTTP to private or loopback addresses is allowed by default; prefer HTTPS for public endpoints.",
 	},
 
 	// ---- Datastores ----
@@ -314,6 +322,26 @@ var Vars = []Var{
 	{
 		Name: "NOVAMEM_DECAY_DAYS", Kind: KindPosFloat, Default: 7.0, Section: secEngine,
 		Description: "Base half-life in days. Effective lifespan grows with use: `effectiveDays = NOVAMEM_DECAY_DAYS x log2(hits + 1)`.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_ENABLED", Kind: KindBool, Default: false, Section: secEngine,
+		Description: "Enables automatic deletion of entries past the configured retention age. Off by default.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_MAX_AGE_DAYS", Kind: KindPosInt, Default: 365, Section: secEngine,
+		Description: "Maximum age in days for entries without explicit expiresAt metadata. Age is measured from updated_at, so updates and decay demotion extend retention.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_BATCH", Kind: KindPosInt, Default: 100, Section: secEngine,
+		Description: "Maximum entries considered per retention pass, oldest updated_at first.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_INTERVAL_MINUTES", Kind: KindPosInt, Default: 60, Section: secEngine,
+		Description: "How often the retention job runs while enabled.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_DRY_RUN", Kind: KindBool, Default: false, Section: secEngine,
+		Description: "Logs each retention batch that would be deleted without deleting entries.",
 	},
 	{
 		Name: "NOVAMEM_PERSONAL_TERMS", Kind: KindCSV, Section: secEngine,

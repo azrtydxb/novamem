@@ -6,7 +6,7 @@ title: MCP tools
 
 <!-- tool-catalogue:start -->
 
-_21 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](https://github.com/azrtydxb/novamem/blob/main/go/internal/mcp/tooldefs.json) by `go run ./cmd/gen-tool-docs` — the descriptions below are the ones the server sends on `tools/list`, not a paraphrase of them. Edit [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and re-run `go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs` — not this table, and not tooldefs.json, which is itself generated._
+_28 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](https://github.com/azrtydxb/novamem/blob/main/go/internal/mcp/tooldefs.json) by `go run ./cmd/gen-tool-docs` — the descriptions below are the ones the server sends on `tools/list`, not a paraphrase of them. Edit [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and re-run `go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs` — not this table, and not tooldefs.json, which is itself generated._
 
 ## Memory tools
 
@@ -255,6 +255,52 @@ Revoke a member's access to a project. CALL THIS when the user says "remove bob 
 | `project`  | string | yes      | Project id or human name.                  |
 | `username` | string | yes      | Exact email address of the user to remove. |
 
+## Admin and operations tools
+
+### `admin_list_users`
+
+Read-only deployment-wide user inventory and entry/token counts. Admin callers only.
+
+Takes no arguments.
+
+### `admin_list_projects`
+
+Read-only deployment-wide project inventory. Admin callers only.
+
+Takes no arguments.
+
+### `admin_list_tokens`
+
+Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.
+
+Takes no arguments.
+
+### `admin_health`
+
+Read-only dependency and service health snapshot. Admin callers only.
+
+Takes no arguments.
+
+### `admin_stats`
+
+Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.
+
+Takes no arguments.
+
+### `admin_audit_recent`
+
+Read-only recent administrative audit entries, newest first. Admin callers only.
+
+| Argument | Type    | Required | Description                                 |
+| -------- | ------- | -------- | ------------------------------------------- |
+| `limit`  | integer | —        | Maximum number of entries; defaults to 100. |
+
+### `admin_ops_status`
+
+Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.
+
+Takes no arguments.
+
 <!-- tool-catalogue:end -->
 
 ## Transports
@@ -281,17 +327,9 @@ What clients speak this transport: OpenAI Codex CLI, recent Cursor / Kilo Code (
 
 Everything it served is served by `/mcp`, which speaks both protocol eras. A client still configured for the old pair needs its `url` changed to `/mcp` and its `type` to `http`; `novamem-init` writes that shape now.
 
-### stdio shim
+### Local stdio bridge
 
-`novamem-mcp` proxies stdio JSON-RPC ↔ Streamable HTTP. Used by hosts that don't support remote MCP at all (Claude Desktop) or whose remote-MCP implementation is broken.
-
-```bash
-NOVAMEM_BASE_URL=https://novamem.example.com \
-NOVAMEM_TOKEN=nm_... \
-  npx -y @azrtydxb/novamem-mcp
-```
-
-Pin the version (`@1.2.0`) for reproducibility.
+Hosts that require stdio can use the Go `novamem-mcp` binary, distributed with `novamem-init` in the release archives. Set `NOVAMEM_BASE_URL` and `NOVAMEM_TOKEN` for the server and bearer. For remote MCP clients, connect directly to `/mcp`.
 
 ## Conventions
 
@@ -304,4 +342,4 @@ Pin the version (`@1.2.0`) for reproducibility.
 
 - [Mental model](../concepts/mental-model.md)
 - [Hybrid search internals](../architecture/hybrid-search.md)
-- [novamem-init CLI](../connect/init-cli.md) — wires the SSE/stdio config for you
+- [novamem-init CLI](../connect/init-cli.md) — configures supported hosts for you
