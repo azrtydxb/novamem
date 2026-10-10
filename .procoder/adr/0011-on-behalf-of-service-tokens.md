@@ -133,6 +133,12 @@ they have no effect.
   reaper). Those are keyed by `user_id` and already isolated by the
   composite; the jobs operate per row or per user and never merge across
   users.
+- The composite id is not safe in every place a user id goes. Qdrant
+  collection names are URL path segments, and the `/` in `org:<org>/<sub>`
+  made every OBO vector write 404 on kw (found 2026-10-10 by conformance;
+  CI ran pgvector only). The Qdrant store now hashes a composite id to
+  `obo<32 hex>` in collection names; real ids keep their names. Anything
+  new that embeds a user id in a path or identifier must do the same.
 - Each distinct `(org, sub)` is a distinct user for quotas, rate limits and
   metrics. There is no org-level quota yet.
 - A real user id must never begin with `org:`. Nothing in NovaMem lets a
