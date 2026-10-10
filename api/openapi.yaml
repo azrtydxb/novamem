@@ -374,13 +374,19 @@ components:
         source: *id001
         score: &id003
           type: number
+          description: >-
+            Ranking score for this result. Ranked search results are returned
+            in non-increasing score order. When cross-encoder reranking
+            succeeds, this is the reranker relevance score; otherwise it is
+            the fused search score. Per-signal fusion contributions remain in
+            `signals`.
         metadata:
           type: object
           additionalProperties: true
         signals:
           type: object
           description: >-
-            Per-signal contributions behind `score`, present on the ranked
+            Per-signal contributions to the fused search score, present on the ranked
             responses (/v1/search, /v1/context, /v1/neighbors) and absent on
             /v1/recent, which orders by recency and ranks nothing. Every key
             is optional because the set varies by route: fusion returns all
