@@ -460,17 +460,13 @@ func TestBaseURLFollowsHostAndPort(t *testing.T) {
 }
 
 // TestDeprecatedDecayAlias — the canonical name wins when both are set,
-// and the alias still works alone. Deployments picked up the Go-only
-// spelling; dropping it would change their decay half-life silently.
+// and using the deprecated alias alone fails with migration guidance.
 func TestDeprecatedDecayAlias(t *testing.T) {
-	c, err := loadWith(t, map[string]string{"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := loadWith(t, map[string]string{"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14"})
+	if err == nil || !strings.Contains(err.Error(), "set NOVAMEM_DECAY_DAYS instead") {
+		t.Fatalf("deprecated alias did not explain the replacement: %v", err)
 	}
-	if c.DecayEffectiveDays != 14 {
-		t.Errorf("the deprecated alias alone gave %v, want 14", c.DecayEffectiveDays)
-	}
-	c, err = loadWith(t, map[string]string{
+	c, err := loadWith(t, map[string]string{
 		"NOVAMEM_DECAY_DAYS":                   "3",
 		"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14",
 	})

@@ -293,7 +293,7 @@ func Load() (Config, error) {
 	// spelling; the TS name wins when both are set.
 	decayKey := "NOVAMEM_DECAY_DAYS"
 	if !hasValue(decayKey, KindPosFloat) && hasValue("NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS", KindPosFloat) {
-		decayKey = "NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS"
+		return c, fmt.Errorf("NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS is deprecated; set NOVAMEM_DECAY_DAYS instead")
 	}
 	if c.DecayEffectiveDays, err = posFloatEnv(decayKey); err != nil {
 		return c, err
