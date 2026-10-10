@@ -147,11 +147,19 @@ var Vars = []Var{
 	},
 	{
 		Name: "NOVAMEM_PORT", Kind: KindPort, Default: 7778, Section: secTransport,
-		Description: "HTTP port. REST, `/mcp`, the dashboard and `/api-docs` are all served here.",
+		Description: "HTTP port, or HTTPS when both TLS files are configured. REST, `/mcp`, the dashboard and `/api-docs` are all served here.",
+	},
+	{
+		Name: "NOVAMEM_TLS_CERT", Kind: KindString, Section: secTransport,
+		Description: "Path to the PEM TLS certificate for native HTTPS. Must be set together with `NOVAMEM_TLS_KEY`; leave both unset behind a TLS-terminating proxy or for local development.",
+	},
+	{
+		Name: "NOVAMEM_TLS_KEY", Kind: KindString, Section: secTransport,
+		Description: "Path to the PEM TLS private key for native HTTPS. Must be set together with `NOVAMEM_TLS_CERT`; leave both unset behind a TLS-terminating proxy or for local development.",
 	},
 	{
 		Name: "NOVAMEM_BASE_URL", Kind: KindString, Section: secTransport,
-		DefaultNote: "`http://$NOVAMEM_HOST:$NOVAMEM_PORT`",
+		DefaultNote: "`http://$NOVAMEM_HOST:$NOVAMEM_PORT`, or `https://` when native TLS is configured",
 		Description: "The public origin. Seeds the trusted-origin list for the sign-in CSRF check and the `resource` identifier in the OAuth protected-resource metadata, so it must be the URL clients actually reach — set it when novamem sits behind a proxy.",
 	},
 	{
