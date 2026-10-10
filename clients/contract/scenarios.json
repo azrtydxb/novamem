@@ -1504,9 +1504,16 @@
             "degraded": false
           },
           "recent": {
-            "results": []
+            "results": [
+              {
+                "id": "e2",
+                "content": "yesterday's oat milk"
+              }
+            ]
           },
-          "contextPack": {},
+          "contextPack": {
+            "decisions": ["dark roast is the daily driver"]
+          },
           "guidance": "Use this context before answering."
         }
       },
@@ -1523,7 +1530,24 @@
         "outcome": "ok",
         "result": {
           "relevant": {
-            "degraded": false
+            "degraded": false,
+            "results": [
+              {
+                "id": "e1",
+                "content": "dark roast"
+              }
+            ]
+          },
+          "recent": {
+            "results": [
+              {
+                "id": "e2",
+                "content": "yesterday's oat milk"
+              }
+            ]
+          },
+          "contextPack": {
+            "decisions": ["dark roast is the daily driver"]
           },
           "guidance": "Use this context before answering."
         }

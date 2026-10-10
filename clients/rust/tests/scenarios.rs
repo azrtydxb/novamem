@@ -43,6 +43,18 @@ fn subset(want: &Value, got: &Value, path: &str) -> String {
             }
             String::new()
         }
+        Value::Array(w) => match got {
+            Value::Array(g) if g.len() == w.len() => {
+                for (i, (wv, gv)) in w.iter().zip(g.iter()).enumerate() {
+                    let d = subset(wv, gv, &format!("{path}[{i}]"));
+                    if !d.is_empty() {
+                        return d;
+                    }
+                }
+                String::new()
+            }
+            _ => format!("{path}: want {}-element array, got {got}", w.len()),
+        },
         _ if want == got => String::new(),
         _ => format!("{path}: got {got}, want {want}"),
     }

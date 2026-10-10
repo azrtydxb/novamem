@@ -209,6 +209,17 @@ func subset(want, got any, path string) string {
 			}
 		}
 		return ""
+	case []any:
+		g, ok := got.([]any)
+		if !ok || len(g) != len(w) {
+			return fmt.Sprintf("%s: want %d-element array, got %v", path, len(w), got)
+		}
+		for i := range w {
+			if d := subset(w[i], g[i], fmt.Sprintf("%s[%d]", path, i)); d != "" {
+				return d
+			}
+		}
+		return ""
 	default:
 		if fmt.Sprint(want) != fmt.Sprint(got) {
 			return fmt.Sprintf("%s: got %v, want %v", path, got, want)

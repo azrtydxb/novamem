@@ -29,6 +29,14 @@ def subset(want, got, path="$"):
             if d:
                 return d
         return ""
+    if isinstance(want, list):
+        if not isinstance(got, list) or len(want) != len(got):
+            return f"{path}: want {len(want)}-element array, got {got!r}"
+        for i, (w, g) in enumerate(zip(want, got)):
+            d = subset(w, g, f"{path}[{i}]")
+            if d:
+                return d
+        return ""
     return "" if want == got else f"{path}: got {got!r}, want {want!r}"
 
 
