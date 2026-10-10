@@ -99,6 +99,13 @@
       "when": 1786611697270,
       "tag": "0013_entry_source_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786611698270,
+      "tag": "0015_preserve_float64_precision",
+      "breakpoints": true
     }
   ]
 }
