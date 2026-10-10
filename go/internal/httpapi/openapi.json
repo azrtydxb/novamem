@@ -1558,7 +1558,8 @@
                         "cold": {
                           "enum": [
                             "ok",
-                            "unreachable"
+                            "unreachable",
+                            "failing"
                           ],
                           "type": "string"
                         },
@@ -1643,7 +1644,8 @@
                         "cold": {
                           "enum": [
                             "ok",
-                            "unreachable"
+                            "unreachable",
+                            "failing"
                           ],
                           "type": "string"
                         },
