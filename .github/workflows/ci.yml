@@ -33,10 +33,12 @@ env:
 jobs:
   gitops:
     name: GitOps deployment checks
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # The ARC runner image has no kubectl (GitHub's hosted image did).
+      - uses: azure/setup-kubectl@v4
       - run: python3 scripts/test-record-kw-image.py
       - name: Keep credentials and namespace outside application sync
         run: |
@@ -175,7 +177,7 @@ jobs:
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
     name: audit
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -199,10 +201,14 @@ jobs:
   package:
     name: package (npm)
     needs: [test]
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # The ARC runner image has no node (GitHub's hosted image did).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - name: Confirm nothing is publishable
         run: node scripts/assert-nothing-publishable.mjs
 
@@ -394,7 +400,7 @@ jobs:
       contents: write # record the verified image for Kuvryn Sync on main
       packages: write # push the multi-arch manifest to ghcr.io
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

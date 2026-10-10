@@ -767,6 +767,36 @@ Both are green on the full rollup with no review comments. Merging to main is th
 
 **Decision (2026-10-10, owner):** merge and deploy both, no release tag yet.
 
+## master-13's LACP bond is split; half of cluster DNS fails (2026-10-10)
+
+master-13's bond0 (802.3ad) has its two members in different aggregators (enP4p65s0 → ID 2, enP3p49s0 → ID 1, 24 link failures). The node reaches only part of the LAN: worker-22/23 and gx10-9c17 answer; the router 192.168.10.1, .2, .3, master-11/12 and worker-21/24/25 do not (ARP INCOMPLETE). The CoreDNS pod on master-13 logged 2525 upstream timeouts to 192.168.10.1 in an hour (the other pod: 0), so roughly half of all external lookups in the cluster fail. This broke the novamem and nexora CI runs (pulls and action downloads). Nodes still report Ready.
+
+- Mitigate now (delete the CoreDNS pod on master-13 so it reschedules elsewhere, and keep it off master-13), then investigate the bond/switch side (ks01/ks02 LACP) read-only and report before changing anything (recommended)
+- Mitigate only; the owner handles the switch/bond
+- Hands off
+
+**Decision (2026-10-10, owner):** mitigate now and investigate the bond/switch read-only, reporting before any change.
+
+## master-13 bond: flapping link to ks02 ether8 (2026-10-10)
+
+Read-only finding (~80%): the enP3p49s0 ↔ ks02 ether8 cable/port is bad — 33 link-downs since 10-06, now negotiates 100M with the partner advertising only 10/100 (damaged pair or crimp), so the host bond split into two aggregators. ks01 ether8 is clean at 2.5G; switch bond/MLAG config is uniform across all nodes. CoreDNS is already kept off master-13.
+
+- Owner reseats/replaces the cable now; meanwhile disable ks02 ether8 so master-13 runs cleanly on its ks01 link (no redundancy until the cable is fixed) (recommended)
+- Owner replaces the cable; no software change meanwhile
+- Leave it
+
+**Decision (2026-10-10, owner):** disable ks02 ether8 now; the owner replaces the cable.
+
+## Which remaining jobs move to the ARC runners (2026-10-10)
+
+The go job moved to arc-azrtydxb-amd64 on owner instruction. Still on GitHub-hosted: ci.yml gitops, audit, package, manifest; release-binaries.yml binaries; pages.yml deploy (ubuntu-latest); dependabot-automerge.yml enable-automerge.
+
+- Move every job to ARC (recommended)
+- Move only ci.yml's jobs; leave pages deploy, release binaries and dependabot automerge on GitHub-hosted
+- Only the go job
+
+**Decision (2026-10-10, owner):** move only ci.yml's jobs (gitops, audit, package, manifest) to ARC; leave Pages deploy, release binaries and Dependabot auto-merge on GitHub-hosted.
+
 ## Embedding redundancy for novamem (2026-10-10)
 
 novamem already calls fastllm's pooled `bge-m3` frontend (pool `cacheaffinity-bge-m3`), but the pool has one member: a single Kuvryn-placed vLLM workload on gx10-48f4 (:8890). The reranker (`bge-reranker-v2-m3`, :8891) is also only on gx10-48f4. gx10-9c17 runs Qwen3.6-35B-A3B and an audio engine.
