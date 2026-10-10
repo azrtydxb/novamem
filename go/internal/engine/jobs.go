@@ -297,10 +297,8 @@ func (e *Engine) ReconcilePendingEmbeddings(ctx context.Context, batchSize int) 
 	for _, row := range rows {
 		if err := e.embedAndUpsert(ctx, row); err != nil {
 			out.Failed++
-			e.recordEmbedFailure(err, "reconcile", row.ID)
 			continue
 		}
-		e.recordEmbedSuccess()
 		out.Done++
 	}
 	pending, err := e.warm.CountPendingEmbedding(ctx)
@@ -312,18 +310,26 @@ func (e *Engine) ReconcilePendingEmbeddings(ctx context.Context, batchSize int) 
 	return out, nil
 }
 
+// embedAndUpsert attributes each failure to the dependency that caused it:
+// the embedder, the cold vector store, or (unsignalled, logged) the warm
+// store. Embedding the text and writing the vector are separate outages.
 func (e *Engine) embedAndUpsert(ctx context.Context, row warmstore.PendingEntry) error {
 	embedding, err := e.embedDocument(ctx, row.Content)
 	if err != nil {
+		e.recordEmbedFailure(err, "reconcile", row.ID)
 		return err
 	}
+	e.recordEmbedSuccess()
 	if err := e.cold.Upsert(ctx, coldstore.UpsertArgs{
 		UserID: row.UserID, ProjectID: row.ProjectID, ID: row.ID, Namespace: row.Namespace,
 		Embedding: embedding, Payload: e.vectorPayload(row.Source, row.AgentName),
 	}); err != nil {
+		e.recordVectorStoreFailure(err, "reconcile", row.ID)
 		return err
 	}
+	e.recordVectorStoreSuccess()
 	if err := e.warm.SetEmbeddedAt(ctx, row.ID, ptrTime(time.Now())); err != nil {
+		e.log.Warn("reconcile: could not stamp embedded_at", "entryId", row.ID, "err", err)
 		return err
 	}
 	// A row that was also parked as a missing-vector orphan is repaired.
@@ -421,7 +427,8 @@ func (e *Engine) DeleteUser(ctx context.Context, userID string) (DeleteUserResul
 
 // Health is /v1/admin/health/deep's per-dependency snapshot. Deliberate
 // asymmetry: a failing embedder and a pending backlog are reported but
-// neither enters `ok` — keyword search still works without the embedder,
+// neither enters `ok` (nor does a cold store that answers pings but fails
+// writes, reported as cold=failing) — keyword search still works without the embedder,
 // so pulling the service out of rotation would turn a partial loss of
 // recall into a total loss of memory.
 func (e *Engine) Health(ctx context.Context) map[string]any {
@@ -436,6 +443,13 @@ func (e *Engine) Health(ctx context.Context) map[string]any {
 	embedder := "ok"
 	if e.embedderFailing() {
 		embedder = "failing"
+	}
+	// Reachable (Ping) but rejecting writes — a wrong collection, a bad
+	// path, a full disk — is the case Ping cannot see. Report it on the
+	// cold dependency, never on the embedder.
+	cold := state(coldOK)
+	if coldOK && e.cold != nil && e.vectorStoreFailing() {
+		cold = "failing"
 	}
 	var pending *int
 	if n := e.pendingEmbeddings.Load(); n >= 0 {
@@ -460,7 +474,7 @@ func (e *Engine) Health(ctx context.Context) map[string]any {
 		"ok": warmOK && coldOK,
 		"deps": map[string]any{
 			"warm":     state(warmOK),
-			"cold":     state(coldOK),
+			"cold":     cold,
 			"embedder": embedder,
 		},
 		// Which vector backend is actually configured. The dashboard had
