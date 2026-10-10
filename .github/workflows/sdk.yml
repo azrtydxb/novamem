@@ -83,7 +83,7 @@ jobs:
       # layout depends on line length, so no template can match it alone).
       # Pinned to the version contributors get from Homebrew: a different
       # release may lay lines out differently and fail the check below.
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
