@@ -142,6 +142,7 @@ func TestDefaults(t *testing.T) {
 		ObserverObserveThreshold:   10,
 		ObserverReflectThreshold:   50,
 		ObserverTimeoutMs:          30000,
+		OTELServiceName:             "novamem",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("default config differs from the pinned value:\n got %+v\nwant %+v", got, want)
