@@ -30,7 +30,7 @@ func TestRetentionDisabledDoesNotDelete(t *testing.T) {
 	}
 	user := "retention-disabled-" + time.Now().Format("150405.000000000")
 	id := "DISABLED" + time.Now().Format("150405.000000000")
-	if _, err := warm.InsertEntry(ctx, id, warmstore.InsertEntryArgs{UserID: user, Namespace: "retention-disabled-test", Content: "retention disabled fixture"}); err != nil {
+	if _, err := warm.InsertEntry(ctx, id, warmstore.InsertEntryArgs{UserID: user, Namespace: "retention-disabled-test", Content: "retention disabled fixture", Metadata: map[string]any{"expiresAt": "2099-01-01T00:00:00Z"}}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM memory_entries WHERE id=$1`, id) })
@@ -55,5 +55,15 @@ func TestRetentionDisabledDoesNotDelete(t *testing.T) {
 	}
 	if entry == nil {
 		t.Fatal("retention deleted an entry while disabled")
+	}
+}
+
+func TestRetentionDisabledDoesNotRegisterTicker(t *testing.T) {
+	registered := 0
+	scheduleRetention(Config{RetentionEnabled: false}, func(time.Duration, func(context.Context)) {
+		registered++
+	})
+	if registered != 0 {
+		t.Fatalf("disabled retention registered %d ticker(s)", registered)
 	}
 }
