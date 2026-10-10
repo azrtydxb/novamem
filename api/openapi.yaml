@@ -55,6 +55,16 @@ components:
       description:
         Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax.
         Browsers attach it automatically.
+    ServiceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description:
+        "On-behalf-of service token: an EdDSA JWT a registered service signs itself (header
+        alg=EdDSA, kid=service key id; claims sub, org, aud=novamem, iat, exp with exp-iat at
+        most 15 minutes). Acts as user `sub` within the key's one organization on the
+        memory data plane only; projects, accounts, tokens and the admin surface answer 403.
+        Accepted only in user auth mode. See ADR 0011."
   schemas:
     ContextResult:
       type: object
@@ -145,6 +155,32 @@ components:
       required:
         - userId
         - email
+    ServiceKey:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The `kid` for the JWT header.
+        name:
+          type: string
+        organizationId:
+          type: string
+        publicKey:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        revokedAt:
+          nullable: true
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - organizationId
+        - publicKey
+        - createdAt
+        - revokedAt
     UserDeletion:
       type: object
       properties:
@@ -415,6 +451,24 @@ components:
         coldDeleteOk: *id002
       required:
         - deleted
+    ForgetBySourceResult:
+      type: object
+      properties:
+        sourceRef:
+          type: string
+        ids:
+          type: array
+          items:
+            type: string
+        count:
+          type: integer
+        coldDeleteOk:
+          type: boolean
+      required:
+        - sourceRef
+        - ids
+        - count
+        - coldDeleteOk
     Stats:
       type: object
       properties:
@@ -840,6 +894,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -901,6 +956,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -911,6 +967,12 @@ paths:
                 $ref: "#/components/schemas/HygieneReport"
         "401":
           description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and this report is account-wide
           content:
             application/json:
               schema:
@@ -952,6 +1014,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -962,6 +1025,12 @@ paths:
                 $ref: "#/components/schemas/EvaluateReport"
         "401":
           description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and this evaluation is account-wide
           content:
             application/json:
               schema:
@@ -1069,6 +1138,8 @@ paths:
                   type: boolean
                 rerank:
                   type: boolean
+                  description:
+                    Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.
                 minVectorScore:
                   type: number
                   minimum: 0
@@ -1082,6 +1153,7 @@ paths:
                 - query
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1165,6 +1237,10 @@ paths:
               description:
                 '"snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids"
                 omits content and metadata (rank first, hydrate later). Default "full".'
+            rerank:
+              type: boolean
+              description:
+                Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.
           required:
             - query
         annotations:
@@ -1247,6 +1323,10 @@ paths:
                   type: boolean
                 expandSourceChunks:
                   type: boolean
+                rerank:
+                  type: boolean
+                  description:
+                    Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.
                 maxTokens:
                   type: integer
                   minimum: 0
@@ -1256,6 +1336,7 @@ paths:
                 - message
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1319,6 +1400,10 @@ paths:
                 graph:
                   type: number
               description: Per-signal weight overrides. Omit to use defaults.
+            rerank:
+              type: boolean
+              description:
+                Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.
           required:
             - message
         annotations:
@@ -1385,10 +1470,22 @@ paths:
                   type: string
                   format: date-time
                   pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                sourceRefs:
+                  description:
+                    External sources this entry derives from (document URL, ticket key, ...).
+                    Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget
+                    {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.
+                  maxItems: 32
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 512
               required:
                 - content
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1458,6 +1555,15 @@ paths:
               description:
                 Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less
                 strings are rejected. Past it the entry is hidden from reads and later hard-deleted.
+            sourceRefs:
+              type: array
+              items:
+                type: string
+              description:
+                "External sources this entry derives from (document URL, ticket key, thread id), at
+                most 32, each up to 512 characters. Merged into the entry when the write dedupes or
+                updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry
+                that carries one."
           required:
             - content
         annotations:
@@ -1572,6 +1678,7 @@ paths:
               additionalProperties: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1737,10 +1844,22 @@ paths:
                   type: string
                   format: date-time
                   pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                sourceRefs:
+                  description:
+                    External sources this entry derives from (document URL, ticket key, ...).
+                    Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget
+                    {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.
+                  maxItems: 32
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 512
               required:
                 - content
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -1804,6 +1923,15 @@ paths:
               description:
                 Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less
                 strings are rejected. Past it the entry is hidden from reads and later hard-deleted.
+            sourceRefs:
+              type: array
+              items:
+                type: string
+              description:
+                "External sources this entry derives from (document URL, ticket key, thread id), at
+                most 32, each up to 512 characters. Merged into the entry when the write dedupes or
+                updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry
+                that carries one."
           required:
             - content
         annotations:
@@ -1829,6 +1957,7 @@ paths:
           required: false
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2005,6 +2134,7 @@ paths:
           required: true
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2162,6 +2292,7 @@ paths:
                     - ids
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2283,6 +2414,7 @@ paths:
                 - id
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "401":
@@ -2338,7 +2470,7 @@ paths:
       operationId: postV1Neighbors
   /v1/forget:
     post:
-      summary: Delete a memory entry by id
+      summary: Delete a memory entry by id, or every entry from a source reference
       tags:
         - memory
       requestBody:
@@ -2352,23 +2484,34 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 128
+                sourceRef:
+                  description:
+                    Forget every entry carrying this source reference, in the caller's
+                    organization and scope. Mutually exclusive with `id`; exactly one is required
+                    (400 otherwise). Idempotent — a repeat answers count 0.
+                  type: string
+                  minLength: 1
+                  maxLength: 512
                 project:
                   nullable: true
                   type: string
                   minLength: 1
                   maxLength: 128
-              required:
-                - id
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
-          description: ForgetResult
+          description: ForgetResult for `id`, ForgetBySourceResult for `sourceRef`
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ForgetResult"
+                # MCP requires outputSchema.type == "object"; a bare oneOf is rejected.
+                type: object
+                oneOf:
+                  - $ref: "#/components/schemas/ForgetResult"
+                  - $ref: "#/components/schemas/ForgetBySourceResult"
         "401":
           description: Missing or invalid credentials
           content:
@@ -2383,7 +2526,7 @@ paths:
           X", "remove what I said about Y", "that''s wrong, drop it". Do NOT call this proactively or
           as a way to "clean up" the store; the synaptic-decay sweep handles natural-aging. If a fact
           CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and
-          graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.'
+          graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly. With `sourceRef`, every memory stored with that source reference is deleted; with an active project and no `project` argument that covers only the active project, not user-wide entries.'
         inputSchema:
           type: object
           properties:
@@ -2391,12 +2534,19 @@ paths:
               type: string
               description:
                 "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is
-                already gone still answers 200."
+                already gone still answers 200. Give exactly one of `id` or `sourceRef`."
+            sourceRef:
+              type: string
+              description:
+                "Delete every memory that was stored with this source reference (see `sourceRefs`
+                on `memory_remember` / `memory_capture`), for example when the source document is
+                deleted or access to it is revoked. Replies `{ids, count}`; count 0 when nothing
+                matched. Scope: with an active project and no `project` argument, only that
+                project's entries are removed (not your user-wide ones); pass `project` to
+                choose another. Give exactly one of `id` or `sourceRef`."
             project:
               type: string
               description: Project id or name (scope check).
-          required:
-            - id
         annotations:
           title: Forget a memory
           readOnlyHint: false
@@ -2412,6 +2562,7 @@ paths:
         - lifecycle
       security:
         - UserBearer: []
+        - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
@@ -2422,6 +2573,12 @@ paths:
                 $ref: "#/components/schemas/Stats"
         "401":
           description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token is confined to a project and these stats are account-wide
           content:
             application/json:
               schema:
@@ -3573,6 +3730,134 @@ paths:
       description:
         Set per-user ceilings on stored entries and writes per minute. Null clears a ceiling
         rather than setting it to zero.
+  /v1/admin/service-keys:
+    post:
+      summary: Register a service's Ed25519 public key for on-behalf-of tokens
+      tags:
+        - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                organizationId:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+                  description: The one organization this key may act for. "default" is refused.
+                publicKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  description: Raw 32-byte Ed25519 public key, base64url.
+              required:
+                - name
+                - organizationId
+                - publicKey
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "201":
+          description: The registered key. Its id is the `kid` the service puts in its JWT header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceKey"
+        "400":
+          description: Invalid body, or the organization is "default"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      operationId: postV1AdminServiceKeys
+      description:
+        Register the public half of a key a service signs on-behalf-of tokens with. NovaMem
+        never holds the private key. Admin only.
+    get:
+      summary: List service keys, revoked ones included
+      tags:
+        - admin
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "200":
+          description: Every registered key, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ServiceKey"
+                required:
+                  - keys
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      operationId: getV1AdminServiceKeys
+      description: Admin only.
+  /v1/admin/service-keys/{id}:
+    delete:
+      summary: Revoke a service key
+      tags:
+        - admin
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          in: path
+          name: id
+          required: true
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "200":
+          description: Revoked. Tokens signed by the key stop verifying immediately.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+                required:
+                  - revoked
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No such active service key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      operationId: deleteV1AdminServiceKeysById
+      description: Admin only. Idempotent only in effect; a second revoke answers 404.
   /v1/admin/audit-log:
     get:
       summary: Tail the audit log
@@ -3838,6 +4123,7 @@ paths:
                         enum:
                           - ok
                           - unreachable
+                          - failing
                       graph:
                         type: string
                         enum:
@@ -3897,6 +4183,7 @@ paths:
                         enum:
                           - ok
                           - unreachable
+                          - failing
                       graph:
                         type: string
                         enum:

@@ -76,7 +76,7 @@ async fn main() {
     let gone = step(
         "forget",
         c.forget(ForgetRequest {
-            id: id.clone(),
+            id: Some(id.clone()),
             ..Default::default()
         })
         .await,

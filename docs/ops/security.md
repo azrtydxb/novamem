@@ -27,7 +27,8 @@ Email the maintainers privately rather than opening a public issue. We aim to ac
 3. Removing a project member must also revoke their project-related access. `WarmStore.removeProjectMember` deletes the membership row in a single transaction.
 4. Data-plane routes (`/v1/search`, `/v1/recent`, `/v1/neighbors`, `/v1/remember`, `/v1/capture`, `/v1/forget`, `PUT /v1/memories/:id`) enforce project membership via `checkProjectAccess`. Forget/update paths re-fetch the entry's real scope and re-check membership before mutating (defence in depth against `project: null` laundering).
 5. The Better Auth passthrough refuses operations that would leave zero admins: pre-handler intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` (when the new role is non-admin) and returns `400 LAST_ADMIN_PROTECTED` if the target is the only admin.
-6. Audit-log every admin action. Read it at `GET /v1/admin/audit-log`.
+6. On-behalf-of callers (ADR 0011) act as the composite user id `org:<org>/<sub>`; `memory_entries.organization_id` is checked as well. A real user id must never start with `org:`, and a service key must never be bound to org `default`. Do not give an on-behalf-of identity project access.
+7. Audit-log every admin action. Read it at `GET /v1/admin/audit-log`.
 
 ## Production hardening checklist
 

@@ -265,6 +265,8 @@ pub struct novamem_capture_request {
     pub project: *mut c_char,
     pub sensitivity: *mut c_char,
     pub source: *mut c_char,
+    pub source_refs: *mut *mut c_char,
+    pub source_refs_len: usize,
     pub source_type: *mut c_char,
 }
 
@@ -283,12 +285,14 @@ impl novamem_capture_request {
             project: c_str(self.project),
             sensitivity: c_enum(self.sensitivity),
             source: c_str(self.source),
+            source_refs: c_str_array(self.source_refs, self.source_refs_len),
             source_type: c_str(self.source_type),
         }
     }
 
     /// Builds a C value that owns copies of everything in `v`.
     pub(crate) fn to_c(v: &types::CaptureRequest) -> Self {
+        let (source_refs_ptr, source_refs_len) = str_array_to_c(v.source_refs.as_deref());
         Self {
             agent_name: str_to_c(v.agent_name.as_deref()),
             captured_from: str_to_c(v.captured_from.as_deref()),
@@ -303,6 +307,8 @@ impl novamem_capture_request {
             project: str_to_c(v.project.as_deref()),
             sensitivity: enum_to_c(v.sensitivity.as_ref()),
             source: str_to_c(v.source.as_deref()),
+            source_refs: source_refs_ptr,
+            source_refs_len,
             source_type: str_to_c(v.source_type.as_deref()),
         }
     }
@@ -320,6 +326,7 @@ impl novamem_capture_request {
         free_str(self.project);
         free_str(self.sensitivity);
         free_str(self.source);
+        free_str_array(self.source_refs, self.source_refs_len);
         free_str(self.source_type);
     }
 }
@@ -552,6 +559,8 @@ pub struct novamem_context_request {
     pub message: *mut c_char,
     pub namespace: *mut c_char,
     pub project: *mut c_char,
+    pub has_rerank: bool,
+    pub rerank: bool,
     pub weights: *mut novamem_context_request_weights,
 }
 
@@ -570,6 +579,7 @@ impl novamem_context_request {
             message: c_str(self.message).unwrap_or_default(),
             namespace: c_str(self.namespace),
             project: c_str(self.project),
+            rerank: if self.has_rerank { Some(self.rerank) } else { None },
             weights: self.weights.as_ref().map(|p| p.to_rust()),
         }
     }
@@ -596,6 +606,8 @@ impl novamem_context_request {
             message: str_to_c(Some(v.message.as_str())),
             namespace: str_to_c(v.namespace.as_deref()),
             project: str_to_c(v.project.as_deref()),
+            has_rerank: v.rerank.is_some(),
+            rerank: v.rerank.unwrap_or_default(),
             weights: v.weights.as_ref().map_or(std::ptr::null_mut(), |x| boxed(novamem_context_request_weights::to_c(x))),
         }
     }
@@ -613,6 +625,7 @@ impl novamem_context_request {
         free_str(self.message);
         free_str(self.namespace);
         free_str(self.project);
+
         novamem_context_request_weights_free(self.weights);
     }
 }
@@ -1033,22 +1046,25 @@ pub unsafe extern "C" fn novamem_exported_entry_free(p: *mut novamem_exported_en
 pub struct novamem_forget_request {
     pub id: *mut c_char,
     pub project: *mut c_char,
+    pub source_ref: *mut c_char,
 }
 
 impl novamem_forget_request {
     /// Reads a C-owned value into the SDK type.
     pub(crate) unsafe fn to_rust(&self) -> types::ForgetRequest {
         types::ForgetRequest {
-            id: c_str(self.id).unwrap_or_default(),
+            id: c_str(self.id),
             project: c_str(self.project),
+            source_ref: c_str(self.source_ref),
         }
     }
 
     /// Builds a C value that owns copies of everything in `v`.
     pub(crate) fn to_c(v: &types::ForgetRequest) -> Self {
         Self {
-            id: str_to_c(Some(v.id.as_str())),
+            id: str_to_c(v.id.as_deref()),
             project: str_to_c(v.project.as_deref()),
+            source_ref: str_to_c(v.source_ref.as_deref()),
         }
     }
 
@@ -1056,6 +1072,7 @@ impl novamem_forget_request {
     pub(crate) unsafe fn free_fields(&mut self) {
         free_str(self.id);
         free_str(self.project);
+        free_str(self.source_ref);
     }
 }
 

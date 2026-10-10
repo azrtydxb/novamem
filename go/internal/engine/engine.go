@@ -98,11 +98,11 @@ type Engine struct {
 	// one ERROR per minute at most, with the suppressed count riding
 	// along so a dead embeddings host can't turn a search incident into
 	// a log-volume incident.
-	embedMu                sync.Mutex
-	lastEmbedErrorLoggedAt time.Time
-	lastEmbedOkAt          time.Time
-	lastEmbedErrorAt       time.Time
-	suppressedEmbedErrors  int
+	embedSig failureSignal
+	// The vector store (Qdrant/pgvector) is a separate dependency with its
+	// own signal: a healthy embedder with a failing store must not be
+	// reported as an embedder outage.
+	vectorSig failureSignal
 
 	// In-flight fire-and-forget enrichment tasks (MAX_ENRICH_IN_FLIGHT).
 	enrichInFlight atomic.Int64
@@ -228,40 +228,82 @@ func New(o Options) *Engine {
 	return e
 }
 
+// failureSignal tracks one dependency's recent outcomes: a throttled ERROR
+// log (once a minute, suppressed count riding along) and the "most recent
+// outcome was a failure" flag the health report reads.
+type failureSignal struct {
+	mu           sync.Mutex
+	lastLoggedAt time.Time
+	lastOkAt     time.Time
+	lastErrAt    time.Time
+	suppressed   int
+}
+
+// fail records a failure and reports whether to log it now, with the count
+// of failures suppressed since the last log.
+func (f *failureSignal) fail(now time.Time) (logNow bool, suppressed int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastErrAt = now
+	if now.Sub(f.lastLoggedAt) < time.Minute {
+		f.suppressed++
+		return false, 0
+	}
+	suppressed = f.suppressed
+	f.suppressed = 0
+	f.lastLoggedAt = now
+	return true, suppressed
+}
+
+func (f *failureSignal) ok(now time.Time) {
+	f.mu.Lock()
+	f.lastOkAt = now
+	f.mu.Unlock()
+}
+
+// failing is true only when the most recent outcome was a failure; a blip
+// that later succeeded is not an outage.
+func (f *failureSignal) failing() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.lastErrAt.IsZero() && f.lastErrAt.After(f.lastOkAt)
+}
+
 // recordEmbedFailure — engine/index.ts recordEmbedFailure. ERROR level
 // (this is data becoming unfindable, not a degraded nicety), throttled
-// to once a minute.
+// to once a minute. Only for failures of the embedding call itself; a
+// vector-store failure goes to recordVectorStoreFailure.
 func (e *Engine) recordEmbedFailure(err error, op, entryID string) {
-	e.embedMu.Lock()
-	now := e.now()
-	e.lastEmbedErrorAt = now
-	if now.Sub(e.lastEmbedErrorLoggedAt) < time.Minute {
-		e.suppressedEmbedErrors++
-		e.embedMu.Unlock()
+	logNow, suppressed := e.embedSig.fail(e.now())
+	if !logNow {
 		return
 	}
-	suppressed := e.suppressedEmbedErrors
-	e.suppressedEmbedErrors = 0
-	e.lastEmbedErrorLoggedAt = now
-	e.embedMu.Unlock()
 	e.log.Error("embedder failed — entry stored without a vector and is not findable "+
 		"by semantic search until the reconciler drains it",
 		"op", op, "entryId", entryID, "err", err, "suppressedSinceLastLog", suppressed)
 }
 
-// embedderFailing — "failing" only when the most recent outcome was a
-// failure; a blip that later succeeded is not an outage.
-func (e *Engine) embedderFailing() bool {
-	e.embedMu.Lock()
-	defer e.embedMu.Unlock()
-	return !e.lastEmbedErrorAt.IsZero() && e.lastEmbedErrorAt.After(e.lastEmbedOkAt)
+// recordVectorStoreFailure is recordEmbedFailure's counterpart for the cold
+// vector store (a write or read that failed after the embedder answered).
+func (e *Engine) recordVectorStoreFailure(err error, op, entryID string) {
+	logNow, suppressed := e.vectorSig.fail(e.now())
+	if !logNow {
+		return
+	}
+	e.log.Error("vector store write failed — entry stored without a vector and is not findable "+
+		"by semantic search until the reconciler drains it",
+		"op", op, "entryId", entryID, "err", err, "suppressedSinceLastLog", suppressed)
 }
 
-func (e *Engine) recordEmbedSuccess() {
-	e.embedMu.Lock()
-	e.lastEmbedOkAt = e.now()
-	e.embedMu.Unlock()
-}
+// embedderFailing — see failureSignal.failing.
+func (e *Engine) embedderFailing() bool { return e.embedSig.failing() }
+
+// vectorStoreFailing — the cold store's counterpart of embedderFailing.
+func (e *Engine) vectorStoreFailing() bool { return e.vectorSig.failing() }
+
+func (e *Engine) recordEmbedSuccess() { e.embedSig.ok(e.now()) }
+
+func (e *Engine) recordVectorStoreSuccess() { e.vectorSig.ok(e.now()) }
 
 // embedDocument — the "document" side of the asymmetric prefix pair.
 // Returns errNoEmbedder when nothing is configured so every caller takes
@@ -303,6 +345,11 @@ type RememberRequest struct {
 	Confidence   *float64
 	Force        bool
 	ExpiresAt    string // ISO-8601 or ""
+	// SourceRefs name the external sources this entry derives from
+	// (#338). They are MERGED, never replaced: when a write dedupes onto
+	// or updates an existing entry, the new refs are added to it, so
+	// forgetting any one of its sources removes the entry.
+	SourceRefs []string
 }
 
 type RememberResult struct {
@@ -373,6 +420,9 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 		if err := e.warm.BumpHits(ctx, existingID); err != nil {
 			return RememberResult{}, err
 		}
+		if err := e.warm.AddSourceRefs(ctx, existingID, req.SourceRefs); err != nil {
+			return RememberResult{}, err
+		}
 		// Repaired in the namespace the entry actually lives in: dedup
 		// matches on (user, project, hash) with namespace excluded, and
 		// using the request's namespace indexed the vector under a shelf
@@ -420,6 +470,7 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 		ContentHash:    &contentHash,
 		FactsPendingAt: factsPendingAt,
 		GraphPendingAt: graphPendingAt,
+		SourceRefs:     req.SourceRefs,
 	})
 	if err != nil {
 		return RememberResult{}, err
@@ -458,9 +509,11 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 			Embedding: embedding,
 			Payload:   e.vectorPayload(source, req.AgentName),
 		}); err != nil {
+			e.recordVectorStoreFailure(err, "remember", id)
 			e.parkMissingVector(ctx, userID, req.Project, id, namespace, err)
 			return RememberResult{}, err
 		}
+		e.recordVectorStoreSuccess()
 		// Stamped only after the vector is durably in the cold store: the
 		// marker means "a vector exists", so ordering it after the upsert
 		// is what keeps it from lying when cold is the tier that failed.
@@ -693,6 +746,11 @@ func (e *Engine) Capture(ctx context.Context, userID string, req RememberRequest
 					return RememberResult{}, err
 				}
 				if updated.Updated {
+					// The overwrite keeps every content word the old text had,
+					// so the entry now derives from both sources.
+					if err := e.warm.AddSourceRefs(ctx, candidate.ID, req.SourceRefs); err != nil {
+						return RememberResult{}, err
+					}
 					// embeddingChanged is false when the re-embed failed, so
 					// the caller is told the row is stored but not yet
 					// searchable.
@@ -729,8 +787,10 @@ func (e *Engine) nearDuplicate(ctx context.Context, userID string, projectID *st
 		K:         captureCandidateK,
 	})
 	if err != nil {
+		e.vectorSig.fail(e.now())
 		return nil, err
 	}
+	e.recordVectorStoreSuccess()
 	var ids []string
 	for _, h := range nearby {
 		if h.Score >= semanticDuplicateThreshold {
@@ -935,15 +995,29 @@ func (e *Engine) Forget(ctx context.Context, userID, id string, project *string)
 	if err := e.warm.DeleteEntry(ctx, id, entry.ProjectID, userID); err != nil {
 		return ForgetResult{}, err
 	}
-	coldDeleteOk := true
+	coldDeleteOk, err := e.cleanupAfterWarmDelete(ctx, userID, id, entry.Namespace, entry.ProjectID)
+	if err != nil {
+		return ForgetResult{}, err
+	}
+	return ForgetResult{Deleted: true, ColdDeleteOk: coldDeleteOk}, nil
+}
+
+// cleanupAfterWarmDelete is everything forget does once the warm rows are
+// gone: the cold vector (parked in cold_orphans for the reaper when the
+// delete fails), the facts distilled from the entry, and the changelog.
+// Shared by forget-by-id and forget-by-source so the two cannot drift.
+// The error is only a failure to PARK an orphan; coldDeleteOk reports
+// whether every cold-side cleanup succeeded.
+func (e *Engine) cleanupAfterWarmDelete(ctx context.Context, userID, id, namespace string, projectID *string) (coldDeleteOk bool, err error) {
+	coldDeleteOk = true
 	if e.cold != nil {
-		if delErr := e.cold.Delete(ctx, userID, entry.Namespace, id, entry.ProjectID); delErr != nil {
+		if delErr := e.cold.Delete(ctx, userID, namespace, id, projectID); delErr != nil {
 			// Warm row is already gone; the cold vector is orphaned. Park
 			// the id; the reaper retries until the delete succeeds.
 			coldDeleteOk = false
 			e.log.Warn("forget: cold vector survived; queued for reaper", "entryId", id, "err", delErr)
-			if parkErr := e.warm.RecordColdOrphan(ctx, id, userID, entry.Namespace, entry.ProjectID, delErr.Error()); parkErr != nil {
-				return ForgetResult{}, parkErr
+			if parkErr := e.warm.RecordColdOrphan(ctx, id, userID, namespace, projectID, delErr.Error()); parkErr != nil {
+				return false, parkErr
 			}
 		}
 	}
@@ -952,11 +1026,52 @@ func (e *Engine) Forget(ctx context.Context, userID, id string, project *string)
 	// still answer searches, so a user who deleted a fact keeps being
 	// told it. That is the opposite of what forget promises, and it
 	// matters most for exactly the entries someone bothered to delete.
-	if !e.deleteDerivedFacts(ctx, userID, id, entry.ProjectID) {
+	if !e.deleteDerivedFacts(ctx, userID, id, projectID) {
 		coldDeleteOk = false
 	}
-	e.logChange(ctx, userID, entry.ProjectID, id, "deleted", map[string]any{"coldDeleteOk": coldDeleteOk})
-	return ForgetResult{Deleted: true, ColdDeleteOk: coldDeleteOk}, nil
+	e.logChange(ctx, userID, projectID, id, "deleted", map[string]any{"coldDeleteOk": coldDeleteOk})
+	return coldDeleteOk, nil
+}
+
+// ForgetBySourceResult is the receipt of a forget by source reference.
+type ForgetBySourceResult struct {
+	SourceRef    string   `json:"sourceRef"`
+	IDs          []string `json:"ids"`
+	Count        int      `json:"count"`
+	ColdDeleteOk bool     `json:"coldDeleteOk"`
+}
+
+// ForgetBySource removes every entry in the caller's organization and
+// scope that carries ref (#338).
+//
+// Ordering: ALL warm rows (entry, FTS shadow, access, relations, refs) go
+// in one transaction first, then the cold vectors one by one. Retrieval
+// resolves every hit — keyword, vector, graph — through the warm entries
+// table, so once that transaction commits nothing revoked can be returned
+// even if the process dies before touching the cold store. A vector whose
+// delete fails is parked for the reaper; one stranded by a crash in that
+// window is unreachable (it has no warm row to resolve to) but is not
+// retried — the same residual as forget-by-id, which uses this order.
+// Idempotent: no match is a receipt with count 0.
+func (e *Engine) ForgetBySource(ctx context.Context, userID string, project *string, ref string) (ForgetBySourceResult, error) {
+	gone, err := e.warm.DeleteEntriesBySourceRef(ctx, userID, project, ref)
+	if err != nil {
+		return ForgetBySourceResult{}, err
+	}
+	res := ForgetBySourceResult{SourceRef: ref, IDs: make([]string, 0, len(gone)), ColdDeleteOk: true}
+	var firstErr error
+	for _, g := range gone {
+		res.IDs = append(res.IDs, g.ID)
+		ok, err := e.cleanupAfterWarmDelete(ctx, userID, g.ID, g.Namespace, g.ProjectID)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if !ok {
+			res.ColdDeleteOk = false
+		}
+	}
+	res.Count = len(res.IDs)
+	return res, firstErr
 }
 
 // DeleteProjectResult — engine/index.ts deleteProject's return shape.
@@ -1098,8 +1213,10 @@ func (e *Engine) Update(ctx context.Context, userID, id string, req UpdateReques
 				Embedding: embedding,
 				Payload:   map[string]any{"source": entry.Source, "agentName": entry.AgentName},
 			}); err != nil {
+				e.recordVectorStoreFailure(err, "update", id)
 				return UpdateResult{}, err
 			}
+			e.recordVectorStoreSuccess()
 			stampedAt := e.now()
 			if err := e.warm.SetEmbeddedAt(ctx, id, &stampedAt); err != nil {
 				return UpdateResult{}, err

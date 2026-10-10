@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // MaxContentBytes — routes/schemas.ts MAX_CONTENT_BYTES. zod's .max()
@@ -212,6 +213,29 @@ func (c *v) projectRef(key string) (*string, bool) {
 // namespaceRule — NamespaceRule (schemas.ts) for includeNamespaces items.
 func validNamespaceItem(s string) bool {
 	return utf16Len(s) >= 1 && utf16Len(s) <= 128 && namespaceRe.MatchString(s)
+}
+
+// Source references (#338) are opaque caller-chosen strings (a document
+// URL, a ticket key, a thread id), so the rule is about safety, not shape:
+// bounded count and length, no control characters (they corrupt logs and
+// admin UIs), and not blank. Matching is exact and case-sensitive.
+const (
+	MaxSourceRefs   = 32
+	MaxSourceRefLen = 512
+
+	sourceRefMessage = "source ref must not be blank or contain control characters"
+)
+
+func validSourceRef(s string) bool {
+	if strings.TrimSpace(s) == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+			return false
+		}
+	}
+	return utf8.ValidString(s)
 }
 
 // metadata — MetadataRule: object, keys ≤64 chars, serialized ≤8KB.
