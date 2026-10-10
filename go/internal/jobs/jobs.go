@@ -38,6 +38,11 @@ type Config struct {
 	// NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS / _BATCH.
 	ReconcileInterval time.Duration
 	ReconcileBatch    int
+	RetentionEnabled  bool
+	RetentionMaxAge   time.Duration
+	RetentionBatch    int
+	RetentionInterval time.Duration
+	RetentionDryRun   bool
 }
 
 // Run starts every loop and blocks until ctx is cancelled and all
@@ -78,6 +83,17 @@ func Run(ctx context.Context, cfg Config) {
 				"abandoned", reap.Abandoned, "pending", reap.Pending, "total", reap.Total)
 		}
 	})
+	if cfg.RetentionEnabled {
+		loop(cfg.RetentionInterval, func(ctx context.Context) {
+			r, err := cfg.Engine.ApplyRetention(ctx, cfg.RetentionMaxAge, cfg.RetentionBatch, cfg.RetentionDryRun)
+			if err != nil {
+				cfg.Log.Error("retention error", "err", err)
+				return
+			}
+			cfg.Log.Info("retention batch", "selected", r.Selected, "deleted", r.Deleted,
+				"entryIds", r.EntryIDs, "dryRun", r.DryRun)
+		})
+	}
 
 	// Dream cycle — daily. The heavy work is the per-entry vector lookup;
 	// firing it more often than once per cold-write batch buys nothing.
