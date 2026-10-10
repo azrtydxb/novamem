@@ -351,8 +351,15 @@ func run() error {
 	}()
 
 	log.Info("novamem-go listening", "addr", srv.Addr, "latestMigration", warmstore.LatestMigration())
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+	var serveErr error
+	if cfg.TLSCert != "" {
+		log.Info("native TLS enabled", "cert", cfg.TLSCert)
+		serveErr = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+	} else {
+		serveErr = srv.ListenAndServe()
+	}
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		return serveErr
 	}
 	<-jobsDone
 	return nil

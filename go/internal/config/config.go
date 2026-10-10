@@ -30,6 +30,8 @@ import (
 type Config struct {
 	Host     string // NOVAMEM_HOST
 	Port     int    // NOVAMEM_PORT
+	TLSCert  string // NOVAMEM_TLS_CERT
+	TLSKey   string // NOVAMEM_TLS_KEY
 	WarmURL  string // NOVAMEM_WARM_URL (Postgres DSN) — required
 	LogLevel string // LOG_LEVEL
 
@@ -166,6 +168,8 @@ func Load() (Config, error) {
 	var err error
 	c := Config{
 		Host:      strEnv("NOVAMEM_HOST"),
+		TLSCert:   strEnv("NOVAMEM_TLS_CERT"),
+		TLSKey:    strEnv("NOVAMEM_TLS_KEY"),
 		WarmURL:   strEnv("NOVAMEM_WARM_URL"),
 		LogLevel:  strEnv("LOG_LEVEL"),
 		AuthToken: strEnv("NOVAMEM_AUTH_TOKEN"),
@@ -177,6 +181,9 @@ func Load() (Config, error) {
 		// Same fail-fast stance as the TS server: a server without its
 		// warm store would 503 every request; refuse to start instead.
 		return c, fmt.Errorf("NOVAMEM_WARM_URL is required")
+	}
+	if (c.TLSCert == "") != (c.TLSKey == "") {
+		return c, fmt.Errorf("NOVAMEM_TLS_CERT and NOVAMEM_TLS_KEY must be set together")
 	}
 	if c.AuthMode, err = enumEnv("NOVAMEM_AUTH_MODE"); err != nil {
 		return c, err
@@ -193,7 +200,11 @@ func Load() (Config, error) {
 	c.InsecureCookies = boolEnv("NOVAMEM_INSECURE_COOKIES")
 	c.BaseURL = strEnv("NOVAMEM_BASE_URL")
 	if c.BaseURL == "" {
-		c.BaseURL = fmt.Sprintf("http://%s:%d", c.Host, c.Port)
+		scheme := "http"
+		if c.TLSCert != "" {
+			scheme = "https"
+		}
+		c.BaseURL = fmt.Sprintf("%s://%s:%d", scheme, c.Host, c.Port)
 	}
 	if c.QuotaMaxEntries, err = intEnv("NOVAMEM_QUOTA_MAX_ENTRIES"); err != nil {
 		return c, err

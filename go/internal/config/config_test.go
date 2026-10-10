@@ -178,6 +178,16 @@ func TestFailFast(t *testing.T) {
 			`NOVAMEM_PORT "http" is not a valid port`,
 		},
 		{
+			"TLS certificate without key",
+			map[string]string{"NOVAMEM_TLS_CERT": "/etc/novamem/tls.crt"},
+			"NOVAMEM_TLS_CERT and NOVAMEM_TLS_KEY must be set together",
+		},
+		{
+			"TLS key without certificate",
+			map[string]string{"NOVAMEM_TLS_KEY": "/etc/novamem/tls.key"},
+			"NOVAMEM_TLS_CERT and NOVAMEM_TLS_KEY must be set together",
+		},
+		{
 			"unknown auth mode",
 			map[string]string{"NOVAMEM_AUTH_MODE": "tenant"},
 			`NOVAMEM_AUTH_MODE "tenant" is not one of none|bearer|user`,
@@ -291,6 +301,24 @@ func TestFailFast(t *testing.T) {
 				t.Errorf("error = %q\n   want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestNativeTLSConfig(t *testing.T) {
+	cert := "/etc/novamem/tls.crt"
+	key := "/etc/novamem/tls.key"
+	c, err := loadWith(t, map[string]string{
+		"NOVAMEM_TLS_CERT": cert,
+		"NOVAMEM_TLS_KEY":  key,
+	})
+	if err != nil {
+		t.Fatalf("Load with native TLS configured: %v", err)
+	}
+	if c.TLSCert != cert || c.TLSKey != key {
+		t.Fatalf("TLS paths = (%q, %q), want (%q, %q)", c.TLSCert, c.TLSKey, cert, key)
+	}
+	if c.BaseURL != "https://0.0.0.0:7778" {
+		t.Errorf("TLS BaseURL = %q, want https://0.0.0.0:7778", c.BaseURL)
 	}
 }
 
