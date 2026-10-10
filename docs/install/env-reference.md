@@ -8,7 +8,7 @@ Every novamem-server config knob lives in an environment variable. The schema is
 
 <!-- env-reference:start -->
 
-_76 variables. This section is generated from [`go/internal/config/registry.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/config/registry.go) by `go run ./cmd/gen-env-docs` — the defaults below are the ones the loader applies, not a second copy of them. Add or change a variable there, not here._
+_80 variables. This section is generated from [`go/internal/config/registry.go`](https://github.com/azrtydxb/novamem/blob/main/go/internal/config/registry.go) by `go run ./cmd/gen-env-docs` — the defaults below are the ones the loader applies, not a second copy of them. Add or change a variable there, not here._
 
 ## Required settings
 
@@ -139,11 +139,15 @@ Each of these is required under the condition named, and startup fails fast with
 
 ## Logging and diagnostics
 
-| Variable                           | Type                    | Default | Description                                                                                                                                                                                                                 |
-| ---------------------------------- | ----------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NOVAMEM_ALLOW_INSECURE_ENDPOINTS` | boolean (1/true/yes/on) | off     | Allows configured endpoints, including the cold store, to use public HTTP. HTTP to private or loopback addresses is allowed by default; prefer HTTPS for public endpoints.                                                  |
-| `LOG_LEVEL`                        | string                  | `info`  | Log level: `debug`, `info`, `warn` or `error`.                                                                                                                                                                              |
-| `NOVAMEM_PPROF_ADDR`               | string                  | —       | When set — `127.0.0.1:6060`, say — serves Go `net/http/pprof` on its own listener. A separate socket rather than an API route, so profiling stays reachable in every auth mode and never rides an exposed port by accident. |
+| Variable                             | Type                    | Default                                  | Description                                                                                                                                                                                                                 |
+| ------------------------------------ | ----------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOVAMEM_ALLOW_INSECURE_ENDPOINTS`   | boolean (1/true/yes/on) | off                                      | Allows configured endpoints, including the cold store, to use public HTTP. HTTP to private or loopback addresses is allowed by default; prefer HTTPS for public endpoints.                                                  |
+| `LOG_LEVEL`                          | string                  | `info`                                   | Log level: `debug`, `info`, `warn` or `error`.                                                                                                                                                                              |
+| `OTEL_ENABLED`                       | boolean (1/true/yes/on) | off                                      | Enables OpenTelemetry trace export. Setting an OTLP endpoint also enables tracing.                                                                                                                                          |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`        | string                  | —                                        | OTLP/HTTP collector base URL. Traces are posted to `${endpoint}/v1/traces`; setting it enables tracing.                                                                                                                     |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | string                  | `$OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces` | Full OTLP/HTTP traces URL, overriding the base endpoint.                                                                                                                                                                    |
+| `OTEL_SERVICE_NAME`                  | string                  | `novamem`                                | OpenTelemetry `service.name` resource attribute.                                                                                                                                                                            |
+| `NOVAMEM_PPROF_ADDR`                 | string                  | —                                        | When set — `127.0.0.1:6060`, say — serves Go `net/http/pprof` on its own listener. A separate socket rather than an API route, so profiling stays reachable in every auth mode and never rides an exposed port by accident. |
 
 ## Deprecated
 
@@ -189,8 +193,8 @@ to the server it is the origin it advertises, and to the client tools it
 is the server to connect to. Pointing them at each other is the intent.
 :::
 
-::: info No OpenTelemetry
-The Go server emits no OTLP traces, and reads no `OTEL_*` variables — setting `OTEL_EXPORTER_OTLP_ENDPOINT` does nothing. This page listed them until the reference was generated from the loader, which is exactly the kind of claim a hand-written table can make and a generated one cannot. Prometheus metrics are available at `/v1/admin/metrics/prom` (see `NOVAMEM_ADMIN_DASHBOARD`); OTLP export is tracked in [#277](https://github.com/azrtydxb/novamem/issues/277).
+::: info OpenTelemetry
+The Go server exports traces over OTLP/HTTP when `OTEL_ENABLED` is true or either OTLP endpoint is set. Prometheus metrics are available at `/v1/admin/metrics/prom` (see `NOVAMEM_ADMIN_DASHBOARD`).
 :::
 
 ## See also

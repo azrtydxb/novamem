@@ -24,6 +24,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/jobs"
 	"github.com/azrtydxb/novamem/go/internal/llm"
 	"github.com/azrtydxb/novamem/go/internal/metrics"
+	"github.com/azrtydxb/novamem/go/internal/tracing"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -305,6 +306,17 @@ func run() error {
 			RetentionInterval: time.Duration(cfg.RetentionIntervalMinutes) * time.Minute,
 			RetentionDryRun: cfg.RetentionDryRun,
 		})
+	}()
+	shutdownTracing, traceErr := tracing.Start(ctx, tracing.Config{Enabled: cfg.TracingEnabled(), Endpoint: cfg.OTELEndpoint, TracesEndpoint: cfg.OTELTracesEndpoint, ServiceName: cfg.OTELServiceName}, log)
+	if traceErr != nil {
+		log.Error("OTLP tracing disabled; server will continue", "err", traceErr)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(flush); err != nil {
+			log.Warn("OTLP tracing shutdown", "err", err)
+		}
 	}()
 
 	if cfg.PprofAddr != "" {

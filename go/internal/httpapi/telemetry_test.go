@@ -6,16 +6,19 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/azrtydxb/novamem/go/internal/engine"
 )
 
 func TestAdminTelemetryAggregatesWithoutContentAndRequiresAdmin(t *testing.T) {
 	e := newOBOEnv(t)
 	ctx := context.Background()
-	// Migration 0016 enforces project references for new entries. Give the
-	// telemetry fixture a real project owned by the test user before
-	// inserting rows that refer to it.
-	if _, err := e.pool.Exec(ctx, `INSERT INTO projects (id, name, owner_user_id)
-		SELECT 'project-opaque', 'Telemetry fixture', id FROM "user" WHERE email = 'user@example.test'`); err != nil {
+	owner, err := e.warm.CreateBAUser(ctx, "telemetry@example.test", "t", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := e.warm.CreateProject(ctx, engine.NewULID(), "project-opaque", owner.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	created := time.Now().UTC().Add(-24 * time.Hour)
@@ -23,8 +26,8 @@ func TestAdminTelemetryAggregatesWithoutContentAndRequiresAdmin(t *testing.T) {
 		id, namespace, project, agent, sens string
 		cold, embedded, factsPending        bool
 	}{
-		{"telemetry-a", "work", "project-opaque", "agent-x", "private", false, true, false},
-		{"telemetry-b", "work", "project-opaque", "agent-x", "internal", true, false, true},
+		{"telemetry-a", "work", project.ID, "agent-x", "private", false, true, false},
+		{"telemetry-b", "work", project.ID, "agent-x", "internal", true, false, true},
 	} {
 		_, err := e.pool.Exec(ctx, `INSERT INTO memory_entries (id,user_id,project_id,content,namespace,agent_name,cold,embedded_at,facts_pending_at,metadata,created_at) VALUES ($1,'public',$2,'must-not-leak',$3,$4,$5,CASE WHEN $6 THEN now() ELSE NULL END,CASE WHEN $7 THEN now() ELSE NULL END,jsonb_build_object('sensitivity',$8::text),$9)`, row.id, row.project, row.namespace, row.agent, row.cold, row.embedded, row.factsPending, row.sens, created)
 		if err != nil {
@@ -70,7 +73,7 @@ func TestAdminTelemetryAggregatesWithoutContentAndRequiresAdmin(t *testing.T) {
 		t.Errorf("missing %s count %d in %#v", key, want, rows)
 	}
 	assertCount(got.ByNamespace, "work", 2)
-	assertCount(got.ByProject, "project-opaque", 2)
+	assertCount(got.ByProject, project.ID, 2)
 	assertCount(got.BySensitivity, "private", 1)
 	assertCount(got.BySensitivity, "internal", 1)
 	assertCount(got.ByTier, "warm", 1)

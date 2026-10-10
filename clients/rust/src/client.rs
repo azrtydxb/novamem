@@ -61,10 +61,10 @@ fn decode<T: DeserializeOwned>(op: &str, r: Resp) -> Result<T, Error> {
 fn degraded_empty(op: &str, r: &Resp) -> Result<(), Error> {
     let v = &r.body;
     let degraded = v.get("degraded").and_then(Value::as_bool).unwrap_or(false);
-    let empty = v
-        .get("results")
-        .and_then(Value::as_array)
-        .is_none_or(|r| r.is_empty());
+    let empty = match v.get("results").and_then(Value::as_array) {
+        Some(results) => results.is_empty(),
+        None => true,
+    };
     if degraded && empty {
         return Err(Error::unavailable(
             op,
@@ -186,11 +186,11 @@ impl Client {
             .t
             .call(Call::new("update", Method::PUT, path).body(body("update", &request)?))
             .await?;
-        if v.body
-            .get("id")
-            .and_then(Value::as_str)
-            .is_none_or(str::is_empty)
-        {
+        let missing_or_empty_id = match v.body.get("id").and_then(Value::as_str) {
+            Some(id) => id.is_empty(),
+            None => true,
+        };
+        if missing_or_empty_id {
             if let Value::Object(m) = &mut v.body {
                 m.insert("id".into(), json!(id.trim()));
             }
@@ -201,7 +201,11 @@ impl Client {
     /// Never reports success on a failed delete. An id that is not in your
     /// scope comes back `deleted: false` with no error.
     pub async fn forget(&self, request: t::ForgetRequest) -> Result<t::ForgetResult, Error> {
-        if request.id.as_deref().is_none_or(blank) {
+        let missing_or_blank_id = match request.id.as_deref() {
+            Some(id) => blank(id),
+            None => true,
+        };
+        if missing_or_blank_id {
             return Err(Error::new("forget", "id is required"));
         }
         match self
