@@ -281,17 +281,9 @@ What clients speak this transport: OpenAI Codex CLI, recent Cursor / Kilo Code (
 
 Everything it served is served by `/mcp`, which speaks both protocol eras. A client still configured for the old pair needs its `url` changed to `/mcp` and its `type` to `http`; `novamem-init` writes that shape now.
 
-### stdio shim
+### Local stdio bridge
 
-`novamem-mcp` proxies stdio JSON-RPC ↔ Streamable HTTP. Used by hosts that don't support remote MCP at all (Claude Desktop) or whose remote-MCP implementation is broken.
-
-```bash
-NOVAMEM_BASE_URL=https://novamem.example.com \
-NOVAMEM_TOKEN=nm_... \
-  npx -y @azrtydxb/novamem-mcp
-```
-
-Pin the version (`@1.2.0`) for reproducibility.
+Hosts that require stdio can use the Go `novamem-mcp` binary, distributed with `novamem-init` in the release archives. Set `NOVAMEM_BASE_URL` and `NOVAMEM_TOKEN` for the server and bearer. For remote MCP clients, connect directly to `/mcp`.
 
 ## Conventions
 
@@ -304,4 +296,4 @@ Pin the version (`@1.2.0`) for reproducibility.
 
 - [Mental model](../concepts/mental-model.md)
 - [Hybrid search internals](../architecture/hybrid-search.md)
-- [novamem-init CLI](../connect/init-cli.md) — wires the SSE/stdio config for you
+- [novamem-init CLI](../connect/init-cli.md) — configures supported hosts for you

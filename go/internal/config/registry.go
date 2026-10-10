@@ -316,6 +316,26 @@ var Vars = []Var{
 		Description: "Base half-life in days. Effective lifespan grows with use: `effectiveDays = NOVAMEM_DECAY_DAYS x log2(hits + 1)`.",
 	},
 	{
+		Name: "NOVAMEM_RETENTION_ENABLED", Kind: KindBool, Default: false, Section: secEngine,
+		Description: "Enables automatic deletion of entries past the configured retention age. Off by default.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_MAX_AGE_DAYS", Kind: KindPosInt, Default: 365, Section: secEngine,
+		Description: "Maximum age in days for entries without explicit expiresAt metadata. Age is measured from updated_at, so updates and decay demotion extend retention.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_BATCH", Kind: KindPosInt, Default: 100, Section: secEngine,
+		Description: "Maximum entries considered per retention pass, oldest updated_at first.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_INTERVAL_MINUTES", Kind: KindPosInt, Default: 60, Section: secEngine,
+		Description: "How often the retention job runs while enabled.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_DRY_RUN", Kind: KindBool, Default: false, Section: secEngine,
+		Description: "Logs each retention batch that would be deleted without deleting entries.",
+	},
+	{
 		Name: "NOVAMEM_PERSONAL_TERMS", Kind: KindCSV, Section: secEngine,
 		Description: "Deployment-specific vocabulary — operator name, product names, project slugs — that the worthiness scorer treats as high-relevance.",
 	},
