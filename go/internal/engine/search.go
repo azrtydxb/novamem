@@ -227,10 +227,12 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 					})
 					if err != nil {
 						degraded = true
+						e.vectorSig.fail(e.now())
 						e.log.Warn("vector tier failed", "err", err)
 						vectorHits = nil
 						break vectorLoop
 					}
+					e.recordVectorStoreSuccess()
 					vectorHits = append(vectorHits, hits...)
 				}
 			}

@@ -98,11 +98,11 @@ type Engine struct {
 	// one ERROR per minute at most, with the suppressed count riding
 	// along so a dead embeddings host can't turn a search incident into
 	// a log-volume incident.
-	embedMu                sync.Mutex
-	lastEmbedErrorLoggedAt time.Time
-	lastEmbedOkAt          time.Time
-	lastEmbedErrorAt       time.Time
-	suppressedEmbedErrors  int
+	embedSig failureSignal
+	// The vector store (Qdrant/pgvector) is a separate dependency with its
+	// own signal: a healthy embedder with a failing store must not be
+	// reported as an embedder outage.
+	vectorSig failureSignal
 
 	// In-flight fire-and-forget enrichment tasks (MAX_ENRICH_IN_FLIGHT).
 	enrichInFlight atomic.Int64
@@ -228,40 +228,82 @@ func New(o Options) *Engine {
 	return e
 }
 
+// failureSignal tracks one dependency's recent outcomes: a throttled ERROR
+// log (once a minute, suppressed count riding along) and the "most recent
+// outcome was a failure" flag the health report reads.
+type failureSignal struct {
+	mu           sync.Mutex
+	lastLoggedAt time.Time
+	lastOkAt     time.Time
+	lastErrAt    time.Time
+	suppressed   int
+}
+
+// fail records a failure and reports whether to log it now, with the count
+// of failures suppressed since the last log.
+func (f *failureSignal) fail(now time.Time) (logNow bool, suppressed int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastErrAt = now
+	if now.Sub(f.lastLoggedAt) < time.Minute {
+		f.suppressed++
+		return false, 0
+	}
+	suppressed = f.suppressed
+	f.suppressed = 0
+	f.lastLoggedAt = now
+	return true, suppressed
+}
+
+func (f *failureSignal) ok(now time.Time) {
+	f.mu.Lock()
+	f.lastOkAt = now
+	f.mu.Unlock()
+}
+
+// failing is true only when the most recent outcome was a failure; a blip
+// that later succeeded is not an outage.
+func (f *failureSignal) failing() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.lastErrAt.IsZero() && f.lastErrAt.After(f.lastOkAt)
+}
+
 // recordEmbedFailure — engine/index.ts recordEmbedFailure. ERROR level
 // (this is data becoming unfindable, not a degraded nicety), throttled
-// to once a minute.
+// to once a minute. Only for failures of the embedding call itself; a
+// vector-store failure goes to recordVectorStoreFailure.
 func (e *Engine) recordEmbedFailure(err error, op, entryID string) {
-	e.embedMu.Lock()
-	now := e.now()
-	e.lastEmbedErrorAt = now
-	if now.Sub(e.lastEmbedErrorLoggedAt) < time.Minute {
-		e.suppressedEmbedErrors++
-		e.embedMu.Unlock()
+	logNow, suppressed := e.embedSig.fail(e.now())
+	if !logNow {
 		return
 	}
-	suppressed := e.suppressedEmbedErrors
-	e.suppressedEmbedErrors = 0
-	e.lastEmbedErrorLoggedAt = now
-	e.embedMu.Unlock()
 	e.log.Error("embedder failed — entry stored without a vector and is not findable "+
 		"by semantic search until the reconciler drains it",
 		"op", op, "entryId", entryID, "err", err, "suppressedSinceLastLog", suppressed)
 }
 
-// embedderFailing — "failing" only when the most recent outcome was a
-// failure; a blip that later succeeded is not an outage.
-func (e *Engine) embedderFailing() bool {
-	e.embedMu.Lock()
-	defer e.embedMu.Unlock()
-	return !e.lastEmbedErrorAt.IsZero() && e.lastEmbedErrorAt.After(e.lastEmbedOkAt)
+// recordVectorStoreFailure is recordEmbedFailure's counterpart for the cold
+// vector store (a write or read that failed after the embedder answered).
+func (e *Engine) recordVectorStoreFailure(err error, op, entryID string) {
+	logNow, suppressed := e.vectorSig.fail(e.now())
+	if !logNow {
+		return
+	}
+	e.log.Error("vector store write failed — entry stored without a vector and is not findable "+
+		"by semantic search until the reconciler drains it",
+		"op", op, "entryId", entryID, "err", err, "suppressedSinceLastLog", suppressed)
 }
 
-func (e *Engine) recordEmbedSuccess() {
-	e.embedMu.Lock()
-	e.lastEmbedOkAt = e.now()
-	e.embedMu.Unlock()
-}
+// embedderFailing — see failureSignal.failing.
+func (e *Engine) embedderFailing() bool { return e.embedSig.failing() }
+
+// vectorStoreFailing — the cold store's counterpart of embedderFailing.
+func (e *Engine) vectorStoreFailing() bool { return e.vectorSig.failing() }
+
+func (e *Engine) recordEmbedSuccess() { e.embedSig.ok(e.now()) }
+
+func (e *Engine) recordVectorStoreSuccess() { e.vectorSig.ok(e.now()) }
 
 // embedDocument — the "document" side of the asymmetric prefix pair.
 // Returns errNoEmbedder when nothing is configured so every caller takes
@@ -467,9 +509,11 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 			Embedding: embedding,
 			Payload:   e.vectorPayload(source, req.AgentName),
 		}); err != nil {
+			e.recordVectorStoreFailure(err, "remember", id)
 			e.parkMissingVector(ctx, userID, req.Project, id, namespace, err)
 			return RememberResult{}, err
 		}
+		e.recordVectorStoreSuccess()
 		// Stamped only after the vector is durably in the cold store: the
 		// marker means "a vector exists", so ordering it after the upsert
 		// is what keeps it from lying when cold is the tier that failed.
@@ -743,8 +787,10 @@ func (e *Engine) nearDuplicate(ctx context.Context, userID string, projectID *st
 		K:         captureCandidateK,
 	})
 	if err != nil {
+		e.vectorSig.fail(e.now())
 		return nil, err
 	}
+	e.recordVectorStoreSuccess()
 	var ids []string
 	for _, h := range nearby {
 		if h.Score >= semanticDuplicateThreshold {
@@ -1167,8 +1213,10 @@ func (e *Engine) Update(ctx context.Context, userID, id string, req UpdateReques
 				Embedding: embedding,
 				Payload:   map[string]any{"source": entry.Source, "agentName": entry.AgentName},
 			}); err != nil {
+				e.recordVectorStoreFailure(err, "update", id)
 				return UpdateResult{}, err
 			}
+			e.recordVectorStoreSuccess()
 			stampedAt := e.now()
 			if err := e.warm.SetEmbeddedAt(ctx, id, &stampedAt); err != nil {
 				return UpdateResult{}, err
