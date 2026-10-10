@@ -137,6 +137,10 @@ type Config struct {
 	ExtractionMaxFacts      int    // NOVAMEM_EXTRACTION_MAX_FACTS
 	ExtractionTimeoutMs     int    // NOVAMEM_EXTRACTION_TIMEOUT_MS
 	ExtractionMaxConcurrent int    // NOVAMEM_EXTRACTION_MAX_CONCURRENT
+	// ExtractionRedact gates the PII pass over the extraction payload
+	// (engine/redact.go). Default ON; the disableBool spellings turn it
+	// off. Stored content is never rewritten either way.
+	ExtractionRedact bool // NOVAMEM_EXTRACTION_REDACT
 
 	// Phase 4 query decomposition + coherence rerank (opt-in per request
 	// via SearchRequest.decompose).
@@ -165,7 +169,16 @@ type Config struct {
 	// stays reachable in every auth mode (a dashboard-gated route is
 	// unreachable under auth.mode=bearer) and never rides an exposed
 	// port by accident. Default off.
-	PprofAddr string
+	PprofAddr          string
+	OTELEnabled        bool
+	OTELEndpoint       string
+	OTELTracesEndpoint string
+	OTELServiceName    string
+}
+
+// TracingEnabled accepts either documented activation switch.
+func (c Config) TracingEnabled() bool {
+	return c.OTELEnabled || c.OTELEndpoint != "" || c.OTELTracesEndpoint != ""
 }
 
 // Load reads and validates the environment, returning the first problem
@@ -399,6 +412,11 @@ func Load() (Config, error) {
 	if c.ExtractionMaxConcurrent, err = posIntEnv("NOVAMEM_EXTRACTION_MAX_CONCURRENT"); err != nil {
 		return c, err
 	}
+	// Default on: what leaves the process to the extraction model is
+	// redacted unless the operator says otherwise. disableBool, not
+	// boolEnv — an explicit value is an opt-OUT, and anything but the
+	// falsy spellings keeps the redaction.
+	c.ExtractionRedact = disableBool("NOVAMEM_EXTRACTION_REDACT")
 	if c.ExtractionEnabled && (c.ExtractionEndpoint == "" || c.ExtractionModel == "") {
 		return c, fmt.Errorf("extraction.enabled = true requires endpoint + model (NOVAMEM_EXTRACTION_ENDPOINT / NOVAMEM_EXTRACTION_MODEL)")
 	}
@@ -438,6 +456,10 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("observer.enabled = true requires endpoint + model (NOVAMEM_OBSERVER_ENDPOINT / NOVAMEM_OBSERVER_MODEL)")
 	}
 	c.PprofAddr = strEnv("NOVAMEM_PPROF_ADDR")
+	c.OTELEnabled = boolEnv("OTEL_ENABLED")
+	c.OTELEndpoint = strEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	c.OTELTracesEndpoint = strEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	c.OTELServiceName = strEnv("OTEL_SERVICE_NAME")
 	c.AllowInsecureEndpoints = boolEnv("NOVAMEM_ALLOW_INSECURE_ENDPOINTS")
 	for _, endpoint := range []struct{ key, value string }{
 		{"NOVAMEM_COLD_URL", c.ColdURL},

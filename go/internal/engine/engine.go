@@ -71,15 +71,18 @@ type Engine struct {
 	extractor          *llm.FactExtractor
 	extractorMaxFacts  int
 	extractorTimeoutMs int
-	decomposer         *llm.QueryDecomposer
-	observer           *llm.Observer
-	log                *slog.Logger
-	quotas             Quotas
-	maxContentChars    int // NOVAMEM_MAX_CONTENT_CHARS; 0 disables
-	personalTerms      []string
-	minVectorScore     float64
-	rerankPoolMult     int
-	graphLinkFanout    int // 0 disables graph enrichment entirely
+	// redactExtraction — see redact.go. Applied to the extraction payload
+	// ONLY; stored content is never rewritten.
+	redactExtraction bool
+	decomposer       *llm.QueryDecomposer
+	observer         *llm.Observer
+	log              *slog.Logger
+	quotas           Quotas
+	maxContentChars  int // NOVAMEM_MAX_CONTENT_CHARS; 0 disables
+	personalTerms    []string
+	minVectorScore   float64
+	rerankPoolMult   int
+	graphLinkFanout  int // 0 disables graph enrichment entirely
 	// defaultEffectiveDays is the decay lifespan base (config.ts
 	// decay.defaultEffectiveDays, 7).
 	defaultEffectiveDays float64
@@ -157,9 +160,16 @@ type Options struct {
 	// ExtractorTimeoutMs sizes the detached context of the fire-and-forget
 	// write-path extraction; 0 → 120000 (config.ts default).
 	ExtractorTimeoutMs int
-	Decomposer         *llm.QueryDecomposer
-	Observer           *llm.Observer
-	Log                *slog.Logger
+	// ExtractorRedact gates the PII redaction pass applied to the
+	// extraction payload before it leaves the process (redact.go;
+	// NOVAMEM_EXTRACTION_REDACT, default on). A pointer because the
+	// default is ON: a plain bool's zero value would make "unset" and
+	// "operator asked for off" indistinguishable, and every Options
+	// literal in the tree omits unset fields.
+	ExtractorRedact *bool
+	Decomposer      *llm.QueryDecomposer
+	Observer        *llm.Observer
+	Log             *slog.Logger
 
 	Quotas          Quotas
 	MaxContentChars int
@@ -198,6 +208,7 @@ func New(o Options) *Engine {
 		extractor:          o.Extractor,
 		extractorMaxFacts:  o.ExtractorMaxFacts,
 		extractorTimeoutMs: o.ExtractorTimeoutMs,
+		redactExtraction:   o.ExtractorRedact == nil || *o.ExtractorRedact,
 		decomposer:         o.Decomposer,
 		observer:           o.Observer,
 		log:                o.Log,

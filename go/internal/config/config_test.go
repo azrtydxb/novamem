@@ -141,12 +141,14 @@ func TestDefaults(t *testing.T) {
 		ExtractionMaxFacts:         8,
 		ExtractionTimeoutMs:        120000,
 		ExtractionMaxConcurrent:    12,
+		ExtractionRedact:           true,
 		QueryDecompMaxSubqueries:   3,
 		QueryDecompCoherenceRerank: true,
 		QueryDecompTimeoutMs:       8000,
 		ObserverObserveThreshold:   10,
 		ObserverReflectThreshold:   50,
 		ObserverTimeoutMs:          30000,
+		OTELServiceName:             "novamem",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("default config differs from the pinned value:\n got %+v\nwant %+v", got, want)
@@ -406,6 +408,30 @@ func TestAdminDashboardDefaultsOn(t *testing.T) {
 		}
 		if c.AdminDashboard != want {
 			t.Errorf("NOVAMEM_ADMIN_DASHBOARD=%q gave %v, want %v", raw, c.AdminDashboard, want)
+		}
+	}
+}
+
+// TestExtractionRedactDefaultsOn — the redaction is a privacy floor, so
+// it is a disableBool like the admin surface: default on, off only by an
+// explicit falsy spelling, and a misspelling KEEPS the redaction rather
+// than silently dropping it.
+func TestExtractionRedactDefaultsOn(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"":      true,
+		"1":     true,
+		"true":  true,
+		"maybe": true,
+		"0":     false,
+		"false": false,
+		" OFF ": false,
+	} {
+		c, err := loadWith(t, map[string]string{"NOVAMEM_EXTRACTION_REDACT": raw})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ExtractionRedact != want {
+			t.Errorf("NOVAMEM_EXTRACTION_REDACT=%q gave %v, want %v", raw, c.ExtractionRedact, want)
 		}
 	}
 }
