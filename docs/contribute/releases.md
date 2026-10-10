@@ -11,9 +11,8 @@ novamem has two parallel release pathways:
 
 ## npm packages — retired
 
-npm publishing is no longer part of this repo. `@azrtydxb/novamem`
-(client), `@azrtydxb/novamem-mcp` (stdio shim) and
-`@azrtydxb/novamem-init` (installer) were superseded by Go binaries and
+npm publishing is no longer part of this repo. The former TypeScript
+client, MCP bridge, and installer were superseded by Go binaries and
 removed, along with Changesets and the npm release workflow. Every
 remaining workspace package is private, so there is nothing to publish.
 
@@ -62,7 +61,7 @@ are static and run on glibc or musl alike), stamps `--version` from the
 tag, and attaches one archive plus its `.sha256` to the GitHub release.
 
 **Both binaries ride in the same archive on purpose.** `novamem-init`
-resolves the MCP shim by looking for `novamem-mcp` beside its own
+resolves the stdio bridge by looking for `novamem-mcp` beside its own
 executable; splitting them would silently drop that path and fall back
 to whatever is on `$PATH`.
 
