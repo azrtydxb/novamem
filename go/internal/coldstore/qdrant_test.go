@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,7 @@ func TestCollectionNaming(t *testing.T) {
 // OBO write failed on kw. The fake below accepts only paths whose
 // collection segment is a single, slash-free name.
 func TestOBOCollectionNamesArePathSafe(t *testing.T) {
+	const pathSafe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
 	acme, globex := "org:acme/alice", "org:globex/alice"
 	if got := collectionFor("01HREALUSER", "default", nil); got != "novamem_u_01HREALUSER_default" {
 		t.Fatalf("a real user's collection name changed: %q", got)
@@ -48,7 +50,7 @@ func TestOBOCollectionNamesArePathSafe(t *testing.T) {
 	}
 	for _, name := range []string{a, g, legacyUserCollectionFor(acme, "default")} {
 		for _, c := range name {
-			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+			if !strings.ContainsRune(pathSafe, c) {
 				t.Fatalf("collection name %q has %q, which is not path-safe", name, c)
 			}
 		}
