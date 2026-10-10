@@ -5,7 +5,7 @@
 ## One-shot installer (recommended)
 
 ```bash
-npx @azrtydxb/novamem-init
+novamem-init
 ```
 
 Signs you in, mints a fresh `nm_…` bearer, detects Kilo Code, and writes `.kilocode/mcp.json` + the rules + slash commands for you. Idempotent.
@@ -23,23 +23,6 @@ Either drop a `.mcp.json` at the project root (Kilo honours the same file Claude
       "type": "http",
       "url": "http://localhost:7778/mcp",
       "headers": { "Authorization": "Bearer nm_..." }
-    }
-  }
-}
-```
-
-For Kilo builds without remote-MCP support, fall back to the stdio shim:
-
-```json
-{
-  "mcpServers": {
-    "novamem": {
-      "command": "npx",
-      "args": ["@azrtydxb/novamem-mcp"],
-      "env": {
-        "NOVAMEM_BASE_URL": "http://localhost:7778",
-        "NOVAMEM_TOKEN": "nm_..."
-      }
     }
   }
 }

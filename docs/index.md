@@ -21,7 +21,7 @@ This is the long-form documentation. For the marketing landing page see [novamem
 | Section            | Goes deep on                                                                                                                                             |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Install**        | Docker Compose env reference, Kubernetes manifest walkthrough, manual Postgres + Qdrant setup                                                            |
-| **Connect agents** | The `npx @azrtydxb/novamem-init` CLI in detail; per-host (Claude Code, Desktop, ChatGPT, Cursor, Cline, Continue, Kilo, others); custom HTTP integration |
+| **Connect agents** | The `novamem-init` Go CLI in detail; per-host (Claude Code, Desktop, ChatGPT, Cursor, Cline, Continue, Kilo, others); custom HTTP integration |
 | **Dashboard**      | Sign-in & roles, every page tour, projects + sharing, tenant + user admin, API tokens                                                                    |
 | **Architecture**   | System shape, tiered storage, hybrid search internals, worthiness gate + dedup, decay maths + dream cycle, multi-tenancy                                 |
 | **API reference**  | Auth flows, the data plane, admin & users, MCP tools, OpenAPI spec                                                                                       |

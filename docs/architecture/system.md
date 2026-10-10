@@ -206,7 +206,7 @@ Co-occurrence edges live in the bitemporal `memory_relations` table (`valid_from
 
 - **HTTP/JSON** — Go `net/http`. The contract is authored once in [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and everything else is generated from it by `cmd/gen-contract`: the served document (`/openapi.json`), the MCP tool surface (`tooldefs.json`), and the route list the mux is checked against. A CI drift gate regenerates and fails on a dirty tree, and a test compares the generated route list against the routes actually registered, in both directions. The same document is rendered for reading at `/api-docs`, from a renderer embedded in the binary.
 - **MCP Streamable HTTP** — one endpoint, `/mcp`, serving both protocol eras (ADR 0006): modern `2026-07-28` requests are stateless and self-describing, legacy `initialize` mints a signed session id any replica can adopt (ADR 0005). The HTTP+SSE pair it replaced was removed in ADR 0007.
-- **MCP stdio (legacy shim)** — `packages/mcp/src/index.ts` is a thin stdio↔HTTP bridge for clients that don't speak remote MCP yet. The shim talks to the same `/v1/*` and `/api/auth/*` endpoints any other client uses.
+- **MCP stdio compatibility** — the Go `novamem-mcp` binary bridges local stdio clients to the server’s `/mcp` endpoint. Remote MCP clients connect to `/mcp` directly.
 
 ## Dashboard
 
