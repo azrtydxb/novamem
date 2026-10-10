@@ -36,6 +36,10 @@ type InsertEntryArgs struct {
 	// nil when the corresponding feature is unconfigured.
 	FactsPendingAt *time.Time
 	GraphPendingAt *time.Time
+	// SourceRefs are merged into the entry's source references in the
+	// same transaction as the row (#338). On a lost dedupe race they are
+	// merged into the concurrent winner, same as an exact-dup hit.
+	SourceRefs []string
 }
 
 // InsertEntry writes the three-row transaction: memory_entries +
@@ -84,9 +88,15 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 		if err != nil {
 			return "", err
 		}
+		if err := addSourceRefs(ctx, tx, winner, a.SourceRefs); err != nil {
+			return "", err
+		}
 		return winner, tx.Commit(ctx)
 	}
 	if err != nil {
+		return "", err
+	}
+	if err := addSourceRefs(ctx, tx, winner, a.SourceRefs); err != nil {
 		return "", err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -417,6 +427,24 @@ func (s *Store) DeleteEntry(ctx context.Context, id string, entryProjectID *stri
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+	// LOCK ORDER: memory_entries row first, then memory_fts, then the
+	// rest. DeleteEntriesBySourceRef and DeleteDerivedFacts select
+	// their entries FOR UPDATE before touching memory_fts; taking the
+	// fts row first here would let a forget-by-id and a forget-by-source
+	// of the same entry each hold one and wait on the other (deadlock).
+	// Every path that deletes an entry must lock the entries row first.
+	var locked string
+	err = tx.QueryRow(ctx,
+		`SELECT id FROM memory_entries WHERE id = $1 AND `+scope+` AND organization_id = $3 FOR UPDATE`,
+		id, scopeValue, tenant.OrgOf(userID)).Scan(&locked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Gone already, or not in the caller's scope or organization:
+		// nothing to delete, and no shadow rows are touched.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM memory_fts WHERE entry_id = $1 AND `+scope, id, scopeValue); err != nil {
 		return err
 	}

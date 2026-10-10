@@ -220,6 +220,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
     public var project: String?
     public var sensitivity: String?
     public var source: String?
+    public var sourceRefs: [String]?
     public var sourceType: String?
 
     public init(
@@ -234,6 +235,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         project: String? = nil,
         sensitivity: String? = nil,
         source: String? = nil,
+        sourceRefs: [String]? = nil,
         sourceType: String? = nil
     ) {
         self.agentName = agentName
@@ -247,6 +249,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         self.project = project
         self.sensitivity = sensitivity
         self.source = source
+        self.sourceRefs = sourceRefs
         self.sourceType = sourceType
     }
 
@@ -262,6 +265,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         case project = "project"
         case sensitivity = "sensitivity"
         case source = "source"
+        case sourceRefs = "sourceRefs"
         case sourceType = "sourceType"
     }
 
@@ -278,6 +282,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         project = try c.decodeIfPresent(String.self, forKey: .project)
         sensitivity = try c.decodeIfPresent(String.self, forKey: .sensitivity)
         source = try c.decodeIfPresent(String.self, forKey: .source)
+        sourceRefs = try c.decodeIfPresent([String].self, forKey: .sourceRefs)
         sourceType = try c.decodeIfPresent(String.self, forKey: .sourceType)
     }
 
@@ -294,6 +299,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         if let v = project, !v.isEmpty { try c.encode(v, forKey: .project) }
         if let v = sensitivity, !v.isEmpty { try c.encode(v, forKey: .sensitivity) }
         if let v = source, !v.isEmpty { try c.encode(v, forKey: .source) }
+        if let v = sourceRefs { try c.encode(v, forKey: .sourceRefs) }
         if let v = sourceType, !v.isEmpty { try c.encode(v, forKey: .sourceType) }
     }
 }
@@ -912,32 +918,38 @@ public struct ExportedEntry: Codable, Sendable, Equatable {
 }
 
 public struct ForgetRequest: Codable, Sendable, Equatable {
-    public var id: String
+    public var id: String?
     public var project: String?
+    public var sourceRef: String?
 
     public init(
-        id: String,
-        project: String? = nil
+        id: String? = nil,
+        project: String? = nil,
+        sourceRef: String? = nil
     ) {
         self.id = id
         self.project = project
+        self.sourceRef = sourceRef
     }
 
     enum CodingKeys: String, CodingKey {
         case id = "id"
         case project = "project"
+        case sourceRef = "sourceRef"
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
         project = try c.decodeIfPresent(String.self, forKey: .project)
+        sourceRef = try c.decodeIfPresent(String.self, forKey: .sourceRef)
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
+        if let v = id, !v.isEmpty { try c.encode(v, forKey: .id) }
         if let v = project, !v.isEmpty { try c.encode(v, forKey: .project) }
+        if let v = sourceRef, !v.isEmpty { try c.encode(v, forKey: .sourceRef) }
     }
 }
 

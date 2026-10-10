@@ -290,9 +290,9 @@ site builds from it, and the duplicated pages under
 
 ## The commit gate blocks on a vuln in a gitignored agent install
 
-Every commit in this repo currently fails:
-
-    BLOCKING toml 4.1.1 has 2 known vulnerability(s), max severity 8.2 — upgrade it (security)
+Every commit in this repo currently fails on a blocking security finding:
+toml 4.1.1 has 2 known vulnerabilities, max severity 8.2. (Paraphrased on
+2026-10-09: the gate read the verbatim quote back as a live finding.)
 
 Tracked down 2026-09-11: the package is
 `.kilocode/node_modules/toml@4.1.1` — a Kilo Code install sitting in the
@@ -726,3 +726,43 @@ Atlas (multi-tenant) must act for a user inside an org. The Go server already ha
 - Must be an existing NovaMem user: Atlas provisions each user through POST /v1/admin/users first; tokens for unknown users are rejected
 
 **Decision (2026-10-09, owner):** free-form subject scoped by org.
+
+## MCP ignores project-confined tokens (found reviewing #338)
+
+`resolveScopeMCP` (go/internal/httpapi/mcp.go) never checks the token's `ProjectID`, so a full-scope project-confined `nm_` token can read or forget the user's user-wide entries and other projects' entries over `/mcp`. HTTP enforces it (`confineToTokenProject`). Pre-existing on main.
+
+- File an issue and fix it in its own PR right after #339/#338 (recommended)
+- Fix it inside #338
+- File the issue only
+
+**Decision (2026-10-09, owner):** file an issue and fix it in its own PR after #339/#338.
+
+## CI "generated" job: api.adoptium.net sinkholed by nexora-dns (2026-10-09)
+
+setup-java (temurin) fails on the ARC runners: the LAN DNS (nexora-dns, .136/.139) answers api.adoptium.net with 0.0.0.0/::; 1.1.1.1 resolves it. The policy can't be inspected or changed: nexora-mgmt is 0/2 ready because its database nexora-db is down — primary nexora-db-2 is in CrashLoopBackOff with "Not enough disk space" (10Gi Longhorn PVC; replica nexora-db-1 is at 9%), so nexora-db-rw has no endpoints. Engines keep serving their last policy.
+
+- Recover nexora-db first (find what filled the primary's volume, likely WAL; expand the PVC or fail over to nexora-db-1), then allowlist api.adoptium.net in nexora (recommended)
+- Workaround in novamem CI only: run google-java-format inside the maven:3.9-eclipse-temurin-21 image the java job already pulls, so the generated job no longer downloads a JDK
+- Both
+
+**Decision (2026-10-09, owner):** recover nexora-db first, then allowlist api.adoptium.net.
+
+## Committing a regenerated clients/php/src/Types.php (2026-10-09)
+
+The gate runs phpstan on the staged Types.php alone. phpstan.neon excludes that generated file (it has 244 level-6 errors by design), so phpstan answers "No files found to analyse" and the gate blocks. procoder does not honor phpstan's excludePaths. Blocks the #338 commit that regenerates every SDK's wire types.
+
+- File a procoder issue, and commit this one regeneration from your own terminal (the gate is a Claude hook, so a terminal commit is not gated) (recommended)
+- File a procoder issue and wait for the fix before #338 can merge
+- Remove Types.php from the phpstan exclusion and fix the 244 findings in the PHP template
+
+**Decision (2026-10-09, owner):** file a procoder issue; the owner commits this regeneration from a terminal.
+
+## Merging #339 and #341 (2026-10-10)
+
+Both are green on the full rollup with no review comments. Merging to main is the kw deploy (GitOps): it runs migrations 0012 (organization_id on memory_entries, service_keys) and 0013 (memory_entry_source_refs) against the kw database and ships on-behalf-of tokens and forget-by-source. #341 is stacked on #339. Both issues also ask for a tagged release of the server and clients/go.
+
+- Merge #339, retarget #341 to main and merge it once its CI reruns green, let GitOps deploy, run conformance against kw; release tag decided separately (recommended)
+- Merge both and also cut the release tag
+- Hold the merges
+
+**Decision (2026-10-10, owner):** merge and deploy both, no release tag yet.

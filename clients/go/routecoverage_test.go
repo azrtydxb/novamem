@@ -90,3 +90,14 @@ func TestServiceKeyAdminMethodsExist(t *testing.T) {
 		}
 	}
 }
+
+// ForgetBySource rides POST /v1/forget, which routes.json credits to
+// Client.Forget for every SDK. The other SDKs add the by-source variant on
+// first consumer (ADR 0009), so nothing in routes.json names the Go method.
+//
+// proved by: renaming Client.ForgetBySource fails this test.
+func TestForgetBySourceMethodExists(t *testing.T) {
+	if _, ok := reflect.TypeFor[*Client]().MethodByName("ForgetBySource"); !ok {
+		t.Error("Client has no method ForgetBySource")
+	}
+}

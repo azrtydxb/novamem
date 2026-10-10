@@ -445,6 +445,32 @@
         ],
         "type": "object"
       },
+      "ForgetBySourceResult": {
+        "properties": {
+          "coldDeleteOk": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceRef": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceRef",
+          "ids",
+          "count",
+          "coldDeleteOk"
+        ],
+        "type": "object"
+      },
       "ForgetResult": {
         "properties": {
           "coldDeleteOk": {
@@ -2456,6 +2482,16 @@
                     "maxLength": 128,
                     "type": "string"
                   },
+                  "sourceRefs": {
+                    "description": "External sources this entry derives from (document URL, ticket key, ...). Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.",
+                    "items": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  },
                   "sourceType": {
                     "maxLength": 64,
                     "type": "string"
@@ -2869,7 +2905,7 @@
     },
     "/v1/forget": {
       "post": {
-        "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.",
+        "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly. With `sourceRef`, every memory stored with that source reference is deleted; with an active project and no `project` argument that covers only the active project, not user-wide entries.",
         "operationId": "postV1Forget",
         "requestBody": {
           "content": {
@@ -2886,11 +2922,14 @@
                     "minLength": 1,
                     "nullable": true,
                     "type": "string"
+                  },
+                  "sourceRef": {
+                    "description": "Forget every entry carrying this source reference, in the caller's organization and scope. Mutually exclusive with `id`; exactly one is required (400 otherwise). Idempotent — a repeat answers count 0.",
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
                   }
                 },
-                "required": [
-                  "id"
-                ],
                 "type": "object"
               }
             }
@@ -2902,11 +2941,19 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ForgetResult"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ForgetResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ForgetBySourceResult"
+                    }
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "ForgetResult"
+            "description": "ForgetResult for `id`, ForgetBySourceResult for `sourceRef`"
           },
           "401": {
             "content": {
@@ -2930,7 +2977,7 @@
             "SessionCookie": []
           }
         ],
-        "summary": "Delete a memory entry by id",
+        "summary": "Delete a memory entry by id, or every entry from a source reference",
         "tags": [
           "memory"
         ]
@@ -4584,6 +4631,16 @@
                   "source": {
                     "maxLength": 128,
                     "type": "string"
+                  },
+                  "sourceRefs": {
+                    "description": "External sources this entry derives from (document URL, ticket key, ...). Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.",
+                    "items": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
                   },
                   "sourceType": {
                     "maxLength": 64,

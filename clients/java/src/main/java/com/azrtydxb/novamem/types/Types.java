@@ -353,6 +353,7 @@ public final class Types {
       @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project,
       @JsonProperty(value = "sensitivity") CaptureRequestSensitivity sensitivity,
       @JsonProperty(value = "source") @JsonInclude(JsonInclude.Include.NON_EMPTY) String source,
+      @JsonProperty(value = "sourceRefs") List<String> sourceRefs,
       @JsonProperty(value = "sourceType") @JsonInclude(JsonInclude.Include.NON_EMPTY)
           String sourceType) {
     /** A builder with every field unset. */
@@ -374,6 +375,7 @@ public final class Types {
       b.project = project;
       b.sensitivity = sensitivity;
       b.source = source;
+      b.sourceRefs = sourceRefs;
       b.sourceType = sourceType;
       return b;
     }
@@ -391,6 +393,7 @@ public final class Types {
       private String project;
       private CaptureRequestSensitivity sensitivity;
       private String source;
+      private List<String> sourceRefs;
       private String sourceType;
 
       private Builder() {}
@@ -461,6 +464,12 @@ public final class Types {
         return this;
       }
 
+      /** Sets sourceRefs. */
+      public Builder sourceRefs(List<String> sourceRefs) {
+        this.sourceRefs = sourceRefs;
+        return this;
+      }
+
       /** Sets sourceType. */
       public Builder sourceType(String sourceType) {
         this.sourceType = sourceType;
@@ -481,6 +490,7 @@ public final class Types {
             project,
             sensitivity,
             source,
+            sourceRefs,
             sourceType);
       }
     }
@@ -1491,9 +1501,10 @@ public final class Types {
   @JsonInclude(JsonInclude.Include.NON_NULL)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public record ForgetRequest(
-      @JsonProperty(value = "id", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
-          String id,
-      @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project) {
+      @JsonProperty(value = "id") @JsonInclude(JsonInclude.Include.NON_EMPTY) String id,
+      @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project,
+      @JsonProperty(value = "sourceRef") @JsonInclude(JsonInclude.Include.NON_EMPTY)
+          String sourceRef) {
     /** A builder with every field unset. */
     public static Builder builder() {
       return new Builder();
@@ -1504,6 +1515,7 @@ public final class Types {
       Builder b = new Builder();
       b.id = id;
       b.project = project;
+      b.sourceRef = sourceRef;
       return b;
     }
 
@@ -1511,6 +1523,7 @@ public final class Types {
     public static final class Builder {
       private String id;
       private String project;
+      private String sourceRef;
 
       private Builder() {}
 
@@ -1526,9 +1539,15 @@ public final class Types {
         return this;
       }
 
+      /** Sets sourceRef. */
+      public Builder sourceRef(String sourceRef) {
+        this.sourceRef = sourceRef;
+        return this;
+      }
+
       /** The record. */
       public ForgetRequest build() {
-        return new ForgetRequest(id, project);
+        return new ForgetRequest(id, project, sourceRef);
       }
     }
   }

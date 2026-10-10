@@ -91,6 +91,13 @@
           "description": "Free-text origin label stored with the entry (e.g. an app or surface name).",
           "type": "string"
         },
+        "sourceRefs": {
+          "description": "External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry that carries one.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "sourceType": {
           "description": "chat | email | code-review | doc | inference | observation | system | manual",
           "type": "string"
@@ -176,17 +183,18 @@
     "memory_forget": {
       "properties": {
         "id": {
-          "description": "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200.",
+          "description": "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200. Give exactly one of `id` or `sourceRef`.",
           "type": "string"
         },
         "project": {
           "description": "Project id or name (scope check).",
           "type": "string"
+        },
+        "sourceRef": {
+          "description": "Delete every memory that was stored with this source reference (see `sourceRefs` on `memory_remember` / `memory_capture`), for example when the source document is deleted or access to it is revoked. Replies `{ids, count}`; count 0 when nothing matched. Scope: with an active project and no `project` argument, only that project's entries are removed (not your user-wide ones); pass `project` to choose another. Give exactly one of `id` or `sourceRef`.",
+          "type": "string"
         }
       },
-      "required": [
-        "id"
-      ],
       "type": "object"
     },
     "memory_hygiene": {
@@ -306,6 +314,13 @@
         "source": {
           "description": "Free-text origin label stored with the entry (e.g. an app or surface name).",
           "type": "string"
+        },
+        "sourceRefs": {
+          "description": "External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry that carries one.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "sourceType": {
           "description": "chat | email | code-review | doc | inference | observation | system | manual",

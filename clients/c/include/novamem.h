@@ -167,6 +167,8 @@ struct novamem_capture_request {
     const char *project;
     const char *sensitivity;
     const char *source;
+    const char **source_refs;
+    size_t source_refs_len;
     const char *source_type;
 };
 void novamem_capture_request_free(novamem_capture_request *p);
@@ -310,6 +312,7 @@ void novamem_exported_entry_free(novamem_exported_entry *p);
 struct novamem_forget_request {
     const char *id;
     const char *project;
+    const char *source_ref;
 };
 void novamem_forget_request_free(novamem_forget_request *p);
 

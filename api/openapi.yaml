@@ -451,6 +451,24 @@ components:
         coldDeleteOk: *id002
       required:
         - deleted
+    ForgetBySourceResult:
+      type: object
+      properties:
+        sourceRef:
+          type: string
+        ids:
+          type: array
+          items:
+            type: string
+        count:
+          type: integer
+        coldDeleteOk:
+          type: boolean
+      required:
+        - sourceRef
+        - ids
+        - count
+        - coldDeleteOk
     Stats:
       type: object
       properties:
@@ -1426,6 +1444,17 @@ paths:
                   type: string
                   format: date-time
                   pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                sourceRefs:
+                  description:
+                    External sources this entry derives from (document URL, ticket key, ...).
+                    Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget
+                    {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.
+                  maxItems: 32
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 512
               required:
                 - content
       security:
@@ -1500,6 +1529,15 @@ paths:
               description:
                 Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less
                 strings are rejected. Past it the entry is hidden from reads and later hard-deleted.
+            sourceRefs:
+              type: array
+              items:
+                type: string
+              description:
+                "External sources this entry derives from (document URL, ticket key, thread id), at
+                most 32, each up to 512 characters. Merged into the entry when the write dedupes or
+                updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry
+                that carries one."
           required:
             - content
         annotations:
@@ -1780,6 +1818,17 @@ paths:
                   type: string
                   format: date-time
                   pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                sourceRefs:
+                  description:
+                    External sources this entry derives from (document URL, ticket key, ...).
+                    Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget
+                    {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.
+                  maxItems: 32
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 512
               required:
                 - content
       security:
@@ -1848,6 +1897,15 @@ paths:
               description:
                 Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less
                 strings are rejected. Past it the entry is hidden from reads and later hard-deleted.
+            sourceRefs:
+              type: array
+              items:
+                type: string
+              description:
+                "External sources this entry derives from (document URL, ticket key, thread id), at
+                most 32, each up to 512 characters. Merged into the entry when the write dedupes or
+                updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry
+                that carries one."
           required:
             - content
         annotations:
@@ -2386,7 +2444,7 @@ paths:
       operationId: postV1Neighbors
   /v1/forget:
     post:
-      summary: Delete a memory entry by id
+      summary: Delete a memory entry by id, or every entry from a source reference
       tags:
         - memory
       requestBody:
@@ -2400,24 +2458,34 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 128
+                sourceRef:
+                  description:
+                    Forget every entry carrying this source reference, in the caller's
+                    organization and scope. Mutually exclusive with `id`; exactly one is required
+                    (400 otherwise). Idempotent — a repeat answers count 0.
+                  type: string
+                  minLength: 1
+                  maxLength: 512
                 project:
                   nullable: true
                   type: string
                   minLength: 1
                   maxLength: 128
-              required:
-                - id
       security:
         - UserBearer: []
         - ServiceBearer: []
         - SessionCookie: []
       responses:
         "200":
-          description: ForgetResult
+          description: ForgetResult for `id`, ForgetBySourceResult for `sourceRef`
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ForgetResult"
+                # MCP requires outputSchema.type == "object"; a bare oneOf is rejected.
+                type: object
+                oneOf:
+                  - $ref: "#/components/schemas/ForgetResult"
+                  - $ref: "#/components/schemas/ForgetBySourceResult"
         "401":
           description: Missing or invalid credentials
           content:
@@ -2432,7 +2500,7 @@ paths:
           X", "remove what I said about Y", "that''s wrong, drop it". Do NOT call this proactively or
           as a way to "clean up" the store; the synaptic-decay sweep handles natural-aging. If a fact
           CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and
-          graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.'
+          graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly. With `sourceRef`, every memory stored with that source reference is deleted; with an active project and no `project` argument that covers only the active project, not user-wide entries.'
         inputSchema:
           type: object
           properties:
@@ -2440,12 +2508,19 @@ paths:
               type: string
               description:
                 "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is
-                already gone still answers 200."
+                already gone still answers 200. Give exactly one of `id` or `sourceRef`."
+            sourceRef:
+              type: string
+              description:
+                "Delete every memory that was stored with this source reference (see `sourceRefs`
+                on `memory_remember` / `memory_capture`), for example when the source document is
+                deleted or access to it is revoked. Replies `{ids, count}`; count 0 when nothing
+                matched. Scope: with an active project and no `project` argument, only that
+                project's entries are removed (not your user-wide ones); pass `project` to
+                choose another. Give exactly one of `id` or `sourceRef`."
             project:
               type: string
               description: Project id or name (scope check).
-          required:
-            - id
         annotations:
           title: Forget a memory
           readOnlyHint: false
