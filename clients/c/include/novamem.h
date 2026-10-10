@@ -229,6 +229,8 @@ struct novamem_context_request {
     const char *message;
     const char *namespace_;
     const char *project;
+    bool has_rerank;
+    bool rerank;
     struct novamem_context_request_weights *weights;
 };
 void novamem_context_request_free(novamem_context_request *p);

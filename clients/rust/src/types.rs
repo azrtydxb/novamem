@@ -209,6 +209,8 @@ pub struct ContextRequest {
     pub namespace: Option<String>,
     #[serde(rename = "project", default, skip_serializing_if = "none_or_empty")]
     pub project: Option<String>,
+    #[serde(rename = "rerank", default, skip_serializing_if = "Option::is_none")]
+    pub rerank: Option<bool>,
     #[serde(rename = "weights", default, skip_serializing_if = "Option::is_none")]
     pub weights: Option<ContextRequestWeights>,
 }

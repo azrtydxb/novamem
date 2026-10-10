@@ -14,16 +14,17 @@ _21 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](http
 
 Mandatory first-pass grounding tool. CALL THIS before answering any substantive user request. Returns relevant hybrid search results plus recent memory in one response so agents stop ignoring memory unless explicitly told.
 
-| Argument            | Type   | Required | Description                                                                   |
-| ------------------- | ------ | -------- | ----------------------------------------------------------------------------- |
-| `includeNamespaces` | array  | —        | Union results across these shelves. Takes precedence over `namespace`.        |
-| `includeProjects`   | array  | —        | Active-project mode: union user-global with each listed project (id or name). |
-| `k`                 | number | —        | Top-K relevant/recent entries to return.                                      |
-| `maxSensitivity`    | string | —        | Maximum sensitivity to return; defaults to private, excluding sensitive.      |
-| `message`           | string | yes      | The user's current message or task.                                           |
-| `namespace`         | string | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf. |
-| `project`           | string | —        | Project id or human name.                                                     |
-| `weights`           | object | —        | Per-signal weight overrides. Omit to use defaults.                            |
+| Argument            | Type    | Required | Description                                                                                                                                                           |
+| ------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `includeNamespaces` | array   | —        | Union results across these shelves. Takes precedence over `namespace`.                                                                                                |
+| `includeProjects`   | array   | —        | Active-project mode: union user-global with each listed project (id or name).                                                                                         |
+| `k`                 | number  | —        | Top-K relevant/recent entries to return.                                                                                                                              |
+| `maxSensitivity`    | string  | —        | Maximum sensitivity to return; defaults to private, excluding sensitive.                                                                                              |
+| `message`           | string  | yes      | The user's current message or task.                                                                                                                                   |
+| `namespace`         | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                         |
+| `project`           | string  | —        | Project id or human name.                                                                                                                                             |
+| `rerank`            | boolean | —        | Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order. |
+| `weights`           | object  | —        | Per-signal weight overrides. Omit to use defaults.                                                                                                                    |
 
 ### `memory_capture`
 
@@ -97,16 +98,17 @@ Read-only client adoption report. Use this to verify the current MCP tool surfac
 
 Search the user's persistent memory store for facts about them. CALL THIS PROACTIVELY at the start of any conversation where personal context might matter — preferences, project context, biographical details, prior decisions. Do not wait for the user to remind you they've stored something. If the user references "my project", "what I told you", "as we discussed", "the same as before", or any personal context that isn't already in this conversation, search here FIRST before asking them to repeat. This store contains facts the user has explicitly chosen to persist, so its contents are higher-confidence than inferences from your built-in conversation memory or `memory_user_edits`. Hybrid keyword (FTS) + vector (cosine) + graph (neighbours) fused via weighted scoring (defaults keyword 0.3, vector 0.6, graph 0.1). Override `weights` only with a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id / symbol lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap and lean fully on semantic similarity.
 
-| Argument            | Type   | Required | Description                                                                                                                                                                                                        |
-| ------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contentMode`       | string | —        | "snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids" omits content and metadata (rank first, hydrate later). Default "full".                                                             |
-| `includeNamespaces` | array  | —        | Cross-namespace search: union results across these shelves. Takes precedence over `namespace`. Use to _restrict_ the default fanout to a specific subset; if you want everything, omit both fields.                |
-| `includeProjects`   | array  | —        | Active-project mode: union user-global with each listed project (id or name).                                                                                                                                      |
-| `k`                 | number | —        | Top-K to return (default 10)                                                                                                                                                                                       |
-| `namespace`         | string | —        | Single namespace shelf to search. Overridden by `includeNamespaces` when both are set. Omit both to fan out across every namespace with entries visible in the current scope (user-global and/or active projects). |
-| `project`           | string | —        | Project to scope to. Accepts id (ULID) or human name. Omit for user-wide entries.                                                                                                                                  |
-| `query`             | string | yes      | What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.                                                                                        |
-| `weights`           | object | —        | Per-signal weight overrides. Omit to use defaults.                                                                                                                                                                 |
+| Argument            | Type    | Required | Description                                                                                                                                                                                                        |
+| ------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `contentMode`       | string  | —        | "snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids" omits content and metadata (rank first, hydrate later). Default "full".                                                             |
+| `includeNamespaces` | array   | —        | Cross-namespace search: union results across these shelves. Takes precedence over `namespace`. Use to _restrict_ the default fanout to a specific subset; if you want everything, omit both fields.                |
+| `includeProjects`   | array   | —        | Active-project mode: union user-global with each listed project (id or name).                                                                                                                                      |
+| `k`                 | number  | —        | Top-K to return (default 10)                                                                                                                                                                                       |
+| `namespace`         | string  | —        | Single namespace shelf to search. Overridden by `includeNamespaces` when both are set. Omit both to fan out across every namespace with entries visible in the current scope (user-global and/or active projects). |
+| `project`           | string  | —        | Project to scope to. Accepts id (ULID) or human name. Omit for user-wide entries.                                                                                                                                  |
+| `query`             | string  | yes      | What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.                                                                                        |
+| `rerank`            | boolean | —        | Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.                                              |
+| `weights`           | object  | —        | Per-signal weight overrides. Omit to use defaults.                                                                                                                                                                 |
 
 ### `memory_remember`
 
