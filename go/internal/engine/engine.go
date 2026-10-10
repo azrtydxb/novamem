@@ -372,6 +372,15 @@ type RememberResult struct {
 	Embedded     *bool    `json:"embedded,omitempty"`
 }
 
+const (
+	defaultNamespace      = "default"
+	defaultSource         = "manual"
+	maxQuotaStateEntries  = 10_000
+	quotaCountCacheTTL    = 30 * time.Second
+	writeQuotaErrorFormat = "write quota exceeded: %d writes/minute — retry after the window resets"
+	entryQuotaErrorFormat = "entry quota exceeded: %d stored entries — forget something first"
+)
+
 func boolPtr(b bool) *bool { return &b }
 
 // withSensitivityMetadata — TTL rides in metadata.expiresAt and the
@@ -450,7 +459,7 @@ func (e *Engine) prepareRemember(ctx context.Context, userID string, req Remembe
 	req = withSensitivityMetadata(req)
 	namespace := req.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 	return req, namespace, sha256Hex(strings.TrimSpace(req.Content)), nil, nil
 }
@@ -483,7 +492,7 @@ func (e *Engine) dedupeRemember(ctx context.Context, userID string, req Remember
 func (e *Engine) persistRemember(ctx context.Context, userID string, req RememberRequest, namespace, contentHash string) (string, string, error) {
 	source := req.Source
 	if source == "" {
-		source = "manual"
+		source = defaultSource
 	}
 	var graphPendingAt *time.Time
 	if e.graphLinkFanout > 0 {
@@ -610,7 +619,7 @@ func (e *Engine) backfillMissingVector(ctx context.Context, userID string, proje
 	}
 	source := req.Source
 	if source == "" {
-		source = "manual"
+		source = defaultSource
 	}
 	if err := e.cold.Upsert(ctx, coldstore.UpsertArgs{
 		UserID:    userID,
@@ -702,7 +711,7 @@ func (e *Engine) Capture(ctx context.Context, userID string, req RememberRequest
 	}
 	namespace := req.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 	req.Namespace = namespace
 
@@ -924,7 +933,7 @@ func (e *Engine) Recent(ctx context.Context, userID string, args RecentArgs) ([]
 			return nil, err
 		}
 		if len(ns) == 0 {
-			ns = []string{"default"}
+			ns = []string{defaultNamespace}
 		}
 		namespaces = ns
 	}
@@ -1314,17 +1323,17 @@ func (e *Engine) enforceWriteQuota(ctx context.Context, userID string) error {
 	if s == nil || now.Sub(s.windowStart) >= time.Minute {
 		s = &quotaEntry{windowStart: now}
 		// Bound the map like TS: stale users drop out wholesale.
-		if len(e.quotaState) >= 10_000 {
+		if len(e.quotaState) >= maxQuotaStateEntries {
 			e.quotaState = map[string]*quotaEntry{}
 		}
 		e.quotaState[userID] = s
 	}
 	if writesPerMinute > 0 && s.writes >= writesPerMinute {
 		return &HTTPError{StatusCode: 429, Message: fmt.Sprintf(
-			"write quota exceeded: %d writes/minute — retry after the window resets", writesPerMinute)}
+			writeQuotaErrorFormat, writesPerMinute)}
 	}
 	if maxEntries > 0 {
-		if now.Sub(s.countCheckedAt) >= 30*time.Second {
+		if now.Sub(s.countCheckedAt) >= quotaCountCacheTTL {
 			// Count query under the mutex: acceptable at slice-2 load, and
 			// it keeps the check-then-increment atomic. ponytail: move the
 			// count outside the lock if quota-enabled write throughput
@@ -1338,7 +1347,7 @@ func (e *Engine) enforceWriteQuota(ctx context.Context, userID string) error {
 		}
 		if s.count >= maxEntries {
 			return &HTTPError{StatusCode: 429, Message: fmt.Sprintf(
-				"entry quota exceeded: %d stored entries — forget something first", maxEntries)}
+				entryQuotaErrorFormat, maxEntries)}
 		}
 		s.count++
 	}

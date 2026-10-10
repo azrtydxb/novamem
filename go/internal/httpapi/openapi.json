@@ -514,23 +514,82 @@
       "HygieneReport": {
         "properties": {
           "contradictionCandidates": {
-            "items": {},
+            "items": {
+              "properties": {
+                "ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "duplicateClusters": {
-            "items": {},
+            "items": {
+              "properties": {
+                "ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "lowValue": {
-            "items": {},
+            "items": {
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "orphanCandidates": {
-            "items": {},
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "stale": {
-            "items": {},
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "summary": {
