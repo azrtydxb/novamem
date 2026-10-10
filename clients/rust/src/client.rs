@@ -64,7 +64,7 @@ fn degraded_empty(op: &str, r: &Resp) -> Result<(), Error> {
     let empty = v
         .get("results")
         .and_then(Value::as_array)
-        .map_or(true, |r| r.is_empty());
+        .is_none_or(|r| r.is_empty());
     if degraded && empty {
         return Err(Error::unavailable(
             op,
@@ -189,7 +189,7 @@ impl Client {
         if v.body
             .get("id")
             .and_then(Value::as_str)
-            .map_or(true, str::is_empty)
+            .is_none_or(str::is_empty)
         {
             if let Value::Object(m) = &mut v.body {
                 m.insert("id".into(), json!(id.trim()));
@@ -201,7 +201,7 @@ impl Client {
     /// Never reports success on a failed delete. An id that is not in your
     /// scope comes back `deleted: false` with no error.
     pub async fn forget(&self, request: t::ForgetRequest) -> Result<t::ForgetResult, Error> {
-        if request.id.as_deref().map_or(true, blank) {
+        if request.id.as_deref().is_none_or(blank) {
             return Err(Error::new("forget", "id is required"));
         }
         match self
