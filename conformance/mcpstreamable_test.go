@@ -37,10 +37,14 @@ type mcpSession struct {
 	sid    string
 	proto  string
 	nextID int
+	token  *string
 }
 
 func (s *mcpSession) headers() map[string]string {
 	h := map[string]string{"Accept": "application/json, text/event-stream"}
+	if s.token != nil {
+		h["Authorization"] = "Bearer " + *s.token
+	}
 	if s.sid != "" {
 		h["Mcp-Session-Id"] = s.sid
 	}
@@ -117,8 +121,12 @@ func (s *mcpSession) mustResult(t *testing.T, method string, params any) map[str
 // notifications/initialized. Bearer auth is the run's test token, same
 // as the TS transport's requestInit headers.
 func connect(t *testing.T) *mcpSession {
+	return connectWithToken(t, nil)
+}
+
+func connectWithToken(t *testing.T, token *string) *mcpSession {
 	t.Helper()
-	s := &mcpSession{}
+	s := &mcpSession{token: token}
 	s.nextID++
 	r := API(t, "/mcp", Opts{
 		Body: map[string]any{

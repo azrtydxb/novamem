@@ -269,6 +269,23 @@ func collect(paths, doc map[string]any) ([]mcpTool, []route) {
 			routes = append(routes, r)
 		}
 	}
+	// MCP-only operational tools deliberately have no HTTP route. Their
+	// input and output contracts still live in OpenAPI's authored source,
+	// under x-mcp-tools, while the dispatcher reuses the same stores as
+	// the admin HTTP handlers.
+	if raw, ok := doc["x-mcp-tools"].([]any); ok {
+		for i, entry := range raw {
+			t := toTool(entry, "MCP", fmt.Sprintf("x-mcp-tools[%d]", i))
+			for _, k := range []string{"inputSchema", "outputSchema"} {
+				sch, ok := t[k].(map[string]any)
+				if !ok {
+					fail("MCP %s: tool %q has no %s object", "x-mcp-tools", t.name(), k)
+				}
+				t[k] = jsonSchema(resolveAuthored(sch, doc), t.name()+"."+k)
+			}
+			tools = append(tools, t)
+		}
+	}
 	// `tools/list` order is part of what clients see. The spec says
 	// servers SHOULD return tools deterministically, because clients cache
 	// the list and models prompt-cache it — so the order is declared in

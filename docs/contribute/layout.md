@@ -48,7 +48,7 @@ internal/
 ├── warmstore/           — Postgres layer
 │   └── migrations/      — embedded SQL + drizzle-format journal
 ├── coldstore/           — pgvector and Qdrant backends
-├── mcp/                 — MCP server: 21 tools over Streamable HTTP
+├── mcp/                 — MCP server: 28 tools over Streamable HTTP
 └── auth/                — Better Auth-compatible hashing, cookies, JWKS
 ```
 
