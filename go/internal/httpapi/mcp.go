@@ -21,6 +21,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/mcp"
 	"github.com/azrtydxb/novamem/go/internal/tenant"
+	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
 func (s *server) registerMCP(mux *routeMux) *mcp.Server {
@@ -58,6 +59,17 @@ func firstIssue(c *v) error {
 	return fmt.Errorf("invalid argument '%s': %s", i.Path, i.Message)
 }
 
+const errTokenConfined = "token is confined to its project"
+
+// ctxToken is the bearer-token record of the request that carries this
+// tool call, nil for sessions, bearer-mode and on-behalf-of callers.
+func ctxToken(ctx context.Context) *warmstore.TokenInfo {
+	if c, ok := ctx.Value(callerKey{}).(*caller); ok {
+		return c.token
+	}
+	return nil
+}
+
 // resolveScopeMCP — mcp-tools.ts resolveScope: canonicalize project +
 // includeProjects refs (id or name) with membership checks, falling
 // back to the caller's active project when no scope was supplied.
@@ -70,6 +82,20 @@ func (s *server) resolveScopeMCP(ctx context.Context, userID string, project *st
 			return nil, nil, errors.New(errOBOProjects)
 		}
 		return nil, nil, nil
+	}
+	if tok := ctxToken(ctx); tok != nil && tok.ProjectID != nil {
+		// Same rule as HTTP's checkProjectAccess: a project-confined
+		// token is held to its project, never widened by an active-project
+		// default, and an explicit other project is refused.
+		scope := projectScope{Project: project, IncludeProjects: includeProjects}
+		denial, err := s.confineScope(ctx, userID, *tok.ProjectID, &scope)
+		if err != nil {
+			return nil, nil, err
+		}
+		if denial != "" {
+			return nil, nil, errors.New(denial)
+		}
+		return scope.Project, scope.IncludeProjects, nil
 	}
 	if project == nil && len(includeProjects) == 0 {
 		active, err := s.warm.GetActiveProject(ctx, userID)
@@ -134,6 +160,17 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 	c := &v{m: args}
 	if tenant.IsOBO(userID) && strings.HasPrefix(name, "project_") {
 		return nil, errors.New(errOBOProjects)
+	}
+	// A project-confined token is held to its project on every tool that
+	// takes a scope (resolveScopeMCP). The rest either manage projects or
+	// read across the user's whole store, so they are refused outright.
+	if tok := ctxToken(ctx); tok != nil && tok.ProjectID != nil {
+		switch {
+		case strings.HasPrefix(name, "project_"):
+			return nil, errors.New(errTokenConfined)
+		case name == "memory_stats", name == "memory_hygiene", name == "memory_evaluate":
+			return nil, errors.New(errTokenConfined)
+		}
 	}
 	switch name {
 
