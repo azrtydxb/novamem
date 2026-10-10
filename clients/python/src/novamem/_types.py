@@ -263,6 +263,7 @@ class CaptureRequest(_Wire):
     project: str | None = None
     sensitivity: CaptureRequestSensitivity | None = None
     source: str | None = None
+    source_refs: list[str] | None = None
     source_type: str | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
@@ -277,6 +278,7 @@ class CaptureRequest(_Wire):
         ("project", "project", ("p", "string"), False),
         ("sensitivity", "sensitivity", ("n", "CaptureRequestSensitivity"), False),
         ("source", "source", ("p", "string"), False),
+        ("source_refs", "sourceRefs", ("a", ("p", "string")), False),
         ("source_type", "sourceType", ("p", "string"), False),
     )
 
@@ -352,6 +354,7 @@ class ContextRequest(_Wire):
     max_tokens: int | None = None
     namespace: str | None = None
     project: str | None = None
+    rerank: bool | None = None
     weights: ContextRequestWeights | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
@@ -366,6 +369,7 @@ class ContextRequest(_Wire):
         ("message", "message", ("p", "string"), True),
         ("namespace", "namespace", ("p", "string"), False),
         ("project", "project", ("p", "string"), False),
+        ("rerank", "rerank", ("p", "bool"), False),
         ("weights", "weights", ("n", "ContextRequestWeights"), False),
     )
 
@@ -492,12 +496,14 @@ class ExportedEntry(_Wire):
 
 @dataclass(frozen=True)
 class ForgetRequest(_Wire):
-    id: str
+    id: str | None = None
     project: str | None = None
+    source_ref: str | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("id", "id", ("p", "string"), True),
+        ("id", "id", ("p", "string"), False),
         ("project", "project", ("p", "string"), False),
+        ("source_ref", "sourceRef", ("p", "string"), False),
     )
 
 

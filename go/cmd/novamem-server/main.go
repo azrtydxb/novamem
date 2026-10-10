@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -176,6 +177,12 @@ func run() error {
 			APIKey:    cfg.RerankAPIKey,
 			TimeoutMs: cfg.RerankTimeoutMs,
 		})
+		rerankHost := cfg.RerankEndpoint
+		if u, perr := url.Parse(cfg.RerankEndpoint); perr == nil && u.Host != "" {
+			rerankHost = u.Host
+		}
+		log.Info("reranker configured", "model", cfg.RerankModel,
+			"endpointHost", rerankHost, "rerankByDefault", true)
 	}
 
 	// The three LLM subsystems, each constructed iff its enable flag AND

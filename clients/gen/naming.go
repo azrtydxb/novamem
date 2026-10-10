@@ -171,3 +171,41 @@ func swiftident(s string) string {
 	}
 	return id
 }
+
+// javaKeywords are Java's reserved words and literals, plus the names a
+// record component may not take (they would clash with Object's methods).
+var javaKeywords = func() map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields(`
+		abstract assert boolean break byte case catch char class const continue
+		default do double else enum extends final finally float for goto if
+		implements import instanceof int interface long native new package
+		private protected public return short static strictfp super switch
+		synchronized this throw throws transient try void volatile while
+		true false null _ clone finalize getClass hashCode notify notifyAll
+		toString wait`) {
+		m[w] = true
+	}
+	return m
+}()
+
+// javaident: camelCase, with a trailing underscore where Java reserves the
+// word ("default" → "default_").
+func javaident(s string) string {
+	id := camel(s)
+	if javaKeywords[id] {
+		return id + "_"
+	}
+	return id
+}
+
+// javamethod: the Java name of a routes.json method ("Client.SessionRecap"
+// → "sessionRecap"). A keyword gets a descriptive name rather than an
+// underscore: Management.Import → "importEntries".
+func javamethod(m string) string {
+	_, after, _ := strings.Cut(m, ".")
+	if id := camel(after); id == "import" {
+		return "importEntries"
+	}
+	return javaident(after)
+}

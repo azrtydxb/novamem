@@ -1378,15 +1378,15 @@ Run `cd clients/dotnet && dotnet test`: expect FAIL with `error CS0246: The type
 
 Files:
 
-- `clients/gen/templates/java.tmpl` (created; out: `java/src/main/java/com/azrtydxb/novamem/types/Types.java`). One file holds `public final class Types` with a `public record` per object type, annotated `@JsonInclude(JsonInclude.Include.NON_NULL)` and `@JsonIgnoreProperties(ignoreUnknown = true)`, with `@JsonProperty("<wire>")` on each component. Enums use `@JsonValue` on the wire string. `datetime` becomes `java.time.Instant`, `int64` becomes `Long`, `int32` becomes `Integer`, and maps become `Map<String, Object>`. All records are nested in one generated file, so the generator writes one path per language. That file matches the spec's `types/*.java` path.
-- `clients/gen/templates/java_dispatch.tmpl` (created; out: `java/src/test/java/com/azrtydxb/novamem/Dispatch.java`): `static final Map<String, Dispatch.Fn> TABLE`, where `interface Fn { Object call(Clients c, JsonNode args, boolean async, long cancelAfterMs) throws Exception; }`. With `async` set it calls the `…Async` variant, cancels the future after `cancelAfterMs` when that's above 0, then calls `join()`.
+- `clients/gen/templates/java.tmpl` (created; out: `java/src/main/java/com/azrtydxb/novamem/types/Types.java`). One file holds `public final class Types` with a `public record` per object type, annotated `@JsonInclude(JsonInclude.Include.NON_NULL)` and `@JsonIgnoreProperties(ignoreUnknown = true)`, with `@JsonProperty("<wire>")` on each component. Enums use `@JsonValue` on the wire string, plus an `UNKNOWN` constant marked `@JsonEnumDefaultValue` so a value this version does not know still reads. Every record carries a `builder()` / `toBuilder()`. Required fields are `@JsonInclude(ALWAYS)` (and `required = true` when not nullable); optional strings are `NON_EMPTY`. The directive names `fmt: google-java-format`: the generator pipes the output through it, because gjf lays lines out by length and no template can match it alone. `datetime` becomes `java.time.Instant`, `int64` becomes `Long`, `int32` becomes `Integer`, and maps become `Map<String, Object>`. All records are nested in one generated file, so the generator writes one path per language. That file matches the spec's `types/*.java` path.
+- `clients/gen/templates/java_dispatch.tmpl` (created; out: `java/src/test/java/com/azrtydxb/novamem/Dispatch.java`): `static final Map<String, Dispatch.Fn> TABLE` and the nested `record Clients(Client client, Management management, Admin admin)`, where `interface Fn { Object call(Clients c, JsonNode args, boolean async, long cancelAfterMs) throws Exception; }`. With `async` set it calls the `…Async` variant, cancels the future after `cancelAfterMs` when that's above 0, then calls `join()`.
 - `clients/java/pom.xml` (created):
   - `groupId com.azrtydxb`, `artifactId novamem`, `version 0.1.0`, `maven.compiler.release 17`.
-  - Dependency `com.fasterxml.jackson.core:jackson-databind:2.20.0` (plus `jackson-datatype-jsr310` is NOT added; `Instant` is serialised through a small hand-written serializer and deserializer registered on the client's `ObjectMapper`, which keeps the one-dependency rule).
+  - Dependency `com.fasterxml.jackson.core:jackson-databind:2.22.3` (plus `jackson-datatype-jsr310` is NOT added; `Instant` is serialised through a small hand-written serializer and deserializer registered on the client's `ObjectMapper`, which keeps the one-dependency rule).
   - Test dependency `org.junit.jupiter:junit-jupiter:5.13.4`.
   - Plugins `maven-surefire-plugin:3.5.3`, `maven-source-plugin:3.3.1`, `maven-javadoc-plugin:3.11.2`, `maven-gpg-plugin:3.2.8` and `org.sonatype.central:central-publishing-maven-plugin:0.8.0`, the last two in a `release` profile only.
 - `clients/java/src/main/java/com/azrtydxb/novamem/{Client,Management,Admin,NovamemConfig,NovamemException,Transport,InstantCodec}.java` (created)
-- `clients/java/src/test/java/com/azrtydxb/novamem/{ScenarioTest,RouteTest}.java` (created)
+- `clients/java/src/test/java/com/azrtydxb/novamem/{ScenarioTest,RouteTest,TransportTest}.java` (created). TransportTest covers what no shared scenario reaches: a body that stalls after its headers still times out, cancelling a mapped future cancels its source, and a network-path `Location` is another origin.
 - `clients/java/src/test/java/com/azrtydxb/novamem/Smoke.java` (created; run as `java -cp "$(cat cp.txt):target/classes:target/test-classes" com.azrtydxb.novamem.Smoke <up|down>`, where `cp.txt` comes from `mvn -q dependency:build-classpath -Dmdep.outputFile=cp.txt`)
 
 Interfaces:
@@ -1471,7 +1471,7 @@ class ScenarioTest {
           ? "http://127.0.0.1:" + closed + "/s/" + id : url + "/s/" + id;
       NovamemConfig cfg = NovamemConfig.builder().baseUrl(base).token(token)
           .timeout(Duration.ofMillis(scen.get("timeoutMs").asLong())).build();
-      Clients c = new Clients(new Client(cfg), new Management(cfg), new Admin(cfg));
+      Dispatch.Clients c = new Dispatch.Clients(new Client(cfg), new Management(cfg), new Admin(cfg));
       boolean cancel = call.has("cancelAfterMs");
       try {
         result = Dispatch.TABLE.get(call.get("method").asText())
@@ -1531,6 +1531,8 @@ class RouteTest {
         String[] p = m.get("name").asText().split("\\.");
         Class<?> cls = Class.forName("com.azrtydxb.novamem." + p[0]);
         String name = Character.toLowerCase(p[1].charAt(0)) + p[1].substring(1);
+        // "import" is a Java keyword (clients/gen javamethod).
+        name = name.equals("import") ? "importEntries" : name;
         for (String n : new String[] {name, name + "Async"})
           assertTrue(Arrays.stream(cls.getMethods()).anyMatch(x -> x.getName().equals(n)), e.getKey() + " " + p[0] + "." + n);
       }
@@ -1547,7 +1549,8 @@ Run `cd clients/java && mvn -B verify`: expect FAIL with `cannot find symbol` / 
   - `IOException` is unavailable and retryable.
   - `JsonProcessingException` is unavailable (`malformed response body`).
   - Status handling follows the Constraints, and every message is redacted.
-  - The async variant uses `sendAsync`. The returned future is the `sendAsync` future piped through `thenApply(decode)`, and `cancel(true)` on it cancels the exchange.
+  - Every call is async at the core (`sendAsync`); the blocking method waits on the async one. The body is read by a `BodySubscriber` that cancels once 8 MiB is crossed. The call's own deadline (HttpRequest.timeout stops at the headers) completes the future with `timed out`. Redirects are followed by hand with `Redirect.NEVER`. Cancelling the returned future — or any future mapped from it through `Base.then` — cancels the exchange in flight.
+  - `Management.Import` is `importEntries` (`import` is a Java keyword; clients/gen `javamethod`).
 - [ ] Implement the 41 methods, sync and async, with the special rules from Task 7 and camelCase names.
 - [ ] Run `cd clients/java && mvn -B verify` on Java 17 and Java 21: expect PASS (`Tests run: <n>, Failures: 0, Errors: 0`).
 - [ ] Mutation check: remove the 404 handling in `forget` and re-run. Expect FAIL on `forget-404-not-deleted` (`expected: <ok> but was: <not_found>`). Revert.
@@ -1555,7 +1558,8 @@ Run `cd clients/java && mvn -B verify`: expect FAIL with `cannot find symbol` / 
 - [ ] Write `Smoke.java` (up/down, prefix `java`).
 - [ ] Add a `java` job to `.github/workflows/sdk.yml`:
   - `runs-on: arc-azrtydxb-amd64`, `timeout-minutes: 20`, `needs: [generated]`.
-  - A matrix of `java: [17, 21]`, using `actions/setup-java@v5` with `distribution: temurin` and `cache: maven`, plus `actions/setup-go@v6`.
+  - A matrix of `java: [17, 21]`, run in the `maven:3.9-eclipse-temurin-<java>` image (the runner has no Maven), plus `actions/setup-go`.
+  - The `generated` job installs google-java-format 1.36.1 (the version Homebrew ships), because `-check` runs the Java templates through it.
   - Run: `cd clients/java && mvn -B verify`.
 - [ ] Commit `feat(sdk-java): novamem Java SDK held to the shared scenario suite`.
 
@@ -2383,29 +2387,30 @@ Files:
 
 - `clients/smoke/go.mod` (created: `module github.com/azrtydxb/novamem/clients/smoke`, `go 1.23.0`, no requirements; added to `go.work`)
 - `clients/smoke/cmd/mint/main.go` (created: signs in the bootstrap admin and prints a fresh `nm_` token)
+- `clients/smoke/cmd/embed/main.go` (created: a deterministic OpenAI-compatible `/v1/embeddings` stand-in). Without an embedder the server marks every search `degraded` (go/internal/engine/search.go), and a degraded search with no results is — correctly — `unavailable` in every SDK, so the search-after-forget step could never pass. The stand-in hashes words into a unit vector of `-dim` (default 384, the server's `NOVAMEM_EMBEDDINGS_DIM` default), so the same text embeds identically and no model is downloaded.
 - `clients/smoke/schema.go` (created: a minimal OpenAPI-subset validator)
 - `clients/smoke/schema_test.go` (created: `TestResponsesMatchSchemas`, plus the validator's own unit test)
-- `clients/smoke/run.sh` (created: runs each SDK's smoke `up`, or `down` with `-down`)
+- `clients/smoke/run.sh` (created: `run.sh <lang> <build|up|down>` runs one SDK's smoke phase)
 - `.github/workflows/sdk.yml` (modified: add the `sdk-smoke` job)
 
 Interfaces:
 
-- `mint` flags: `-url` (default `http://127.0.0.1:7778`), `-email`, `-password` and `-label` (default `sdk-smoke`). It does `POST /api/auth/sign-in/email` with `Origin: <url>` and body `{"email","password"}`, takes every `Set-Cookie` name=value pair, then does `POST /v1/me/tokens` with that `Cookie` header, `Origin: <url>` and body `{"label":"<label>"}`. It prints the `token` field on stdout and exits non-zero with the status and body on any non-2xx.
+- `mint` flags: `-url` (default `http://127.0.0.1:7778`), `-email`, `-password`, `-label` (default `sdk-smoke`) and `-wait` (default `0`: when set, poll `GET /ready` until 200 or the duration passes, so minimal images need no curl). It does `POST /api/auth/sign-in/email` with `Origin: <url>` and body `{"email","password"}`, takes every `Set-Cookie` name=value pair, then does `POST /v1/me/tokens` with that `Cookie` header, `Origin: <url>` and body `{"label":"<label>"}`. It prints the `token` field on stdout and exits non-zero with the status and body on any non-2xx.
 - `schema.go` exports `func Validate(doc map[string]any, schemaName string, v any) error`, which checks `type`, `required`, `properties` (recursively), `items`, `nullable` and `$ref` (resolved against `doc.components.schemas`). Unknown fields pass. The error names the JSON path.
 - `TestResponsesMatchSchemas` reads the environment variables `NOVAMEM_SMOKE_URL` and `NOVAMEM_SMOKE_ADMIN_TOKEN` (the minted admin token). If either is unset it calls `t.Skip("NOVAMEM_SMOKE_URL unset: live schema check needs the sdk-smoke job")`, a loud skip.
-- `run.sh <up|down>` runs, in order, each SDK's smoke with `NOVAMEM_SMOKE_URL` and `NOVAMEM_SMOKE_TOKEN` exported:
+- `run.sh <lang> <build|up|down>`: `build` prepares that SDK (`npm ci && npm run build`, `mvn -B -q test-compile dependency:build-classpath -Dmdep.outputFile=cp.txt`, `cargo build --example smoke`, `make -C clients/c build/smoke`, `composer install --no-dev`, `swift build --product novamem-smoke`, `dotnet build clients/dotnet/smoke`; nothing for python and ruby). `up` and `down` run the smoke with `NOVAMEM_SMOKE_URL` and `NOVAMEM_SMOKE_TOKEN` from the environment and never build, so `down` measures the stopped server rather than a compile. The commands:
 
-  - `python3 clients/python/smoke.py`
-  - `node clients/typescript/smoke.mjs`
-  - `dotnet run --project clients/dotnet/smoke`
-  - `java -cp "$(cat clients/java/cp.txt):clients/java/target/classes:clients/java/target/test-classes" com.azrtydxb.novamem.Smoke`
-  - `cargo run --quiet --manifest-path clients/rust/Cargo.toml --example smoke`
-  - `make -s -C clients/c smoke`
-  - `ruby -Iclients/ruby/lib clients/ruby/smoke.rb`
-  - `php clients/php/smoke.php`
-  - `swift run --package-path clients/swift novamem-smoke`
+  - python: `python3 clients/python/smoke.py`
+  - typescript: `node clients/typescript/smoke.mjs`
+  - dotnet: `dotnet run --no-build --project clients/dotnet/smoke --`
+  - java: `java -cp "$(cat clients/java/cp.txt):clients/java/target/classes:clients/java/target/test-classes" com.azrtydxb.novamem.Smoke`
+  - rust: `target/debug/examples/smoke` (the workspace target dir)
+  - c: `clients/c/build/smoke`
+  - ruby: `ruby -Iclients/ruby/lib clients/ruby/smoke.rb`
+  - php: `php clients/php/smoke.php`
+  - swift: `clients/swift/.build/debug/novamem-smoke`
 
-  Each is invoked with the mode as its argument. The script continues past failures, prints `FAIL <lang>` for each, and exits 1 if any failed.
+  Each is invoked with the mode as its argument; an unknown language exits 2.
 
 - [ ] Write the failing tests `clients/smoke/schema_test.go`:
 
@@ -2540,30 +2545,16 @@ Run `cd clients/smoke && go test ./...`: expect FAIL with `undefined: Validate`.
 
 - [ ] Implement `schema.go`. Run `cd clients/smoke && go test -count=1 ./...`: expect PASS (`TestValidateCatchesMissingRequired` passes, and `TestResponsesMatchSchemas` shows as SKIP with its reason).
 - [ ] Implement `cmd/mint/main.go` and `run.sh`.
-- [ ] Add the `sdk-smoke` job to `.github/workflows/sdk.yml`:
-  - `runs-on: arc-azrtydxb-amd64`, `timeout-minutes: 40`, `needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]`.
-  - Give it a `services.postgres` block with image `pgvector/pgvector:pg16`, the environment variables `POSTGRES_USER=novamem`, `POSTGRES_PASSWORD=novamem` and `POSTGRES_DB=novamem`, ports `5432:5432`, and options `--health-cmd "pg_isready -U novamem" --health-interval 5s --health-timeout 5s --health-retries 20` (Task 1 proved this works on the ARC runners).
-  - Then these steps:
-    1. `actions/checkout@v7`; `actions/setup-go@v6`; and the setup actions for Python 3.13, Node 24, .NET 8, Java 21, Rust stable, Ruby 3.2, PHP 8.4 and Swift 6.2 (same actions and versions as Tasks 7–15).
-    2. Build the server: `cd go && go build -o "$RUNNER_TEMP/novamem-server" ./cmd/novamem-server`.
-    3. Start it in the background with these environment variables, and write its PID to `$RUNNER_TEMP/server.pid`:
-       - `NOVAMEM_WARM_URL=postgres://novamem:novamem@127.0.0.1:5432/novamem?sslmode=disable`
-       - `NOVAMEM_COLD_PROVIDER=pgvector`
-       - `NOVAMEM_AUTH_MODE=user`
-       - `NOVAMEM_COOKIE_SECRET=sdk-smoke-cookie-secret-0123456789`
-       - `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL=smoke-admin@example.com`
-       - `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=smoke-admin-password`
-       - `NOVAMEM_INSECURE_COOKIES=1`
-       - `NOVAMEM_PORT=7778`
-       - `NOVAMEM_BASE_URL=http://127.0.0.1:7778`
-    4. Wait for readiness: `timeout 90 bash -c 'until curl -fsS http://127.0.0.1:7778/ready; do sleep 2; done'`.
-    5. `ADMIN=$(go run ./clients/smoke/cmd/mint -email smoke-admin@example.com -password smoke-admin-password)`, then `echo "::add-mask::$ADMIN"`, then `echo "NOVAMEM_SMOKE_ADMIN_TOKEN=$ADMIN" >> "$GITHUB_ENV"`, then mint a second token with `-label sdk-smoke-user` and export it as `NOVAMEM_SMOKE_TOKEN`, also masked.
-    6. `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 go test -count=1 -v -run TestResponsesMatchSchemas ./clients/smoke/...`
-    7. Build every SDK's smoke prerequisites: `npm ci && npm run build` in typescript; `mvn -B -q test-compile dependency:build-classpath -Dmdep.outputFile=cp.txt` in java; `make -C clients/c lib`.
-    8. `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 sh clients/smoke/run.sh up`
-    9. Stop the server: `kill "$(cat "$RUNNER_TEMP/server.pid")"`, wait for the port to close, and use `sleep 1` only inside the wait loop.
-    10. `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 sh clients/smoke/run.sh down`
-- [ ] Run `actionlint .github/workflows/sdk.yml`: expect PASS. Push and open the PR: expect `sdk-smoke` green, with a log line `PASS <lang> up` and `PASS <lang> down` for all nine languages.
+- [ ] Add two jobs to `.github/workflows/sdk.yml`. The toolchain setup actions for Ruby, PHP and Swift do not work on the ARC runners (Tasks 12–15 moved those jobs into containers), so each language runs in its own image instead of one host job with nine setup actions:
+  - `sdk-smoke-build` (`runs-on: arc-azrtydxb-amd64`, `needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]`): `actions/setup-go`, then `CGO_ENABLED=0 go build` of `./go/cmd/novamem-server`, `./clients/smoke/cmd/mint` and `./clients/smoke/cmd/embed` into `smoke-bin/`, uploaded with `actions/upload-artifact` as `smoke-bin`.
+  - `sdk-smoke` (`needs: [sdk-smoke-build]`, `timeout-minutes: 30`, `fail-fast: false`): a matrix of `{lang, image}` — python `python:3.13-bookworm`, typescript `node:24-bookworm`, dotnet `mcr.microsoft.com/dotnet/sdk:8.0`, java `maven:3.9-eclipse-temurin-21`, rust and c `rust:1-bookworm`, ruby `ruby:3.2-bookworm`, php `composer:2`, swift `swift:6.3-noble`, and schema `golang:1.26-bookworm` — with `container.image: ${{ matrix.image }}` and a `services.postgres` block: image `pgvector/pgvector:pg16`, `POSTGRES_USER=novamem`, `POSTGRES_PASSWORD=novamem`, `POSTGRES_DB=novamem`, options `--health-cmd "pg_isready -U novamem" --health-interval 5s --health-timeout 5s --health-retries 20`. Steps:
+    1. `actions/checkout`, `actions/download-artifact` (`smoke-bin`), `chmod +x smoke-bin/*`, and `sh clients/smoke/run.sh <lang> build` (before the server starts: a build is not what `down` measures).
+    2. Start `smoke-bin/embed -addr 127.0.0.1:7779` and `smoke-bin/novamem-server` in the background, writing the server's PID to `$RUNNER_TEMP/server.pid`, with `NOVAMEM_WARM_URL=postgres://novamem:novamem@postgres:5432/novamem?sslmode=disable`, `NOVAMEM_COLD_PROVIDER=pgvector`, `NOVAMEM_EMBEDDINGS_PROVIDER=openai-compatible`, `NOVAMEM_EMBEDDINGS_ENDPOINT=http://127.0.0.1:7779/v1`, `NOVAMEM_EMBEDDINGS_MODEL=smoke-hash`, `NOVAMEM_AUTH_MODE=user`, `NOVAMEM_COOKIE_SECRET=sdk-smoke-cookie-secret-0123456789`, `NOVAMEM_BOOTSTRAP_ADMIN_EMAIL=smoke-admin@example.com`, `NOVAMEM_BOOTSTRAP_ADMIN_PASSWORD=smoke-admin-password`, `NOVAMEM_INSECURE_COOKIES=1`, `NOVAMEM_PORT=7778` and `NOVAMEM_BASE_URL=http://127.0.0.1:7778`.
+    3. `ADMIN=$(smoke-bin/mint -wait 90s -email smoke-admin@example.com -password smoke-admin-password)`, `echo "::add-mask::$ADMIN"`, exported as `NOVAMEM_SMOKE_ADMIN_TOKEN`; a second token with `-label sdk-smoke-user`, masked, exported as `NOVAMEM_SMOKE_TOKEN`.
+    4. schema: `NOVAMEM_SMOKE_URL=http://127.0.0.1:7778 go test -count=1 -v -run TestResponsesMatchSchemas ./clients/smoke/...`. Every other language: `sh clients/smoke/run.sh <lang> up`.
+    5. Stop the server (`kill "$(cat "$RUNNER_TEMP/server.pid")"`) and wait, in a `sleep 1` loop of at most 30 s, until the process is gone or a zombie (`/proc/<pid>/status` State `Z`: the job container's PID 1 does not reap children, and an exited process has closed its socket).
+    6. Every language but schema: `sh clients/smoke/run.sh <lang> down`.
+- [ ] Run `actionlint .github/workflows/sdk.yml`: expect PASS. Push and open the PR: expect every `sdk-smoke` matrix leg green, each with the log lines `PASS <lang> up` and `PASS <lang> down`, and the schema leg with `TestResponsesMatchSchemas` PASS (not SKIP).
 - [ ] Falsifiability check on a scratch commit (dropped before merge): make `clients/python/smoke.py`'s `down` step accept an empty result. Expect `sdk-smoke` to fail with `FAIL python`. Separately, add `bogus` to `ProvisionedUser.required` in `api/openapi.yaml` and regenerate: expect `TestResponsesMatchSchemas` to fail with `POST /v1/admin/users: $.bogus: required field missing`. Drop both.
 - [ ] Commit `ci(sdk): live smoke of every SDK against a server built from the PR`.
 
@@ -2580,7 +2571,7 @@ Files:
 Interfaces:
 
 - Each workflow triggers on `on: push: tags: ["clients/<lang>/v*"]` only, uses `permissions: contents: write, id-token: write` where the registry supports trusted publishing, and runs on `arc-azrtydxb-amd64`. Its jobs are:
-  - `verify`: identical steps to that SDK's `sdk.yml` job.
+  - `verify`: `uses: ./.github/workflows/sdk.yml` — the whole SDK workflow (now also `on: workflow_call`), live smoke included, rather than a copy of one job's steps that could drift from it.
   - `version-matches-tag`: fails unless the manifest version equals the tag's `X.Y.Z`. The manifest version comes from `pyproject.toml`, `package.json`, the `.csproj`, `pom.xml`, `Cargo.toml` or `novamem.gemspec`. PHP and Swift have no manifest version, so this job is skipped for them.
   - `publish`, with `needs: [verify, version-matches-tag]`.
 - Publish commands and secrets:
@@ -2589,15 +2580,14 @@ Interfaces:
   - dotnet: `dotnet pack -c Release clients/dotnet/src/Novamem -o out && dotnet nuget push out/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json`.
   - java: `mvn -B -P release deploy`, with `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY` and `MAVEN_GPG_PASSPHRASE` secrets through `actions/setup-java@v5`'s `server-id: central` and `gpg-private-key` inputs.
   - rust: `cargo publish --locked --manifest-path clients/rust/Cargo.toml`, with `CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.
-  - c: a matrix job builds `cargo build --release --manifest-path clients/c/novamem-ffi/Cargo.toml` on `arc-azrtydxb-amd64` (linux-x86_64) and `arc-azrtydxb` (linux-aarch64), then archives `include/` plus `libnovamem_ffi.a` and `libnovamem_ffi.so` as `novamem-c-${VERSION}-<triplet>.tar.gz`. Only these two Linux triplets exist, matching the recipes from Task 12. It then runs `gh release create "$GITHUB_REF_NAME" --title "novamem C/C++ SDK $VERSION" <archives>` and rewrites the SHA-512s in `clients/c/port/vcpkg/portfile.cmake` and `clients/c/port/conan/conanfile.py`. It opens a PR with those two files (`gh pr create --title "chore(sdk-c): pin ${VERSION} archive hashes"`), because submitting to the vcpkg and Conan central indexes is a manual upstream PR, documented in `clients/c/README.md`.
+  - c: a matrix job builds `cargo build --release --manifest-path clients/c/novamem-ffi/Cargo.toml` on `arc-azrtydxb-amd64` (linux-x86_64) and `arc-azrtydxb-publish` (linux-aarch64, the arm64 runner ci.yml's image build uses), then archives `include/` plus `libnovamem_ffi.a` and `libnovamem_ffi.so` as `novamem-c-${VERSION}-<triplet>.tar.gz`. Only these two Linux triplets exist, matching the recipes from Task 12. It then runs `gh release create "$GITHUB_REF_NAME" --title "novamem C/C++ SDK $VERSION" <archives>` and rewrites the SHA-512s in `clients/c/port/vcpkg/portfile.cmake` and `clients/c/port/conan/conanfile.py`. It opens a PR with those two files (`gh pr create --title "chore(sdk-c): pin ${VERSION} archive hashes"`), because submitting to the vcpkg and Conan central indexes is a manual upstream PR, documented in `clients/c/README.md`.
   - ruby: `gem build clients/ruby/novamem.gemspec && gem push novamem-${VERSION}.gem`, with `GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}`.
   - php: the job runs `git subtree split --prefix clients/php -b php-split`, then `git push "https://x-access-token:${{ secrets.SDK_MIRROR_TOKEN }}@github.com/azrtydxb/novamem-php" php-split:main`, then tags the mirror `v${VERSION}` and pushes the tag. Packagist has the mirror registered with its GitHub hook, so it picks up the tag. `SDK_MIRROR_TOKEN` is a fine-grained PAT with `contents: write` on the two mirror repos only.
   - swift: the job runs `swift package describe --package-path clients/swift`, then `git subtree split --prefix clients/swift -b swift-split`, then pushes to `azrtydxb/novamem-swift` `main` with `SDK_MIRROR_TOKEN`, tagging the mirror `${VERSION}` (no `v`, as SwiftPM expects). Consumers use `.package(url: "https://github.com/azrtydxb/novamem-swift", from: "0.1.0")`.
 - `scripts/check-sdk-tag-triggers.sh` fails:
 
   - if any `release-sdk-*.yml` has a tag pattern other than `clients/<its lang>/v*`;
-  - if `release-binaries.yml`'s `tags` pattern `v*` would match `clients/python/v0.1.0` (it does not; glob `v*` is anchored at the start);
-  - or if `ci.yml` triggers on `tags`.
+  - or if a `tags` pattern of `release-binaries.yml` or `ci.yml` would match any `clients/<lang>/v0.1.0` (neither does: glob `v*` is anchored at the start). `ci.yml` triggers on `v*` on purpose — server releases publish semver image tags — so the check is that SDK tags never match, not that ci.yml has no tag trigger.
 
 - [ ] Write the failing check `scripts/check-sdk-tag-triggers.sh`:
 
