@@ -1649,11 +1649,14 @@ public final class Types {
   @JsonInclude(JsonInclude.Include.NON_NULL)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public record HygieneReport(
-      @JsonProperty(value = "contradictionCandidates") List<Object> contradictionCandidates,
-      @JsonProperty(value = "duplicateClusters") List<Object> duplicateClusters,
-      @JsonProperty(value = "lowValue") List<Object> lowValue,
-      @JsonProperty(value = "orphanCandidates") List<Object> orphanCandidates,
-      @JsonProperty(value = "stale") List<Object> stale,
+      @JsonProperty(value = "contradictionCandidates")
+          List<HygieneReportContradictionCandidatesItem> contradictionCandidates,
+      @JsonProperty(value = "duplicateClusters")
+          List<HygieneReportDuplicateClustersItem> duplicateClusters,
+      @JsonProperty(value = "lowValue") List<HygieneReportLowValueItem> lowValue,
+      @JsonProperty(value = "orphanCandidates")
+          List<HygieneReportOrphanCandidatesItem> orphanCandidates,
+      @JsonProperty(value = "stale") List<HygieneReportStaleItem> stale,
       @JsonProperty(value = "summary", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
           HygieneReportSummary summary) {
     /** A builder with every field unset. */
@@ -1675,41 +1678,42 @@ public final class Types {
 
     /** Builds HygieneReport records. */
     public static final class Builder {
-      private List<Object> contradictionCandidates;
-      private List<Object> duplicateClusters;
-      private List<Object> lowValue;
-      private List<Object> orphanCandidates;
-      private List<Object> stale;
+      private List<HygieneReportContradictionCandidatesItem> contradictionCandidates;
+      private List<HygieneReportDuplicateClustersItem> duplicateClusters;
+      private List<HygieneReportLowValueItem> lowValue;
+      private List<HygieneReportOrphanCandidatesItem> orphanCandidates;
+      private List<HygieneReportStaleItem> stale;
       private HygieneReportSummary summary;
 
       private Builder() {}
 
       /** Sets contradictionCandidates. */
-      public Builder contradictionCandidates(List<Object> contradictionCandidates) {
+      public Builder contradictionCandidates(
+          List<HygieneReportContradictionCandidatesItem> contradictionCandidates) {
         this.contradictionCandidates = contradictionCandidates;
         return this;
       }
 
       /** Sets duplicateClusters. */
-      public Builder duplicateClusters(List<Object> duplicateClusters) {
+      public Builder duplicateClusters(List<HygieneReportDuplicateClustersItem> duplicateClusters) {
         this.duplicateClusters = duplicateClusters;
         return this;
       }
 
       /** Sets lowValue. */
-      public Builder lowValue(List<Object> lowValue) {
+      public Builder lowValue(List<HygieneReportLowValueItem> lowValue) {
         this.lowValue = lowValue;
         return this;
       }
 
       /** Sets orphanCandidates. */
-      public Builder orphanCandidates(List<Object> orphanCandidates) {
+      public Builder orphanCandidates(List<HygieneReportOrphanCandidatesItem> orphanCandidates) {
         this.orphanCandidates = orphanCandidates;
         return this;
       }
 
       /** Sets stale. */
-      public Builder stale(List<Object> stale) {
+      public Builder stale(List<HygieneReportStaleItem> stale) {
         this.stale = stale;
         return this;
       }
@@ -1724,6 +1728,240 @@ public final class Types {
       public HygieneReport build() {
         return new HygieneReport(
             contradictionCandidates, duplicateClusters, lowValue, orphanCandidates, stale, summary);
+      }
+    }
+  }
+
+  /** The HygieneReportContradictionCandidatesItem schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record HygieneReportContradictionCandidatesItem(
+      @JsonProperty(value = "ids") List<String> ids,
+      @JsonProperty(value = "reason") @JsonInclude(JsonInclude.Include.NON_EMPTY) String reason) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.ids = ids;
+      b.reason = reason;
+      return b;
+    }
+
+    /** Builds HygieneReportContradictionCandidatesItem records. */
+    public static final class Builder {
+      private List<String> ids;
+      private String reason;
+
+      private Builder() {}
+
+      /** Sets ids. */
+      public Builder ids(List<String> ids) {
+        this.ids = ids;
+        return this;
+      }
+
+      /** Sets reason. */
+      public Builder reason(String reason) {
+        this.reason = reason;
+        return this;
+      }
+
+      /** The record. */
+      public HygieneReportContradictionCandidatesItem build() {
+        return new HygieneReportContradictionCandidatesItem(ids, reason);
+      }
+    }
+  }
+
+  /** The HygieneReportDuplicateClustersItem schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record HygieneReportDuplicateClustersItem(
+      @JsonProperty(value = "ids") List<String> ids,
+      @JsonProperty(value = "reason") @JsonInclude(JsonInclude.Include.NON_EMPTY) String reason) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.ids = ids;
+      b.reason = reason;
+      return b;
+    }
+
+    /** Builds HygieneReportDuplicateClustersItem records. */
+    public static final class Builder {
+      private List<String> ids;
+      private String reason;
+
+      private Builder() {}
+
+      /** Sets ids. */
+      public Builder ids(List<String> ids) {
+        this.ids = ids;
+        return this;
+      }
+
+      /** Sets reason. */
+      public Builder reason(String reason) {
+        this.reason = reason;
+        return this;
+      }
+
+      /** The record. */
+      public HygieneReportDuplicateClustersItem build() {
+        return new HygieneReportDuplicateClustersItem(ids, reason);
+      }
+    }
+  }
+
+  /** The HygieneReportLowValueItem schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record HygieneReportLowValueItem(
+      @JsonProperty(value = "content") @JsonInclude(JsonInclude.Include.NON_EMPTY) String content,
+      @JsonProperty(value = "id") @JsonInclude(JsonInclude.Include.NON_EMPTY) String id,
+      @JsonProperty(value = "reason") @JsonInclude(JsonInclude.Include.NON_EMPTY) String reason) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.content = content;
+      b.id = id;
+      b.reason = reason;
+      return b;
+    }
+
+    /** Builds HygieneReportLowValueItem records. */
+    public static final class Builder {
+      private String content;
+      private String id;
+      private String reason;
+
+      private Builder() {}
+
+      /** Sets content. */
+      public Builder content(String content) {
+        this.content = content;
+        return this;
+      }
+
+      /** Sets id. */
+      public Builder id(String id) {
+        this.id = id;
+        return this;
+      }
+
+      /** Sets reason. */
+      public Builder reason(String reason) {
+        this.reason = reason;
+        return this;
+      }
+
+      /** The record. */
+      public HygieneReportLowValueItem build() {
+        return new HygieneReportLowValueItem(content, id, reason);
+      }
+    }
+  }
+
+  /** The HygieneReportOrphanCandidatesItem schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record HygieneReportOrphanCandidatesItem(
+      @JsonProperty(value = "id") @JsonInclude(JsonInclude.Include.NON_EMPTY) String id,
+      @JsonProperty(value = "reason") @JsonInclude(JsonInclude.Include.NON_EMPTY) String reason) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.id = id;
+      b.reason = reason;
+      return b;
+    }
+
+    /** Builds HygieneReportOrphanCandidatesItem records. */
+    public static final class Builder {
+      private String id;
+      private String reason;
+
+      private Builder() {}
+
+      /** Sets id. */
+      public Builder id(String id) {
+        this.id = id;
+        return this;
+      }
+
+      /** Sets reason. */
+      public Builder reason(String reason) {
+        this.reason = reason;
+        return this;
+      }
+
+      /** The record. */
+      public HygieneReportOrphanCandidatesItem build() {
+        return new HygieneReportOrphanCandidatesItem(id, reason);
+      }
+    }
+  }
+
+  /** The HygieneReportStaleItem schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record HygieneReportStaleItem(
+      @JsonProperty(value = "id") @JsonInclude(JsonInclude.Include.NON_EMPTY) String id,
+      @JsonProperty(value = "reason") @JsonInclude(JsonInclude.Include.NON_EMPTY) String reason) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.id = id;
+      b.reason = reason;
+      return b;
+    }
+
+    /** Builds HygieneReportStaleItem records. */
+    public static final class Builder {
+      private String id;
+      private String reason;
+
+      private Builder() {}
+
+      /** Sets id. */
+      public Builder id(String id) {
+        this.id = id;
+        return this;
+      }
+
+      /** Sets reason. */
+      public Builder reason(String reason) {
+        this.reason = reason;
+        return this;
+      }
+
+      /** The record. */
+      public HygieneReportStaleItem build() {
+        return new HygieneReportStaleItem(id, reason);
       }
     }
   }

@@ -503,27 +503,86 @@ public sealed record HygieneReport
 {
     [JsonPropertyName("contradictionCandidates")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<JsonElement>? ContradictionCandidates { get; init; }
+    public List<HygieneReportContradictionCandidatesItem>? ContradictionCandidates { get; init; }
 
     [JsonPropertyName("duplicateClusters")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<JsonElement>? DuplicateClusters { get; init; }
+    public List<HygieneReportDuplicateClustersItem>? DuplicateClusters { get; init; }
 
     [JsonPropertyName("lowValue")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<JsonElement>? LowValue { get; init; }
+    public List<HygieneReportLowValueItem>? LowValue { get; init; }
 
     [JsonPropertyName("orphanCandidates")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<JsonElement>? OrphanCandidates { get; init; }
+    public List<HygieneReportOrphanCandidatesItem>? OrphanCandidates { get; init; }
 
     [JsonPropertyName("stale")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<JsonElement>? Stale { get; init; }
+    public List<HygieneReportStaleItem>? Stale { get; init; }
 
     [JsonPropertyName("summary")]
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public required HygieneReportSummary Summary { get; init; }
+}
+
+public sealed record HygieneReportContradictionCandidatesItem
+{
+    [JsonPropertyName("ids")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Ids { get; init; }
+
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+}
+
+public sealed record HygieneReportDuplicateClustersItem
+{
+    [JsonPropertyName("ids")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Ids { get; init; }
+
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+}
+
+public sealed record HygieneReportLowValueItem
+{
+    [JsonPropertyName("content")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Content { get; init; }
+
+    [JsonPropertyName("id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+}
+
+public sealed record HygieneReportOrphanCandidatesItem
+{
+    [JsonPropertyName("id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+}
+
+public sealed record HygieneReportStaleItem
+{
+    [JsonPropertyName("id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
 }
 
 public sealed record HygieneReportSummary

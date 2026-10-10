@@ -514,19 +514,55 @@ components:
             orphanCandidates: *id003
         lowValue:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              content:
+                type: string
+              reason:
+                type: string
         stale:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              reason:
+                type: string
         duplicateClusters:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              ids:
+                type: array
+                items:
+                  type: string
+              reason:
+                type: string
         contradictionCandidates:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              ids:
+                type: array
+                items:
+                  type: string
+              reason:
+                type: string
         orphanCandidates:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              reason:
+                type: string
       required:
         - summary
     EvaluateReport:
