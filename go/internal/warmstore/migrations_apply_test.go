@@ -26,6 +26,23 @@ func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 	if err := Migrate(ctx, pool, log); err != nil {
 		t.Fatalf("first migrate: %v", err)
 	}
+	var foreignKeys, unvalidated int
+	if err := pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE NOT convalidated) FROM pg_constraint WHERE contype = 'f' AND conname IN (
+		'memory_access_entry_fk', 'memory_fts_entry_fk', 'memory_relations_from_fk', 'memory_relations_to_fk',
+		'project_members_project_fk', 'project_members_user_fk', 'projects_owner_user_fk', 'user_tokens_user_fk',
+		'user_active_project_user_fk', 'user_active_project_project_fk', 'memory_entries_project_fk',
+		'memory_changes_entry_fk', 'metrics_samples_user_fk', 'user_quotas_user_fk')`).Scan(&foreignKeys, &unvalidated); err != nil {
+		t.Fatal(err)
+	}
+	if foreignKeys != 14 || unvalidated != 0 {
+		t.Fatalf("foreign keys = %d, unvalidated = %d; want 14 validated constraints", foreignKeys, unvalidated)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_tokens (token_hash, user_id) VALUES ('fk-test-token', 'missing-fk-test-user')`); err == nil {
+		t.Fatal("user_tokens accepted a row with a missing user")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO memory_fts (entry_id, content) VALUES ('missing-fk-test-entry', 'orphan')`); err == nil {
+		t.Fatal("memory_fts accepted a row with a missing entry")
+	}
 	rows, latest := journalState(ctx, t, pool)
 	want := len(mustLoad(t))
 	if rows != want {
@@ -74,6 +91,10 @@ func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 	var effectiveDays, strength float64
 	if err := pool.QueryRow(ctx, `INSERT INTO decay_runs (effective_days) VALUES ($1) RETURNING effective_days`, precise).Scan(&effectiveDays); err != nil {
 		t.Fatalf("effective_days round-trip: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO memory_entries (id, content) VALUES ('precision-a', 'test'), ('precision-b', 'test')
+		ON CONFLICT (id) DO NOTHING`); err != nil {
+		t.Fatalf("insert relation endpoints: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `INSERT INTO memory_relations (from_id, to_id, strength) VALUES ('precision-a', 'precision-b', $1)
 		ON CONFLICT (from_id, to_id, relation) DO UPDATE SET strength = EXCLUDED.strength RETURNING strength`, precise).Scan(&strength); err != nil {
