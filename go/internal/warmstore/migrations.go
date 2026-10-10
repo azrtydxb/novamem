@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -163,6 +164,40 @@ func applyMigrations(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) 
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
+	}
+	// PostgreSQL checks new writes against NOT VALID foreign keys immediately,
+	// but validating legacy rows scans the child table. Do that only after the
+	// migration transaction has released its locks, and let startup continue if
+	// old orphan data prevents validation.
+	rows, err := pool.Query(ctx, `
+		SELECT n.nspname, c.relname, conname
+		  FROM pg_constraint fk
+		  JOIN pg_class c ON c.oid = fk.conrelid
+		  JOIN pg_namespace n ON n.oid = c.relnamespace
+		 WHERE contype = 'f' AND NOT convalidated
+		 ORDER BY n.nspname, c.relname, conname`)
+	if err != nil {
+		return fmt.Errorf("finding unvalidated foreign keys: %w", err)
+	}
+	type foreignKey struct{ schema, table, name string }
+	var pending []foreignKey
+	for rows.Next() {
+		var fk foreignKey
+		if err := rows.Scan(&fk.schema, &fk.table, &fk.name); err != nil {
+			rows.Close()
+			return fmt.Errorf("reading unvalidated foreign keys: %w", err)
+		}
+		pending = append(pending, fk)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("reading unvalidated foreign keys: %w", err)
+	}
+	rows.Close()
+	for _, fk := range pending {
+		if _, err := pool.Exec(ctx, `ALTER TABLE `+pgx.Identifier{fk.schema, fk.table}.Sanitize()+` VALIDATE CONSTRAINT `+pgx.Identifier{fk.name}.Sanitize()); err != nil {
+			log.Warn("foreign key remains NOT VALID; existing orphan rows may need cleanup", "table", fk.schema+"."+fk.table, "constraint", fk.name, "err", err)
+		}
 	}
 	if applied == 0 {
 		log.Info("schema up to date", "latestMigration", last)

@@ -17,6 +17,9 @@ import (
 func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 	url := os.Getenv("NOVAMEM_TEST_DATABASE_URL")
 	if url == "" {
+		if os.Getenv("CI") == "1" {
+			t.Fatal("NOVAMEM_TEST_DATABASE_URL is required in CI")
+		}
 		t.Skip("set NOVAMEM_TEST_DATABASE_URL to a throwaway database to run")
 	}
 	ctx := context.Background()
@@ -29,6 +32,23 @@ func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 
 	if err := Migrate(ctx, pool, log); err != nil {
 		t.Fatalf("first migrate: %v", err)
+	}
+	var foreignKeys, unvalidated int
+	if err := pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE NOT convalidated) FROM pg_constraint WHERE contype = 'f' AND conname IN (
+		'memory_access_entry_fk', 'memory_fts_entry_fk', 'memory_relations_from_fk', 'memory_relations_to_fk',
+		'project_members_project_fk', 'project_members_user_fk', 'projects_owner_user_fk', 'user_tokens_user_fk',
+		'user_active_project_user_fk', 'user_active_project_project_fk', 'memory_entries_project_fk',
+		'memory_changes_entry_fk', 'metrics_samples_user_fk', 'user_quotas_user_fk')`).Scan(&foreignKeys, &unvalidated); err != nil {
+		t.Fatal(err)
+	}
+	if foreignKeys != 14 || unvalidated != 0 {
+		t.Fatalf("foreign keys = %d, unvalidated = %d; want 14 validated constraints", foreignKeys, unvalidated)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_tokens (token_hash, user_id) VALUES ('fk-test-token', 'missing-fk-test-user')`); err == nil {
+		t.Fatal("user_tokens accepted a row with a missing user")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO memory_fts (entry_id, content) VALUES ('missing-fk-test-entry', 'orphan')`); err == nil {
+		t.Fatal("memory_fts accepted a row with a missing entry")
 	}
 	rows, latest := journalState(ctx, t, pool)
 	want := len(mustLoad(t))
