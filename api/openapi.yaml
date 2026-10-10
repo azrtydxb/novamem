@@ -374,13 +374,19 @@ components:
         source: *id001
         score: &id003
           type: number
+          description: >-
+            Ranking score for this result. Ranked search results are returned
+            in non-increasing score order. When cross-encoder reranking
+            succeeds, this is the reranker relevance score; otherwise it is
+            the fused search score. Per-signal fusion contributions remain in
+            `signals`.
         metadata:
           type: object
           additionalProperties: true
         signals:
           type: object
           description: >-
-            Per-signal contributions behind `score`, present on the ranked
+            Per-signal contributions to the fused search score, present on the ranked
             responses (/v1/search, /v1/context, /v1/neighbors) and absent on
             /v1/recent, which orders by recency and ranks nothing. Every key
             is optional because the set varies by route: fusion returns all
@@ -4214,3 +4220,55 @@ paths:
         "Per-dependency status for operators: warm store, cold store and the graph tier reported
         separately. This is the detail `/health` deliberately withholds from anonymous callers, which
         is why it is admin-gated."
+
+  # Better Auth passthrough paths; generated into baAllowlist.
+  /api/auth/sign-in/email:
+    x-ba-allow: true
+  /api/auth/sign-out:
+    x-ba-allow: true
+  /api/auth/get-session:
+    x-ba-allow: true
+  /api/auth/token:
+    x-ba-allow: true
+  /api/auth/jwks:
+    x-ba-allow: true
+  /api/auth/change-password:
+    x-ba-allow: true
+  /api/auth/list-sessions:
+    x-ba-allow: true
+  /api/auth/revoke-session:
+    x-ba-allow: true
+  /api/auth/forget-password:
+    x-ba-allow: true
+  /api/auth/reset-password:
+    x-ba-allow: true
+  /api/auth/verify-email:
+    x-ba-allow: true
+  /api/auth/send-verification-email:
+    x-ba-allow: true
+  /api/auth/admin/list-users:
+    x-ba-allow: true
+  /api/auth/admin/create-user:
+    x-ba-allow: true
+  /api/auth/admin/update-user:
+    x-ba-allow: true
+  /api/auth/admin/set-role:
+    x-ba-allow: true
+  /api/auth/admin/set-user-password:
+    x-ba-allow: true
+  /api/auth/admin/remove-user:
+    x-ba-allow: true
+  /api/auth/admin/ban-user:
+    x-ba-allow: true
+  /api/auth/admin/unban-user:
+    x-ba-allow: true
+  /api/auth/admin/list-user-sessions:
+    x-ba-allow: true
+  /api/auth/admin/revoke-user-session:
+    x-ba-allow: true
+  /api/auth/admin/revoke-user-sessions:
+    x-ba-allow: true
+  /api/auth/admin/impersonate-user:
+    x-ba-allow: true
+  /api/auth/admin/stop-impersonating:
+    x-ba-allow: true

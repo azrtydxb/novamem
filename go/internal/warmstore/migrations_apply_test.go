@@ -60,6 +60,39 @@ func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 			t.Errorf("migration %s: %d journal rows with drizzle's (hash, created_at), want 1", m.Tag, n)
 		}
 	}
+
+	// Exercise the float64 storage path against PostgreSQL, including the
+	// Store row scanner used by normal entry reads.
+	const precise = 0.1234567890123
+	if _, err := pool.Exec(ctx, `INSERT INTO memory_entries (id, content, confidence) VALUES ('precision-test', 'test', $1)
+		ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, confidence = EXCLUDED.confidence`, precise); err != nil {
+		t.Fatalf("insert precise confidence: %v", err)
+	}
+	entry, err := scanEntry(pool.QueryRow(ctx, `SELECT `+entryColumns+` FROM memory_entries WHERE id = 'precision-test'`))
+	if err != nil {
+		t.Fatalf("scan precise confidence: %v", err)
+	}
+	if entry.Confidence != precise {
+		t.Errorf("confidence round-trip = %.16g, want %.16g", entry.Confidence, precise)
+	}
+	var effectiveDays, strength float64
+	if err := pool.QueryRow(ctx, `INSERT INTO decay_runs (effective_days) VALUES ($1) RETURNING effective_days`, precise).Scan(&effectiveDays); err != nil {
+		t.Fatalf("effective_days round-trip: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO memory_relations (from_id, to_id, strength) VALUES ('precision-a', 'precision-b', $1)
+		ON CONFLICT (from_id, to_id, relation) DO UPDATE SET strength = EXCLUDED.strength RETURNING strength`, precise).Scan(&strength); err != nil {
+		t.Fatalf("strength round-trip: %v", err)
+	}
+	if effectiveDays != precise || strength != precise {
+		t.Errorf("float round-trips effective_days=%.16g strength=%.16g, want %.16g", effectiveDays, strength, precise)
+	}
+	var coldExists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'memory_entries' AND column_name = 'cold')`).Scan(&coldExists); err != nil {
+		t.Fatal(err)
+	}
+	if !coldExists {
+		t.Error("memory_entries.cold is required by decay, stats, and vector reconciliation paths")
+	}
 }
 
 func journalState(ctx context.Context, t *testing.T, pool *pgxpool.Pool) (rows int, latest int64) {
