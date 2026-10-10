@@ -453,6 +453,10 @@ var Vars = []Var{
 		Name: "LOG_LEVEL", Kind: KindString, Default: "info", Section: secOps,
 		Description: "Log level: `debug`, `info`, `warn` or `error`.",
 	},
+	{Name: "OTEL_ENABLED", Kind: KindBool, Default: false, Section: secOps, Description: "Enables OpenTelemetry trace export. Setting an OTLP endpoint also enables tracing."},
+	{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Kind: KindString, Section: secOps, Description: "OTLP/HTTP collector base URL. Traces are posted to `${endpoint}/v1/traces`; setting it enables tracing."},
+	{Name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", Kind: KindString, Section: secOps, DefaultNote: "`$OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces`", Description: "Full OTLP/HTTP traces URL, overriding the base endpoint."},
+	{Name: "OTEL_SERVICE_NAME", Kind: KindString, Default: "novamem", Section: secOps, Description: "OpenTelemetry `service.name` resource attribute."},
 	{
 		Name: "NOVAMEM_PPROF_ADDR", Kind: KindString, Section: secOps,
 		Description: "When set — `127.0.0.1:6060`, say — serves Go `net/http/pprof` on its own listener. A separate socket rather than an API route, so profiling stays reachable in every auth mode and never rides an exposed port by accident.",

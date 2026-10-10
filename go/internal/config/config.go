@@ -155,7 +155,16 @@ type Config struct {
 	// stays reachable in every auth mode (a dashboard-gated route is
 	// unreachable under auth.mode=bearer) and never rides an exposed
 	// port by accident. Default off.
-	PprofAddr string
+	PprofAddr          string
+	OTELEnabled        bool
+	OTELEndpoint       string
+	OTELTracesEndpoint string
+	OTELServiceName    string
+}
+
+// TracingEnabled accepts either documented activation switch.
+func (c Config) TracingEnabled() bool {
+	return c.OTELEnabled || c.OTELEndpoint != "" || c.OTELTracesEndpoint != ""
 }
 
 // Load reads and validates the environment, returning the first problem
@@ -404,6 +413,10 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("observer.enabled = true requires endpoint + model (NOVAMEM_OBSERVER_ENDPOINT / NOVAMEM_OBSERVER_MODEL)")
 	}
 	c.PprofAddr = strEnv("NOVAMEM_PPROF_ADDR")
+	c.OTELEnabled = boolEnv("OTEL_ENABLED")
+	c.OTELEndpoint = strEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	c.OTELTracesEndpoint = strEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	c.OTELServiceName = strEnv("OTEL_SERVICE_NAME")
 	return c, nil
 }
 
