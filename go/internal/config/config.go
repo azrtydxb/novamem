@@ -135,6 +135,10 @@ type Config struct {
 	ExtractionMaxFacts      int    // NOVAMEM_EXTRACTION_MAX_FACTS
 	ExtractionTimeoutMs     int    // NOVAMEM_EXTRACTION_TIMEOUT_MS
 	ExtractionMaxConcurrent int    // NOVAMEM_EXTRACTION_MAX_CONCURRENT
+	// ExtractionRedact gates the PII pass over the extraction payload
+	// (engine/redact.go). Default ON; the disableBool spellings turn it
+	// off. Stored content is never rewritten either way.
+	ExtractionRedact bool // NOVAMEM_EXTRACTION_REDACT
 
 	// Phase 4 query decomposition + coherence rerank (opt-in per request
 	// via SearchRequest.decompose).
@@ -397,6 +401,11 @@ func Load() (Config, error) {
 	if c.ExtractionMaxConcurrent, err = posIntEnv("NOVAMEM_EXTRACTION_MAX_CONCURRENT"); err != nil {
 		return c, err
 	}
+	// Default on: what leaves the process to the extraction model is
+	// redacted unless the operator says otherwise. disableBool, not
+	// boolEnv — an explicit value is an opt-OUT, and anything but the
+	// falsy spellings keeps the redaction.
+	c.ExtractionRedact = disableBool("NOVAMEM_EXTRACTION_REDACT")
 	if c.ExtractionEnabled && (c.ExtractionEndpoint == "" || c.ExtractionModel == "") {
 		return c, fmt.Errorf("extraction.enabled = true requires endpoint + model (NOVAMEM_EXTRACTION_ENDPOINT / NOVAMEM_EXTRACTION_MODEL)")
 	}
