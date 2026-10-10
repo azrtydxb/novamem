@@ -110,7 +110,8 @@ type Config struct {
 	// (NOVAMEM_ADMIN_DASHBOARD; "0"/"false"/"no"/"off" disable it).
 	AdminDashboard bool
 
-	// Phase 5 cross-encoder rerank (opt-in per request; off unless enabled).
+	// Phase 5 cross-encoder rerank (off unless enabled; once enabled it is
+	// the default for every search, opt-out per request with rerank:false).
 	RerankEnabled   bool   // NOVAMEM_RERANK_ENABLED
 	RerankEndpoint  string // NOVAMEM_RERANK_ENDPOINT (full URL)
 	RerankModel     string // NOVAMEM_RERANK_MODEL

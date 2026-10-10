@@ -168,6 +168,7 @@ func newHandler(opts Options) (http.Handler, []string) {
 	s.registerMCP(mux)
 	s.registerAuthRoutes(mux)
 	s.registerAdmin(mux)
+	s.registerServiceKeys(mux)
 	// Unmatched routes answer Fastify's default 404 envelope rather than
 	// net/http's text/plain "404 page not found" — callers (and the
 	// conformance suite) parse `error` off every 4xx body.

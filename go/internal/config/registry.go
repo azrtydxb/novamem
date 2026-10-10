@@ -333,7 +333,7 @@ var Vars = []Var{
 	// ---- LLM subsystems ----
 	{
 		Name: "NOVAMEM_RERANK_ENABLED", Kind: KindBool, Default: false, Section: secLLM,
-		Description: "Enables the cross-encoder rerank stage, which callers then opt into per request.",
+		Description: "Enables the cross-encoder rerank stage. Once enabled, every search reranks by default; a caller opts out per request with `rerank: false` (HTTP `/v1/search` and `/v1/context`, MCP `memory_search` and `memory_context`).",
 	},
 	{
 		Name: "NOVAMEM_RERANK_ENDPOINT", Kind: KindString, Section: secLLM,

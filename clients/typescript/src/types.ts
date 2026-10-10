@@ -53,6 +53,7 @@ export interface CaptureRequest {
   project?: string | null;
   sensitivity?: CaptureRequestSensitivity;
   source?: string;
+  sourceRefs?: Array<string>;
   sourceType?: string;
 }
 
@@ -99,6 +100,7 @@ export interface ContextRequest {
   message: string;
   namespace?: string;
   project?: string | null;
+  rerank?: boolean;
   weights?: ContextRequestWeights;
 }
 
@@ -177,8 +179,9 @@ export interface ExportedEntry {
 }
 
 export interface ForgetRequest {
-  id: string;
+  id?: string;
   project?: string | null;
+  sourceRef?: string;
 }
 
 export interface ForgetResult {

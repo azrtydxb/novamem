@@ -181,7 +181,7 @@ module Novamem
     end
   end
 
-  CaptureRequest = Struct.new(:agent_name, :captured_from, :confidence, :content, :expires_at, :force, :metadata, :namespace, :project, :sensitivity, :source, :source_type, keyword_init: true)
+  CaptureRequest = Struct.new(:agent_name, :captured_from, :confidence, :content, :expires_at, :force, :metadata, :namespace, :project, :sensitivity, :source, :source_refs, :source_type, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a
   # Struct.new block it would land on the enclosing module, shared by all).
@@ -198,6 +198,7 @@ module Novamem
       [:project, "project", [:p, "string"], false],
       [:sensitivity, "sensitivity", [:n, "CaptureRequestSensitivity"], false],
       [:source, "source", [:p, "string"], false],
+      [:source_refs, "sourceRefs", [:a, [:p, "string"]], false],
       [:source_type, "sourceType", [:p, "string"], false],
     ].freeze
 
@@ -335,7 +336,7 @@ module Novamem
     end
   end
 
-  ContextRequest = Struct.new(:as_of, :decompose, :expand_source_chunks, :include_namespaces, :include_projects, :k, :max_sensitivity, :max_tokens, :message, :namespace, :project, :weights, keyword_init: true)
+  ContextRequest = Struct.new(:as_of, :decompose, :expand_source_chunks, :include_namespaces, :include_projects, :k, :max_sensitivity, :max_tokens, :message, :namespace, :project, :rerank, :weights, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a
   # Struct.new block it would land on the enclosing module, shared by all).
@@ -352,6 +353,7 @@ module Novamem
       [:message, "message", [:p, "string"], true],
       [:namespace, "namespace", [:p, "string"], false],
       [:project, "project", [:p, "string"], false],
+      [:rerank, "rerank", [:p, "bool"], false],
       [:weights, "weights", [:n, "ContextRequestWeights"], false],
     ].freeze
 
@@ -658,14 +660,15 @@ module Novamem
     end
   end
 
-  ForgetRequest = Struct.new(:id, :project, keyword_init: true)
+  ForgetRequest = Struct.new(:id, :project, :source_ref, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a
   # Struct.new block it would land on the enclosing module, shared by all).
   class ForgetRequest
     FIELDS = [
-      [:id, "id", [:p, "string"], true],
+      [:id, "id", [:p, "string"], false],
       [:project, "project", [:p, "string"], false],
+      [:source_ref, "sourceRef", [:p, "string"], false],
     ].freeze
 
     def self.from_h(h)

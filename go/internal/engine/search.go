@@ -63,9 +63,11 @@ type SearchArgs struct {
 	IncludeNamespaces []string
 	Weights           *WeightsOverride
 	MaxSensitivity    string
-	// Rerank opts into the Phase 5 cross-encoder pass (requires a
-	// configured reranker; silently ignored otherwise, as in TS).
-	Rerank bool
+	// Rerank is tri-state. nil (unset) reranks whenever a reranker is
+	// configured; an explicit false skips the cross-encoder pass for this
+	// request; an explicit true is the same as unset. Ignored when no
+	// reranker is configured.
+	Rerank *bool
 	// Decompose opts into Phase 4 query decomposition + the coherence
 	// rerank (requires a configured decomposer; ignored otherwise).
 	Decompose bool
@@ -227,10 +229,12 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 					})
 					if err != nil {
 						degraded = true
+						e.vectorSig.fail(e.now())
 						e.log.Warn("vector tier failed", "err", err)
 						vectorHits = nil
 						break vectorLoop
 					}
+					e.recordVectorStoreSuccess()
 					vectorHits = append(vectorHits, hits...)
 				}
 			}
@@ -380,11 +384,6 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 	}
 
 	// ── Visibility filter → rank prior ─────────────────────────────────
-	type visibleItem struct {
-		result SearchResultItem
-		entry  *warmstore.Entry
-		score  float64
-	}
 	var visible []*visibleItem
 	for _, f := range fused {
 		entry := entryByID[f.ID]
@@ -427,50 +426,7 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 	}
 	sort.SliceStable(visible, func(a, b int) bool { return visible[a].score > visible[b].score })
 
-	// ── Phase 5 EXPERIMENT: cross-encoder rerank ───────────────────────
-	// Opt-in per request AND requires a configured service. Scored
-	// candidates re-order by cross-encoder relevance ahead of unscored
-	// ones (which keep fused order); a rerank failure falls back to the
-	// fused order — an enhancement outage must not fail the search.
-	if req.Rerank && e.reranker != nil && len(visible) > 1 {
-		pool := len(visible)
-		if maxPool := k * e.rerankPoolMult; pool > maxPool {
-			pool = maxPool
-		}
-		docs := make([]string, pool)
-		for i := 0; i < pool; i++ {
-			docs[i], _ = visible[i].result["content"].(string)
-		}
-		scores, err := e.reranker.Rerank(ctx, req.Query, docs)
-		if err != nil {
-			e.log.Warn("rerank failed; using fused order", "err", err)
-		} else {
-			order := map[*visibleItem]int{}
-			for i, v := range visible {
-				order[v] = i
-			}
-			sort.SliceStable(visible, func(a, b int) bool {
-				ia, ib := order[visible[a]], order[visible[b]]
-				var sa, sb *float64
-				if ia < pool {
-					sa = scores[ia]
-				}
-				if ib < pool {
-					sb = scores[ib]
-				}
-				switch {
-				case sa != nil && sb != nil:
-					return *sa > *sb
-				case sa != nil:
-					return true
-				case sb != nil:
-					return false
-				default:
-					return ia < ib
-				}
-			})
-		}
-	}
+	e.rerankVisible(ctx, req, k, visible)
 
 	// ── Diversify + token budget + truncate ────────────────────────────
 	tokenCache := map[string]map[string]bool{}
@@ -999,4 +955,68 @@ func projectEq(a, b *string) bool {
 		return a == b
 	}
 	return *a == *b
+}
+
+// visibleItem is one search candidate that survived the visibility
+// filter, with the fused score it ranks by.
+type visibleItem struct {
+	result SearchResultItem
+	entry  *warmstore.Entry
+	score  float64
+}
+
+// wantsRerank resolves the tri-state request field: with a reranker
+// configured, unset and true both rerank and only an explicit false
+// opts out; with none configured the field is ignored.
+func (e *Engine) wantsRerank(requested *bool) bool {
+	return e.reranker != nil && (requested == nil || *requested)
+}
+
+// rerankVisible is the Phase 5 cross-encoder pass. Reranking is the
+// default whenever a reranker is configured; a request opts out with
+// rerank:false. Scored candidates re-order by cross-encoder relevance
+// ahead of unscored ones (which keep fused order); a rerank failure
+// falls back to the fused order — an enhancement outage must not fail
+// the search. It reorders visible in place.
+func (e *Engine) rerankVisible(ctx context.Context, req SearchArgs, k int, visible []*visibleItem) {
+	if !e.wantsRerank(req.Rerank) || len(visible) < 2 {
+		return
+	}
+	pool := len(visible)
+	if maxPool := k * e.rerankPoolMult; pool > maxPool {
+		pool = maxPool
+	}
+	docs := make([]string, pool)
+	for i := 0; i < pool; i++ {
+		docs[i], _ = visible[i].result["content"].(string)
+	}
+	scores, err := e.reranker.Rerank(ctx, req.Query, docs)
+	if err != nil {
+		e.log.Warn("rerank failed; using fused order", "err", err)
+	} else {
+		order := map[*visibleItem]int{}
+		for i, v := range visible {
+			order[v] = i
+		}
+		sort.SliceStable(visible, func(a, b int) bool {
+			ia, ib := order[visible[a]], order[visible[b]]
+			var sa, sb *float64
+			if ia < pool {
+				sa = scores[ia]
+			}
+			if ib < pool {
+				sb = scores[ib]
+			}
+			switch {
+			case sa != nil && sb != nil:
+				return *sa > *sb
+			case sa != nil:
+				return true
+			case sb != nil:
+				return false
+			default:
+				return ia < ib
+			}
+		})
+	}
 }
