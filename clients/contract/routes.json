@@ -145,6 +145,9 @@
   "GET /v1/admin/metrics/prom": {
     "nonGoal": "Prometheus scrape target"
   },
+  "GET /v1/admin/telemetry": {
+    "nonGoal": "Admin dashboard aggregate view; deliberately not exposed through client SDKs"
+  },
   "GET /v1/admin/service-keys": {
     "nonGoal": "Go-client-only for now: the on-behalf-of orchestrator (Kuvryn Atlas, #337) is the sole consumer; the other SDKs add it on first consumer. Go: Admin.ListServiceKeys"
   },
