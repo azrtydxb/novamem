@@ -65,7 +65,7 @@ func (s *Store) InsertEntry(ctx context.Context, id string, a InsertEntryArgs) (
 			(id, user_id, project_id, content, namespace, source, agent_name, metadata,
 			 source_type, captured_from, confidence, content_hash, facts_pending_at, graph_pending_at,
 			 organization_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11::real, 1.0),$12,$13,$14,$15)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11::double precision, 1.0),$12,$13,$14,$15)
 		ON CONFLICT DO NOTHING
 		RETURNING id`,
 		id, a.UserID, a.ProjectID, a.Content, a.Namespace, a.Source, a.AgentName, metadata,
