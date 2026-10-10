@@ -67,6 +67,18 @@ final class ScenarioTests: XCTestCase {
             }
             return ""
         }
+        if let w = want as? [Any] {
+            guard let g = got as? [Any], w.count == g.count else {
+                return "\(path): want \(w.count)-element array, got \(String(describing: got))"
+            }
+            for (i, wv) in w.enumerated() {
+                let d = subset(wv, g[i], "\(path)[\(i)]")
+                if !d.isEmpty {
+                    return d
+                }
+            }
+            return ""
+        }
         return (want as? NSObject)?.isEqual(got) == true ? "" : "\(path): got \(String(describing: got)), want \(want)"
     }
 

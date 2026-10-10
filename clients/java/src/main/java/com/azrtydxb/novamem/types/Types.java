@@ -353,6 +353,7 @@ public final class Types {
       @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project,
       @JsonProperty(value = "sensitivity") CaptureRequestSensitivity sensitivity,
       @JsonProperty(value = "source") @JsonInclude(JsonInclude.Include.NON_EMPTY) String source,
+      @JsonProperty(value = "sourceRefs") List<String> sourceRefs,
       @JsonProperty(value = "sourceType") @JsonInclude(JsonInclude.Include.NON_EMPTY)
           String sourceType) {
     /** A builder with every field unset. */
@@ -374,6 +375,7 @@ public final class Types {
       b.project = project;
       b.sensitivity = sensitivity;
       b.source = source;
+      b.sourceRefs = sourceRefs;
       b.sourceType = sourceType;
       return b;
     }
@@ -391,6 +393,7 @@ public final class Types {
       private String project;
       private CaptureRequestSensitivity sensitivity;
       private String source;
+      private List<String> sourceRefs;
       private String sourceType;
 
       private Builder() {}
@@ -461,6 +464,12 @@ public final class Types {
         return this;
       }
 
+      /** Sets sourceRefs. */
+      public Builder sourceRefs(List<String> sourceRefs) {
+        this.sourceRefs = sourceRefs;
+        return this;
+      }
+
       /** Sets sourceType. */
       public Builder sourceType(String sourceType) {
         this.sourceType = sourceType;
@@ -481,6 +490,7 @@ public final class Types {
             project,
             sensitivity,
             source,
+            sourceRefs,
             sourceType);
       }
     }
@@ -796,6 +806,7 @@ public final class Types {
       @JsonProperty(value = "namespace") @JsonInclude(JsonInclude.Include.NON_EMPTY)
           String namespace,
       @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project,
+      @JsonProperty(value = "rerank") Boolean rerank,
       @JsonProperty(value = "weights") ContextRequestWeights weights) {
     /** A builder with every field unset. */
     public static Builder builder() {
@@ -816,6 +827,7 @@ public final class Types {
       b.message = message;
       b.namespace = namespace;
       b.project = project;
+      b.rerank = rerank;
       b.weights = weights;
       return b;
     }
@@ -833,6 +845,7 @@ public final class Types {
       private String message;
       private String namespace;
       private String project;
+      private Boolean rerank;
       private ContextRequestWeights weights;
 
       private Builder() {}
@@ -903,6 +916,12 @@ public final class Types {
         return this;
       }
 
+      /** Sets rerank. */
+      public Builder rerank(Boolean rerank) {
+        this.rerank = rerank;
+        return this;
+      }
+
       /** Sets weights. */
       public Builder weights(ContextRequestWeights weights) {
         this.weights = weights;
@@ -923,6 +942,7 @@ public final class Types {
             message,
             namespace,
             project,
+            rerank,
             weights);
       }
     }
@@ -1019,6 +1039,154 @@ public final class Types {
       /** The record. */
       public ContextRequestWeights build() {
         return new ContextRequestWeights(entity, graph, keyword, recency, vector);
+      }
+    }
+  }
+
+  /** The ContextResult schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record ContextResult(
+      @JsonProperty(value = "contextPack") Map<String, Object> contextPack,
+      @JsonProperty(value = "guidance") @JsonInclude(JsonInclude.Include.NON_EMPTY) String guidance,
+      @JsonProperty(value = "recent", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          ContextResultRecent recent,
+      @JsonProperty(value = "relevant", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          ContextResultRelevant relevant) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.contextPack = contextPack;
+      b.guidance = guidance;
+      b.recent = recent;
+      b.relevant = relevant;
+      return b;
+    }
+
+    /** Builds ContextResult records. */
+    public static final class Builder {
+      private Map<String, Object> contextPack;
+      private String guidance;
+      private ContextResultRecent recent;
+      private ContextResultRelevant relevant;
+
+      private Builder() {}
+
+      /** Sets contextPack. */
+      public Builder contextPack(Map<String, Object> contextPack) {
+        this.contextPack = contextPack;
+        return this;
+      }
+
+      /** Sets guidance. */
+      public Builder guidance(String guidance) {
+        this.guidance = guidance;
+        return this;
+      }
+
+      /** Sets recent. */
+      public Builder recent(ContextResultRecent recent) {
+        this.recent = recent;
+        return this;
+      }
+
+      /** Sets relevant. */
+      public Builder relevant(ContextResultRelevant relevant) {
+        this.relevant = relevant;
+        return this;
+      }
+
+      /** The record. */
+      public ContextResult build() {
+        return new ContextResult(contextPack, guidance, recent, relevant);
+      }
+    }
+  }
+
+  /** The ContextResultRecent schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record ContextResultRecent(
+      @JsonProperty(value = "results", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          List<MemoryEntry> results) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.results = results;
+      return b;
+    }
+
+    /** Builds ContextResultRecent records. */
+    public static final class Builder {
+      private List<MemoryEntry> results;
+
+      private Builder() {}
+
+      /** Sets results. */
+      public Builder results(List<MemoryEntry> results) {
+        this.results = results;
+        return this;
+      }
+
+      /** The record. */
+      public ContextResultRecent build() {
+        return new ContextResultRecent(results);
+      }
+    }
+  }
+
+  /** The ContextResultRelevant schema. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record ContextResultRelevant(
+      @JsonProperty(value = "degraded") Boolean degraded,
+      @JsonProperty(value = "results", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
+          List<MemoryEntry> results) {
+    /** A builder with every field unset. */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /** A builder holding this record's values. */
+    public Builder toBuilder() {
+      Builder b = new Builder();
+      b.degraded = degraded;
+      b.results = results;
+      return b;
+    }
+
+    /** Builds ContextResultRelevant records. */
+    public static final class Builder {
+      private Boolean degraded;
+      private List<MemoryEntry> results;
+
+      private Builder() {}
+
+      /** Sets degraded. */
+      public Builder degraded(Boolean degraded) {
+        this.degraded = degraded;
+        return this;
+      }
+
+      /** Sets results. */
+      public Builder results(List<MemoryEntry> results) {
+        this.results = results;
+        return this;
+      }
+
+      /** The record. */
+      public ContextResultRelevant build() {
+        return new ContextResultRelevant(degraded, results);
       }
     }
   }
@@ -1491,9 +1659,10 @@ public final class Types {
   @JsonInclude(JsonInclude.Include.NON_NULL)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public record ForgetRequest(
-      @JsonProperty(value = "id", required = true) @JsonInclude(JsonInclude.Include.ALWAYS)
-          String id,
-      @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project) {
+      @JsonProperty(value = "id") @JsonInclude(JsonInclude.Include.NON_EMPTY) String id,
+      @JsonProperty(value = "project") @JsonInclude(JsonInclude.Include.NON_EMPTY) String project,
+      @JsonProperty(value = "sourceRef") @JsonInclude(JsonInclude.Include.NON_EMPTY)
+          String sourceRef) {
     /** A builder with every field unset. */
     public static Builder builder() {
       return new Builder();
@@ -1504,6 +1673,7 @@ public final class Types {
       Builder b = new Builder();
       b.id = id;
       b.project = project;
+      b.sourceRef = sourceRef;
       return b;
     }
 
@@ -1511,6 +1681,7 @@ public final class Types {
     public static final class Builder {
       private String id;
       private String project;
+      private String sourceRef;
 
       private Builder() {}
 
@@ -1526,9 +1697,15 @@ public final class Types {
         return this;
       }
 
+      /** Sets sourceRef. */
+      public Builder sourceRef(String sourceRef) {
+        this.sourceRef = sourceRef;
+        return this;
+      }
+
       /** The record. */
       public ForgetRequest build() {
-        return new ForgetRequest(id, project);
+        return new ForgetRequest(id, project, sourceRef);
       }
     }
   }

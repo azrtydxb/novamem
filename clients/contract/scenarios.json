@@ -1494,12 +1494,27 @@
       "respond": {
         "status": 200,
         "json": {
-          "results": [
-            {
-              "id": "e1",
-              "content": "dark roast"
-            }
-          ]
+          "relevant": {
+            "results": [
+              {
+                "id": "e1",
+                "content": "dark roast"
+              }
+            ],
+            "degraded": false
+          },
+          "recent": {
+            "results": [
+              {
+                "id": "e2",
+                "content": "yesterday's oat milk"
+              }
+            ]
+          },
+          "contextPack": {
+            "decisions": ["dark roast is the daily driver"]
+          },
+          "guidance": "Use this context before answering."
         }
       },
       "expectRequest": [
@@ -1512,7 +1527,30 @@
         }
       ],
       "expect": {
-        "outcome": "ok"
+        "outcome": "ok",
+        "result": {
+          "relevant": {
+            "degraded": false,
+            "results": [
+              {
+                "id": "e1",
+                "content": "dark roast"
+              }
+            ]
+          },
+          "recent": {
+            "results": [
+              {
+                "id": "e2",
+                "content": "yesterday's oat milk"
+              }
+            ]
+          },
+          "contextPack": {
+            "decisions": ["dark roast is the daily driver"]
+          },
+          "guidance": "Use this context before answering."
+        }
       }
     },
     {

@@ -53,6 +53,7 @@ export interface CaptureRequest {
   project?: string | null;
   sensitivity?: CaptureRequestSensitivity;
   source?: string;
+  sourceRefs?: Array<string>;
   sourceType?: string;
 }
 
@@ -99,6 +100,7 @@ export interface ContextRequest {
   message: string;
   namespace?: string;
   project?: string | null;
+  rerank?: boolean;
   weights?: ContextRequestWeights;
 }
 
@@ -110,6 +112,22 @@ export interface ContextRequestWeights {
   keyword?: number;
   recency?: number;
   vector?: number;
+}
+
+export interface ContextResult {
+  contextPack?: Record<string, unknown>;
+  guidance?: string;
+  recent: ContextResultRecent;
+  relevant: ContextResultRelevant;
+}
+
+export interface ContextResultRecent {
+  results: Array<MemoryEntry>;
+}
+
+export interface ContextResultRelevant {
+  degraded?: boolean;
+  results: Array<MemoryEntry>;
 }
 
 export interface DecayResult {
@@ -161,8 +179,9 @@ export interface ExportedEntry {
 }
 
 export interface ForgetRequest {
-  id: string;
+  id?: string;
   project?: string | null;
+  sourceRef?: string;
 }
 
 export interface ForgetResult {

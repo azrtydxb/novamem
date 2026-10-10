@@ -263,6 +263,7 @@ class CaptureRequest(_Wire):
     project: str | None = None
     sensitivity: CaptureRequestSensitivity | None = None
     source: str | None = None
+    source_refs: list[str] | None = None
     source_type: str | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
@@ -277,6 +278,7 @@ class CaptureRequest(_Wire):
         ("project", "project", ("p", "string"), False),
         ("sensitivity", "sensitivity", ("n", "CaptureRequestSensitivity"), False),
         ("source", "source", ("p", "string"), False),
+        ("source_refs", "sourceRefs", ("a", ("p", "string")), False),
         ("source_type", "sourceType", ("p", "string"), False),
     )
 
@@ -352,6 +354,7 @@ class ContextRequest(_Wire):
     max_tokens: int | None = None
     namespace: str | None = None
     project: str | None = None
+    rerank: bool | None = None
     weights: ContextRequestWeights | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
@@ -366,6 +369,7 @@ class ContextRequest(_Wire):
         ("message", "message", ("p", "string"), True),
         ("namespace", "namespace", ("p", "string"), False),
         ("project", "project", ("p", "string"), False),
+        ("rerank", "rerank", ("p", "bool"), False),
         ("weights", "weights", ("n", "ContextRequestWeights"), False),
     )
 
@@ -384,6 +388,41 @@ class ContextRequestWeights(_Wire):
         ("keyword", "keyword", ("p", "float"), False),
         ("recency", "recency", ("p", "float"), False),
         ("vector", "vector", ("p", "float"), False),
+    )
+
+
+@dataclass(frozen=True)
+class ContextResult(_Wire):
+    recent: ContextResultRecent
+    relevant: ContextResultRelevant
+    context_pack: dict[str, Any] | None = None
+    guidance: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("context_pack", "contextPack", ("m", ("p", "any")), False),
+        ("guidance", "guidance", ("p", "string"), False),
+        ("recent", "recent", ("n", "ContextResultRecent"), True),
+        ("relevant", "relevant", ("n", "ContextResultRelevant"), True),
+    )
+
+
+@dataclass(frozen=True)
+class ContextResultRecent(_Wire):
+    results: list[MemoryEntry]
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("results", "results", ("a", ("n", "MemoryEntry")), True),
+    )
+
+
+@dataclass(frozen=True)
+class ContextResultRelevant(_Wire):
+    results: list[MemoryEntry]
+    degraded: bool | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("degraded", "degraded", ("p", "bool"), False),
+        ("results", "results", ("a", ("n", "MemoryEntry")), True),
     )
 
 
@@ -492,12 +531,14 @@ class ExportedEntry(_Wire):
 
 @dataclass(frozen=True)
 class ForgetRequest(_Wire):
-    id: str
+    id: str | None = None
     project: str | None = None
+    source_ref: str | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("id", "id", ("p", "string"), True),
+        ("id", "id", ("p", "string"), False),
         ("project", "project", ("p", "string"), False),
+        ("source_ref", "sourceRef", ("p", "string"), False),
     )
 
 
@@ -1188,6 +1229,9 @@ __all__ = [
     "ContextRequest",
     "ContextRequestMaxSensitivity",
     "ContextRequestWeights",
+    "ContextResult",
+    "ContextResultRecent",
+    "ContextResultRelevant",
     "DecayResult",
     "EntryList",
     "EvaluateReport",

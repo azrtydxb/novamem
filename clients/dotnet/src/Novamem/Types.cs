@@ -149,6 +149,10 @@ public sealed record CaptureRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Source { get; init; }
 
+    [JsonPropertyName("sourceRefs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? SourceRefs { get; init; }
+
     [JsonPropertyName("sourceType")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SourceType { get; init; }
@@ -292,6 +296,10 @@ public sealed record ContextRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Project { get; init; }
 
+    [JsonPropertyName("rerank")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Rerank { get; init; }
+
     [JsonPropertyName("weights")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ContextRequestWeights? Weights { get; init; }
@@ -327,6 +335,43 @@ public sealed record ContextRequestWeights
     [JsonPropertyName("vector")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? Vector { get; init; }
+}
+
+public sealed record ContextResult
+{
+    [JsonPropertyName("contextPack")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, JsonElement>? ContextPack { get; init; }
+
+    [JsonPropertyName("guidance")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Guidance { get; init; }
+
+    [JsonPropertyName("recent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required ContextResultRecent Recent { get; init; }
+
+    [JsonPropertyName("relevant")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required ContextResultRelevant Relevant { get; init; }
+}
+
+public sealed record ContextResultRecent
+{
+    [JsonPropertyName("results")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required List<MemoryEntry> Results { get; init; }
+}
+
+public sealed record ContextResultRelevant
+{
+    [JsonPropertyName("degraded")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Degraded { get; init; }
+
+    [JsonPropertyName("results")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required List<MemoryEntry> Results { get; init; }
 }
 
 public sealed record DecayResult
@@ -461,12 +506,16 @@ public sealed record ExportedEntry
 public sealed record ForgetRequest
 {
     [JsonPropertyName("id")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
-    public required string Id { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Id { get; init; }
 
     [JsonPropertyName("project")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Project { get; init; }
+
+    [JsonPropertyName("sourceRef")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceRef { get; init; }
 }
 
 public sealed record ForgetResult

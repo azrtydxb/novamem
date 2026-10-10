@@ -2,6 +2,9 @@
   "DELETE /mcp": {
     "nonGoal": "MCP transport"
   },
+  "DELETE /v1/admin/service-keys/{id}": {
+    "nonGoal": "Go-client-only for now: the on-behalf-of orchestrator (Kuvryn Atlas, #337) is the sole consumer; the other SDKs add it on first consumer. Go: Admin.RevokeServiceKey"
+  },
   "DELETE /v1/admin/users/{id}": {
     "methods": [
       {
@@ -141,6 +144,9 @@
   },
   "GET /v1/admin/metrics/prom": {
     "nonGoal": "Prometheus scrape target"
+  },
+  "GET /v1/admin/service-keys": {
+    "nonGoal": "Go-client-only for now: the on-behalf-of orchestrator (Kuvryn Atlas, #337) is the sole consumer; the other SDKs add it on first consumer. Go: Admin.ListServiceKeys"
   },
   "GET /v1/admin/users": {
     "methods": [
@@ -290,6 +296,9 @@
   "POST /mcp": {
     "nonGoal": "MCP transport \u2014 spoken by MCP hosts and the shim, not the REST client"
   },
+  "POST /v1/admin/service-keys": {
+    "nonGoal": "Go-client-only for now: the on-behalf-of orchestrator (Kuvryn Atlas, #337) is the sole consumer; the other SDKs add it on first consumer. Go: Admin.RegisterServiceKey"
+  },
   "POST /v1/admin/tokens/revoke": {
     "methods": [
       {
@@ -351,7 +360,7 @@
         "name": "Client.Context",
         "op": "context",
         "request": "ContextRequest",
-        "response": "SearchResult"
+        "response": "ContextResult"
       }
     ]
   },

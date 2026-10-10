@@ -229,3 +229,25 @@ var AdminHealthDeepResponse = Schema{
 	"coldProvider":      Enum("pgvector", "qdrant", "none"),
 	"pendingEmbeddings": Null(Num),
 }
+
+// ServiceKey is a registered on-behalf-of signing key (ADR 0011).
+var ServiceKey = Schema{
+	"id":             Str,
+	"name":           Str,
+	"organizationId": Str,
+	"publicKey":      Str,
+	"createdAt":      Str,
+	"revokedAt":      Null(Str),
+}
+
+var ServiceKeyListResponse = Schema{"keys": Arr(ServiceKey)}
+
+var ServiceKeyRevokeResponse = Schema{"revoked": Bool}
+
+// ForgetBySourceResponse is POST /v1/forget {sourceRef}'s body.
+var ForgetBySourceResponse = Schema{
+	"sourceRef":    Str,
+	"ids":          Arr(Str),
+	"count":        Num,
+	"coldDeleteOk": Bool,
+}

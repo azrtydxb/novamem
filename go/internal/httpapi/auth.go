@@ -14,6 +14,7 @@ package httpapi
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -38,6 +39,10 @@ type caller struct {
 	userID string
 	dash   *warmstore.User
 	token  *warmstore.TokenInfo
+	// obo is set for an on-behalf-of service token (ADR 0011). userID is
+	// then the composite tenant.UserID(org, sub), and dash and token are
+	// nil.
+	obo *auth.OBOClaims
 }
 
 type callerKey struct{}
@@ -112,6 +117,11 @@ func (s *server) resolveCaller(w http.ResponseWriter, r *http.Request) (*caller,
 
 	// ─── user mode ───────────────────────────────────────────────────
 	ctx := r.Context()
+	// A service-signed JWT is an explicit credential, so it wins over a
+	// session cookie that happens to ride along.
+	if auth.LooksLikeOBOToken(token) {
+		return s.resolveOBO(w, r, token)
+	}
 	c := &caller{}
 	if u := s.sessionUser(r); u != nil {
 		c.dash = u
@@ -252,3 +262,69 @@ func (s *server) restrictedDenied(w http.ResponseWriter, r *http.Request, c *cal
 	}
 	return false
 }
+
+// projectConfinedDenied rejects account-wide reads that cannot honor a
+// token's project boundary. Project-scoped memory routes use
+// checkProjectAccess instead.
+func (s *server) projectConfinedDenied(w http.ResponseWriter, r *http.Request) bool {
+	if tok := callerOf(r).token; tok != nil && tok.ProjectID != nil {
+		s.sendError(w, http.StatusForbidden, "token is confined to its project")
+		return true
+	}
+	return false
+}
+
+// resolveOBO authenticates an on-behalf-of service token. Any failure to
+// verify is a bare 401: the reason (unknown kid, bad signature, wrong
+// org, expired ...) is logged, never returned, so the response does not
+// help an attacker probe which kids exist.
+func (s *server) resolveOBO(w http.ResponseWriter, r *http.Request, token string) (*caller, bool) {
+	claims, err := auth.VerifyOBOToken(r.Context(), token, time.Now(), s.lookupServiceKey)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidOBOToken) {
+			s.log.Debug("on-behalf-of token rejected", "reason", err.Error())
+			s.sendUnauthorized(w, r)
+			return nil, false
+		}
+		s.log.Error("service key lookup failed", "err", err)
+		s.sendError(w, http.StatusInternalServerError, "internal server error")
+		return nil, false
+	}
+	c := &caller{userID: claims.UserID(), obo: claims}
+	if s.oboDenied(w, r) {
+		return nil, false
+	}
+	return c, true
+}
+
+func (s *server) lookupServiceKey(ctx context.Context, kid string) (*auth.ServiceKey, error) {
+	k, err := s.warm.GetServiceKey(ctx, kid)
+	if err != nil || k == nil {
+		return nil, err
+	}
+	pub, err := auth.DecodeServicePublicKey(k.PublicKey)
+	if err != nil {
+		// A row nobody can verify against is as good as unknown.
+		return nil, nil
+	}
+	return &auth.ServiceKey{ID: k.ID, OrgID: k.OrganizationID, PublicKey: pub, Revoked: k.RevokedAt != nil}, nil
+}
+
+// oboDenied fences an on-behalf-of caller out of everything that is not
+// the memory data plane: account management, admin, token management and
+// (further down, per handler) projects. An OBO caller has no NovaMem
+// account to manage, and the admin surface must never be reachable by a
+// service credential. Returns true when it has already sent the 403.
+func (s *server) oboDenied(w http.ResponseWriter, r *http.Request) bool {
+	path := r.URL.Path
+	if strings.HasPrefix(path, "/v1/admin/") || strings.HasPrefix(path, "/v1/auth/") ||
+		strings.HasPrefix(path, "/v1/me/") || path == "/admin" || strings.HasPrefix(path, "/admin/") {
+		s.sendError(w, http.StatusForbidden, "not available to on-behalf-of tokens")
+		return true
+	}
+	return false
+}
+
+// errOBOProjects is what an on-behalf-of caller gets for any project
+// scope: projects are a sharing construct between real accounts.
+const errOBOProjects = "projects are not available to on-behalf-of tokens"

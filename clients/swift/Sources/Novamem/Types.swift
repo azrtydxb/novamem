@@ -220,6 +220,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
     public var project: String?
     public var sensitivity: String?
     public var source: String?
+    public var sourceRefs: [String]?
     public var sourceType: String?
 
     public init(
@@ -234,6 +235,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         project: String? = nil,
         sensitivity: String? = nil,
         source: String? = nil,
+        sourceRefs: [String]? = nil,
         sourceType: String? = nil
     ) {
         self.agentName = agentName
@@ -247,6 +249,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         self.project = project
         self.sensitivity = sensitivity
         self.source = source
+        self.sourceRefs = sourceRefs
         self.sourceType = sourceType
     }
 
@@ -262,6 +265,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         case project = "project"
         case sensitivity = "sensitivity"
         case source = "source"
+        case sourceRefs = "sourceRefs"
         case sourceType = "sourceType"
     }
 
@@ -278,6 +282,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         project = try c.decodeIfPresent(String.self, forKey: .project)
         sensitivity = try c.decodeIfPresent(String.self, forKey: .sensitivity)
         source = try c.decodeIfPresent(String.self, forKey: .source)
+        sourceRefs = try c.decodeIfPresent([String].self, forKey: .sourceRefs)
         sourceType = try c.decodeIfPresent(String.self, forKey: .sourceType)
     }
 
@@ -294,6 +299,7 @@ public struct CaptureRequest: Codable, Sendable, Equatable {
         if let v = project, !v.isEmpty { try c.encode(v, forKey: .project) }
         if let v = sensitivity, !v.isEmpty { try c.encode(v, forKey: .sensitivity) }
         if let v = source, !v.isEmpty { try c.encode(v, forKey: .source) }
+        if let v = sourceRefs { try c.encode(v, forKey: .sourceRefs) }
         if let v = sourceType, !v.isEmpty { try c.encode(v, forKey: .sourceType) }
     }
 }
@@ -489,6 +495,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
     public var message: String
     public var namespace: String?
     public var project: String?
+    public var rerank: Bool?
     public var weights: ContextRequestWeights?
 
     public init(
@@ -503,6 +510,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         message: String,
         namespace: String? = nil,
         project: String? = nil,
+        rerank: Bool? = nil,
         weights: ContextRequestWeights? = nil
     ) {
         self.asOf = asOf
@@ -516,6 +524,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         self.message = message
         self.namespace = namespace
         self.project = project
+        self.rerank = rerank
         self.weights = weights
     }
 
@@ -531,6 +540,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         case message = "message"
         case namespace = "namespace"
         case project = "project"
+        case rerank = "rerank"
         case weights = "weights"
     }
 
@@ -547,6 +557,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         message = try c.decode(String.self, forKey: .message)
         namespace = try c.decodeIfPresent(String.self, forKey: .namespace)
         project = try c.decodeIfPresent(String.self, forKey: .project)
+        rerank = try c.decodeIfPresent(Bool.self, forKey: .rerank)
         weights = try c.decodeIfPresent(ContextRequestWeights.self, forKey: .weights)
     }
 
@@ -563,6 +574,7 @@ public struct ContextRequest: Codable, Sendable, Equatable {
         try c.encode(message, forKey: .message)
         if let v = namespace, !v.isEmpty { try c.encode(v, forKey: .namespace) }
         if let v = project, !v.isEmpty { try c.encode(v, forKey: .project) }
+        if let v = rerank { try c.encode(v, forKey: .rerank) }
         if let v = weights { try c.encode(v, forKey: .weights) }
     }
 }
@@ -620,6 +632,102 @@ public struct ContextRequestWeights: Codable, Sendable, Equatable {
         if let v = keyword { try c.encode(v, forKey: .keyword) }
         if let v = recency { try c.encode(v, forKey: .recency) }
         if let v = vector { try c.encode(v, forKey: .vector) }
+    }
+}
+
+public struct ContextResult: Codable, Sendable, Equatable {
+    public var contextPack: [String: JSONValue]?
+    public var guidance: String?
+    public var recent: ContextResultRecent
+    public var relevant: ContextResultRelevant
+
+    public init(
+        contextPack: [String: JSONValue]? = nil,
+        guidance: String? = nil,
+        recent: ContextResultRecent,
+        relevant: ContextResultRelevant
+    ) {
+        self.contextPack = contextPack
+        self.guidance = guidance
+        self.recent = recent
+        self.relevant = relevant
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case contextPack = "contextPack"
+        case guidance = "guidance"
+        case recent = "recent"
+        case relevant = "relevant"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        contextPack = try c.decodeIfPresent([String: JSONValue].self, forKey: .contextPack)
+        guidance = try c.decodeIfPresent(String.self, forKey: .guidance)
+        recent = try c.decode(ContextResultRecent.self, forKey: .recent)
+        relevant = try c.decode(ContextResultRelevant.self, forKey: .relevant)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = contextPack { try c.encode(v, forKey: .contextPack) }
+        if let v = guidance, !v.isEmpty { try c.encode(v, forKey: .guidance) }
+        try c.encode(recent, forKey: .recent)
+        try c.encode(relevant, forKey: .relevant)
+    }
+}
+
+public struct ContextResultRecent: Codable, Sendable, Equatable {
+    public var results: [MemoryEntry]
+
+    public init(
+        results: [MemoryEntry]
+    ) {
+        self.results = results
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case results = "results"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        results = try c.decode([MemoryEntry].self, forKey: .results)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(results, forKey: .results)
+    }
+}
+
+public struct ContextResultRelevant: Codable, Sendable, Equatable {
+    public var degraded: Bool?
+    public var results: [MemoryEntry]
+
+    public init(
+        degraded: Bool? = nil,
+        results: [MemoryEntry]
+    ) {
+        self.degraded = degraded
+        self.results = results
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case degraded = "degraded"
+        case results = "results"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        degraded = try c.decodeIfPresent(Bool.self, forKey: .degraded)
+        results = try c.decode([MemoryEntry].self, forKey: .results)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = degraded { try c.encode(v, forKey: .degraded) }
+        try c.encode(results, forKey: .results)
     }
 }
 
@@ -912,32 +1020,38 @@ public struct ExportedEntry: Codable, Sendable, Equatable {
 }
 
 public struct ForgetRequest: Codable, Sendable, Equatable {
-    public var id: String
+    public var id: String?
     public var project: String?
+    public var sourceRef: String?
 
     public init(
-        id: String,
-        project: String? = nil
+        id: String? = nil,
+        project: String? = nil,
+        sourceRef: String? = nil
     ) {
         self.id = id
         self.project = project
+        self.sourceRef = sourceRef
     }
 
     enum CodingKeys: String, CodingKey {
         case id = "id"
         case project = "project"
+        case sourceRef = "sourceRef"
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
         project = try c.decodeIfPresent(String.self, forKey: .project)
+        sourceRef = try c.decodeIfPresent(String.self, forKey: .sourceRef)
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
+        if let v = id, !v.isEmpty { try c.encode(v, forKey: .id) }
         if let v = project, !v.isEmpty { try c.encode(v, forKey: .project) }
+        if let v = sourceRef, !v.isEmpty { try c.encode(v, forKey: .sourceRef) }
     }
 }
 

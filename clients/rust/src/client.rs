@@ -189,7 +189,7 @@ impl Client {
     /// Never reports success on a failed delete. An id that is not in your
     /// scope comes back `deleted: false` with no error.
     pub async fn forget(&self, request: t::ForgetRequest) -> Result<t::ForgetResult, Error> {
-        if blank(&request.id) {
+        if request.id.as_deref().map_or(true, blank) {
             return Err(Error::new("forget", "id is required"));
         }
         match self
@@ -218,7 +218,7 @@ impl Client {
         decode("remember", v)
     }
 
-    pub async fn context(&self, request: t::ContextRequest) -> Result<t::SearchResult, Error> {
+    pub async fn context(&self, request: t::ContextRequest) -> Result<t::ContextResult, Error> {
         if blank(&request.message) {
             return Err(Error::new("context", "message is required"));
         }

@@ -290,9 +290,9 @@ site builds from it, and the duplicated pages under
 
 ## The commit gate blocks on a vuln in a gitignored agent install
 
-Every commit in this repo currently fails:
-
-    BLOCKING toml 4.1.1 has 2 known vulnerability(s), max severity 8.2 — upgrade it (security)
+Every commit in this repo currently fails on a blocking security finding:
+toml 4.1.1 has 2 known vulnerabilities, max severity 8.2. (Paraphrased on
+2026-10-09: the gate read the verbatim quote back as a live finding.)
 
 Tracked down 2026-09-11: the package is
 `.kilocode/node_modules/toml@4.1.1` — a Kilo Code install sitting in the
@@ -740,6 +740,111 @@ After restarting kube-vip-ds (2026-09-30), .131/.124 are fixed. Left: .125 (fast
 **Decision (2026-09-30, owner):** remove the stale .125 copy on master-11; leave .130 to its owner.
 
 **Decision (2026-09-30, owner):** move novaforge-git-platform off .130. Done: pinned to 192.168.10.141 in NovaForge (chart option loadBalancerIP), certificate and LFS URL moved with it; .130 is BuildKit only, no VIP bound twice.
+
+## On-behalf-of token format (#337)
+
+Atlas (multi-tenant) must act for a user inside an org. The Go server already hand-rolls EdDSA JWTs (bajwt.go, stdlib ed25519); go.mod has no JWT library.
+
+- Service-signed EdDSA JWT: an admin registers the service's Ed25519 public key bound to one org; the service mints short-lived JWTs (sub=user, org, exp ≤ 15m, aud=novamem) itself; NovaMem holds no service secret (recommended)
+- NovaMem-minted JWT: admin issues an opaque `nm_svc_` key bound to an org; the service exchanges it per user at a token endpoint for a short-lived NovaMem-signed JWT
+- Opaque `nm_svc_` key bound to an org plus an `X-Novamem-On-Behalf-Of: <user>` header; user is not a signed claim and has no per-call expiry
+
+**Decision (2026-10-09, owner):** service-signed EdDSA JWT.
+
+## Who the on-behalf-of user is (#337)
+
+- Free-form subject scoped by org: the claim's user id is Atlas's own id, NovaMem stores it as-is with organization_id; no NovaMem user row needed (recommended)
+- Must be an existing NovaMem user: Atlas provisions each user through POST /v1/admin/users first; tokens for unknown users are rejected
+
+**Decision (2026-10-09, owner):** free-form subject scoped by org.
+
+## MCP ignores project-confined tokens (found reviewing #338)
+
+`resolveScopeMCP` (go/internal/httpapi/mcp.go) never checks the token's `ProjectID`, so a full-scope project-confined `nm_` token can read or forget the user's user-wide entries and other projects' entries over `/mcp`. HTTP enforces it (`confineToTokenProject`). Pre-existing on main.
+
+- File an issue and fix it in its own PR right after #339/#338 (recommended)
+- Fix it inside #338
+- File the issue only
+
+**Decision (2026-10-09, owner):** file an issue and fix it in its own PR after #339/#338.
+
+## CI "generated" job: api.adoptium.net sinkholed by nexora-dns (2026-10-09)
+
+setup-java (temurin) fails on the ARC runners: the LAN DNS (nexora-dns, .136/.139) answers api.adoptium.net with 0.0.0.0/::; 1.1.1.1 resolves it. The policy can't be inspected or changed: nexora-mgmt is 0/2 ready because its database nexora-db is down — primary nexora-db-2 is in CrashLoopBackOff with "Not enough disk space" (10Gi Longhorn PVC; replica nexora-db-1 is at 9%), so nexora-db-rw has no endpoints. Engines keep serving their last policy.
+
+- Recover nexora-db first (find what filled the primary's volume, likely WAL; expand the PVC or fail over to nexora-db-1), then allowlist api.adoptium.net in nexora (recommended)
+- Workaround in novamem CI only: run google-java-format inside the maven:3.9-eclipse-temurin-21 image the java job already pulls, so the generated job no longer downloads a JDK
+- Both
+
+**Decision (2026-10-09, owner):** recover nexora-db first, then allowlist api.adoptium.net.
+
+## Committing a regenerated clients/php/src/Types.php (2026-10-09)
+
+The gate runs phpstan on the staged Types.php alone. phpstan.neon excludes that generated file (it has 244 level-6 errors by design), so phpstan answers "No files found to analyse" and the gate blocks. procoder does not honor phpstan's excludePaths. Blocks the #338 commit that regenerates every SDK's wire types.
+
+- File a procoder issue, and commit this one regeneration from your own terminal (the gate is a Claude hook, so a terminal commit is not gated) (recommended)
+- File a procoder issue and wait for the fix before #338 can merge
+- Remove Types.php from the phpstan exclusion and fix the 244 findings in the PHP template
+
+**Decision (2026-10-09, owner):** file a procoder issue; the owner commits this regeneration from a terminal.
+
+## Merging #339 and #341 (2026-10-10)
+
+Both are green on the full rollup with no review comments. Merging to main is the kw deploy (GitOps): it runs migrations 0012 (organization_id on memory_entries, service_keys) and 0013 (memory_entry_source_refs) against the kw database and ships on-behalf-of tokens and forget-by-source. #341 is stacked on #339. Both issues also ask for a tagged release of the server and clients/go.
+
+- Merge #339, retarget #341 to main and merge it once its CI reruns green, let GitOps deploy, run conformance against kw; release tag decided separately (recommended)
+- Merge both and also cut the release tag
+- Hold the merges
+
+**Decision (2026-10-10, owner):** merge and deploy both, no release tag yet.
+
+## master-13's LACP bond is split; half of cluster DNS fails (2026-10-10)
+
+master-13's bond0 (802.3ad) has its two members in different aggregators (enP4p65s0 → ID 2, enP3p49s0 → ID 1, 24 link failures). The node reaches only part of the LAN: worker-22/23 and gx10-9c17 answer; the router 192.168.10.1, .2, .3, master-11/12 and worker-21/24/25 do not (ARP INCOMPLETE). The CoreDNS pod on master-13 logged 2525 upstream timeouts to 192.168.10.1 in an hour (the other pod: 0), so roughly half of all external lookups in the cluster fail. This broke the novamem and nexora CI runs (pulls and action downloads). Nodes still report Ready.
+
+- Mitigate now (delete the CoreDNS pod on master-13 so it reschedules elsewhere, and keep it off master-13), then investigate the bond/switch side (ks01/ks02 LACP) read-only and report before changing anything (recommended)
+- Mitigate only; the owner handles the switch/bond
+- Hands off
+
+**Decision (2026-10-10, owner):** mitigate now and investigate the bond/switch read-only, reporting before any change.
+
+## master-13 bond: flapping link to ks02 ether8 (2026-10-10)
+
+Read-only finding (~80%): the enP3p49s0 ↔ ks02 ether8 cable/port is bad — 33 link-downs since 10-06, now negotiates 100M with the partner advertising only 10/100 (damaged pair or crimp), so the host bond split into two aggregators. ks01 ether8 is clean at 2.5G; switch bond/MLAG config is uniform across all nodes. CoreDNS is already kept off master-13.
+
+- Owner reseats/replaces the cable now; meanwhile disable ks02 ether8 so master-13 runs cleanly on its ks01 link (no redundancy until the cable is fixed) (recommended)
+- Owner replaces the cable; no software change meanwhile
+- Leave it
+
+**Decision (2026-10-10, owner):** disable ks02 ether8 now; the owner replaces the cable.
+
+## Which remaining jobs move to the ARC runners (2026-10-10)
+
+The go job moved to arc-azrtydxb-amd64 on owner instruction. Still on GitHub-hosted: ci.yml gitops, audit, package, manifest; release-binaries.yml binaries; pages.yml deploy (ubuntu-latest); dependabot-automerge.yml enable-automerge.
+
+- Move every job to ARC (recommended)
+- Move only ci.yml's jobs; leave pages deploy, release binaries and dependabot automerge on GitHub-hosted
+- Only the go job
+
+**Decision (2026-10-10, owner):** move only ci.yml's jobs (gitops, audit, package, manifest) to ARC; leave Pages deploy, release binaries and Dependabot auto-merge on GitHub-hosted.
+
+## Embedding redundancy for novamem (2026-10-10)
+
+novamem already calls fastllm's pooled `bge-m3` frontend (pool `cacheaffinity-bge-m3`), but the pool has one member: a single Kuvryn-placed vLLM workload on gx10-48f4 (:8890). The reranker (`bge-reranker-v2-m3`, :8891) is also only on gx10-48f4. gx10-9c17 runs Qwen3.6-35B-A3B and an audio engine.
+
+- Deploy a second bge-m3 on gx10-9c17 through Kuvryn and add it to the pool (recommended; owner confirms GPU headroom / how Kuvryn places it)
+- Also add a second reranker the same way
+- Leave one instance
+
+## Reranking is never used (2026-10-10)
+
+Reranking is opt-in per request (`rerank: true` on POST /v1/search, engine/search.go:435). MCP memory_search / memory_context have no such parameter, so no agent search has ever been reranked; fastllm shows 0 rerank requests. Config, endpoint and auth are correct (direct call returns 200). The benchmark docs credit reranking with +21pp at ~+500 ms p95.
+
+- Rerank by default when a reranker is configured, with a per-request `rerank: false` opt-out on HTTP and MCP (recommended)
+- Keep it opt-in, but expose `rerank` on the MCP search/context tools
+- Leave as is
+
+**Decision (2026-10-10, owner):** rerank by default when a reranker is configured, with a per-request rerank:false opt-out on HTTP and MCP.
 
 ## How to continue the Cilium L2 migration after the pool outage
 

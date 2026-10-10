@@ -99,6 +99,8 @@ pub struct CaptureRequest {
     pub sensitivity: Option<CaptureRequestSensitivity>,
     #[serde(rename = "source", default, skip_serializing_if = "none_or_empty")]
     pub source: Option<String>,
+    #[serde(rename = "sourceRefs", default, skip_serializing_if = "Option::is_none")]
+    pub source_refs: Option<Vec<String>>,
     #[serde(rename = "sourceType", default, skip_serializing_if = "none_or_empty")]
     pub source_type: Option<String>,
 }
@@ -207,6 +209,8 @@ pub struct ContextRequest {
     pub namespace: Option<String>,
     #[serde(rename = "project", default, skip_serializing_if = "none_or_empty")]
     pub project: Option<String>,
+    #[serde(rename = "rerank", default, skip_serializing_if = "Option::is_none")]
+    pub rerank: Option<bool>,
     #[serde(rename = "weights", default, skip_serializing_if = "Option::is_none")]
     pub weights: Option<ContextRequestWeights>,
 }
@@ -239,6 +243,32 @@ pub struct ContextRequestWeights {
     pub recency: Option<f64>,
     #[serde(rename = "vector", default, skip_serializing_if = "Option::is_none")]
     pub vector: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextResult {
+    #[serde(rename = "contextPack", default, skip_serializing_if = "Option::is_none")]
+    pub context_pack: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(rename = "guidance", default, skip_serializing_if = "none_or_empty")]
+    pub guidance: Option<String>,
+    #[serde(rename = "recent", default)]
+    pub recent: ContextResultRecent,
+    #[serde(rename = "relevant", default)]
+    pub relevant: ContextResultRelevant,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextResultRecent {
+    #[serde(rename = "results", default)]
+    pub results: Vec<MemoryEntry>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextResultRelevant {
+    #[serde(rename = "degraded", default, skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<bool>,
+    #[serde(rename = "results", default)]
+    pub results: Vec<MemoryEntry>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -325,10 +355,12 @@ pub struct ExportedEntry {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ForgetRequest {
-    #[serde(rename = "id", default)]
-    pub id: String,
+    #[serde(rename = "id", default, skip_serializing_if = "none_or_empty")]
+    pub id: Option<String>,
     #[serde(rename = "project", default, skip_serializing_if = "none_or_empty")]
     pub project: Option<String>,
+    #[serde(rename = "sourceRef", default, skip_serializing_if = "none_or_empty")]
+    pub source_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

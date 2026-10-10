@@ -63,6 +63,15 @@ function subset(want: unknown, got: unknown, path = "$"): string {
     }
     return "";
   }
+  if (Array.isArray(want)) {
+    if (!Array.isArray(got) || want.length !== got.length)
+      return `${path}: want ${want.length}-element array, got ${JSON.stringify(got)}`;
+    for (let i = 0; i < want.length; i++) {
+      const d = subset(want[i], got[i], `${path}[${i}]`);
+      if (d) return d;
+    }
+    return "";
+  }
   return JSON.stringify(want) === JSON.stringify(got)
     ? ""
     : `${path}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`;
