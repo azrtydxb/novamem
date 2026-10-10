@@ -45,6 +45,24 @@ type Config struct {
 	RetentionDryRun   bool
 }
 
+// scheduleRetention registers the retention ticker only when the feature is
+// enabled. Keeping this boundary explicit also makes the default-off behavior
+// testable without starting background workers.
+func scheduleRetention(cfg Config, loop func(time.Duration, func(context.Context))) {
+	if !cfg.RetentionEnabled {
+		return
+	}
+	loop(cfg.RetentionInterval, func(ctx context.Context) {
+		r, err := cfg.Engine.ApplyRetention(ctx, cfg.RetentionMaxAge, cfg.RetentionBatch, cfg.RetentionDryRun)
+		if err != nil {
+			cfg.Log.Error("retention error", "err", err)
+			return
+		}
+		cfg.Log.Info("retention batch", "selected", r.Selected, "deleted", r.Deleted,
+			"entryIds", r.EntryIDs, "dryRun", r.DryRun)
+	})
+}
+
 // Run starts every loop and blocks until ctx is cancelled and all
 // in-flight ticks have finished.
 func Run(ctx context.Context, cfg Config) {
@@ -83,17 +101,7 @@ func Run(ctx context.Context, cfg Config) {
 				"abandoned", reap.Abandoned, "pending", reap.Pending, "total", reap.Total)
 		}
 	})
-	if cfg.RetentionEnabled {
-		loop(cfg.RetentionInterval, func(ctx context.Context) {
-			r, err := cfg.Engine.ApplyRetention(ctx, cfg.RetentionMaxAge, cfg.RetentionBatch, cfg.RetentionDryRun)
-			if err != nil {
-				cfg.Log.Error("retention error", "err", err)
-				return
-			}
-			cfg.Log.Info("retention batch", "selected", r.Selected, "deleted", r.Deleted,
-				"entryIds", r.EntryIDs, "dryRun", r.DryRun)
-		})
-	}
+	scheduleRetention(cfg, loop)
 
 	// Dream cycle — daily. The heavy work is the per-entry vector lookup;
 	// firing it more often than once per cold-write batch buys nothing.
