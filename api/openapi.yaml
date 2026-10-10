@@ -66,6 +66,12 @@ components:
         memory data plane only; projects, accounts, tokens and the admin surface answer 403.
         Accepted only in user auth mode. See ADR 0011."
   schemas:
+    TelemetryGroup:
+      type: object
+      required: [key, count]
+      properties:
+        key: { type: string }
+        count: { type: integer, format: int64 }
     ContextResult:
       type: object
       description:
@@ -3889,6 +3895,66 @@ paths:
       description:
         "Newest-first tail of every admin action: user create/delete, role change, quota change,
         token revocation. Written by the server, never by a caller."
+  /v1/admin/telemetry:
+    get:
+      summary: Aggregate memory telemetry
+      tags: [admin]
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "200":
+          description: Aggregate-only memory volume, distribution, growth and operational health. Memory content and user identifiers are never returned. Sensitivity distribution and daily growth are limited to 30 days because there is no general created-at/sensitivity index.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [totalEntries, embeddedEntries, pendingEmbeddings, pendingExtractions, pendingColdOrphans, byNamespace, byProject, bySensitivity, byTier, createdPerDay, topAgents, lastDecayAt, health]
+                properties:
+                  totalEntries: { type: integer, format: int64 }
+                  embeddedEntries: { type: integer, format: int64 }
+                  pendingEmbeddings: { type: integer, format: int64 }
+                  pendingExtractions: { type: integer, format: int64 }
+                  pendingColdOrphans: { type: integer }
+                  byNamespace: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  byProject: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  bySensitivity: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  byTier: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  createdPerDay:
+                    type: array
+                    items:
+                      type: object
+                      required: [date, count]
+                      properties:
+                        date: { type: string, format: date }
+                        count: { type: integer, format: int64 }
+                  topAgents:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, count]
+                      properties:
+                        name: { type: string }
+                        count: { type: integer, format: int64 }
+                  lastDecayAt: { type: string, format: date-time, nullable: true }
+                  health:
+                    type: object
+                    required: [ok, deps, coldProvider, pendingEmbeddings]
+                    properties:
+                      ok: { type: boolean }
+                      deps:
+                        type: object
+                        required: [warm, cold, embedder]
+                        properties:
+                          warm: { type: string, enum: [ok, unreachable] }
+                          cold: { type: string, enum: [ok, unreachable, failing] }
+                          embedder: { type: string, enum: [ok, failing] }
+                      coldProvider: { type: string, enum: [pgvector, qdrant, none] }
+                      pendingEmbeddings: { type: integer, nullable: true }
+        "401": { description: Missing or invalid credentials }
+        "403": { description: Authenticated user is not an admin }
+      operationId: getV1AdminTelemetry
+      description: "Admin-only aggregate view. Daily growth and sensitivity distribution are limited to the last 30 days because created_at and metadata sensitivity have no general-purpose index; project values are opaque ids and no memory content or user identifiers are returned."
   /v1/admin/metrics:
     get:
       summary: Global metrics snapshot (JSON)
