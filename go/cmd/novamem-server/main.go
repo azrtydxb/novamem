@@ -299,6 +299,11 @@ func run() error {
 			DecayInterval:     time.Duration(cfg.DecayIntervalMs) * time.Millisecond,
 			ReconcileInterval: time.Duration(cfg.ReconcileIntervalMs) * time.Millisecond,
 			ReconcileBatch:    cfg.ReconcileBatch,
+			RetentionEnabled: cfg.RetentionEnabled,
+			RetentionMaxAge: time.Duration(cfg.RetentionMaxAgeDays) * 24 * time.Hour,
+			RetentionBatch: cfg.RetentionBatch,
+			RetentionInterval: time.Duration(cfg.RetentionIntervalMinutes) * time.Minute,
+			RetentionDryRun: cfg.RetentionDryRun,
 		})
 	}()
 

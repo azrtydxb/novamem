@@ -66,6 +66,12 @@ components:
         memory data plane only; projects, accounts, tokens and the admin surface answer 403.
         Accepted only in user auth mode. See ADR 0011."
   schemas:
+    TelemetryGroup:
+      type: object
+      required: [key, count]
+      properties:
+        key: { type: string }
+        count: { type: integer, format: int64 }
     ContextResult:
       type: object
       description:
@@ -374,13 +380,19 @@ components:
         source: *id001
         score: &id003
           type: number
+          description: >-
+            Ranking score for this result. Ranked search results are returned
+            in non-increasing score order. When cross-encoder reranking
+            succeeds, this is the reranker relevance score; otherwise it is
+            the fused search score. Per-signal fusion contributions remain in
+            `signals`.
         metadata:
           type: object
           additionalProperties: true
         signals:
           type: object
           description: >-
-            Per-signal contributions behind `score`, present on the ranked
+            Per-signal contributions to the fused search score, present on the ranked
             responses (/v1/search, /v1/context, /v1/neighbors) and absent on
             /v1/recent, which orders by recency and ranks nothing. Every key
             is optional because the set varies by route: fusion returns all
@@ -514,19 +526,55 @@ components:
             orphanCandidates: *id003
         lowValue:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              content:
+                type: string
+              reason:
+                type: string
         stale:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              reason:
+                type: string
         duplicateClusters:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              ids:
+                type: array
+                items:
+                  type: string
+              reason:
+                type: string
         contradictionCandidates:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              ids:
+                type: array
+                items:
+                  type: string
+              reason:
+                type: string
         orphanCandidates:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              reason:
+                type: string
       required:
         - summary
     EvaluateReport:
@@ -840,6 +888,79 @@ components:
         removed: *id007
       required:
         - removed
+x-mcp-tools:
+  - name: admin_list_users
+    description: Read-only deployment-wide user inventory and entry/token counts. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, properties: {users: {type: array, items: {type: object, additionalProperties: true}}}, required: [users], additionalProperties: false}
+    annotations: {title: List users, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 22
+  - name: admin_list_projects
+    description: Read-only deployment-wide project inventory. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, properties: {projects: {type: array, items: {type: object, properties: {id: {type: string}, name: {type: string}, ownerUserId: {type: string}, createdAt: {type: string, format: date-time}}, required: [id, name, ownerUserId, createdAt], additionalProperties: false}}}, required: [projects], additionalProperties: false}
+    annotations: {title: List projects, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 23
+  - name: admin_list_tokens
+    description: Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, properties: {tokens: {type: array, items: {type: object, additionalProperties: true}}}, required: [tokens], additionalProperties: false}
+    annotations: {title: List token metadata, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 24
+  - name: admin_health
+    description: Read-only dependency and service health snapshot. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, additionalProperties: true}
+    annotations: {title: Service health, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 25
+  - name: admin_stats
+    description: Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema: {type: object, additionalProperties: true}
+    annotations: {title: Service statistics, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 26
+  - name: admin_audit_recent
+    description: Read-only recent administrative audit entries, newest first. Admin callers only.
+    inputSchema: {type: object, properties: {limit: {type: integer, minimum: 1, maximum: 500, description: Maximum number of entries; defaults to 100.}}, additionalProperties: false}
+    outputSchema: {type: object, properties: {entries: {type: array, items: {type: object, additionalProperties: true}}}, required: [entries], additionalProperties: false}
+    annotations: {title: Recent audit entries, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 27
+  - name: admin_ops_status
+    description: Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.
+    inputSchema: {type: object, properties: {}, additionalProperties: false}
+    outputSchema:
+      type: object
+      properties:
+        jobs:
+          type: object
+          properties:
+            decay:
+              type: object
+              properties:
+                lastRunAt: {type: [string, 'null'], format: date-time}
+                runs: {type: integer}
+              required: [lastRunAt, runs]
+              additionalProperties: false
+            dream:
+              type: object
+              properties:
+                lastRunAt: {type: [string, 'null'], format: date-time}
+              required: [lastRunAt]
+              additionalProperties: false
+            reaper:
+              type: object
+              properties:
+                lastRunAt: {type: [string, 'null'], format: date-time}
+                runs: {type: integer}
+              required: [lastRunAt, runs]
+              additionalProperties: false
+          required: [decay, dream, reaper]
+          additionalProperties: false
+      required: [jobs]
+      additionalProperties: false
+    annotations: {title: Operations job status, readOnlyHint: true, idempotentHint: true, openWorldHint: false}
+    x-order: 28
+
 paths:
   /v1/auth/rotate-token:
     post:
@@ -3889,6 +4010,66 @@ paths:
       description:
         "Newest-first tail of every admin action: user create/delete, role change, quota change,
         token revocation. Written by the server, never by a caller."
+  /v1/admin/telemetry:
+    get:
+      summary: Aggregate memory telemetry
+      tags: [admin]
+      security:
+        - SessionCookie: []
+        - UserBearer: []
+      responses:
+        "200":
+          description: Aggregate-only memory volume, distribution, growth and operational health. Memory content and user identifiers are never returned. Sensitivity distribution and daily growth are limited to 30 days because there is no general created-at/sensitivity index.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [totalEntries, embeddedEntries, pendingEmbeddings, pendingExtractions, pendingColdOrphans, byNamespace, byProject, bySensitivity, byTier, createdPerDay, topAgents, lastDecayAt, health]
+                properties:
+                  totalEntries: { type: integer, format: int64 }
+                  embeddedEntries: { type: integer, format: int64 }
+                  pendingEmbeddings: { type: integer, format: int64 }
+                  pendingExtractions: { type: integer, format: int64 }
+                  pendingColdOrphans: { type: integer }
+                  byNamespace: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  byProject: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  bySensitivity: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  byTier: { type: array, items: { $ref: "#/components/schemas/TelemetryGroup" } }
+                  createdPerDay:
+                    type: array
+                    items:
+                      type: object
+                      required: [date, count]
+                      properties:
+                        date: { type: string, format: date }
+                        count: { type: integer, format: int64 }
+                  topAgents:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, count]
+                      properties:
+                        name: { type: string }
+                        count: { type: integer, format: int64 }
+                  lastDecayAt: { type: string, format: date-time, nullable: true }
+                  health:
+                    type: object
+                    required: [ok, deps, coldProvider, pendingEmbeddings]
+                    properties:
+                      ok: { type: boolean }
+                      deps:
+                        type: object
+                        required: [warm, cold, embedder]
+                        properties:
+                          warm: { type: string, enum: [ok, unreachable] }
+                          cold: { type: string, enum: [ok, unreachable, failing] }
+                          embedder: { type: string, enum: [ok, failing] }
+                      coldProvider: { type: string, enum: [pgvector, qdrant, none] }
+                      pendingEmbeddings: { type: integer, nullable: true }
+        "401": { description: Missing or invalid credentials }
+        "403": { description: Authenticated user is not an admin }
+      operationId: getV1AdminTelemetry
+      description: "Admin-only aggregate view. Daily growth and sensitivity distribution are limited to the last 30 days because created_at and metadata sensitivity have no general-purpose index; project values are opaque ids and no memory content or user identifiers are returned."
   /v1/admin/metrics:
     get:
       summary: Global metrics snapshot (JSON)
@@ -4214,3 +4395,55 @@ paths:
         "Per-dependency status for operators: warm store, cold store and the graph tier reported
         separately. This is the detail `/health` deliberately withholds from anonymous callers, which
         is why it is admin-gated."
+
+  # Better Auth passthrough paths; generated into baAllowlist.
+  /api/auth/sign-in/email:
+    x-ba-allow: true
+  /api/auth/sign-out:
+    x-ba-allow: true
+  /api/auth/get-session:
+    x-ba-allow: true
+  /api/auth/token:
+    x-ba-allow: true
+  /api/auth/jwks:
+    x-ba-allow: true
+  /api/auth/change-password:
+    x-ba-allow: true
+  /api/auth/list-sessions:
+    x-ba-allow: true
+  /api/auth/revoke-session:
+    x-ba-allow: true
+  /api/auth/forget-password:
+    x-ba-allow: true
+  /api/auth/reset-password:
+    x-ba-allow: true
+  /api/auth/verify-email:
+    x-ba-allow: true
+  /api/auth/send-verification-email:
+    x-ba-allow: true
+  /api/auth/admin/list-users:
+    x-ba-allow: true
+  /api/auth/admin/create-user:
+    x-ba-allow: true
+  /api/auth/admin/update-user:
+    x-ba-allow: true
+  /api/auth/admin/set-role:
+    x-ba-allow: true
+  /api/auth/admin/set-user-password:
+    x-ba-allow: true
+  /api/auth/admin/remove-user:
+    x-ba-allow: true
+  /api/auth/admin/ban-user:
+    x-ba-allow: true
+  /api/auth/admin/unban-user:
+    x-ba-allow: true
+  /api/auth/admin/list-user-sessions:
+    x-ba-allow: true
+  /api/auth/admin/revoke-user-session:
+    x-ba-allow: true
+  /api/auth/admin/revoke-user-sessions:
+    x-ba-allow: true
+  /api/auth/admin/impersonate-user:
+    x-ba-allow: true
+  /api/auth/admin/stop-impersonating:
+    x-ba-allow: true

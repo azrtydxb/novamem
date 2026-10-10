@@ -1,6 +1,6 @@
 // Adoption/refresh diagnostics report. Transcribed from
 // packages/server/src/adoption.ts (buildAdoptionReport) with the tool
-// surface from mcp-tools.ts (21 tools: 14 memory_* + 7 project_*) and
+// surface from api/openapi.yaml (28 tools: 14 memory_* + 7 project_* + 7 admin_*) and
 // the MCP instructions block from mcp-instructions.ts, verbatim, so the
 // instructionsHash matches the TS server byte-for-byte.
 package httpapi
@@ -12,33 +12,12 @@ import (
 	"strings"
 
 	"github.com/azrtydxb/novamem/go/internal/agentskill"
+	"github.com/azrtydxb/novamem/go/internal/mcp"
 )
 
-// toolNames — mcp-tools.ts TOOL_DEFINITIONS names (declaration order;
-// the report sorts them).
-var toolNames = []string{
-	"memory_context",
-	"memory_capture",
-	"memory_session_recap",
-	"memory_hygiene",
-	"memory_evaluate",
-	"memory_adoption",
-	"memory_search",
-	"memory_remember",
-	"memory_today",
-	"memory_recent",
-	"memory_neighbors",
-	"memory_forget",
-	"memory_update",
-	"memory_stats",
-	"project_list",
-	"project_create",
-	"project_delete",
-	"project_activate",
-	"project_deactivate",
-	"project_share",
-	"project_unshare",
-}
+// toolNames comes from the generated OpenAPI contract, keeping adoption
+// diagnostics aligned with the exact list returned by tools/list.
+var toolNames = mcp.ToolNames()
 
 // adoptionRequiredTools — adoption.ts ADOPTION_REQUIRED_TOOLS.
 var adoptionRequiredTools = []string{

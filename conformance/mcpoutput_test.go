@@ -22,7 +22,7 @@ import (
 // fails every exercised tool here; publishing a schema that still says
 // `nullable` fails each tool whose answer carries a null.
 func TestMCPToolResultsMatchOutputSchemas(t *testing.T) {
-	Target(t)
+	target := Target(t)
 	s := connect(t)
 	defer s.disconnect(t)
 
@@ -44,6 +44,20 @@ func TestMCPToolResultsMatchOutputSchemas(t *testing.T) {
 	skipped := map[string]string{
 		"project_share":   "needs a second user to share with",
 		"project_unshare": "needs a second user to unshare",
+	}
+	adminToken := target.AdminToken
+	adminTools := []string{
+		"admin_list_users", "admin_list_projects", "admin_list_tokens", "admin_health",
+		"admin_stats", "admin_audit_recent", "admin_ops_status",
+	}
+	var admin *mcpSession
+	if adminToken == "" || target.AuthMode != "user" {
+		for _, name := range adminTools {
+			skipped[name] = "requires a user-mode NOVAMEM_ADMIN_TOKEN"
+		}
+	} else {
+		admin = connectWithToken(t, &adminToken)
+		defer admin.disconnect(t)
 	}
 	exercised := map[string]bool{}
 	check := func(name string, args map[string]any) map[string]any {
@@ -110,6 +124,30 @@ func TestMCPToolResultsMatchOutputSchemas(t *testing.T) {
 		}
 	} else {
 		t.Errorf("memory_capture: want one result, got %v", captured)
+	}
+	if admin != nil {
+		for _, name := range adminTools {
+			exercised[name] = true
+			res, rpcErr := admin.callTool(t, name, map[string]any{})
+			if rpcErr != nil {
+				t.Errorf("%s: JSON-RPC error %v", name, rpcErr)
+				continue
+			}
+			if isErr, _ := res["isError"].(bool); isErr {
+				t.Errorf("%s: admin tool error %v", name, res["content"])
+				continue
+			}
+			sc, ok := res["structuredContent"].(map[string]any)
+			if !ok {
+				t.Errorf("%s: no structuredContent object", name)
+				continue
+			}
+			if schema, ok := schemas[name]; ok {
+				if err := validateSchema(schema, sc, "$"); err != nil {
+					t.Errorf("%s: structuredContent does not match its outputSchema: %v", name, err)
+				}
+			}
+		}
 	}
 
 	project := check("project_create", map[string]any{"name": "conf-mcp-output-" + shelf})

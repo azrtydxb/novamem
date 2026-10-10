@@ -154,15 +154,7 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 	// is configured, rewrite into ≤N sub-queries and retrieve per
 	// sub-query; the original query is always first. A failure falls back
 	// to the original — decomposition is an enhancement, not a dependency.
-	queries := []string{req.Query}
-	if req.Decompose && e.decomposer != nil {
-		decomposed, err := e.decomposer.Decompose(ctx, req.Query)
-		if err != nil {
-			e.log.Warn("decompose failed (using original query)", "err", err)
-		} else if len(decomposed) > 0 {
-			queries = decomposed
-		}
-	}
+	queries := e.decomposeSearchQuery(ctx, req)
 
 	// Embed every query in one batch ("query" side of the asymmetric
 	// prefix pair). Different sub-queries → different vector candidates,
@@ -276,96 +268,17 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 			}
 		}
 	}
-	queryEntities := ExtractQueryEntities(req.Query)
-
-	// ── Fusion ─────────────────────────────────────────────────────────
-	var inputs []HybridInput
-	for _, h := range keywordHits {
-		s := h.Score
-		inputs = append(inputs, HybridInput{ID: h.ID, Signals: HybridSignal{Keyword: &s}})
-	}
-	for _, h := range vectorHits {
-		s := h.Score
-		inputs = append(inputs, HybridInput{ID: h.ID, Signals: HybridSignal{Vector: &s}})
-	}
 	now := e.now()
-	for _, id := range candidateIDs {
-		entry := entryByID[id]
-		if entry == nil {
-			continue
-		}
-		// Recency: exp(-ageDays / 180) over updated_at.
-		ageDays := now.Sub(entry.UpdatedAt).Hours() / 24
-		if score := RecencyScore(ageDays, 180); score > 0 {
-			s := score
-			inputs = append(inputs, HybridInput{ID: id, Signals: HybridSignal{Recency: &s}})
-		}
-		if len(queryEntities) > 0 && entry.Content != "" {
-			if score := EntityMatchScore(entry.Content, queryEntities); score > 0 {
-				s := score
-				inputs = append(inputs, HybridInput{ID: id, Signals: HybridSignal{Entity: &s}})
-			}
-		}
-	}
-	minVector := e.minVectorScore
-	if req.MinVectorScore != nil {
-		minVector = *req.MinVectorScore
-	}
-	fused := Fuse(inputs, weights, minVector)
+	fused := e.fuseSearchCandidates(keywordHits, vectorHits, candidateIDs, entryByID, req.Query, weights, req.MinVectorScore, now)
 	if len(fused) > k*overfetchFactor {
 		fused = fused[:k*overfetchFactor]
 	}
 
-	// Importance-weighted boost for fact memories: metadata.fact.importance
-	// (1..5, neutral 3) multiplies the fused score; raw chunks get 1.0.
-	for i := range fused {
-		boost := 1.0
-		if entry := entryByID[fused[i].ID]; entry != nil {
-			if fact, ok := entry.Metadata["fact"].(map[string]any); ok {
-				if imp, ok := fact["importance"].(float64); ok {
-					boost = math.Max(1, math.Min(5, imp)) / 3
-				}
-			}
-		}
-		fused[i].Score *= boost
-	}
-	sort.SliceStable(fused, func(a, b int) bool { return fused[a].Score > fused[b].Score })
 	// Deliberately NOT truncated to k here: the visibility filter drops
 	// superseded/sensitivity-hidden rows; cutting to k first is exactly
 	// the recall bug the over-fetch exists to prevent.
 
-	// ── Phase 4: coherence rerank ──────────────────────────────────────
-	// Opt-in with decomposition AND a configured decomposer AND enough
-	// candidates. Only the HEAD is reranked, not the whole over-fetch
-	// pool: reranking is a top-of-list concern, and the head is also what
-	// decides whether there is anything to reorder (at k=1 the head is a
-	// single candidate even though `fused` holds many).
-	rerankCount := len(fused)
-	if rerankCount > k {
-		rerankCount = k
-	}
-	if rerankCount > coherenceRerankMaxCandidates {
-		rerankCount = coherenceRerankMaxCandidates
-	}
-	if req.Decompose && e.decomposer != nil && rerankCount >= 2 {
-		head, tail := fused[:rerankCount], fused[rerankCount:]
-		memTexts := make([]string, len(head))
-		for i, f := range head {
-			if entry := entryByID[f.ID]; entry != nil {
-				memTexts[i] = entry.Content
-			}
-		}
-		newOrder, err := e.decomposer.CoherenceRerank(ctx, req.Query, memTexts)
-		if err != nil {
-			e.log.Warn("coherenceRerank failed", "err", err)
-		} else if len(newOrder) == len(head) {
-			reordered := make([]HybridOutput, 0, len(fused))
-			for _, i := range newOrder {
-				reordered = append(reordered, head[i])
-			}
-			fused = append(reordered, tail...)
-		}
-	}
+	fused = e.coherenceRerank(ctx, req, k, fused, entryByID)
 
 	// Pre-fetch promotion stats for cold hits in one round-trip.
 	var coldHitIDs []string
@@ -383,199 +296,17 @@ func (e *Engine) Search(ctx context.Context, userID string, req SearchArgs) (Sea
 		}
 	}
 
-	// ── Visibility filter → rank prior ─────────────────────────────────
-	var visible []*visibleItem
-	for _, f := range fused {
-		entry := entryByID[f.ID]
-		if entry == nil {
-			continue
-		}
-		if isInactiveMemory(entry.Metadata) {
-			continue
-		}
-		if !isSensitivityVisible(entry.Metadata, req.MaxSensitivity) {
-			continue
-		}
-		ageDays := now.Sub(entry.CreatedAt).Hours() / 24
-		memoryType, _ := entry.Metadata["memoryType"].(string)
-		confidence := entry.Confidence
-		prior := RankPrior(&confidence, memoryType, &ageDays)
-		tier := "warm"
-		if entry.Cold {
-			tier = "cold"
-		}
-		var project any
-		if entry.ProjectID != nil {
-			project = *entry.ProjectID
-		}
-		visible = append(visible, &visibleItem{
-			entry: entry,
-			score: f.Score * prior,
-			result: SearchResultItem{
-				"id":        f.ID,
-				"score":     f.Score * prior,
-				"content":   entry.Content,
-				"tier":      tier,
-				"namespace": entry.Namespace,
-				"project":   project,
-				"source":    entry.Source,
-				"metadata":  entry.Metadata,
-				"signals":   f.Signals,
-			},
-		})
-	}
-	sort.SliceStable(visible, func(a, b int) bool { return visible[a].score > visible[b].score })
+	visible := e.applyVisibility(fused, entryByID, req, now)
 
 	e.rerankVisible(ctx, req, k, visible)
 
-	// ── Diversify + token budget + truncate ────────────────────────────
-	tokenCache := map[string]map[string]bool{}
-	tokensFor := func(content string) map[string]bool {
-		t, ok := tokenCache[content]
-		if !ok {
-			t = contentTokens(content)
-			tokenCache[content] = t
-		}
-		return t
-	}
-	tokenBudget := 0
-	if req.MaxTokens > 0 {
-		tokenBudget = req.MaxTokens
-	}
-	spent := 0
-	var selected []*visibleItem
-	for _, cand := range visible {
-		if len(selected) >= k {
-			break
-		}
-		content, _ := cand.result["content"].(string)
-		cost := EstimateTokens(content)
-		candTokens := tokensFor(content)
-		redundant := false
-		for _, s := range selected {
-			sc, _ := s.result["content"].(string)
-			if jaccardOf(tokensFor(sc), candTokens) >= resultDiversityMaxJaccard {
-				redundant = true
-				break
-			}
-		}
-		if redundant {
-			continue
-		}
-		// Always admit the first result: a budget smaller than the top
-		// hit should return that hit rather than nothing.
-		if tokenBudget > 0 && len(selected) > 0 && spent+cost > tokenBudget {
-			break
-		}
-		selected = append(selected, cand)
-		spent += cost
-	}
-	// Backfill from what diversification dropped rather than
-	// under-returning (only without a token budget), then restore
-	// descending score order.
-	if len(selected) < k && tokenBudget == 0 {
-		chosen := map[*visibleItem]bool{}
-		for _, s := range selected {
-			chosen[s] = true
-		}
-		for _, cand := range visible {
-			if len(selected) >= k {
-				break
-			}
-			if chosen[cand] {
-				continue
-			}
-			selected = append(selected, cand)
-		}
-		sort.SliceStable(selected, func(a, b int) bool { return selected[a].score > selected[b].score })
-	}
+	selected := selectSearchResults(visible, k, req.MaxTokens)
 
-	// ── Assemble + promotion + hit bumps ───────────────────────────────
-	results := make([]SearchResultItem, 0, len(selected))
-	var idsToBump []string
-	for _, item := range selected {
-		id, _ := item.result["id"].(string)
-		idsToBump = append(idsToBump, id)
-		// Cold→warm promotion: pre-bump stats gate promotion — an entry
-		// earns warm status when its post-bump lifespan exceeds how long
-		// it had been idle before this hit (engine/index.ts maybePromote).
-		if item.entry.Cold {
-			if preBump, ok := coldStats[id]; ok {
-				lifespan := EffectiveDays(preBump.Hits + 1)
-				if lifespan > preBump.IdleDays {
-					if err := e.warm.MarkCold(ctx, id, false); err == nil {
-						item.result["tier"] = "warm"
-						e.promotedSinceLastDecay.Add(1)
-						if e.metrics != nil {
-							e.metrics.RecordPromotion(1)
-						}
-					} else {
-						e.log.Warn("cold→warm promotion failed", "entryId", id, "err", err)
-					}
-				}
-			}
-		}
-		results = append(results, item.result)
+	results, err := e.formatSearchResults(ctx, userID, req, projectID, selected, coldStats)
+	if err != nil {
+		return SearchOutcome{}, err
 	}
-	if len(idsToBump) > 0 {
-		// Bookkeeping, not response content — async, failures only cost
-		// decay/promotion signal (engine/index.ts bumpHitsMany void).
-		go func(ids []string) {
-			bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := e.warm.BumpHitsMany(bg, ids); err != nil {
-				e.log.Warn("async bumpHitsMany failed (hit counts lag)", "err", err)
-			}
-		}(idsToBump)
-	}
-
-	// ── Auto-expand source_chunk for fact memories ─────────────────────
-	// Inline the raw chunk's text as metadata.sourceText so answerer
-	// LLMs see the compressed fact AND the supporting conversation.
-	if req.ExpandSourceChunks == nil || *req.ExpandSourceChunks {
-		var sourceIDs []string
-		seenSrc := map[string]bool{}
-		for _, r := range results {
-			if meta, ok := r["metadata"].(map[string]any); ok {
-				if srcID, ok := meta["source_chunk_id"].(string); ok && !seenSrc[srcID] {
-					seenSrc[srcID] = true
-					sourceIDs = append(sourceIDs, srcID)
-				}
-			}
-		}
-		if len(sourceIDs) > 0 {
-			srcRows, err := e.warm.GetEntries(ctx, userID, sourceIDs, projectID, req.IncludeProjects)
-			if err != nil {
-				e.log.Warn("source-chunk auto-expand failed (returning facts without sourceText)", "err", err)
-			} else {
-				contentByID := map[string]string{}
-				for i, row := range srcRows {
-					if row != nil {
-						contentByID[sourceIDs[i]] = row.Content
-					}
-				}
-				for _, r := range results {
-					meta, ok := r["metadata"].(map[string]any)
-					if !ok {
-						continue
-					}
-					srcID, ok := meta["source_chunk_id"].(string)
-					if !ok {
-						continue
-					}
-					if text, ok := contentByID[srcID]; ok {
-						// New map, not in-place: the entry's metadata is shared.
-						withText := map[string]any{}
-						for mk, mv := range meta {
-							withText[mk] = mv
-						}
-						withText["sourceText"] = text
-						r["metadata"] = withText
-					}
-				}
-			}
-		}
-	}
+	e.expandSearchSources(ctx, userID, req, projectID, results)
 
 	return SearchOutcome{Results: results, Degraded: degraded}, nil
 }
@@ -1018,5 +749,301 @@ func (e *Engine) rerankVisible(ctx context.Context, req SearchArgs, k int, visib
 				return ia < ib
 			}
 		})
+		// `score` is the scalar consumers use to interpret the returned
+		// ordering. Once reranking succeeds, expose that rank consistently
+		// instead of leaving the fused score attached to a relevance-sorted
+		// result. Unscored candidates remain after scored ones and share the
+		// lowest rerank score, preserving monotonicity without implying that
+		// their fused score is comparable to the cross-encoder's scale.
+		var lowest *float64
+		for i := 0; i < pool; i++ {
+			if score := scores[order[visible[i]]]; score != nil && (lowest == nil || *score < *lowest) {
+				lowest = score
+			}
+		}
+		if lowest != nil {
+			for _, item := range visible {
+				idx := order[item]
+				rankScore := lowest
+				if idx < pool && scores[idx] != nil {
+					rankScore = scores[idx]
+				}
+				item.score = *rankScore
+				item.result["score"] = *rankScore
+			}
+		}
 	}
+}
+
+func (e *Engine) decomposeSearchQuery(ctx context.Context, req SearchArgs) []string {
+	queries := []string{req.Query}
+	if req.Decompose && e.decomposer != nil {
+		decomposed, err := e.decomposer.Decompose(ctx, req.Query)
+		if err != nil {
+			e.log.Warn("decompose failed (using original query)", "err", err)
+		} else if len(decomposed) > 0 {
+			queries = decomposed
+		}
+	}
+	return queries
+}
+
+func (e *Engine) fuseSearchCandidates(keywordHits []warmstore.ScoredID, vectorHits []coldstore.Hit, candidateIDs []string, entryByID map[string]*warmstore.Entry, query string, weights HybridWeights, minVectorOverride *float64, now time.Time) []HybridOutput {
+	queryEntities := ExtractQueryEntities(query)
+	var inputs []HybridInput
+	for _, h := range keywordHits {
+		score := h.Score
+		inputs = append(inputs, HybridInput{ID: h.ID, Signals: HybridSignal{Keyword: &score}})
+	}
+	for _, h := range vectorHits {
+		score := h.Score
+		inputs = append(inputs, HybridInput{ID: h.ID, Signals: HybridSignal{Vector: &score}})
+	}
+	for _, id := range candidateIDs {
+		entry := entryByID[id]
+		if entry == nil {
+			continue
+		}
+		ageDays := now.Sub(entry.UpdatedAt).Hours() / 24
+		if score := RecencyScore(ageDays, 180); score > 0 {
+			inputs = append(inputs, HybridInput{ID: id, Signals: HybridSignal{Recency: &score}})
+		}
+		if len(queryEntities) > 0 && entry.Content != "" {
+			if score := EntityMatchScore(entry.Content, queryEntities); score > 0 {
+				inputs = append(inputs, HybridInput{ID: id, Signals: HybridSignal{Entity: &score}})
+			}
+		}
+	}
+	minVector := e.minVectorScore
+	if minVectorOverride != nil {
+		minVector = *minVectorOverride
+	}
+	fused := Fuse(inputs, weights, minVector)
+	for i := range fused {
+		boost := 1.0
+		if entry := entryByID[fused[i].ID]; entry != nil {
+			if fact, ok := entry.Metadata["fact"].(map[string]any); ok {
+				if importance, ok := fact["importance"].(float64); ok {
+					boost = math.Max(1, math.Min(5, importance)) / 3
+				}
+			}
+		}
+		fused[i].Score *= boost
+	}
+	sort.SliceStable(fused, func(a, b int) bool { return fused[a].Score > fused[b].Score })
+	return fused
+}
+
+func (e *Engine) coherenceRerank(ctx context.Context, req SearchArgs, k int, fused []HybridOutput, entryByID map[string]*warmstore.Entry) []HybridOutput {
+	rerankCount := len(fused)
+	if rerankCount > k {
+		rerankCount = k
+	}
+	if rerankCount > coherenceRerankMaxCandidates {
+		rerankCount = coherenceRerankMaxCandidates
+	}
+	if !req.Decompose || e.decomposer == nil || rerankCount < 2 {
+		return fused
+	}
+	head, tail := fused[:rerankCount], fused[rerankCount:]
+	memTexts := make([]string, len(head))
+	for i, item := range head {
+		if entry := entryByID[item.ID]; entry != nil {
+			memTexts[i] = entry.Content
+		}
+	}
+	newOrder, err := e.decomposer.CoherenceRerank(ctx, req.Query, memTexts)
+	if err != nil {
+		e.log.Warn("coherenceRerank failed", "err", err)
+		return fused
+	}
+	if len(newOrder) != len(head) {
+		return fused
+	}
+	reordered := make([]HybridOutput, 0, len(fused))
+	for _, i := range newOrder {
+		reordered = append(reordered, head[i])
+	}
+	return append(reordered, tail...)
+}
+
+func (e *Engine) applyVisibility(fused []HybridOutput, entryByID map[string]*warmstore.Entry, req SearchArgs, now time.Time) []*visibleItem {
+	var visible []*visibleItem
+	for _, item := range fused {
+		entry := entryByID[item.ID]
+		if entry == nil || isInactiveMemory(entry.Metadata) || !isSensitivityVisible(entry.Metadata, req.MaxSensitivity) {
+			continue
+		}
+		ageDays := now.Sub(entry.CreatedAt).Hours() / 24
+		memoryType, _ := entry.Metadata["memoryType"].(string)
+		confidence := entry.Confidence
+		prior := RankPrior(&confidence, memoryType, &ageDays)
+		tier := "warm"
+		if entry.Cold {
+			tier = "cold"
+		}
+		var project any
+		if entry.ProjectID != nil {
+			project = *entry.ProjectID
+		}
+		visible = append(visible, &visibleItem{entry: entry, score: item.Score * prior, result: SearchResultItem{
+			"id": item.ID, "score": item.Score * prior, "content": entry.Content, "tier": tier,
+			"namespace": entry.Namespace, "project": project, "source": entry.Source,
+			"metadata": entry.Metadata, "signals": item.Signals,
+		}})
+	}
+	sort.SliceStable(visible, func(a, b int) bool { return visible[a].score > visible[b].score })
+	return visible
+}
+
+func selectSearchResults(visible []*visibleItem, k, maxTokens int) []*visibleItem {
+	tokenCache := map[string]map[string]bool{}
+	tokensFor := func(content string) map[string]bool {
+		t, ok := tokenCache[content]
+		if !ok {
+			t = contentTokens(content)
+			tokenCache[content] = t
+		}
+		return t
+	}
+	tokenBudget := 0
+	if maxTokens > 0 {
+		tokenBudget = maxTokens
+	}
+	spent := 0
+	var selected []*visibleItem
+	for _, candidate := range visible {
+		if len(selected) >= k {
+			break
+		}
+		content, _ := candidate.result["content"].(string)
+		cost, candidateTokens := EstimateTokens(content), tokensFor(content)
+		redundant := false
+		for _, item := range selected {
+			selectedContent, _ := item.result["content"].(string)
+			if jaccardOf(tokensFor(selectedContent), candidateTokens) >= resultDiversityMaxJaccard {
+				redundant = true
+				break
+			}
+		}
+		if redundant {
+			continue
+		}
+		if tokenBudget > 0 && len(selected) > 0 && spent+cost > tokenBudget {
+			break
+		}
+		selected = append(selected, candidate)
+		spent += cost
+	}
+	if len(selected) < k && tokenBudget == 0 {
+		chosen := map[*visibleItem]bool{}
+		for _, item := range selected {
+			chosen[item] = true
+		}
+		for _, candidate := range visible {
+			if len(selected) >= k {
+				break
+			}
+			if chosen[candidate] {
+				continue
+			}
+			selected = append(selected, candidate)
+		}
+		sort.SliceStable(selected, func(a, b int) bool { return selected[a].score > selected[b].score })
+	}
+	return selected
+}
+
+func (e *Engine) formatSearchResults(ctx context.Context, userID string, req SearchArgs, projectID *string, selected []*visibleItem, coldStats map[string]warmstore.ColdStats) ([]SearchResultItem, error) {
+	// ── Assemble + promotion + hit bumps ───────────────────────────────
+	results := make([]SearchResultItem, 0, len(selected))
+	var idsToBump []string
+	for _, item := range selected {
+		id, _ := item.result["id"].(string)
+		idsToBump = append(idsToBump, id)
+		// Cold→warm promotion: pre-bump stats gate promotion — an entry
+		// earns warm status when its post-bump lifespan exceeds how long
+		// it had been idle before this hit (engine/index.ts maybePromote).
+		if item.entry.Cold {
+			if preBump, ok := coldStats[id]; ok {
+				lifespan := EffectiveDays(preBump.Hits + 1)
+				if lifespan > preBump.IdleDays {
+					if err := e.warm.MarkCold(ctx, id, false); err == nil {
+						item.result["tier"] = "warm"
+						e.promotedSinceLastDecay.Add(1)
+						if e.metrics != nil {
+							e.metrics.RecordPromotion(1)
+						}
+					} else {
+						e.log.Warn("cold→warm promotion failed", "entryId", id, "err", err)
+					}
+				}
+			}
+		}
+		results = append(results, item.result)
+	}
+	if len(idsToBump) > 0 {
+		// Bookkeeping, not response content — async, failures only cost
+		// decay/promotion signal (engine/index.ts bumpHitsMany void).
+		go func(ids []string) {
+			bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := e.warm.BumpHitsMany(bg, ids); err != nil {
+				e.log.Warn("async bumpHitsMany failed (hit counts lag)", "err", err)
+			}
+		}(idsToBump)
+	}
+
+	return results, nil
+}
+
+func (e *Engine) expandSearchSources(ctx context.Context, userID string, req SearchArgs, projectID *string, results []SearchResultItem) {
+	// ── Auto-expand source_chunk for fact memories ─────────────────────
+	// Inline the raw chunk's text as metadata.sourceText so answerer
+	// LLMs see the compressed fact AND the supporting conversation.
+	if req.ExpandSourceChunks == nil || *req.ExpandSourceChunks {
+		var sourceIDs []string
+		seenSrc := map[string]bool{}
+		for _, r := range results {
+			if meta, ok := r["metadata"].(map[string]any); ok {
+				if srcID, ok := meta["source_chunk_id"].(string); ok && !seenSrc[srcID] {
+					seenSrc[srcID] = true
+					sourceIDs = append(sourceIDs, srcID)
+				}
+			}
+		}
+		if len(sourceIDs) > 0 {
+			srcRows, err := e.warm.GetEntries(ctx, userID, sourceIDs, projectID, req.IncludeProjects)
+			if err != nil {
+				e.log.Warn("source-chunk auto-expand failed (returning facts without sourceText)", "err", err)
+			} else {
+				contentByID := map[string]string{}
+				for i, row := range srcRows {
+					if row != nil {
+						contentByID[sourceIDs[i]] = row.Content
+					}
+				}
+				for _, r := range results {
+					meta, ok := r["metadata"].(map[string]any)
+					if !ok {
+						continue
+					}
+					srcID, ok := meta["source_chunk_id"].(string)
+					if !ok {
+						continue
+					}
+					if text, ok := contentByID[srcID]; ok {
+						// New map, not in-place: the entry's metadata is shared.
+						withText := map[string]any{}
+						for mk, mv := range meta {
+							withText[mk] = mv
+						}
+						withText["sourceText"] = text
+						r["metadata"] = withText
+					}
+				}
+			}
+		}
+	}
+
 }
