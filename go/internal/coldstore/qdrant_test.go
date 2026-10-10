@@ -30,6 +30,63 @@ func TestCollectionNaming(t *testing.T) {
 	}
 }
 
+// An on-behalf-of user id (`org:<org>/<sub>`) carries a `/`. Raw, it split
+// the `/collections/<name>` path and real Qdrant answered 404, so every
+// OBO write failed on kw. The fake below accepts only paths whose
+// collection segment is a single, slash-free name.
+func TestOBOCollectionNamesArePathSafe(t *testing.T) {
+	acme, globex := "org:acme/alice", "org:globex/alice"
+	if got := collectionFor("01HREALUSER", "default", nil); got != "novamem_u_01HREALUSER_default" {
+		t.Fatalf("a real user's collection name changed: %q", got)
+	}
+	a, g := collectionFor(acme, "default", nil), collectionFor(globex, "default", nil)
+	if a == g {
+		t.Fatalf("two orgs share a collection: %q", a)
+	}
+	if a != collectionFor(acme, "default", nil) {
+		t.Fatal("collection name is not deterministic")
+	}
+	for _, name := range []string{a, g, legacyUserCollectionFor(acme, "default")} {
+		for _, c := range name {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+				t.Fatalf("collection name %q has %q, which is not path-safe", name, c)
+			}
+		}
+	}
+
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		paths = append(paths, r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections":
+			_, _ = w.Write([]byte(`{"result":{"collections":[{"name":"` + a + `"}]}}`))
+		case r.URL.Path == "/collections/"+a, r.URL.Path == "/collections/"+a+"/points":
+			_, _ = w.Write([]byte(`{"result":{"status":"completed"}}`))
+		case r.URL.Path == "/collections/"+a+"/points/query":
+			_, _ = w.Write([]byte(`{"result":{"points":[{"id":"x","score":0.9,"payload":{"entryId":"e1"}}]}}`))
+		default:
+			http.Error(w, "", http.StatusNotFound) // what Qdrant does with a split path
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	s := newQdrant(Config{URL: srv.URL, VectorSize: 3})
+
+	if err := s.Upsert(ctx, UpsertArgs{UserID: acme, ID: "e1", Namespace: "default",
+		Embedding: []float64{1, 0, 0}}); err != nil {
+		t.Fatalf("OBO upsert: %v (paths %v)", err, paths)
+	}
+	hits, err := s.Search(ctx, SearchArgs{UserID: acme, Namespace: "default", Embedding: []float64{1, 0, 0}, K: 1})
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("OBO search: %v %v (paths %v)", hits, err, paths)
+	}
+	dropped, err := s.DeleteAllForUser(ctx, acme)
+	if err != nil || len(dropped) != 1 || dropped[0] != a {
+		t.Fatalf("OBO deleteAllForUser dropped %v, %v", dropped, err)
+	}
+}
+
 // End-to-end against a fake Qdrant: exercises lazy collection creation,
 // the legacy-collection read union with per-entry dedupe (best score
 // wins), delete fan-out across both collections, and the deleteAll
