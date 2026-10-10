@@ -33,10 +33,12 @@ env:
 jobs:
   gitops:
     name: GitOps deployment checks
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # The ARC runner image has no kubectl (GitHub's hosted image did).
+      - uses: azure/setup-kubectl@v4
       - run: python3 scripts/test-record-kw-image.py
       - name: Keep credentials and namespace outside application sync
         run: |
@@ -101,8 +103,31 @@ jobs:
   # ── Go modules (server rewrite + shared client) ───────────────────────
   go:
     name: go (build + vet + test)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    # A real Postgres for the tests that skip without one — above all
+    # TestOnBehalfOfToken, which proves organization isolation (#337, ADR
+    # 0011) and must not be a test that quietly skips in CI. The pgvector
+    # image is the one the pgvector cold store runs on; the tag is pinned.
+    # The test fails (rather than skips) when CI is set and this is unset.
+    # Pulled through the in-cluster Nexus (it proxies docker.io): a direct
+    # Docker Hub pull hits the anonymous rate limit.
+    services:
+      postgres:
+        image: 192.168.10.131/pgvector/pgvector:0.8.1-pg16
+        env:
+          POSTGRES_USER: novamem
+          POSTGRES_PASSWORD: novamem
+          POSTGRES_DB: novamem_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novamem"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NOVAMEM_TEST_DATABASE_URL: postgres://novamem:novamem@localhost:5432/novamem_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -152,7 +177,7 @@ jobs:
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
     name: audit
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -176,10 +201,14 @@ jobs:
   package:
     name: package (npm)
     needs: [test]
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # The ARC runner image has no node (GitHub's hosted image did).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - name: Confirm nothing is publishable
         run: node scripts/assert-nothing-publishable.mjs
 
@@ -371,7 +400,7 @@ jobs:
       contents: write # record the verified image for Kuvryn Sync on main
       packages: write # push the multi-arch manifest to ghcr.io
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

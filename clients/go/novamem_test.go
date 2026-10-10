@@ -55,6 +55,16 @@ func call(ctx context.Context, c *Client, op string) error {
 	panic("unknown op " + op)
 }
 
+// TestForgetBySourceRequiresRef: a blank reference must never reach the
+// wire, where a server that treated it as "match everything" would be the
+// worst possible reading of an empty string.
+func TestForgetBySourceRequiresRef(t *testing.T) {
+	c, _ := New(Config{BaseURL: "http://127.0.0.1:1", Token: "nm_x"})
+	if _, err := c.ForgetBySource(context.Background(), "  "); err == nil {
+		t.Fatal("blank source ref accepted")
+	}
+}
+
 var allOps = []string{"capture", "search", "recent", "neighbors", "update", "forget"}
 
 func TestHappyPath(t *testing.T) {
@@ -231,6 +241,36 @@ func TestHappyPath(t *testing.T) {
 				}
 				if !got.Deleted || !got.ColdDeleteOk {
 					t.Errorf("got %+v", got)
+				}
+			},
+		},
+		{
+			name: "forget by source sends sourceRef and returns the receipt", wantPath: "/v1/forget", wantMethod: http.MethodPost,
+			wantBody: []string{`"sourceRef":"sp://doc/1"`},
+			status:   http.StatusOK,
+			respond:  ForgetBySourceResult{SourceRef: "sp://doc/1", IDs: []string{"01A", "01B"}, Count: 2, ColdDeleteOk: true},
+			check: func(t *testing.T, c *Client) {
+				got, err := c.ForgetBySource(context.Background(), "sp://doc/1")
+				if err != nil {
+					t.Fatalf("ForgetBySource: %v", err)
+				}
+				if got.Count != 2 || len(got.IDs) != 2 || got.IDs[0] != "01A" || !got.ColdDeleteOk {
+					t.Errorf("got %+v", got)
+				}
+			},
+		},
+		{
+			name: "forget by source of an unknown ref is count 0, not an error", wantPath: "/v1/forget", wantMethod: http.MethodPost,
+			wantBody: []string{`"sourceRef":"gone"`},
+			status:   http.StatusOK,
+			respond:  map[string]any{"sourceRef": "gone", "ids": nil, "count": 0, "coldDeleteOk": true},
+			check: func(t *testing.T, c *Client) {
+				got, err := c.ForgetBySource(context.Background(), "gone")
+				if err != nil {
+					t.Fatalf("ForgetBySource: %v", err)
+				}
+				if got.Count != 0 || got.IDs == nil || len(got.IDs) != 0 {
+					t.Errorf("want count 0 and a non-nil empty IDs, got %+v", got)
 				}
 			},
 		},
