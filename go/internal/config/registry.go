@@ -388,6 +388,10 @@ var Vars = []Var{
 		Description: "How many extractions may be in flight at once. Bounds the load a burst of writes puts on the model server.",
 	},
 	{
+		Name: "NOVAMEM_EXTRACTION_REDACT", Kind: KindDisableBool, Default: true, Section: secLLM,
+		Description: "Redacts PII (emails, phone numbers, API keys, IPv4 addresses) from the content sent to the extraction model, replacing it with stable placeholders. The stored memory keeps the original text; only the LLM payload is rewritten. Set `NOVAMEM_EXTRACTION_REDACT=0` to send content verbatim.",
+	},
+	{
 		Name: "NOVAMEM_QUERY_DECOMP_ENABLED", Kind: KindCoercedBool, Default: false, Section: secLLM,
 		Description: "Enables query decomposition, which callers opt into per request with `decompose`.",
 	},
