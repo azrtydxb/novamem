@@ -409,13 +409,37 @@ jobs:
           # Existing Scout credential, stored separately as a repository secret.
           # Main uses it for CI's deployment commit; tags need only read access.
           token: ${{ github.ref == 'refs/heads/main' && secrets.KW_GITOPS_TOKEN || github.token }}
-      - uses: docker/setup-buildx-action@v4
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # Buildx imagetools uses a client-side registry resolver, but its
+      # registry TLS behavior does not honor buildkitd's insecure setting.
+      # Install regctl so this job can explicitly skip TLS verification for
+      # the GHCR endpoint intercepted by the ARC runner's Nexus mirror.
+      - name: Install regctl
+        run: |
+          case "$(uname -m)" in
+            x86_64) ARCH=amd64; SHA256=8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd ;;
+            aarch64|arm64) ARCH=arm64; SHA256=a9b71a3ee79b2d1dbbd7d51fd5e8fa214722c192864235d3d8764463c751a1ff ;;
+            *) echo "Unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          curl --fail --silent --show-error --location --insecure \
+            "https://github.com/regclient/regclient/releases/download/v0.11.6/regctl-linux-${ARCH}" \
+            --output "$RUNNER_TEMP/regctl"
+          echo "${SHA256}  ${RUNNER_TEMP}/regctl" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/regctl"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      # docker login talks to the daemon, whose GHCR mirror connection is
+      # intercepted by Nexus and fails hostname validation for Nexus's cert.
+      # Store Docker's standard auth entry directly: no registry handshake
+      # occurs here, and the daemon has no client-side insecure override.
+      - name: Configure manual ghcr.io auth and TLS handling
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AUTH="$(printf '%s' "x-access-token:${GITHUB_TOKEN}" | base64 | tr -d '\n')"
+          mkdir -p "$HOME/.docker"
+          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$AUTH" > "$HOME/.docker/config.json"
+          chmod 600 "$HOME/.docker/config.json"
+          # This is client-local regctl config; it does not change dind.
+          regctl registry set ghcr.io --tls insecure --skip-check
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -430,35 +454,46 @@ jobs:
       # can pin reproducibly regardless of whether they're following
       # `:main` or a release tag.
       - name: Create + push :sha-<short> multi-arch manifest
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
+          SHORT_SHA: ${{ steps.sha.outputs.short }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }} \
-            ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-arm64
+          regctl index create "$IMAGE:sha-$SHORT_SHA" \
+            --ref "$IMAGE:sha-$SHORT_SHA-amd64" \
+            --ref "$IMAGE:sha-$SHORT_SHA-arm64"
       - name: Create + push :main multi-arch manifest
         if: github.ref == 'refs/heads/main'
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:main \
-            ${{ env.REGISTRY_IMAGE }}:main-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:main-arm64
+          regctl index create "$IMAGE:main" \
+            --ref "$IMAGE:main-amd64" \
+            --ref "$IMAGE:main-arm64"
       - name: Create + push :v<X.Y.Z> multi-arch manifest
         if: steps.semver.outputs.v
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
+          VERSION: ${{ steps.semver.outputs.v }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }} \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }}-arm64
+          regctl index create "$IMAGE:$VERSION" \
+            --ref "$IMAGE:$VERSION-amd64" \
+            --ref "$IMAGE:$VERSION-arm64"
       - name: Create + push :<X.Y.Z> multi-arch manifest
         if: steps.semver.outputs.bare
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
+          VERSION: ${{ steps.semver.outputs.bare }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }} \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-arm64
+          regctl index create "$IMAGE:$VERSION" \
+            --ref "$IMAGE:$VERSION-amd64" \
+            --ref "$IMAGE:$VERSION-arm64"
       - name: Verify the kw image resolves for both architectures
         if: github.ref == 'refs/heads/main'
         env:
           IMAGE: ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}
         run: |
           for attempt in $(seq 1 12); do
-            if docker buildx imagetools inspect "$IMAGE" --raw | jq -e '
+            if regctl manifest get "$IMAGE" --format raw-body | jq -e '
               [.manifests[].platform | select(.os == "linux") | .architecture]
               | (index("amd64") != null and index("arm64") != null)
             ' >/dev/null; then
