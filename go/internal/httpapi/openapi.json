@@ -2621,6 +2621,10 @@
                     "nullable": true,
                     "type": "string"
                   },
+                  "rerank": {
+                    "description": "Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.",
+                    "type": "boolean"
+                  },
                   "weights": {
                     "properties": {
                       "entity": {
@@ -4790,6 +4794,7 @@
                     "type": "string"
                   },
                   "rerank": {
+                    "description": "Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.",
                     "type": "boolean"
                   },
                   "weights": {

@@ -147,6 +147,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		includeProjects, _ := c.strArray("includeProjects", 16, 1, 128, validProjectRefItem, "project ref contains control characters")
 		weights := c.parseWeights()
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
+		rerank := c.boolPtr("rerank")
 		if err := firstIssue(c); err != nil {
 			return nil, err
 		}
@@ -160,6 +161,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		relevant, err := s.engine.Search(ctx, userID, engine.SearchArgs{
 			Query: message, K: k, Namespace: namespace, IncludeNamespaces: includeNamespaces,
 			Project: project, IncludeProjects: includeProjects, Weights: weights, MaxSensitivity: maxSensitivity,
+			Rerank: rerank,
 		})
 		if err != nil {
 			return nil, err
@@ -352,6 +354,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		weights := c.parseWeights()
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 		contentMode, _ := c.enum("contentMode", "full", "snippet", "ids")
+		rerank := c.boolPtr("rerank")
 		if err := firstIssue(c); err != nil {
 			return nil, err
 		}
@@ -362,6 +365,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		outcome, err := s.engine.Search(ctx, userID, engine.SearchArgs{
 			Query: query, K: k, Namespace: namespace, IncludeNamespaces: includeNamespaces,
 			Project: project, IncludeProjects: includeProjects, Weights: weights, MaxSensitivity: maxSensitivity,
+			Rerank: rerank,
 		})
 		if err != nil {
 			return nil, err

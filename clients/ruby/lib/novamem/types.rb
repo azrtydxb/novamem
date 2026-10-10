@@ -336,7 +336,7 @@ module Novamem
     end
   end
 
-  ContextRequest = Struct.new(:as_of, :decompose, :expand_source_chunks, :include_namespaces, :include_projects, :k, :max_sensitivity, :max_tokens, :message, :namespace, :project, :weights, keyword_init: true)
+  ContextRequest = Struct.new(:as_of, :decompose, :expand_source_chunks, :include_namespaces, :include_projects, :k, :max_sensitivity, :max_tokens, :message, :namespace, :project, :rerank, :weights, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a
   # Struct.new block it would land on the enclosing module, shared by all).
@@ -353,6 +353,7 @@ module Novamem
       [:message, "message", [:p, "string"], true],
       [:namespace, "namespace", [:p, "string"], false],
       [:project, "project", [:p, "string"], false],
+      [:rerank, "rerank", [:p, "bool"], false],
       [:weights, "weights", [:n, "ContextRequestWeights"], false],
     ].freeze
 

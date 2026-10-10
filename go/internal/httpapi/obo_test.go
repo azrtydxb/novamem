@@ -38,7 +38,11 @@ type oboEnv struct {
 // newOBOEnv skips without NOVAMEM_TEST_DATABASE_URL, except in CI, where
 // a missing database means the job lost its Postgres service and the
 // organization-isolation guarantee would silently stop being tested.
-func newOBOEnv(t *testing.T) *oboEnv {
+func newOBOEnv(t *testing.T) *oboEnv { return newOBOEnvWith(t, nil) }
+
+// newOBOEnvWith is newOBOEnv with a hook over the engine options, for
+// tests that need a collaborator (a reranker) the default env omits.
+func newOBOEnvWith(t *testing.T, tune func(*engine.Options)) *oboEnv {
 	t.Helper()
 	base := os.Getenv("NOVAMEM_TEST_DATABASE_URL")
 	if base == "" {
@@ -86,7 +90,11 @@ func newOBOEnv(t *testing.T) *oboEnv {
 	}
 	warm := warmstore.New(pool)
 	coll := metrics.New()
-	eng := engine.New(engine.Options{Warm: warm, Log: log, MaxContentChars: 4000, Metrics: coll})
+	engOpts := engine.Options{Warm: warm, Log: log, MaxContentChars: 4000, Metrics: coll}
+	if tune != nil {
+		tune(&engOpts)
+	}
+	eng := engine.New(engOpts)
 	h := New(Options{
 		Metrics: coll, Pool: pool, Log: log, Engine: eng, Warm: warm,
 		AuthMode: "user", CookieSecret: strings.Repeat("s", 32),

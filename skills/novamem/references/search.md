@@ -15,6 +15,7 @@ Inputs:
 - `project` (string) — id (ULID) or human name; omit for user-global
 - `includeProjects[]` (string[]) — union user-global with each listed project; capped at 16
 - `weights` (object) — override one or more of `keyword` / `vector` / `graph` / `recency` / `entity`
+- `rerank` (boolean) — cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever it has a reranker configured; `false` skips it for this call. `memory_context` accepts the same field
 
 Useful weight overrides:
 

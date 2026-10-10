@@ -190,7 +190,7 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		args.Decompose = *d
 	}
 	args.ExpandSourceChunks = c.boolPtr("expandSourceChunks")
-	args.Rerank, _ = c.boolean("rerank")
+	args.Rerank = c.boolPtr("rerank")
 	if n, ok := c.number("minVectorScore", 0, 1); ok {
 		args.MinVectorScore = &n
 	}
@@ -245,6 +245,7 @@ func (s *server) handleContext(w http.ResponseWriter, r *http.Request) {
 	c.datetime("asOf", "")
 	c.boolPtr("decompose")
 	expandSourceChunks := c.boolPtr("expandSourceChunks")
+	rerank := c.boolPtr("rerank")
 	maxTokens, maxTokensSet := c.positiveInt("maxTokens", 1_000_000)
 	if len(c.issues) > 0 {
 		s.sendIssues(w, c.issues)
@@ -275,6 +276,7 @@ func (s *server) handleContext(w http.ResponseWriter, r *http.Request) {
 		MaxSensitivity:     maxSensitivity,
 		MaxTokens:          maxTokens,
 		ExpandSourceChunks: expandSourceChunks,
+		Rerank:             rerank,
 	})
 	if err != nil {
 		s.sendEngineErr(w, r, err)

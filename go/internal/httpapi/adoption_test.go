@@ -15,7 +15,7 @@ import "testing"
 // no longer exists; the pin's job now is to make an accidental edit
 // impossible to merge unnoticed.
 func TestInstructionsHashIsPinned(t *testing.T) {
-	const want = "db3dd918d08b0ab2c38fb52da3a13fb5a583d346c8353694b0b0bf331cbb0fcf"
+	const want = "d5335bd09a480f91e90579b9f1729bda74666ca13ed9367a1a3f1673f4548f29"
 	got := sha256HexStr(novamemInstructions)
 	if got != want {
 		t.Fatalf("instructions changed.\n got  %s\n want %s\n"+
