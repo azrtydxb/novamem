@@ -322,6 +322,17 @@ func (e *Engine) embedDocument(ctx context.Context, content string) ([]float64, 
 	return vecs[0], nil
 }
 
+// embedWithTracking records the outcome of a document embedding call.
+func (e *Engine) embedWithTracking(ctx context.Context, content, op, entryID string) ([]float64, error) {
+	vec, err := e.embedDocument(ctx, content)
+	if err != nil {
+		e.recordEmbedFailure(err, op, entryID)
+		return nil, err
+	}
+	e.recordEmbedSuccess()
+	return vec, nil
+}
+
 // vectorTierReady — an embedding is only useful if there is somewhere to
 // put it.
 func (e *Engine) vectorTierReady() bool { return e.embedder != nil && e.cold != nil }
@@ -486,12 +497,10 @@ func (e *Engine) remember(ctx context.Context, userID string, req RememberReques
 	if embedding == nil {
 		if !e.vectorTierReady() {
 			embedderDown = true
-		} else if vec, err := e.embedDocument(ctx, req.Content); err != nil {
+		} else if vec, err := e.embedWithTracking(ctx, req.Content, "remember", id); err != nil {
 			embedderDown = true
-			e.recordEmbedFailure(err, "remember", id)
 		} else {
 			embedding = vec
-			e.recordEmbedSuccess()
 		}
 	}
 
@@ -710,11 +719,8 @@ func (e *Engine) Capture(ctx context.Context, userID string, req RememberRequest
 	// cost is a possible duplicate row.
 	var embedding []float64
 	if e.vectorTierReady() {
-		if vec, err := e.embedDocument(ctx, req.Content); err != nil {
-			e.recordEmbedFailure(err, "capture.dedup-probe", "")
-		} else {
+		if vec, err := e.embedWithTracking(ctx, req.Content, "capture.dedup-probe", ""); err == nil {
 			embedding = vec
-			e.recordEmbedSuccess()
 		}
 	}
 
@@ -1197,11 +1203,8 @@ func (e *Engine) Update(ctx context.Context, userID, id string, req UpdateReques
 		}
 		var embedding []float64
 		if e.vectorTierReady() {
-			if vec, err := e.embedDocument(ctx, *req.Content); err != nil {
-				e.recordEmbedFailure(err, "update", id)
-			} else {
+			if vec, err := e.embedWithTracking(ctx, *req.Content, "update", id); err == nil {
 				embedding = vec
-				e.recordEmbedSuccess()
 			}
 		}
 		if len(embedding) > 0 {
