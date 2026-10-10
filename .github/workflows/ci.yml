@@ -172,7 +172,7 @@ jobs:
       # hand-written table until then, and it had drifted far enough to
       # be undeployable.
       - run: cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs && go run ./cmd/gen-env-docs
-      - run: git diff --exit-code api/ docs/api/ docs/install/env-reference.md .env.example conformance/reference/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go go/internal/agentskill/skill go/internal/initcli/assets
+      - run: git diff --exit-code api/ docs/api/ docs/install/env-reference.md .env.example conformance/reference/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go go/internal/httpapi/ba_allowlist_gen.go go/internal/agentskill/skill go/internal/initcli/assets
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
