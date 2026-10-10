@@ -3,7 +3,6 @@ package warmstore
 import (
 	"context"
 	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,13 +14,7 @@ import (
 //
 // Destructive to that database's schema — point it at a throwaway one.
 func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
-	url := os.Getenv("NOVAMEM_TEST_DATABASE_URL")
-	if url == "" {
-		if os.Getenv("CI") == "1" {
-			t.Fatal("NOVAMEM_TEST_DATABASE_URL is required in CI")
-		}
-		t.Skip("set NOVAMEM_TEST_DATABASE_URL to a throwaway database to run")
-	}
+	url := testDatabaseURL(t)
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {

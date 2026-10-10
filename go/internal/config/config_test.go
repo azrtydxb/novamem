@@ -324,7 +324,7 @@ func TestAuthModeNoneNeedsNoCookieSecret(t *testing.T) {
 func TestCoercedBooleansKeepTheirQuirk(t *testing.T) {
 	c, err := loadWith(t, map[string]string{
 		"NOVAMEM_EXTRACTION_ENABLED":  "false",
-		"NOVAMEM_EXTRACTION_ENDPOINT": "http://llm:8000/v1",
+		"NOVAMEM_EXTRACTION_ENDPOINT": "http://192.168.10.125:8000/v1",
 		"NOVAMEM_EXTRACTION_MODEL":    "qwen",
 	})
 	if err != nil {
@@ -433,11 +433,11 @@ func TestColdURLFollowsTheProvider(t *testing.T) {
 		t.Errorf("qdrant cold URL = %q, want the local Qdrant", c.ColdURL)
 	}
 	// An explicit value wins over both.
-	c, err = loadWith(t, map[string]string{"NOVAMEM_COLD_URL": "http://qdrant.svc:6333"})
+	c, err = loadWith(t, map[string]string{"NOVAMEM_COLD_URL": "http://192.168.10.125:6333"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ColdURL != "http://qdrant.svc:6333" {
+	if c.ColdURL != "http://192.168.10.125:6333" {
 		t.Errorf("explicit cold URL = %q, want it to win", c.ColdURL)
 	}
 }

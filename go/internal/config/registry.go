@@ -175,6 +175,10 @@ var Vars = []Var{
 		Description: "`user` is the default: dashboard sessions plus per-user `nm_…` bearers for MCP. `bearer` is a single shared token. `none` disables authentication entirely and makes every request the public tenant — development only.",
 	},
 	{
+		Name: "NOVAMEM_REQUIRE_AUTH", Kind: KindBool, Default: false, Section: secAuth,
+		Description: "Refuses startup when `NOVAMEM_AUTH_MODE=none`. Set to `1` in deployments that must never run without authentication.",
+	},
+	{
 		Name: "NOVAMEM_AUTH_TOKEN", Kind: KindString, Section: secAuth, Secret: true,
 		Required:    "`NOVAMEM_AUTH_MODE=bearer`",
 		Description: "The shared bearer token for `bearer` mode. Useful for a single-process deployment that wants one static credential.",
@@ -206,6 +210,10 @@ var Vars = []Var{
 	{
 		Name: "NOVAMEM_ADMIN_DASHBOARD", Kind: KindDisableBool, Default: true, Section: secAuth,
 		Description: "Master switch for the admin surface. Set `0` to 404 `/v1/admin/metrics` and `/v1/admin/metrics/prom`.",
+	},
+	{
+		Name: "NOVAMEM_ALLOW_INSECURE_ENDPOINTS", Kind: KindBool, Default: false, Section: secOps,
+		Description: "Allows configured endpoints, including the cold store, to use public HTTP. HTTP to private or loopback addresses is allowed by default; prefer HTTPS for public endpoints.",
 	},
 
 	// ---- Datastores ----
