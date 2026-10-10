@@ -526,3 +526,60 @@ func TestOnBehalfOfToken(t *testing.T) {
 		}
 	})
 }
+
+func TestProjectConfinedTokensCannotReadAccountWideHTTPReports(t *testing.T) {
+	e := newOBOEnv(t)
+	ctx := context.Background()
+	u, err := e.warm.FindUserByID(ctx, callerUserID(t, e, e.userToken))
+	if err != nil || u == nil {
+		t.Fatalf("resolve token user: user=%v err=%v", u, err)
+	}
+	project, err := e.warm.CreateProject(ctx, engine.NewULID(), "confined-reports", u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	label := "confined reports"
+	confined, _, err := e.warm.CreateUserToken(ctx, u.ID, &label, "full", &project.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		method, path string
+		body         any
+	}{
+		{"GET", "/v1/stats", nil},
+		{"POST", "/v1/hygiene", map[string]any{}},
+		{"POST", "/v1/evaluate", map[string]any{}},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			code, out := e.do(tc.method, tc.path, confined, tc.body)
+			if code != http.StatusForbidden || out["error"] != "token is confined to its project" {
+				t.Fatalf("confined token: got %d %v", code, out)
+			}
+			code, out = e.do(tc.method, tc.path, e.userToken, tc.body)
+			if code != http.StatusOK {
+				t.Fatalf("unconfined token: got %d %v", code, out)
+			}
+		})
+	}
+
+	// context-prefix has no explicit project argument by default, so it
+	// must still validate the token's implicit project boundary.
+	if _, err := e.warm.RemoveProjectMember(ctx, project.ID, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	code, out := e.do("GET", "/v1/context-prefix", confined, nil)
+	if code != http.StatusForbidden || out["error"] != "not a member of the token's project" {
+		t.Fatalf("context-prefix without project: got %d %v", code, out)
+	}
+}
+
+func callerUserID(t *testing.T, e *oboEnv, token string) string {
+	t.Helper()
+	info, err := e.warm.ResolveUserToken(context.Background(), token)
+	if err != nil || info == nil {
+		t.Fatalf("resolve user token: info=%v err=%v", info, err)
+	}
+	return info.UserID
+}

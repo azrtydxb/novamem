@@ -388,6 +388,9 @@ func (s *server) handleHygiene(w http.ResponseWriter, r *http.Request) {
 		s.sendIssues(w, c.issues)
 		return
 	}
+	if s.projectConfinedDenied(w, r) {
+		return
+	}
 	report, err := s.engine.HygieneReport(r.Context(), s.userID(r), k)
 	if err != nil {
 		s.sendEngineErr(w, r, err)
@@ -420,6 +423,9 @@ func (s *server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 	suite, _ := c.str("suite", false, 1, 64)
 	if len(c.issues) > 0 {
 		s.sendIssues(w, c.issues)
+		return
+	}
+	if s.projectConfinedDenied(w, r) {
 		return
 	}
 	report, err := s.engine.EvaluateMemoryQuality(r.Context(), s.userID(r), suite)
@@ -474,15 +480,20 @@ func (s *server) handleAdoption(w http.ResponseWriter, r *http.Request) {
 // this answers 404 {"error":"observer disabled"}, exactly as TS does
 // (routes/data-plane.ts /v1/context-prefix).
 func (s *server) handleContextPrefix(w http.ResponseWriter, r *http.Request) {
-	// An explicit `project` goes through the same access check as every
-	// other read: without it any caller who knew a project id could read
-	// that project's observation. No `project` keeps the unscoped prefix
-	// (no active-project default), as before.
+	// Explicit project refs use the same access check as every other read.
+	// A project-confined token with no explicit ref is scoped to its project
+	// too; ordinary callers without a ref keep the unscoped prefix (no
+	// active-project default), as before.
 	userID := s.userID(r)
 	var project *string
-	if q := r.URL.Query(); q.Has("project") {
+	q := r.URL.Query()
+	tok := callerOf(r).token
+	if q.Has("project") || (tok != nil && tok.ProjectID != nil) {
 		raw := q.Get("project")
 		scope := projectScope{Project: &raw}
+		if !q.Has("project") {
+			scope.Project = nil
+		}
 		if !s.checkProjectAccess(w, r, userID, &scope, false) {
 			return
 		}
