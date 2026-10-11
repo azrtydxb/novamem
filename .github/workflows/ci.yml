@@ -426,20 +426,14 @@ jobs:
           echo "${SHA256}  ${RUNNER_TEMP}/regctl" | sha256sum --check
           chmod +x "$RUNNER_TEMP/regctl"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      # docker login talks to the daemon, whose GHCR mirror connection is
-      # intercepted by Nexus and fails hostname validation for Nexus's cert.
-      # Store Docker's standard auth entry directly: no registry handshake
-      # occurs here, and the daemon has no client-side insecure override.
-      - name: Configure manual ghcr.io auth and TLS handling
+      # regctl uses its own client-side auth config; it does not read Docker's
+      # config.json. Keep this login alongside its client-local TLS setting.
+      - name: Login to ghcr.io with regctl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          AUTH="$(printf '%s' "x-access-token:${GITHUB_TOKEN}" | base64 | tr -d '\n')"
-          mkdir -p "$HOME/.docker"
-          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$AUTH" > "$HOME/.docker/config.json"
-          chmod 600 "$HOME/.docker/config.json"
-          # This is client-local regctl config; it does not change dind.
           regctl registry set ghcr.io --tls insecure --skip-check
+          regctl registry login ghcr.io --user x-access-token --pass "$GITHUB_TOKEN"
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
