@@ -409,10 +409,9 @@ jobs:
           # Existing Scout credential, stored separately as a repository secret.
           # Main uses it for CI's deployment commit; tags need only read access.
           token: ${{ github.ref == 'refs/heads/main' && secrets.KW_GITOPS_TOKEN || github.token }}
-      # Buildx imagetools uses a client-side registry resolver, but its
-      # registry TLS behavior does not honor buildkitd's insecure setting.
-      # Install regctl so this job can explicitly skip TLS verification for
-      # the GHCR endpoint intercepted by the ARC runner's Nexus mirror.
+      # regctl needs direct GHCR access; the ARC pod's hosts alias points
+      # ghcr.io at the LAN Nexus mirror, which cannot authenticate pushes.
+      # Install the pinned regctl binary used by the manifest steps below.
       - name: Install regctl
         run: |
           case "$(uname -m)" in
@@ -426,13 +425,31 @@ jobs:
           echo "${SHA256}  ${RUNNER_TEMP}/regctl" | sha256sum --check
           chmod +x "$RUNNER_TEMP/regctl"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      # Resolve outside LAN DNS, then replace the pod's GHCR HostAlias so
+      # clients still connect with hostname/SNI ghcr.io and verify its cert.
+      - name: Route ghcr.io to its public address
+        run: |
+          real_ip=$(curl --fail --silent --show-error \
+            'https://one.one.one.one/dns-query?name=ghcr.io&type=A' \
+            -H 'accept: application/dns-json' \
+            | jq -r '.Answer[] | select(.type==1) | .data' \
+            | shuf -n1)
+          test -n "$real_ip"
+          echo "Using public ghcr.io address: $real_ip"
+          awk -v ip="$real_ip" '
+            $NF == "ghcr.io" { print ip "\tghcr.io"; found=1; next }
+            { print }
+            END { if (!found) print ip "\tghcr.io" }
+          ' /etc/hosts > "$RUNNER_TEMP/hosts"
+          sudo tee /etc/hosts < "$RUNNER_TEMP/hosts" >/dev/null
+          getent hosts ghcr.io | awk -v ip="$real_ip" '$1 == ip { found=1 } END { exit !found }'
       # regctl uses its own client-side auth config; it does not read Docker's
-      # config.json. Keep this login alongside its client-local TLS setting.
+      # config.json. Keep normal TLS verification enabled for real GHCR.
       - name: Login to ghcr.io with regctl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          regctl registry set ghcr.io --tls insecure --skip-check
+          regctl registry set ghcr.io --tls enabled --skip-check
           regctl registry login ghcr.io --user x-access-token --pass "$GITHUB_TOKEN"
       - name: Compute short SHA
         id: sha
