@@ -363,7 +363,7 @@
         "name": "Client.Context",
         "op": "context",
         "request": "ContextRequest",
-        "response": "SearchResult"
+        "response": "ContextResult"
       }
     ]
   },

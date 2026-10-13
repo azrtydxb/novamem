@@ -85,11 +85,35 @@ final class ScenarioTest extends TestCase
         string $path = '$',
     ): string {
         if (is_array($want) && !array_is_list($want)) {
+            // Maps travel the wire as stdClass (a map is a JSON object even
+            // when empty), so compare it as the array it decodes from.
+            if ($got instanceof \stdClass) {
+                $got = (array) $got;
+            }
             if (!is_array($got)) {
                 return "$path: want an object, got " . json_encode($got);
             }
             foreach ($want as $k => $v) {
                 $d = self::subset($v, $got[$k] ?? null, "$path.$k");
+                if ($d !== "") {
+                    return $d;
+                }
+            }
+            return "";
+        }
+        if (is_array($want) && array_is_list($want)) {
+            if (
+                !is_array($got) ||
+                !array_is_list($got) ||
+                count($want) !== count($got)
+            ) {
+                return "$path: want " .
+                        count($want) .
+                        "-element array, got " .
+                        json_encode($got);
+            }
+            foreach ($want as $i => $v) {
+                $d = self::subset($v, $got[$i], "$path[$i]");
                 if ($d !== "") {
                     return $d;
                 }

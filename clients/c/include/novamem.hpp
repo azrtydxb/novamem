@@ -79,11 +79,11 @@ class Client {
         return owned<novamem_capture_result>(out, novamem_capture_result_free);
     }
 
-    owned<novamem_search_result> context(const novamem_context_request &request) const {
+    owned<novamem_context_result> context(const novamem_context_request &request) const {
         novamem_error e{};
-        novamem_search_result *out = nullptr;
+        novamem_context_result *out = nullptr;
         detail::check(novamem_client_context(h_.get(), &request, &out, &e), e);
-        return owned<novamem_search_result>(out, novamem_search_result_free);
+        return owned<novamem_context_result>(out, novamem_context_result_free);
     }
 
     owned<novamem_context_prefix> context_prefix(const std::optional<std::string> &project = std::nullopt) const {

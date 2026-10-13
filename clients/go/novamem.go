@@ -734,6 +734,9 @@ type ContextRequest struct {
 type ContextResult struct {
 	Relevant Results `json:"relevant"`
 	Recent   Results `json:"recent"`
+	// ContextPack groups the same entries by prompt-ready section
+	// (decisions, current setup, pitfalls, ...).
+	ContextPack map[string]any `json:"contextPack,omitempty"`
 	// Guidance is the server's one-line instruction on how to use the bundle
 	// in a prompt.
 	Guidance string `json:"guidance"`

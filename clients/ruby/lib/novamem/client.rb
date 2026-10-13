@@ -105,7 +105,7 @@ module Novamem
     def context(request)
       raise Error.new("context", "message is required") if blank?(request.message)
 
-      SearchResult.from_h(call("context", "POST", "/v1/context", body: request.to_h_wire))
+      ContextResult.from_h(call("context", "POST", "/v1/context", body: request.to_h_wire))
     end
 
     def session_recap(request)

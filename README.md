@@ -22,6 +22,23 @@ Full documentation, install paths, MCP host setup, architecture diagrams, API sp
 
 ---
 
+## SDKs
+
+A client library per language, each covering the same 41 operations and held to one shared behaviour suite ([docs](https://azrtydxb.github.io/novamem/docs/sdks)).
+
+| Language              | Package                                  | Install                                                                     | README                                   |
+| --------------------- | ---------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------- |
+| Go                    | `github.com/azrtydxb/novamem/clients/go` | `go get github.com/azrtydxb/novamem/clients/go`                             | [clients/go](clients/go)                 |
+| Python                | `novamem`                                | `pip install novamem`                                                       | [clients/python](clients/python)         |
+| TypeScript/JavaScript | `@azrtydxb/novamem`                      | `npm install @azrtydxb/novamem`                                             | [clients/typescript](clients/typescript) |
+| .NET                  | `Novamem`                                | `dotnet add package Novamem`                                                | [clients/dotnet](clients/dotnet)         |
+| Java                  | `com.azrtydxb:novamem`                   | Maven / Gradle `com.azrtydxb:novamem:0.1.0`                                 | [clients/java](clients/java)             |
+| Rust                  | `novamem`                                | `cargo add novamem`                                                         | [clients/rust](clients/rust)             |
+| C / C++               | release archive, vcpkg, Conan            | `novamem-c-<version>-<triplet>.tar.gz` from the `clients/c/v*` release      | [clients/c](clients/c)                   |
+| Ruby                  | `novamem`                                | `gem install novamem`                                                       | [clients/ruby](clients/ruby)             |
+| PHP                   | `azrtydxb/novamem`                       | `composer require azrtydxb/novamem`                                         | [clients/php](clients/php)               |
+| Swift                 | `novamem-swift`                          | `.package(url: "https://github.com/azrtydxb/novamem-swift", from: "0.1.0")` | [clients/swift](clients/swift)           |
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

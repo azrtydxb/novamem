@@ -141,12 +141,12 @@ final class Client extends Base
         );
     }
 
-    public function context(T\ContextRequest $request): T\SearchResult
+    public function context(T\ContextRequest $request): T\ContextResult
     {
         if (self::blank($request->message)) {
             throw new NovamemException("context", "message is required");
         }
-        return T\SearchResult::fromArray(
+        return T\ContextResult::fromArray(
             $this->t->call(
                 "context",
                 "POST",

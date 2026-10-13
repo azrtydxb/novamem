@@ -161,7 +161,7 @@ pub unsafe extern "C" fn novamem_client_capture(
 pub unsafe extern "C" fn novamem_client_context(
     h: *const novamem_client,
     request: *const novamem_context_request,
-    out: *mut *mut novamem_search_result,
+    out: *mut *mut novamem_context_result,
     err: *mut novamem_error,
 ) -> novamem_status {
     guard(err, || {
@@ -172,7 +172,7 @@ pub unsafe extern "C" fn novamem_client_context(
         }
         let p_request = request.as_ref().map(|r| r.to_rust()).unwrap_or_default();
         let r = block_on(h.0.context(p_request))?;
-        write_out(out, boxed(novamem_search_result::to_c(&r)));
+        write_out(out, boxed(novamem_context_result::to_c(&r)));
         Ok(())
     })
 }
@@ -969,13 +969,13 @@ pub unsafe extern "C" fn novamem_test_call_by_name(
                 return novamem_status::NOVAMEM_ERR;
             }
             let mut req = novamem_context_request::to_c(&serde_json::from_value(a.clone()).unwrap_or_default());
-            let mut out: *mut novamem_search_result = std::ptr::null_mut();
+            let mut out: *mut novamem_context_result = std::ptr::null_mut();
             let st = novamem_client_context(h, &req, &mut out, err);
             req.free_fields();
             crate::novamem_client_free(h);
             if st == novamem_status::NOVAMEM_OK {
                 write_out(result_json, json_to_c(Some(&(*out).to_rust())));
-                novamem_search_result_free(out);
+                novamem_context_result_free(out);
             }
             st
         }

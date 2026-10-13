@@ -78,6 +78,18 @@ class ScenarioTest {
       }
       return "";
     }
+    if (want.isArray()) {
+      if (got == null || !got.isArray() || want.size() != got.size()) {
+        return path + ": want " + want.size() + "-element array, got " + got;
+      }
+      for (int i = 0; i < want.size(); i++) {
+        String d = subset(want.get(i), got.get(i), path + "[" + i + "]");
+        if (!d.isEmpty()) {
+          return d;
+        }
+      }
+      return "";
+    }
     if (want.isNumber() && got != null && got.isNumber()) {
       return want.doubleValue() == got.doubleValue()
           ? ""

@@ -138,11 +138,11 @@ public sealed class Client : Base
         return Call<RememberResult>("remember", HttpMethod.Post, "/v1/remember", request, ct);
     }
 
-    public Task<SearchResult> ContextAsync(ContextRequest request, CancellationToken ct = default)
+    public Task<ContextResult> ContextAsync(ContextRequest request, CancellationToken ct = default)
     {
         if (Blank(request.Message))
             throw new NovamemException("context", "message is required");
-        return Call<SearchResult>("context", HttpMethod.Post, "/v1/context", request, ct);
+        return Call<ContextResult>("context", HttpMethod.Post, "/v1/context", request, ct);
     }
 
     public Task<SessionRecapResult> SessionRecapAsync(

@@ -2639,9 +2639,9 @@ Files:
 
 - `clients/python/README.md`, `clients/typescript/README.md`, `clients/dotnet/README.md`, `clients/java/README.md`, `clients/rust/README.md`, `clients/c/README.md`, `clients/ruby/README.md`, `clients/php/README.md`, `clients/swift/README.md` (created). Each follows the section order of `clients/go/README.md`: title and install line, Quickstart, "The error contract" (the error table in that language's terms), and "Operations" (a table of all 41 methods with route and notes). It also states the server version requirement and the concurrency guarantee.
 - `scripts/check-sdk-readmes.sh` (created)
-- `packages/docs-site/sdks.md` (created) and the docs-site sidebar config (modified: add an "SDKs" entry)
+- `docs/sdks.md` (created — the site's pages live in `docs/`, `srcDir` of packages/docs-site) and `packages/docs-site/.vitepress/config.mts` (modified: an "SDKs" sidebar group)
 - `README.md` (modified: an "SDKs" table with language, package, install line and a link to each README)
-- `.github/workflows/sdk.yml` (modified: a `readmes` job running `sh scripts/check-sdk-readmes.sh`)
+- `.github/workflows/sdk.yml` (modified: a `readmes` matrix job — a `tables` leg and one quickstart leg per language, each in the image its smoke leg uses, running `sh clients/smoke/run.sh <lang> build` then `sh scripts/check-sdk-readmes.sh <lang>`)
 
 Interfaces:
 
@@ -2656,7 +2656,8 @@ Interfaces:
   - ruby: `ruby -c`
   - php: `php -l`
   - swift: `swiftc -parse`
-- It counts operations-table rows whose first cell names a method from `routes.json` in the language's casing, and requires all 41.
+- It counts operations-table rows whose first cell names a method from `routes.json` in the language's casing, and requires all 41. A keyword takes the name the SDK uses: Python `import_`, Java `importEntries`.
+- `scripts/check-sdk-readmes.sh [tables|<lang>]`: `tables` checks every README's table, `<lang>` compiles that SDK's Quickstart, and no argument does both for all nine — so CI can run each language in its own image.
 
 - [ ] Write the failing check `scripts/check-sdk-readmes.sh`:
 
@@ -2695,7 +2696,7 @@ Run `sh scripts/check-sdk-readmes.sh`: expect FAIL with `FileNotFoundError: ... 
 
 - [ ] Write the nine READMEs and the nine `check-readme.sh` scripts. Run `sh scripts/check-sdk-readmes.sh`: expect PASS.
 - [ ] Mutation check: delete the `search` row from `clients/python/README.md` and re-run. Expect FAIL with `python: operations table has no row for search`. Revert.
-- [ ] Write `packages/docs-site/sdks.md`, with one heading per language and its install line (`pip install novamem`, `npm install @azrtydxb/novamem`, `dotnet add package Novamem`, the Maven coordinates `com.azrtydxb:novamem:0.1.0`, `cargo add novamem`, the release archive and vcpkg/Conan note for C/C++, `gem install novamem`, `composer require azrtydxb/novamem`, and SwiftPM `.package(url: "https://github.com/azrtydxb/novamem-swift", from: "0.1.0")`). Add the sidebar entry. Run `cd packages/docs-site && pnpm build`: expect PASS.
+- [ ] Write `docs/sdks.md`, with one heading per language and its install line (`pip install novamem`, `npm install @azrtydxb/novamem`, `dotnet add package Novamem`, the Maven coordinates `com.azrtydxb:novamem:0.1.0`, `cargo add novamem`, the release archive and vcpkg/Conan note for C/C++, `gem install novamem`, `composer require azrtydxb/novamem`, and SwiftPM `.package(url: "https://github.com/azrtydxb/novamem-swift", from: "0.1.0")`). Add the sidebar entry. Run `cd packages/docs-site && pnpm build`: expect PASS.
 - [ ] Add the SDK table to the root `README.md`.
-- [ ] Add the `readmes` job to `sdk.yml` (`needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]`, with the same toolchain setup steps as `sdk-smoke`).
+- [ ] Add the `readmes` matrix job to `sdk.yml` (`needs: [generated]`; the quickstart checks need only toolchains, not a green SDK suite).
 - [ ] Commit `docs(sdk): READMEs, docs-site SDK page and root SDK table`.

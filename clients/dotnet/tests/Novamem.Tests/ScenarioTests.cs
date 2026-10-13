@@ -81,8 +81,33 @@ public sealed class ScenarioTests(ScenarioServer srv) : IClassFixture<ScenarioSe
             }
             return "";
         }
+        if (want.ValueKind == JsonValueKind.Array)
+        {
+            if (
+                got
+                is not { ValueKind: JsonValueKind.Array } a
+                || a.GetArrayLength() != want.GetArrayLength()
+            )
+                return $"{path}: want {want.GetArrayLength()}-element array, got {got}";
+            var i = 0;
+            foreach (var wv in want.EnumerateArray())
+            {
+                var d = Subset(wv, a[i], $"{path}[{i}]");
+                if (d.Length > 0)
+                    return d;
+                i++;
+            }
+            return "";
+        }
         // Raw-text comparison: JsonElement.DeepEquals is .NET 9+, and these
         // expectations are small scalars written the way the SDK writes them.
+        // Strings compare by value: the serializer escapes characters the
+        // expectations write literally (' as \u0027, ...).
+        if (want.ValueKind == JsonValueKind.String)
+            return got is { ValueKind: JsonValueKind.String } str &&
+                str.GetString() == want.GetString()
+                ? ""
+                : $"{path}: got {got}, want {want}";
         return got is { } x && x.GetRawText() == want.GetRawText()
             ? ""
             : $"{path}: got {got}, want {want}";

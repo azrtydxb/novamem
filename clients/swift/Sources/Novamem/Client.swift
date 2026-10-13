@@ -79,7 +79,7 @@ public final class Client: Base, @unchecked Sendable {
         return try await Self.decode("remember", t.call("remember", "POST", "/v1/remember", body: Self.encode("remember", request)))
     }
 
-    public func context(_ request: ContextRequest) async throws -> SearchResult {
+    public func context(_ request: ContextRequest) async throws -> ContextResult {
         if Self.blank(request.message) {
             throw NovamemError(op: "context", message: "message is required")
         }

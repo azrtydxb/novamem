@@ -4,6 +4,7 @@ import com.azrtydxb.novamem.types.Types.CaptureRequest;
 import com.azrtydxb.novamem.types.Types.CaptureResult;
 import com.azrtydxb.novamem.types.Types.ContextPrefix;
 import com.azrtydxb.novamem.types.Types.ContextRequest;
+import com.azrtydxb.novamem.types.Types.ContextResult;
 import com.azrtydxb.novamem.types.Types.EntryList;
 import com.azrtydxb.novamem.types.Types.ForgetRequest;
 import com.azrtydxb.novamem.types.Types.ForgetResult;
@@ -190,19 +191,19 @@ public final class Client extends Base {
   }
 
   /** The memories relevant to a message, for an agent's prompt. */
-  public SearchResult context(ContextRequest request) {
+  public ContextResult context(ContextRequest request) {
     return await(contextAsync(request));
   }
 
   /** See {@link #context}. */
-  public CompletableFuture<SearchResult> contextAsync(ContextRequest request) {
+  public CompletableFuture<ContextResult> contextAsync(ContextRequest request) {
     if (request == null || blank(request.message())) {
       return invalid("context", "message is required");
     }
     return as(
         "context",
         transport.call("context", "POST", "/v1/context", request, null, true),
-        SearchResult.class,
+        ContextResult.class,
         false);
   }
 

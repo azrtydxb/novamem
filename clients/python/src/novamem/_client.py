@@ -135,10 +135,10 @@ class Client(_Base):
             self._t.call("remember", "POST", "/v1/remember", request.to_wire())
         )
 
-    def context(self, request: t.ContextRequest) -> t.SearchResult:
+    def context(self, request: t.ContextRequest) -> t.ContextResult:
         if _blank(request.message):
             raise NovamemError("context", "message is required")
-        return t.SearchResult.from_wire(
+        return t.ContextResult.from_wire(
             self._t.call("context", "POST", "/v1/context", request.to_wire())
         )
 

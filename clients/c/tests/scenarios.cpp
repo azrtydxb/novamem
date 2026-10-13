@@ -20,8 +20,8 @@ int main(int argc, char **argv) {
         } else {
             result = novamem::test_call(base, token, timeout, method, args);
         }
-        const bool empty = result == "[]" || result.find("\"results\":[]") != std::string::npos;
-        std::cout << (empty ? "empty" : "ok") << " 0 0 - " << result << "\n";
+        // The harness parses the result and decides whether it is empty.
+        std::cout << "ok 0 0 - " << result << "\n";
     } catch (const novamem::Error &e) {
         const char *o = e.unavailable ? "unavailable" : e.not_found ? "not_found" : "error";
         std::cout << o << " " << (e.retryable ? 1 : 0) << " " << e.status_code << " " << (e.code.empty() ? "-" : e.code)

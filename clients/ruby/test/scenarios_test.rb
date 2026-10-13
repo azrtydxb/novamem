@@ -36,6 +36,11 @@ class ScenariosTest < Minitest::Test
   end
 
   def subset(want, got, path = "$")
+    if want.is_a?(Array)
+      return "#{path}: want #{want.length}-element array, got #{got.inspect}" unless got.is_a?(Array) && want.length == got.length
+      want.each_with_index { |w, i| (d = subset(w, got[i], "#{path}[#{i}]")) && (return d) }
+      return nil
+    end
     return (got == want ? nil : "#{path}: got #{got.inspect}, want #{want.inspect}") unless want.is_a?(Hash)
     return "#{path}: want an object, got #{got.inspect}" unless got.is_a?(Hash)
 
