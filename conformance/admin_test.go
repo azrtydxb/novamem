@@ -148,6 +148,55 @@ func TestAdminUnauthenticatedIs401AcrossEveryRequireAdminGatedRoute(t *testing.T
 	}
 }
 
+func TestAdminTelemetrySchemaAndAuthorization(t *testing.T) {
+	adminPlaneTarget(t)
+
+	admin := API(t, "/v1/admin/telemetry", Opts{})
+	if admin.Status != 200 {
+		t.Fatalf("GET /v1/admin/telemetry status = %d, want 200", admin.Status)
+	}
+	admin.MustValidate(t, AdminTelemetryResponse)
+
+	unauthenticated := API(t, "/v1/admin/telemetry", Opts{Token: NoAuth})
+	if unauthenticated.Status != 401 {
+		t.Fatalf("unauthenticated GET /v1/admin/telemetry status = %d, want 401", unauthenticated.Status)
+	}
+	if err := Validate(unauthenticated.Body, ErrorBody); err != nil {
+		t.Fatalf("unauthenticated response: %v", err)
+	}
+
+	// The configured test bearer belongs to the bootstrap admin on kw, so
+	// provision a short-lived real user to exercise the authenticated denial.
+	ns := NS()
+	created := AdminCookieAPI(t, "/v1/admin/users", Opts{Body: map[string]any{
+		"email": "conf-telemetry-" + ns + "@bench.local", "password": "conformance-throwaway-pw-1",
+		"tokenLabel": "conf-telemetry-" + ns,
+	}})
+	if created.Status != 201 {
+		t.Fatalf("create telemetry non-admin user status = %d, want 201", created.Status)
+	}
+	createdBody := created.MustValidate(t, AdminCreateUserResponse)
+	userID := createdBody["userId"].(string)
+	nonAdminToken := createdBody["token"].(string)
+	t.Cleanup(func() {
+		deleted := AdminCookieAPI(t, "/v1/admin/users/"+userID, Opts{Method: "DELETE"})
+		if deleted.Status != 200 && deleted.Status != 404 {
+			t.Logf("cleanup: delete telemetry non-admin %s → %d %v", userID, deleted.Status, deleted.Body)
+		}
+	})
+
+	denied := API(t, "/v1/admin/telemetry", Opts{Token: &nonAdminToken})
+	if denied.Status != 403 {
+		t.Fatalf("non-admin GET /v1/admin/telemetry status = %d, want 403", denied.Status)
+	}
+	if err := Validate(denied.Body, ErrorBody); err != nil {
+		t.Fatalf("non-admin response: %v", err)
+	}
+	if got := denied.Field(t, "error"); got != "admin only" {
+		t.Fatalf("non-admin error = %v, want admin only", got)
+	}
+}
+
 func TestAdminMetricsRoutesFollowTheDashboardMasterSwitch(t *testing.T) {
 	adminPlaneTarget(t)
 

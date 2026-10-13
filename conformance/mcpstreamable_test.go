@@ -152,6 +152,12 @@ func connectWithToken(t *testing.T, token *string) *mcpSession {
 	if s.sid == "" {
 		t.Fatal("no Mcp-Session-Id header on initialize response")
 	}
+	initialized := false
+	t.Cleanup(func() {
+		if !initialized {
+			s.disconnect(t)
+		}
+	})
 	if res, ok := env["result"].(map[string]any); ok {
 		s.proto, _ = res["protocolVersion"].(string)
 	}
@@ -162,6 +168,7 @@ func connectWithToken(t *testing.T, token *string) *mcpSession {
 	if nr.Status < 200 || nr.Status > 299 {
 		t.Fatalf("notifications/initialized: %d", nr.Status)
 	}
+	initialized = true
 	return s
 }
 
@@ -215,10 +222,13 @@ func toolJSON(t *testing.T, r map[string]any) map[string]any {
 
 func TestMCPStreamableTransport(t *testing.T) {
 	Target(t)
+	// The transport tests are sequential and session state is scoped to
+	// the authenticated user. Reuse one session so a multi-replica target
+	// does not accumulate replica-local registry entries between subtests.
+	s := connect(t)
+	defer s.disconnect(t)
 
 	t.Run("initializes and advertises the snapshotted tool surface", func(t *testing.T) {
-		s := connect(t)
-		defer s.disconnect(t)
 		res := s.mustResult(t, "tools/list", map[string]any{})
 		toolsAny, _ := res["tools"].([]any)
 		type tool struct {
@@ -266,8 +276,6 @@ func TestMCPStreamableTransport(t *testing.T) {
 	})
 
 	t.Run("memory_remember -> memory_search -> memory_forget round-trip", func(t *testing.T) {
-		s := connect(t)
-		defer s.disconnect(t)
 		shelf := NS()
 		fact := fmt.Sprintf("the mcp conformance marker for this run is %s", shelf)
 		storedRes, rpcErr := s.callTool(t, "memory_remember", map[string]any{"content": fact, "namespace": shelf})
@@ -298,8 +306,6 @@ func TestMCPStreamableTransport(t *testing.T) {
 	})
 
 	t.Run("unknown tool name is a tool-level error, not a transport crash", func(t *testing.T) {
-		s := connect(t)
-		defer s.disconnect(t)
 		res, rpcErr := s.callTool(t, "memory_nonexistent", map[string]any{})
 		if rpcErr != nil {
 			// Some SDK versions surface it as a JSON-RPC error instead —
@@ -316,8 +322,6 @@ func TestMCPStreamableTransport(t *testing.T) {
 	})
 
 	t.Run("malformed arguments are a tool error with a message", func(t *testing.T) {
-		s := connect(t)
-		defer s.disconnect(t)
 		res, rpcErr := s.callTool(t, "memory_search", map[string]any{})
 		if rpcErr != nil {
 			t.Fatalf("memory_search: %v", rpcErr)
