@@ -46,18 +46,44 @@ func TestMCPToolResultsMatchOutputSchemas(t *testing.T) {
 		"project_unshare": "needs a second user to unshare",
 	}
 	adminToken := target.AdminToken
-	adminTools := []string{
-		"admin_list_users", "admin_list_projects", "admin_list_tokens", "admin_health",
-		"admin_stats", "admin_audit_recent", "admin_ops_status",
+	adminTools := make([]string, 0, len(MCPToolCoverage))
+	for name := range MCPToolCoverage {
+		adminTools = append(adminTools, name)
 	}
+	sort.Strings(adminTools)
 	var admin *mcpSession
 	if adminToken == "" || target.AuthMode != "user" {
 		for _, name := range adminTools {
 			skipped[name] = "requires a user-mode NOVAMEM_ADMIN_TOKEN"
 		}
+	} else if adminToken == target.TestToken {
+		// The kw run uses one bootstrap-admin bearer for both variables.
+		// Reuse its session to stay within the per-user MCP session cap.
+		admin = s
+		for _, name := range adminTools {
+			if _, ok := schemas[name]; !ok {
+				t.Errorf("admin tools/list did not advertise %s with an outputSchema", name)
+			}
+		}
 	} else {
 		admin = connectWithToken(t, &adminToken)
 		defer admin.disconnect(t)
+		adminListed := admin.mustResult(t, "tools/list", map[string]any{})
+		adminAdvertised := map[string]map[string]any{}
+		for _, raw := range adminListed["tools"].([]any) {
+			tool, _ := raw.(map[string]any)
+			name, _ := tool["name"].(string)
+			if schema, ok := tool["outputSchema"].(map[string]any); ok {
+				adminAdvertised[name] = schema
+			}
+		}
+		for _, name := range adminTools {
+			if _, ok := adminAdvertised[name]; !ok {
+				t.Errorf("admin tools/list did not advertise %s with an outputSchema", name)
+				continue
+			}
+			schemas[name] = adminAdvertised[name]
+		}
 	}
 	exercised := map[string]bool{}
 	check := func(name string, args map[string]any) map[string]any {

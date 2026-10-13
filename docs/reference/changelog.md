@@ -4,6 +4,17 @@ All notable changes to novamem are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-13
+
+### Added
+
+- **Go server GA.** The server and host tools have completed the TypeScript-to-Go migration; releases ship as GitHub artifacts, with npm publishing retired.
+- **MCP 2026-07-28 conformance.** Added modern protocol support and `structuredContent` matching each tool's output schema.
+- **On-behalf-of service tokens and organization scoping**, with project confinement; added forget-by-source-reference for targeted deletion.
+- **Admin MCP operations and memory telemetry dashboard**, opt-in retention policy, and reranking by default when configured.
+- **Operational tooling** for restore verification and OTLP trace export; ingress TLS redirect and optional native HTTPS support.
+- **Security hardening** across database foreign keys, TLS and public HTTP guards, project-scoped authorization, and PII redaction.
+
 ## [1.1.2] - 2026-05-05
 
 ### Fixed

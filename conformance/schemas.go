@@ -230,6 +230,24 @@ var AdminHealthDeepResponse = Schema{
 	"pendingEmbeddings": Null(Num),
 }
 
+var TelemetryGroup = Schema{"key": Str, "count": Num}
+
+var AdminTelemetryResponse = Schema{
+	"totalEntries": Num, "embeddedEntries": Num, "pendingEmbeddings": Num,
+	"pendingExtractions": Num, "pendingColdOrphans": Num,
+	"byNamespace": Arr(TelemetryGroup), "byProject": Arr(TelemetryGroup),
+	"bySensitivity": Arr(TelemetryGroup), "byTier": Arr(TelemetryGroup),
+	"createdPerDay": Arr(Schema{"date": Str, "count": Num}),
+	"topAgents":     Arr(Schema{"name": Str, "count": Num}),
+	"lastDecayAt":   Null(Str),
+	"health": Schema{
+		"ok":                Bool,
+		"deps":              Schema{"warm": Enum("ok", "unreachable"), "cold": Enum("ok", "unreachable"), "embedder": Enum("ok", "failing")},
+		"coldProvider":      Enum("pgvector", "qdrant", "none"),
+		"pendingEmbeddings": Null(Num),
+	},
+}
+
 // ServiceKey is a registered on-behalf-of signing key (ADR 0011).
 var ServiceKey = Schema{
 	"id":             Str,
