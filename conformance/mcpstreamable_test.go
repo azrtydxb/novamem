@@ -152,6 +152,12 @@ func connectWithToken(t *testing.T, token *string) *mcpSession {
 	if s.sid == "" {
 		t.Fatal("no Mcp-Session-Id header on initialize response")
 	}
+	initialized := false
+	t.Cleanup(func() {
+		if !initialized {
+			s.disconnect(t)
+		}
+	})
 	if res, ok := env["result"].(map[string]any); ok {
 		s.proto, _ = res["protocolVersion"].(string)
 	}
@@ -162,6 +168,7 @@ func connectWithToken(t *testing.T, token *string) *mcpSession {
 	if nr.Status < 200 || nr.Status > 299 {
 		t.Fatalf("notifications/initialized: %d", nr.Status)
 	}
+	initialized = true
 	return s
 }
 
