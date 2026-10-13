@@ -453,7 +453,7 @@ jobs:
             { print }
             END { if (!found) print ip "\tghcr.io" }
           ' /etc/hosts > "$RUNNER_TEMP/hosts"
-          sudo install -m 0644 "$RUNNER_TEMP/hosts" /etc/hosts
+          sudo sh -c 'cat "$1" > /etc/hosts' sh "$RUNNER_TEMP/hosts"
           getent hosts ghcr.io | awk -v ip="$real_ip" '$1 == ip { found=1 } END { exit !found }'
       # regctl uses its own client-side auth config; it does not read Docker's
       # config.json. Keep normal TLS verification enabled for real GHCR.
