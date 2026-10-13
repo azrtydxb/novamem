@@ -28,7 +28,20 @@ NovaMem instance over HTTP, plus a set of slash commands (`/remember`,
 > automatically. The standalone CLAUDE.md fragment below is a fallback
 > for hosts that don't honour `instructions` yet.
 
-## Install — Claude Code
+## Install — Claude Code (plugin)
+
+The easiest route. The repo root is a plugin marketplace, and
+[`plugins/novamem/`](../plugins/novamem/) is the plugin:
+
+```
+/plugin marketplace add azrtydxb/novamem
+/plugin install novamem@novamem
+```
+
+Claude Code asks for the server URL and your bearer token when you enable
+it. Skills, slash commands and the MCP server then work in every project.
+
+## Install — Claude Code (manual)
 
 From your project root:
 
@@ -42,8 +55,9 @@ cp -r /path/to/novamem/integrations/claude-code/commands/. .claude/commands/
 cat /path/to/novamem/integrations/claude-code/CLAUDE.md >> CLAUDE.md
 ```
 
-Then export your bearer in the env Claude Code launches MCP servers in
-(or set it inline in `.mcp.json` — see file). Restart Claude Code.
+Then export `NOVAMEM_TOKEN` (and `NOVAMEM_BASE_URL` if the server isn't
+at `http://localhost:7778`) in the env Claude Code starts in, or write the
+values into `.mcp.json`. Restart Claude Code.
 
 ## Install — Kilo Code
 

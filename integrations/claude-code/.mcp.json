@@ -3,8 +3,10 @@
   "mcpServers": {
     "novamem": {
       "type": "http",
-      "url": "http://localhost:7778/mcp",
-      "headers": { "Authorization": "Bearer ${NOVAMEM_TOKEN}" }
+      "url": "${NOVAMEM_BASE_URL:-http://localhost:7778}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${NOVAMEM_TOKEN}"
+      }
     }
   }
 }
