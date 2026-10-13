@@ -2,7 +2,9 @@
 
 All notable changes to novamem are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 1.2.0 - 2026-10-13
+
+_First release built and shipped entirely through the Go pipeline: novamem is a single Go binary, agents can now reach the admin surface, services get organization-scoped identity, and the operational guardrails (foreign keys, TLS, auth, PII redaction, retention) are in._
 
 ### Added
 

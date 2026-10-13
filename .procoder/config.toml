@@ -10,3 +10,7 @@ default_branch_policy = "report"
 # so the tracked bench fixture bench/p6-ingest.json (6 MB) passes — bench
 # fixtures are deliberately in-repo so the conformance oracle is hermetic.
 max_file_mb = 10
+
+[release]
+# Files the version-sync leg keeps at the release version.
+files = ["package.json", "packages/admin-ui/package.json", "api/openapi.yaml"]
