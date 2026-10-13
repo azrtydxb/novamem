@@ -813,3 +813,12 @@ Individual CI jobs run 1-5 min (ci.yml wall ~5 min, sdk.yml ~6 min). Today's 40-
 - Keep it on ARC and hand-craft ghcr.io auth + buildx insecure config for ghcr.io
 
 **Decision (2026-10-10, owner):** fix the manifest job for ARC (no GitHub runners): client-side ghcr.io auth + buildx builder with ghcr.io insecure, verified live on a runner before merge.
+
+## Orphan rows on kw flagged by the FK validation (2026-10-13)
+
+Migration 0014's post-commit validation logged pre-existing orphan rows on kw (rows referencing deleted users/projects, created before FKs existed). Deploy is healthy; the orphans are inert but unclean.
+
+- Dispatch a cleanup pass: inventory the orphans, delete the safely-derived ones, document the rest (recommended)
+- Leave them; FKs are NOT VALID-style tolerated for old rows
+
+**Decision (2026-10-13, owner):** clean them up — inventory, backup first, delete the safely-derived ones, document the rest.
