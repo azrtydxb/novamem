@@ -356,6 +356,8 @@ jobs:
           context: .
           file: go/Dockerfile
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
             ${{ github.ref == 'refs/heads/main' && format('{0}:main-{1}', env.REGISTRY_IMAGE, matrix.arch) || '' }}
