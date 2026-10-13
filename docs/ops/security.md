@@ -42,7 +42,13 @@ If you're running novamem with real data:
 - [ ] Set `NOVAMEM_AUTH_MODE=user` (the default).
 - [ ] Unset `NOVAMEM_INSECURE_COOKIES` (or set to `0`). Cookies are then `Secure` and require HTTPS.
 - [ ] Restrict CORS via `NOVAMEM_CORS_ORIGINS` (comma-separated allowlist; default is same-origin only). `*` re-enables permissive behaviour — don't use it in production.
-- [ ] Run the server behind a TLS-terminating reverse proxy or LoadBalancer with a real cert. `Authorization: Bearer …` and the session cookie over plain HTTP are plaintext.
+- [ ] Choose one HTTPS deployment tier below. `Authorization: Bearer …` and session cookies sent over plain HTTP are plaintext.
+
+### HTTPS deployment tiers
+
+1. **Kubernetes kw overlay:** cert-manager provisions the Ingress certificate and ingress-nginx terminates TLS before forwarding HTTP to the novamem Service. The overlay explicitly enables HTTP-to-HTTPS redirects and HSTS. Keep the Service private to the cluster and set `NOVAMEM_BASE_URL` to the public `https://` origin.
+2. **Native TLS:** for a bare server, set both `NOVAMEM_TLS_CERT` and `NOVAMEM_TLS_KEY` to PEM file paths. The Go server serves HTTPS on `NOVAMEM_HOST:NOVAMEM_PORT`; clients must connect with `https://`. It does not start a second HTTP listener or redirect HTTP on the same port.
+3. **Loopback and development:** with both TLS variables unset, the server retains its existing plain HTTP listener. Use this for local development or behind a trusted TLS-terminating proxy. For a proxy, keep the server on a private network or bind `NOVAMEM_HOST=127.0.0.1` when it shares the host. `X-Forwarded-Proto: https` is used for externally generated URL metadata; it does not enable native TLS.
 - [ ] Do **not** expose Postgres / Qdrant on host ports in production. The bundled `docker-compose.yaml` does this for local dev convenience; remove the `ports:` blocks for those services in production compose files.
 - [ ] Change the Postgres password (the bundled `docker-compose.yaml` uses `novamem` as the default — fine for dev, dangerous in prod).
 - [ ] Configure log shipping. Pino emits JSON to stdout; `Authorization`, `password`, and created token values are redacted via `redact:` config.

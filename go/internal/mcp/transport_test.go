@@ -118,7 +118,7 @@ func TestStreamableInitializeAndToolsList(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &listResp); err != nil {
 		t.Fatal(err)
 	}
-	if len(listResp.Result.Tools) != 21 {
+	if len(listResp.Result.Tools) != 28 {
 		t.Fatalf("tools/list returned %d tools", len(listResp.Result.Tools))
 	}
 

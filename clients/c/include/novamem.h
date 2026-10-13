@@ -60,9 +60,6 @@ typedef struct novamem_change_feed_changes_item novamem_change_feed_changes_item
 typedef struct novamem_context_prefix novamem_context_prefix;
 typedef struct novamem_context_request novamem_context_request;
 typedef struct novamem_context_request_weights novamem_context_request_weights;
-typedef struct novamem_context_result novamem_context_result;
-typedef struct novamem_context_result_recent novamem_context_result_recent;
-typedef struct novamem_context_result_relevant novamem_context_result_relevant;
 typedef struct novamem_decay_result novamem_decay_result;
 typedef struct novamem_entry_list novamem_entry_list;
 typedef struct novamem_evaluate_report novamem_evaluate_report;
@@ -74,6 +71,11 @@ typedef struct novamem_forget_request novamem_forget_request;
 typedef struct novamem_forget_result novamem_forget_result;
 typedef struct novamem_health novamem_health;
 typedef struct novamem_hygiene_report novamem_hygiene_report;
+typedef struct novamem_hygiene_report_contradiction_candidates_item novamem_hygiene_report_contradiction_candidates_item;
+typedef struct novamem_hygiene_report_duplicate_clusters_item novamem_hygiene_report_duplicate_clusters_item;
+typedef struct novamem_hygiene_report_low_value_item novamem_hygiene_report_low_value_item;
+typedef struct novamem_hygiene_report_orphan_candidates_item novamem_hygiene_report_orphan_candidates_item;
+typedef struct novamem_hygiene_report_stale_item novamem_hygiene_report_stale_item;
 typedef struct novamem_hygiene_report_summary novamem_hygiene_report_summary;
 typedef struct novamem_import_result novamem_import_result;
 typedef struct novamem_import_result_failed_item novamem_import_result_failed_item;
@@ -252,28 +254,6 @@ struct novamem_context_request_weights {
 };
 void novamem_context_request_weights_free(novamem_context_request_weights *p);
 
-struct novamem_context_result {
-    const char *context_pack;
-    const char *guidance;
-    struct novamem_context_result_recent *recent;
-    struct novamem_context_result_relevant *relevant;
-};
-void novamem_context_result_free(novamem_context_result *p);
-
-struct novamem_context_result_recent {
-    struct novamem_memory_entry *results;
-    size_t results_len;
-};
-void novamem_context_result_recent_free(novamem_context_result_recent *p);
-
-struct novamem_context_result_relevant {
-    bool has_degraded;
-    bool degraded;
-    struct novamem_memory_entry *results;
-    size_t results_len;
-};
-void novamem_context_result_relevant_free(novamem_context_result_relevant *p);
-
 struct novamem_decay_result {
     double demoted;
     double expired;
@@ -356,14 +336,52 @@ struct novamem_health {
 void novamem_health_free(novamem_health *p);
 
 struct novamem_hygiene_report {
-    const char *contradiction_candidates;
-    const char *duplicate_clusters;
-    const char *low_value;
-    const char *orphan_candidates;
-    const char *stale;
+    struct novamem_hygiene_report_contradiction_candidates_item *contradiction_candidates;
+    size_t contradiction_candidates_len;
+    struct novamem_hygiene_report_duplicate_clusters_item *duplicate_clusters;
+    size_t duplicate_clusters_len;
+    struct novamem_hygiene_report_low_value_item *low_value;
+    size_t low_value_len;
+    struct novamem_hygiene_report_orphan_candidates_item *orphan_candidates;
+    size_t orphan_candidates_len;
+    struct novamem_hygiene_report_stale_item *stale;
+    size_t stale_len;
     struct novamem_hygiene_report_summary *summary;
 };
 void novamem_hygiene_report_free(novamem_hygiene_report *p);
+
+struct novamem_hygiene_report_contradiction_candidates_item {
+    const char **ids;
+    size_t ids_len;
+    const char *reason;
+};
+void novamem_hygiene_report_contradiction_candidates_item_free(novamem_hygiene_report_contradiction_candidates_item *p);
+
+struct novamem_hygiene_report_duplicate_clusters_item {
+    const char **ids;
+    size_t ids_len;
+    const char *reason;
+};
+void novamem_hygiene_report_duplicate_clusters_item_free(novamem_hygiene_report_duplicate_clusters_item *p);
+
+struct novamem_hygiene_report_low_value_item {
+    const char *content;
+    const char *id;
+    const char *reason;
+};
+void novamem_hygiene_report_low_value_item_free(novamem_hygiene_report_low_value_item *p);
+
+struct novamem_hygiene_report_orphan_candidates_item {
+    const char *id;
+    const char *reason;
+};
+void novamem_hygiene_report_orphan_candidates_item_free(novamem_hygiene_report_orphan_candidates_item *p);
+
+struct novamem_hygiene_report_stale_item {
+    const char *id;
+    const char *reason;
+};
+void novamem_hygiene_report_stale_item_free(novamem_hygiene_report_stale_item *p);
 
 struct novamem_hygiene_report_summary {
     bool has_contradiction_candidates;
@@ -794,7 +812,7 @@ novamem_status novamem_admin_provision_user(const novamem_admin *h, const novame
 novamem_status novamem_admin_revoke_user_token(const novamem_admin *h, const char *token, novamem_revoke_result **out, novamem_error *err);
 novamem_status novamem_admin_set_user_quota(const novamem_admin *h, const char *id, const int32_t *max_entries, const int32_t *writes_per_minute, novamem_quota_result **out, novamem_error *err);
 novamem_status novamem_client_capture(const novamem_client *h, const novamem_capture_request *request, novamem_capture_result **out, novamem_error *err);
-novamem_status novamem_client_context(const novamem_client *h, const novamem_context_request *request, novamem_context_result **out, novamem_error *err);
+novamem_status novamem_client_context(const novamem_client *h, const novamem_context_request *request, novamem_search_result **out, novamem_error *err);
 novamem_status novamem_client_context_prefix(const novamem_client *h, const char *project, novamem_context_prefix **out, novamem_error *err);
 novamem_status novamem_client_forget(const novamem_client *h, const novamem_forget_request *request, novamem_forget_result **out, novamem_error *err);
 novamem_status novamem_client_health(const novamem_client *h, bool *out, novamem_error *err);

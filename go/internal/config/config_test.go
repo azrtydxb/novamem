@@ -129,6 +129,11 @@ func TestDefaults(t *testing.T) {
 		DecayEffectiveDays:         7,
 		ReconcileIntervalMs:        60000,
 		ReconcileBatch:             400,
+		RetentionEnabled:           false,
+		RetentionMaxAgeDays:        365,
+		RetentionBatch:             100,
+		RetentionIntervalMinutes:   60,
+		RetentionDryRun:            false,
 		RateLimitPerMinute:         600,
 		AdminDashboard:             true,
 		RerankPoolMult:             4,
@@ -136,12 +141,14 @@ func TestDefaults(t *testing.T) {
 		ExtractionMaxFacts:         8,
 		ExtractionTimeoutMs:        120000,
 		ExtractionMaxConcurrent:    12,
+		ExtractionRedact:           true,
 		QueryDecompMaxSubqueries:   3,
 		QueryDecompCoherenceRerank: true,
 		QueryDecompTimeoutMs:       8000,
 		ObserverObserveThreshold:   10,
 		ObserverReflectThreshold:   50,
 		ObserverTimeoutMs:          30000,
+		OTELServiceName:             "novamem",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("default config differs from the pinned value:\n got %+v\nwant %+v", got, want)
@@ -176,6 +183,16 @@ func TestFailFast(t *testing.T) {
 			"non-numeric port",
 			map[string]string{"NOVAMEM_PORT": "http"},
 			`NOVAMEM_PORT "http" is not a valid port`,
+		},
+		{
+			"TLS certificate without key",
+			map[string]string{"NOVAMEM_TLS_CERT": "/etc/novamem/tls.crt"},
+			"NOVAMEM_TLS_CERT and NOVAMEM_TLS_KEY must be set together",
+		},
+		{
+			"TLS key without certificate",
+			map[string]string{"NOVAMEM_TLS_KEY": "/etc/novamem/tls.key"},
+			"NOVAMEM_TLS_CERT and NOVAMEM_TLS_KEY must be set together",
 		},
 		{
 			"unknown auth mode",
@@ -294,6 +311,24 @@ func TestFailFast(t *testing.T) {
 	}
 }
 
+func TestNativeTLSConfig(t *testing.T) {
+	cert := "/etc/novamem/tls.crt"
+	key := "/etc/novamem/tls.key"
+	c, err := loadWith(t, map[string]string{
+		"NOVAMEM_TLS_CERT": cert,
+		"NOVAMEM_TLS_KEY":  key,
+	})
+	if err != nil {
+		t.Fatalf("Load with native TLS configured: %v", err)
+	}
+	if c.TLSCert != cert || c.TLSKey != key {
+		t.Fatalf("TLS paths = (%q, %q), want (%q, %q)", c.TLSCert, c.TLSKey, cert, key)
+	}
+	if c.BaseURL != "https://0.0.0.0:7778" {
+		t.Errorf("TLS BaseURL = %q, want https://0.0.0.0:7778", c.BaseURL)
+	}
+}
+
 // TestAuthModeNoneNeedsNoCookieSecret — the one mode where an absent
 // secret is fine, and the reason the check is conditional rather than
 // unconditional.
@@ -319,7 +354,7 @@ func TestAuthModeNoneNeedsNoCookieSecret(t *testing.T) {
 func TestCoercedBooleansKeepTheirQuirk(t *testing.T) {
 	c, err := loadWith(t, map[string]string{
 		"NOVAMEM_EXTRACTION_ENABLED":  "false",
-		"NOVAMEM_EXTRACTION_ENDPOINT": "http://llm:8000/v1",
+		"NOVAMEM_EXTRACTION_ENDPOINT": "http://192.168.10.125:8000/v1",
 		"NOVAMEM_EXTRACTION_MODEL":    "qwen",
 	})
 	if err != nil {
@@ -377,6 +412,30 @@ func TestAdminDashboardDefaultsOn(t *testing.T) {
 	}
 }
 
+// TestExtractionRedactDefaultsOn — the redaction is a privacy floor, so
+// it is a disableBool like the admin surface: default on, off only by an
+// explicit falsy spelling, and a misspelling KEEPS the redaction rather
+// than silently dropping it.
+func TestExtractionRedactDefaultsOn(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"":      true,
+		"1":     true,
+		"true":  true,
+		"maybe": true,
+		"0":     false,
+		"false": false,
+		" OFF ": false,
+	} {
+		c, err := loadWith(t, map[string]string{"NOVAMEM_EXTRACTION_REDACT": raw})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ExtractionRedact != want {
+			t.Errorf("NOVAMEM_EXTRACTION_REDACT=%q gave %v, want %v", raw, c.ExtractionRedact, want)
+		}
+	}
+}
+
 // TestCorsOriginsTriState — unset, empty and "self" are three different
 // answers, which is why this variable cannot be a plain list with a
 // default.
@@ -428,11 +487,11 @@ func TestColdURLFollowsTheProvider(t *testing.T) {
 		t.Errorf("qdrant cold URL = %q, want the local Qdrant", c.ColdURL)
 	}
 	// An explicit value wins over both.
-	c, err = loadWith(t, map[string]string{"NOVAMEM_COLD_URL": "http://qdrant.svc:6333"})
+	c, err = loadWith(t, map[string]string{"NOVAMEM_COLD_URL": "http://192.168.10.125:6333"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ColdURL != "http://qdrant.svc:6333" {
+	if c.ColdURL != "http://192.168.10.125:6333" {
 		t.Errorf("explicit cold URL = %q, want it to win", c.ColdURL)
 	}
 }
@@ -460,17 +519,13 @@ func TestBaseURLFollowsHostAndPort(t *testing.T) {
 }
 
 // TestDeprecatedDecayAlias — the canonical name wins when both are set,
-// and the alias still works alone. Deployments picked up the Go-only
-// spelling; dropping it would change their decay half-life silently.
+// and using the deprecated alias alone fails with migration guidance.
 func TestDeprecatedDecayAlias(t *testing.T) {
-	c, err := loadWith(t, map[string]string{"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := loadWith(t, map[string]string{"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14"})
+	if err == nil || !strings.Contains(err.Error(), "set NOVAMEM_DECAY_DAYS instead") {
+		t.Fatalf("deprecated alias did not explain the replacement: %v", err)
 	}
-	if c.DecayEffectiveDays != 14 {
-		t.Errorf("the deprecated alias alone gave %v, want 14", c.DecayEffectiveDays)
-	}
-	c, err = loadWith(t, map[string]string{
+	c, err := loadWith(t, map[string]string{
 		"NOVAMEM_DECAY_DAYS":                   "3",
 		"NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS": "14",
 	})

@@ -94,6 +94,29 @@ func TestRerankDefaultsOnWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestRerankKeepsReturnedScoresMonotonic(t *testing.T) {
+	e, _ := rerankFixture(t, http.StatusOK)
+	v := candidates("a", "b", "c")
+	for i, item := range v {
+		item.score = float64(3 - i)
+		item.result["score"] = item.score
+	}
+	// Decompose is enabled by the caller on this path; it changes candidate
+	// retrieval but the final score invariant belongs to the rerank pass.
+	e.rerankVisible(context.Background(), SearchArgs{Query: "q", Decompose: true}, 10, v)
+	previous := float64(1 << 53)
+	for _, item := range v {
+		score := item.result["score"].(float64)
+		if score > previous {
+			t.Fatalf("scores are not non-increasing: %v then %v", previous, score)
+		}
+		if item.score != score {
+			t.Fatalf("internal rank score %v does not match returned score %v", item.score, score)
+		}
+		previous = score
+	}
+}
+
 func TestRerankNoRerankerNeverCalls(t *testing.T) {
 	e := New(Options{Log: slog.New(slog.DiscardHandler)})
 	for _, rr := range []*bool{nil, ptr(true), ptr(false)} {

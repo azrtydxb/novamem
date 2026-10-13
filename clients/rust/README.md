@@ -1,13 +1,13 @@
 # novamem — Rust client
 
-Rust client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service for agents. Async (tokio), rustls, MSRV 1.80.
+Rust client for [novamem](https://github.com/azrtydxb/novamem), a tiered memory service for agents. Async (tokio), rustls, MSRV 1.85.
 
 ```bash
 cargo add novamem
 cargo add tokio --features macros,rt-multi-thread
 ```
 
-Requires Rust 1.80 or newer (the MSRV, tested in CI alongside the current stable) and a Tokio runtime: every call is an `async fn` that must run inside one, since both the HTTP client and the per-call timeout use it. Needs the Go novamem server (the first release after v1.1.7) — every route in `clients/contract/routes.json`.
+Requires Rust 1.85 or newer (the MSRV, tested in CI alongside the current stable) and a Tokio runtime: every call is an `async fn` that must run inside one, since both the HTTP client and the per-call timeout use it. Needs the Go novamem server (the first release after v1.1.7) — every route in `clients/contract/routes.json`.
 
 `Client`, `Management` and `Admin` are `Clone + Send + Sync`. Build one and share it across tasks and threads, or clone it; clones share one connection pool. Calls take `&self`, so concurrent calls on one value are fine.
 
@@ -145,4 +145,4 @@ cd clients/rust
 cargo test --locked
 ```
 
-That is the shared scenario suite, as CI runs it on Rust 1.80 and on stable (CI also runs `cargo clippy --locked --all-targets -- -D warnings`). The suite drives the shared scenario server in `clients/contract` (built with `go`, so Go must be on `PATH`) and never touches a real novamem. `sh check-readme.sh` compiles this README's Quickstart.
+That is the shared scenario suite, as CI runs it on Rust 1.85 and on stable (CI also runs `cargo clippy --locked --all-targets -- -D warnings`). The suite drives the shared scenario server in `clients/contract` (built with `go`, so Go must be on `PATH`) and never touches a real novamem. `sh check-readme.sh` compiles this README's Quickstart.

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub(crate) fn none_or_empty(v: &Option<String>) -> bool {
-    v.as_deref().map_or(true, str::is_empty)
+    v.as_deref().is_none_or(str::is_empty)
 }
 {{define "rtype"}}{{if eq .Prim "string" "datetime"}}String{{else if eq .Prim "int32"}}i32{{else if eq .Prim "int64"}}i64{{else if eq .Prim "float"}}f64{{else if eq .Prim "bool"}}bool{{else if eq .Prim "any"}}serde_json::Value{{else if .Named}}{{.Named}}{{else if .Array}}Vec<{{template "rtype" .Array}}>{{else if .Map}}{{if eq .Map.Prim "any"}}serde_json::Map<String, serde_json::Value>{{else}}BTreeMap<String, {{template "rtype" .Map}}>{{end}}{{end}}{{end}}
 {{- range .Types}}{{if .IsEnum}}

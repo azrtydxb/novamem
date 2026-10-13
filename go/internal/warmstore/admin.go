@@ -449,6 +449,11 @@ func (s *Store) PruneMetricsSamples(ctx context.Context, olderThan time.Time) (i
 
 // GetEngineState / SetEngineState — small durable key/value for
 // background jobs (the dream-cycle cursor).
+const (
+	EngineStateLastDreamRun  = "job_last_dream_run"
+	EngineStateLastReaperRun = "job_last_reaper_run"
+)
+
 func (s *Store) GetEngineState(ctx context.Context, key string) (string, error) {
 	var v string
 	err := s.Pool.QueryRow(ctx, `SELECT value FROM engine_state WHERE key = $1`, key).Scan(&v)

@@ -1,5 +1,12 @@
 {
   "names": [
+    "admin_audit_recent",
+    "admin_health",
+    "admin_list_projects",
+    "admin_list_tokens",
+    "admin_list_users",
+    "admin_ops_status",
+    "admin_stats",
     "memory_adoption",
     "memory_capture",
     "memory_context",
@@ -23,6 +30,48 @@
     "project_unshare"
   ],
   "schemas": {
+    "admin_audit_recent": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "Maximum number of entries; defaults to 100.",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "admin_health": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "admin_list_projects": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "admin_list_tokens": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "admin_list_users": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "admin_ops_status": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "admin_stats": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
     "memory_adoption": {
       "properties": {
         "client": {

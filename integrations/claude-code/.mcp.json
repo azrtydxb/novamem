@@ -2,13 +2,9 @@
   "$schema": "https://docs.anthropic.com/claude/schemas/mcp.json",
   "mcpServers": {
     "novamem": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@azrtydxb/novamem-mcp"],
-      "env": {
-        "NOVAMEM_BASE_URL": "http://localhost:7778",
-        "NOVAMEM_TOKEN": "${NOVAMEM_TOKEN}"
-      }
+      "type": "http",
+      "url": "http://localhost:7778/mcp",
+      "headers": { "Authorization": "Bearer ${NOVAMEM_TOKEN}" }
     }
   }
 }

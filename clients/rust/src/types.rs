@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub(crate) fn none_or_empty(v: &Option<String>) -> bool {
-    v.as_deref().map_or(true, str::is_empty)
+    v.as_deref().is_none_or(str::is_empty)
 }
 
 
@@ -246,32 +246,6 @@ pub struct ContextRequestWeights {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ContextResult {
-    #[serde(rename = "contextPack", default, skip_serializing_if = "Option::is_none")]
-    pub context_pack: Option<serde_json::Map<String, serde_json::Value>>,
-    #[serde(rename = "guidance", default, skip_serializing_if = "none_or_empty")]
-    pub guidance: Option<String>,
-    #[serde(rename = "recent", default)]
-    pub recent: ContextResultRecent,
-    #[serde(rename = "relevant", default)]
-    pub relevant: ContextResultRelevant,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ContextResultRecent {
-    #[serde(rename = "results", default)]
-    pub results: Vec<MemoryEntry>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ContextResultRelevant {
-    #[serde(rename = "degraded", default, skip_serializing_if = "Option::is_none")]
-    pub degraded: Option<bool>,
-    #[serde(rename = "results", default)]
-    pub results: Vec<MemoryEntry>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DecayResult {
     #[serde(rename = "demoted", default)]
     pub demoted: f64,
@@ -380,17 +354,59 @@ pub struct Health {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HygieneReport {
     #[serde(rename = "contradictionCandidates", default, skip_serializing_if = "Option::is_none")]
-    pub contradiction_candidates: Option<Vec<serde_json::Value>>,
+    pub contradiction_candidates: Option<Vec<HygieneReportContradictionCandidatesItem>>,
     #[serde(rename = "duplicateClusters", default, skip_serializing_if = "Option::is_none")]
-    pub duplicate_clusters: Option<Vec<serde_json::Value>>,
+    pub duplicate_clusters: Option<Vec<HygieneReportDuplicateClustersItem>>,
     #[serde(rename = "lowValue", default, skip_serializing_if = "Option::is_none")]
-    pub low_value: Option<Vec<serde_json::Value>>,
+    pub low_value: Option<Vec<HygieneReportLowValueItem>>,
     #[serde(rename = "orphanCandidates", default, skip_serializing_if = "Option::is_none")]
-    pub orphan_candidates: Option<Vec<serde_json::Value>>,
+    pub orphan_candidates: Option<Vec<HygieneReportOrphanCandidatesItem>>,
     #[serde(rename = "stale", default, skip_serializing_if = "Option::is_none")]
-    pub stale: Option<Vec<serde_json::Value>>,
+    pub stale: Option<Vec<HygieneReportStaleItem>>,
     #[serde(rename = "summary", default)]
     pub summary: HygieneReportSummary,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HygieneReportContradictionCandidatesItem {
+    #[serde(rename = "ids", default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<String>>,
+    #[serde(rename = "reason", default, skip_serializing_if = "none_or_empty")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HygieneReportDuplicateClustersItem {
+    #[serde(rename = "ids", default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<String>>,
+    #[serde(rename = "reason", default, skip_serializing_if = "none_or_empty")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HygieneReportLowValueItem {
+    #[serde(rename = "content", default, skip_serializing_if = "none_or_empty")]
+    pub content: Option<String>,
+    #[serde(rename = "id", default, skip_serializing_if = "none_or_empty")]
+    pub id: Option<String>,
+    #[serde(rename = "reason", default, skip_serializing_if = "none_or_empty")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HygieneReportOrphanCandidatesItem {
+    #[serde(rename = "id", default, skip_serializing_if = "none_or_empty")]
+    pub id: Option<String>,
+    #[serde(rename = "reason", default, skip_serializing_if = "none_or_empty")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HygieneReportStaleItem {
+    #[serde(rename = "id", default, skip_serializing_if = "none_or_empty")]
+    pub id: Option<String>,
+    #[serde(rename = "reason", default, skip_serializing_if = "none_or_empty")]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

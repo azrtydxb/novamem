@@ -11,6 +11,9 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 const HealthPage = lazy(() =>
   import("./pages/HealthPage").then((m) => ({ default: m.HealthPage }))
 );
+const TelemetryPage = lazy(() =>
+  import("./pages/TelemetryPage").then((m) => ({ default: m.TelemetryPage }))
+);
 const MetricsPage = lazy(() =>
   import("./pages/MetricsPage").then((m) => ({ default: m.MetricsPage }))
 );
@@ -116,6 +119,7 @@ function Authed() {
       <Suspense fallback={<PageSkeleton />}>
         {tab === "overview" && <MetricsPage />}
         {isAdmin && tab === "health" && <HealthPage />}
+        {isAdmin && tab === "telemetry" && <TelemetryPage />}
         {isAdmin && tab === "users" && <UsersPage />}
         {isAdmin && tab === "audit" && <AuditPage />}
         {!isAdmin && tab === "home" && (

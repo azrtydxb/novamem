@@ -96,16 +96,14 @@ about what state it is starting from. Migrations are the only path.
 - **test (amd64)** + **test (arm64)** on native runners — typecheck, build, vitest
 - **go** — `go build`, `go vet`, `go test` for the server, the shared client, and the conformance oracle, golangci-lint for server + client, plus the OpenAPI drift gate
 - **audit** — `pnpm audit --prod --audit-level=high`
-- **package (npm)** — `pnpm pack` artefacts uploaded for the three published packages
 - **docker (amd64)** + **docker (arm64)** — native build + Trivy HIGH/CRITICAL scan, pushed to ghcr.io on main
 - **manifest (multi-arch)** — stitches the per-arch images into `:main` and `:sha-<short>`
 
 ## Releases
 
-**npm publishing is retired.** The three publishable packages —
-`@azrtydxb/novamem` (client), `@azrtydxb/novamem-mcp` (stdio shim) and
-`@azrtydxb/novamem-init` (installer) — were superseded by Go binaries and
-removed from the tree, and every remaining workspace package is private.
+**npm publishing is retired.** The former TypeScript client, MCP bridge,
+and installer were superseded by Go binaries and removed from the tree;
+every remaining workspace package is private.
 Changesets, `release.yml` and `pnpm release:preflight` went with them.
 Already-published versions stay on npm and keep working; they just get no
 successors. See
@@ -129,14 +127,10 @@ that no publishable package has reappeared, and exists only because
 `package (npm)` is still a **required status check** on `main`. Remove
 that requirement in branch protection and the job can go too.
 
-## Per-package source layout
+## Source layout
 
-Each package's `src/` follows a flat-by-default convention with folders only when a module genuinely spans multiple files:
-
-- **Go packages**: one directory per bounded concern under `go/internal/`. Examples: `go/internal/engine/`, `go/internal/warmstore/`, `go/internal/httpapi/`. The package owns its private helpers and exports only what other packages consume.
-- **TypeScript packages** (`packages/client`, `packages/mcp`, `packages/init`, `packages/admin-ui`): a folder with `index.ts` as the public entry for multi-file modules, or a flat file at the package root when the file IS the module.
-
-When a single-file module grows enough to need internal helpers, promote it to a folder with `index.ts` rather than dropping a `*-helpers.ts` sibling next to it. Mixing the two styles in one package makes import paths inconsistent.
+- **Go packages**: one directory per bounded concern under `go/internal/`. Examples: `go/internal/engine/`, `go/internal/warmstore/`, and `go/internal/httpapi/`.
+- **TypeScript packages**: the dashboard and docs site live under `packages/`. Keep modules flat until a concern spans multiple files; then use a folder with `index.ts` as its public entry.
 
 ## Code style
 

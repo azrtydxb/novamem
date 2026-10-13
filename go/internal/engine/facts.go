@@ -59,7 +59,15 @@ func (e *Engine) storeFactsForChunk(ctx context.Context, args storeFactsArgs) er
 	if e.extractFacts == nil {
 		return nil
 	}
-	facts, err := e.extractFacts(ctx, args.chunkContent)
+	// Redact before the payload leaves the process (#371). Only the LLM
+	// prompt is rewritten; args.chunkContent stays verbatim, and the
+	// staleness check below must keep comparing the ORIGINAL text — it
+	// asserts facts about what the row holds, not about what we sent.
+	payload := args.chunkContent
+	if e.redactExtraction {
+		payload = redactForExtraction(payload)
+	}
+	facts, err := e.extractFacts(ctx, payload)
 	if err != nil {
 		return err
 	}

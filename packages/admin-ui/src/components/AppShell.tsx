@@ -19,6 +19,7 @@ import { CommandPalette } from "./CommandPalette";
 export type Tab =
   | "overview"
   | "health"
+  | "telemetry"
   | "users"
   | "audit"
   | "home"
@@ -62,6 +63,7 @@ export const NAV: NavItem[] = [
   // Admin
   { id: "overview", label: "Overview", glyph: "◐", roles: ["admin", "user"] },
   { id: "health", label: "Health", glyph: "◇", roles: ["admin"] },
+  { id: "telemetry", label: "Telemetry", glyph: "▥", roles: ["admin"], keywords: "memory volume growth namespaces projects sensitivity agents" },
   { id: "users", label: "Users", glyph: "○", roles: ["admin"] },
   {
     id: "audit",

@@ -6,6 +6,7 @@ use std::time::{Duration, SystemTime};
 
 use reqwest::Method;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{json, Map, Value};
 
 use crate::transport::{Call, Resp, Transport};
@@ -26,6 +27,12 @@ fn seg(s: &str) -> String {
 
 fn blank(s: &str) -> bool {
     s.trim().is_empty()
+}
+
+/// A request as JSON. Fails rather than sending `null` when a value cannot
+/// be encoded (a NaN or infinite float, for one).
+fn body<T: Serialize>(op: &str, v: &T) -> Result<Value, Error> {
+    serde_json::to_value(v).map_err(|e| Error::new(op, format!("encode request: {e}")))
 }
 
 /// An object of the given fields, leaving out unset and empty ones.
@@ -54,10 +61,10 @@ fn decode<T: DeserializeOwned>(op: &str, r: Resp) -> Result<T, Error> {
 fn degraded_empty(op: &str, r: &Resp) -> Result<(), Error> {
     let v = &r.body;
     let degraded = v.get("degraded").and_then(Value::as_bool).unwrap_or(false);
-    let empty = v
-        .get("results")
-        .and_then(Value::as_array)
-        .map_or(true, |r| r.is_empty());
+    let empty = match v.get("results").and_then(Value::as_array) {
+        Some(results) => results.is_empty(),
+        None => true,
+    };
     if degraded && empty {
         return Err(Error::unavailable(
             op,
@@ -112,7 +119,9 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("capture", Method::POST, "/v1/capture").json(&request)?)
+            .call(
+                Call::new("capture", Method::POST, "/v1/capture").body(body("capture", &request)?),
+            )
             .await?;
         decode("capture", v)
     }
@@ -123,7 +132,7 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("search", Method::POST, "/v1/search").json(&request)?)
+            .call(Call::new("search", Method::POST, "/v1/search").body(body("search", &request)?))
             .await?;
         degraded_empty("search", &v)?;
         decode("search", v)
@@ -132,7 +141,7 @@ impl Client {
     pub async fn recent(&self, request: t::RecentRequest) -> Result<t::EntryList, Error> {
         let v = self
             .t
-            .call(Call::new("recent", Method::POST, "/v1/recent").json(&request)?)
+            .call(Call::new("recent", Method::POST, "/v1/recent").body(body("recent", &request)?))
             .await?;
         degraded_empty("recent", &v)?;
         decode("recent", v)
@@ -154,7 +163,10 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("neighbors", Method::POST, "/v1/neighbors").json(&request)?)
+            .call(
+                Call::new("neighbors", Method::POST, "/v1/neighbors")
+                    .body(body("neighbors", &request)?),
+            )
             .await?;
         degraded_empty("neighbors", &v)?;
         decode("neighbors", v)
@@ -172,13 +184,13 @@ impl Client {
         let path = format!("/v1/memories/{}", seg(id.trim()));
         let mut v = self
             .t
-            .call(Call::new("update", Method::PUT, path).json(&request)?)
+            .call(Call::new("update", Method::PUT, path).body(body("update", &request)?))
             .await?;
-        if v.body
-            .get("id")
-            .and_then(Value::as_str)
-            .map_or(true, str::is_empty)
-        {
+        let missing_or_empty_id = match v.body.get("id").and_then(Value::as_str) {
+            Some(id) => id.is_empty(),
+            None => true,
+        };
+        if missing_or_empty_id {
             if let Value::Object(m) = &mut v.body {
                 m.insert("id".into(), json!(id.trim()));
             }
@@ -189,12 +201,16 @@ impl Client {
     /// Never reports success on a failed delete. An id that is not in your
     /// scope comes back `deleted: false` with no error.
     pub async fn forget(&self, request: t::ForgetRequest) -> Result<t::ForgetResult, Error> {
-        if request.id.as_deref().map_or(true, blank) {
+        let missing_or_blank_id = match request.id.as_deref() {
+            Some(id) => blank(id),
+            None => true,
+        };
+        if missing_or_blank_id {
             return Err(Error::new("forget", "id is required"));
         }
         match self
             .t
-            .call(Call::new("forget", Method::POST, "/v1/forget").json(&request)?)
+            .call(Call::new("forget", Method::POST, "/v1/forget").body(body("forget", &request)?))
             .await
         {
             Ok(v) => decode("forget", v),
@@ -213,18 +229,23 @@ impl Client {
         }
         let v = self
             .t
-            .call(Call::new("remember", Method::POST, "/v1/remember").json(&request)?)
+            .call(
+                Call::new("remember", Method::POST, "/v1/remember")
+                    .body(body("remember", &request)?),
+            )
             .await?;
         decode("remember", v)
     }
 
-    pub async fn context(&self, request: t::ContextRequest) -> Result<t::ContextResult, Error> {
+    pub async fn context(&self, request: t::ContextRequest) -> Result<t::SearchResult, Error> {
         if blank(&request.message) {
             return Err(Error::new("context", "message is required"));
         }
         let v = self
             .t
-            .call(Call::new("context", Method::POST, "/v1/context").json(&request)?)
+            .call(
+                Call::new("context", Method::POST, "/v1/context").body(body("context", &request)?),
+            )
             .await?;
         decode("context", v)
     }
@@ -235,7 +256,10 @@ impl Client {
     ) -> Result<t::SessionRecapResult, Error> {
         let v = self
             .t
-            .call(Call::new("session-recap", Method::POST, "/v1/session-recap").json(&request)?)
+            .call(
+                Call::new("session-recap", Method::POST, "/v1/session-recap")
+                    .body(body("session-recap", &request)?),
+            )
             .await?;
         decode("session-recap", v)
     }
@@ -279,7 +303,10 @@ impl Management {
     pub async fn mint_token(&self, request: t::MintTokenRequest) -> Result<t::MintedToken, Error> {
         let v = self
             .t
-            .call(Call::new("mint-token", Method::POST, "/v1/me/tokens").json(&request)?)
+            .call(
+                Call::new("mint-token", Method::POST, "/v1/me/tokens")
+                    .body(body("context-prefix", &request)?),
+            )
             .await?;
         decode("mint-token", v)
     }
@@ -565,7 +592,10 @@ impl Admin {
         }
         let v = self
             .t
-            .call(Call::new("provision-user", Method::POST, "/v1/admin/users").json(&request)?)
+            .call(
+                Call::new("provision-user", Method::POST, "/v1/admin/users")
+                    .body(body("list-tokens", &request)?),
+            )
             .await?;
         decode("provision-user", v)
     }
@@ -641,7 +671,6 @@ impl Admin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Serialize;
 
     struct Unencodable;
 
@@ -651,17 +680,13 @@ mod tests {
         }
     }
 
-    // proved by: mapping a serialization error to Value::Null in Call::json
+    // proved by: mapping a serialization error to Value::Null in body()
     // fails this test. (serde_json writes NaN as null rather than failing,
-    // so a failing Serialize is the way to reach this path.) The op comes
-    // from the call itself, so it cannot disagree with the call's name.
+    // so a failing Serialize is the way to reach this path.)
     #[test]
     fn an_unencodable_request_fails_locally() {
-        let e = Call::new("mint-token", Method::POST, "/v1/me/tokens")
-            .json(&Unencodable)
-            .err()
-            .expect("an unencodable request must fail");
-        assert_eq!(e.op(), "mint-token");
+        let e = body("capture", &Unencodable).unwrap_err();
+        assert_eq!(e.op(), "capture");
         assert!(
             e.to_string().contains("encode request: cannot encode"),
             "{e}"

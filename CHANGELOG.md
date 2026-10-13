@@ -2,7 +2,14 @@
 
 All notable changes to novamem are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 1.2.0 - 2026-10-13
+
+_First release built and shipped entirely through the Go pipeline: novamem is a single Go binary, agents can now reach the admin surface, services get organization-scoped identity, and the operational guardrails (foreign keys, TLS, auth, PII redaction, retention) are in._
+
+### Added
+
+- **On-behalf-of service tokens and organization scoping (#337, ADR 0011).** An admin registers a service's Ed25519 public key, bound to one organization (`POST/GET /v1/admin/service-keys`, `DELETE /v1/admin/service-keys/{id}`). The service signs short-lived EdDSA JWTs (`sub`, `org`, `aud=novamem`, at most 15 minutes) and acts as that subject on the memory data plane and `/mcp`, isolated by organization; projects, accounts, token management and the admin surface answer 403. Entries gain `organization_id` (migration 0012, existing rows are `default`). `clients/go` gains `MintOBOToken`, `NewOBOTokenSource`, `Config.TokenSource` and `Admin.RegisterServiceKey/ListServiceKeys/RevokeServiceKey`. Existing `nm_` tokens, cookies and auth modes are unchanged. CI's go job now runs a Postgres service so `TestOnBehalfOfToken` actually runs.
+- **Forget memories by source reference (#338).** `POST /v1/remember`, `POST /v1/capture` and the MCP `memory_remember`/`memory_capture` tools accept `sourceRefs` (at most 32 strings, 1-512 characters), stored per entry in the new `memory_entry_source_refs` table (migration 0013) and merged into an existing entry when a write dedupes or updates it. `POST /v1/forget` and `memory_forget` accept `sourceRef` as an alternative to `id` and delete every matching entry of the caller's organization and scope in one warm transaction, then clean the cold store; the receipt is `{sourceRef, ids, count, coldDeleteOk}`, and a repeat returns `count: 0`. `clients/go` gains `ForgetBySource` and `CaptureRequest.SourceRefs`. Refs are not returned on reads.
 
 ### Added
 

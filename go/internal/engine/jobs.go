@@ -8,11 +8,77 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/azrtydxb/novamem/go/internal/coldstore"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
+
+// RetentionResult describes one bounded automatic-retention pass.
+type RetentionResult struct {
+	Selected int      `json:"selected"`
+	Deleted  int      `json:"deleted"`
+	DryRun   bool     `json:"dryRun"`
+	EntryIDs []string `json:"entryIds,omitempty"`
+}
+
+// ApplyRetention deletes a bounded oldest-first batch of entries without
+// explicit TTL metadata. updated_at is deliberately the age clock: it is
+// more conservative than created_at because updates (including decay's
+// warm-to-cold demotion) extend retention instead of deleting recently
+// changed memories. Deletion goes through Forget so warm shadows, cold
+// vectors, and derived facts follow the same cleanup path as a user forget.
+func (e *Engine) ApplyRetention(ctx context.Context, maxAge time.Duration, batchSize int, dryRun bool) (RetentionResult, error) {
+	if maxAge <= 0 || batchSize <= 0 {
+		return RetentionResult{}, fmt.Errorf("retention max age and batch size must be positive")
+	}
+	rows, err := e.warm.Pool.Query(ctx, `
+		SELECT id, user_id, project_id
+		  FROM memory_entries
+		 WHERE updated_at <= now() - $1::interval
+		   AND metadata->>'expiresAt' IS NULL
+		 ORDER BY updated_at ASC, id ASC
+		 LIMIT $2`, maxAge.String(), batchSize)
+	if err != nil {
+		return RetentionResult{}, err
+	}
+	type candidate struct {
+		id, userID string
+		projectID  *string
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.userID, &c.projectID); err != nil {
+			rows.Close()
+			return RetentionResult{}, err
+		}
+		candidates = append(candidates, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return RetentionResult{}, err
+	}
+	out := RetentionResult{Selected: len(candidates), DryRun: dryRun}
+	if dryRun {
+		out.EntryIDs = make([]string, 0, len(candidates))
+		for _, c := range candidates {
+			out.EntryIDs = append(out.EntryIDs, c.id)
+		}
+		return out, nil
+	}
+	for _, c := range candidates {
+		result, err := e.Forget(ctx, c.userID, c.id, c.projectID)
+		if err != nil {
+			return out, err
+		}
+		if result.Deleted {
+			out.Deleted++
+		}
+	}
+	return out, nil
+}
 
 // DecayResult — POST /v1/decay's body.
 type DecayResult struct {

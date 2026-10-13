@@ -710,37 +710,6 @@ Since #284 every MCP tool declares an `outputSchema`, but tool results carry onl
 
 **Decision (2026-09-30, owner):** add structuredContent, with a test covering every tool that declares an outputSchema.
 
-## Raise the Nexus idle timeout for cold docker pulls?
-
-On 2026-09-30 five SDK jobs on #319 failed pulling images through the Nexus registry mirror (192.168.10.131): a large uncached Docker Hub layer stalled past Jetty's 30 s idle timeout, and the runner saw "connection reset by peer". Shared infrastructure, so the owner decides.
-
-- Raise the Nexus Jetty idle timeout (and the nginx tls sidecar's proxy timeouts to match), e.g. to 300 s (recommended)
-- Leave it; re-run failed jobs when the cache is cold
-
-**Decision (2026-09-30, owner):** raise the timeout.
-
-## Remove the stale kube-vip VIP bindings on kw?
-
-Found 2026-09-30 while debugging CI image pulls: kube-vip leaves a service's VIP bound on bond0 after its instance loses leadership. The kernel still answers ARP for it there, so one TCP flow's packets reach nodes that hold no state for it and get reset — every large pull through the Nexus (192.168.10.131) fails mid-transfer, while the same blob fetched straight from the nginx sidecar completes (180 MB in 3 s). Stale copies: .131 nexus (lease master-12; also on master-11, master-13), .125 fastllm-proxy (lease master-12; also master-11), .124 novaforge-dev/minio (lease master-13; also master-11). Separately, .130 is claimed by two services (buildkit/buildkit and novaforge/novaforge-git-platform).
-
-- Remove the stale copies (`ip addr del <vip>/32 dev bond0` on the non-lease-holder nodes only); leave .130 for the owner (recommended)
-- Restart the kube-vip DaemonSet pods instead, to let them resync
-- Leave it
-
-**Decision (2026-09-30, owner):** restart the kube-vip DaemonSet pods to let them resync.
-
-## The two kube-vip leftovers after the restart
-
-After restarting kube-vip-ds (2026-09-30), .131/.124 are fixed. Left: .125 (fastllm/fastllm-proxy) is still bound on master-11 as well as master-12 (lease holder), so its flows can still be reset; and .130 is claimed by two services (buildkit/buildkit and novaforge/novaforge-git-platform), bound once only because both leases happen to sit on master-12.
-
-- Remove the stale .125 copy on master-11 (`ip addr del 192.168.10.125/32 dev bond0`); leave .130 to its owner (recommended)
-- Remove the .125 copy and also move one of the .130 services to a free IP
-- Leave both
-
-**Decision (2026-09-30, owner):** remove the stale .125 copy on master-11; leave .130 to its owner.
-
-**Decision (2026-09-30, owner):** move novaforge-git-platform off .130. Done: pinned to 192.168.10.141 in NovaForge (chart option loadBalancerIP), certificate and LFS URL moved with it; .130 is BuildKit only, no VIP bound twice.
-
 ## On-behalf-of token format (#337)
 
 Atlas (multi-tenant) must act for a user inside an org. The Go server already hand-rolls EdDSA JWTs (bajwt.go, stdlib ed25519); go.mod has no JWT library.
@@ -798,36 +767,6 @@ Both are green on the full rollup with no review comments. Merging to main is th
 
 **Decision (2026-10-10, owner):** merge and deploy both, no release tag yet.
 
-## master-13's LACP bond is split; half of cluster DNS fails (2026-10-10)
-
-master-13's bond0 (802.3ad) has its two members in different aggregators (enP4p65s0 → ID 2, enP3p49s0 → ID 1, 24 link failures). The node reaches only part of the LAN: worker-22/23 and gx10-9c17 answer; the router 192.168.10.1, .2, .3, master-11/12 and worker-21/24/25 do not (ARP INCOMPLETE). The CoreDNS pod on master-13 logged 2525 upstream timeouts to 192.168.10.1 in an hour (the other pod: 0), so roughly half of all external lookups in the cluster fail. This broke the novamem and nexora CI runs (pulls and action downloads). Nodes still report Ready.
-
-- Mitigate now (delete the CoreDNS pod on master-13 so it reschedules elsewhere, and keep it off master-13), then investigate the bond/switch side (ks01/ks02 LACP) read-only and report before changing anything (recommended)
-- Mitigate only; the owner handles the switch/bond
-- Hands off
-
-**Decision (2026-10-10, owner):** mitigate now and investigate the bond/switch read-only, reporting before any change.
-
-## master-13 bond: flapping link to ks02 ether8 (2026-10-10)
-
-Read-only finding (~80%): the enP3p49s0 ↔ ks02 ether8 cable/port is bad — 33 link-downs since 10-06, now negotiates 100M with the partner advertising only 10/100 (damaged pair or crimp), so the host bond split into two aggregators. ks01 ether8 is clean at 2.5G; switch bond/MLAG config is uniform across all nodes. CoreDNS is already kept off master-13.
-
-- Owner reseats/replaces the cable now; meanwhile disable ks02 ether8 so master-13 runs cleanly on its ks01 link (no redundancy until the cable is fixed) (recommended)
-- Owner replaces the cable; no software change meanwhile
-- Leave it
-
-**Decision (2026-10-10, owner):** disable ks02 ether8 now; the owner replaces the cable.
-
-## Which remaining jobs move to the ARC runners (2026-10-10)
-
-The go job moved to arc-azrtydxb-amd64 on owner instruction. Still on GitHub-hosted: ci.yml gitops, audit, package, manifest; release-binaries.yml binaries; pages.yml deploy (ubuntu-latest); dependabot-automerge.yml enable-automerge.
-
-- Move every job to ARC (recommended)
-- Move only ci.yml's jobs; leave pages deploy, release binaries and dependabot automerge on GitHub-hosted
-- Only the go job
-
-**Decision (2026-10-10, owner):** move only ci.yml's jobs (gitops, audit, package, manifest) to ARC; leave Pages deploy, release binaries and Dependabot auto-merge on GitHub-hosted.
-
 ## Embedding redundancy for novamem (2026-10-10)
 
 novamem already calls fastllm's pooled `bge-m3` frontend (pool `cacheaffinity-bge-m3`), but the pool has one member: a single Kuvryn-placed vLLM workload on gx10-48f4 (:8890). The reranker (`bge-reranker-v2-m3`, :8891) is also only on gx10-48f4. gx10-9c17 runs Qwen3.6-35B-A3B and an audio engine.
@@ -846,22 +785,40 @@ Reranking is opt-in per request (`rerank: true` on POST /v1/search, engine/searc
 
 **Decision (2026-10-10, owner):** rerank by default when a reranker is configured, with a per-request rerank:false opt-out on HTTP and MCP.
 
-## How to continue the Cilium L2 migration after the pool outage
+## Bump the Rust MSRV to 1.85 to land reqwest 0.13 (PR #330, 2026-10-10)
 
-2026-09-30: creating an LB-IPAM pool (even with a service selector) cleared the address of every LoadBalancer service it did not select, taking all VIPs down for ~2 minutes before I reverted. Cilium now has L2 announcements enabled but no pool or policy; kube-vip still announces everything. Details: internal-lab/kubernetes/cilium/l2-migration.md.
+reqwest 0.13.5 requires Rust >= 1.85; the crate declares rust-version = "1.80" and CI's rust (1.80) job enforces it. The feature rename is already pushed on #330; the bump alone cannot go green.
 
-- Per-service: set defaultLBServiceIPAM=none, then recreate each service with loadBalancerClass io.cilium/l2-announcer, one at a time (short outage per service, in a window you choose) (recommended)
-- Single cutover: annotate every service with its address, add a selector-less pool, turn kube-vip services mode off (all VIPs move at once, in a window)
-- Stop here: keep kube-vip (restart it when a stale VIP appears) and revert the Cilium L2 setting
+- Bump MSRV to 1.85 (rust-version + CI matrix job), land #330 on top (recommended if nothing needs 1.80)
+- Close #330 as wontfix until MSRV moves for another reason
+- Hold #330 open, unmerged
 
-**Decision (2026-09-30, owner):** per-service cutover. Done for 18 of 20 services on 2026-09-30 (all but the two DNS VIPs), each owner's source updated.
+**Decision (2026-10-10, owner):** bump MSRV to 1.85 and land #330 on top.
 
-## How the LAN DNS VIPs (.136, .139) move off kube-vip
+## CI runner capacity after today's queue saturation (2026-10-10)
 
-Both are nexora-dns services with externalTrafficPolicy Local, and they are the DNS servers DHCP hands out. Cilium L2 announcements do not handle eTP Local: the leader can be a node with no engine pod, which drops the traffic.
+Individual CI jobs run 1-5 min (ci.yml wall ~5 min, sdk.yml ~6 min). Today's 40-min waits were queue time: dozens of concurrent runs from the PR waves competed for the small self-hosted ARC runner pool on kw.
 
-- Pin announcers to pod nodes: one CiliumL2AnnouncementPolicy per service whose nodeSelector matches exactly the two masters running its engines; keeps client IPs (recommended)
-- Switch to eTP Cluster: no blackhole case, but nexora sees node IPs instead of client IPs
-- Keep DNS on kube-vip, with its service mode enabled only for these two
+- Increase ARC runner replicas for arc-azrtydxb-amd64 (and/or add a scale set for SDK jobs) (recommended)
+- Keep the pool as is; waves are rare
+- Move some jobs back to GitHub-hosted runners
 
-**Decision (2026-09-30, owner):** pin announcers to pod nodes.
+**Correction (2026-10-10, owner):** the amd64 runners are not on kw (kw hosts only arm64), and amd64 capacity is plentiful. Keep as is; no capacity change.
+
+## manifest (multi-arch) job cannot run on the ARC runners (2026-10-10)
+
+#342 moved it to ARC; its first main run failed: `docker login ghcr.io` fails TLS because the runners' docker mirror intercepts ghcr.io and serves the kw-internal Nexus certificate. The docker _build_ jobs work on ARC because their buildx config marks the Nexus registries insecure; the manifest job's plain docker login cannot do that.
+
+- Pin manifest back to ubuntu-24.04 with a comment (it only stitches manifests + records the deploy; it does not need to run in-cluster) (recommended)
+- Keep it on ARC and hand-craft ghcr.io auth + buildx insecure config for ghcr.io
+
+**Decision (2026-10-10, owner):** fix the manifest job for ARC (no GitHub runners): client-side ghcr.io auth + buildx builder with ghcr.io insecure, verified live on a runner before merge.
+
+## Orphan rows on kw flagged by the FK validation (2026-10-13)
+
+Migration 0014's post-commit validation logged pre-existing orphan rows on kw (rows referencing deleted users/projects, created before FKs existed). Deploy is healthy; the orphans are inert but unclean.
+
+- Dispatch a cleanup pass: inventory the orphans, delete the safely-derived ones, document the rest (recommended)
+- Leave them; FKs are NOT VALID-style tolerated for old rows
+
+**Decision (2026-10-13, owner):** clean them up — inventory, backup first, delete the safely-derived ones, document the rest.

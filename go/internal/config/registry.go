@@ -147,11 +147,19 @@ var Vars = []Var{
 	},
 	{
 		Name: "NOVAMEM_PORT", Kind: KindPort, Default: 7778, Section: secTransport,
-		Description: "HTTP port. REST, `/mcp`, the dashboard and `/api-docs` are all served here.",
+		Description: "HTTP port, or HTTPS when both TLS files are configured. REST, `/mcp`, the dashboard and `/api-docs` are all served here.",
+	},
+	{
+		Name: "NOVAMEM_TLS_CERT", Kind: KindString, Section: secTransport,
+		Description: "Path to the PEM TLS certificate for native HTTPS. Must be set together with `NOVAMEM_TLS_KEY`; leave both unset behind a TLS-terminating proxy or for local development.",
+	},
+	{
+		Name: "NOVAMEM_TLS_KEY", Kind: KindString, Section: secTransport,
+		Description: "Path to the PEM TLS private key for native HTTPS. Must be set together with `NOVAMEM_TLS_CERT`; leave both unset behind a TLS-terminating proxy or for local development.",
 	},
 	{
 		Name: "NOVAMEM_BASE_URL", Kind: KindString, Section: secTransport,
-		DefaultNote: "`http://$NOVAMEM_HOST:$NOVAMEM_PORT`",
+		DefaultNote: "`http://$NOVAMEM_HOST:$NOVAMEM_PORT`, or `https://` when native TLS is configured",
 		Description: "The public origin. Seeds the trusted-origin list for the sign-in CSRF check and the `resource` identifier in the OAuth protected-resource metadata, so it must be the URL clients actually reach — set it when novamem sits behind a proxy.",
 	},
 	{
@@ -173,6 +181,10 @@ var Vars = []Var{
 		Name: "NOVAMEM_AUTH_MODE", Kind: KindEnum, Default: "user", Section: secAuth,
 		Enum:        []string{"none", "bearer", "user"},
 		Description: "`user` is the default: dashboard sessions plus per-user `nm_…` bearers for MCP. `bearer` is a single shared token. `none` disables authentication entirely and makes every request the public tenant — development only.",
+	},
+	{
+		Name: "NOVAMEM_REQUIRE_AUTH", Kind: KindBool, Default: false, Section: secAuth,
+		Description: "Refuses startup when `NOVAMEM_AUTH_MODE=none`. Set to `1` in deployments that must never run without authentication.",
 	},
 	{
 		Name: "NOVAMEM_AUTH_TOKEN", Kind: KindString, Section: secAuth, Secret: true,
@@ -206,6 +218,10 @@ var Vars = []Var{
 	{
 		Name: "NOVAMEM_ADMIN_DASHBOARD", Kind: KindDisableBool, Default: true, Section: secAuth,
 		Description: "Master switch for the admin surface. Set `0` to 404 `/v1/admin/metrics` and `/v1/admin/metrics/prom`.",
+	},
+	{
+		Name: "NOVAMEM_ALLOW_INSECURE_ENDPOINTS", Kind: KindBool, Default: false, Section: secOps,
+		Description: "Allows configured endpoints, including the cold store, to use public HTTP. HTTP to private or loopback addresses is allowed by default; prefer HTTPS for public endpoints.",
 	},
 
 	// ---- Datastores ----
@@ -308,6 +324,26 @@ var Vars = []Var{
 		Description: "Base half-life in days. Effective lifespan grows with use: `effectiveDays = NOVAMEM_DECAY_DAYS x log2(hits + 1)`.",
 	},
 	{
+		Name: "NOVAMEM_RETENTION_ENABLED", Kind: KindBool, Default: false, Section: secEngine,
+		Description: "Enables automatic deletion of entries past the configured retention age. Off by default.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_MAX_AGE_DAYS", Kind: KindPosInt, Default: 365, Section: secEngine,
+		Description: "Maximum age in days for entries without explicit expiresAt metadata. Age is measured from updated_at, so updates and decay demotion extend retention.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_BATCH", Kind: KindPosInt, Default: 100, Section: secEngine,
+		Description: "Maximum entries considered per retention pass, oldest updated_at first.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_INTERVAL_MINUTES", Kind: KindPosInt, Default: 60, Section: secEngine,
+		Description: "How often the retention job runs while enabled.",
+	},
+	{
+		Name: "NOVAMEM_RETENTION_DRY_RUN", Kind: KindBool, Default: false, Section: secEngine,
+		Description: "Logs each retention batch that would be deleted without deleting entries.",
+	},
+	{
 		Name: "NOVAMEM_PERSONAL_TERMS", Kind: KindCSV, Section: secEngine,
 		Description: "Deployment-specific vocabulary — operator name, product names, project slugs — that the worthiness scorer treats as high-relevance.",
 	},
@@ -388,6 +424,10 @@ var Vars = []Var{
 		Description: "How many extractions may be in flight at once. Bounds the load a burst of writes puts on the model server.",
 	},
 	{
+		Name: "NOVAMEM_EXTRACTION_REDACT", Kind: KindDisableBool, Default: true, Section: secLLM,
+		Description: "Redacts PII (emails, phone numbers, API keys, IPv4 addresses) from the content sent to the extraction model, replacing it with stable placeholders. The stored memory keeps the original text; only the LLM payload is rewritten. Set `NOVAMEM_EXTRACTION_REDACT=0` to send content verbatim.",
+	},
+	{
 		Name: "NOVAMEM_QUERY_DECOMP_ENABLED", Kind: KindCoercedBool, Default: false, Section: secLLM,
 		Description: "Enables query decomposition, which callers opt into per request with `decompose`.",
 	},
@@ -453,6 +493,10 @@ var Vars = []Var{
 		Name: "LOG_LEVEL", Kind: KindString, Default: "info", Section: secOps,
 		Description: "Log level: `debug`, `info`, `warn` or `error`.",
 	},
+	{Name: "OTEL_ENABLED", Kind: KindBool, Default: false, Section: secOps, Description: "Enables OpenTelemetry trace export. Setting an OTLP endpoint also enables tracing."},
+	{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Kind: KindString, Section: secOps, Description: "OTLP/HTTP collector base URL. Traces are posted to `${endpoint}/v1/traces`; setting it enables tracing."},
+	{Name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", Kind: KindString, Section: secOps, DefaultNote: "`$OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces`", Description: "Full OTLP/HTTP traces URL, overriding the base endpoint."},
+	{Name: "OTEL_SERVICE_NAME", Kind: KindString, Default: "novamem", Section: secOps, Description: "OpenTelemetry `service.name` resource attribute."},
 	{
 		Name: "NOVAMEM_PPROF_ADDR", Kind: KindString, Section: secOps,
 		Description: "When set — `127.0.0.1:6060`, say — serves Go `net/http/pprof` on its own listener. A separate socket rather than an API route, so profiling stays reachable in every auth mode and never rides an exposed port by accident.",

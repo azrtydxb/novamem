@@ -5,9 +5,8 @@ name: Release binaries
 # not npm packages).
 #
 # The two binaries travel in ONE archive per platform on purpose:
-# novamem-init resolves the shim by looking for `novamem-mcp` beside its
-# own executable, so splitting them would break that path for anyone who
-# just unpacks the archive.
+# novamem-init resolves the stdio bridge by looking for `novamem-mcp`
+# beside its executable, so keep both binaries in each platform archive.
 
 on:
   push:

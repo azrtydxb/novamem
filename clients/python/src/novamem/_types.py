@@ -392,41 +392,6 @@ class ContextRequestWeights(_Wire):
 
 
 @dataclass(frozen=True)
-class ContextResult(_Wire):
-    recent: ContextResultRecent
-    relevant: ContextResultRelevant
-    context_pack: dict[str, Any] | None = None
-    guidance: str | None = None
-
-    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("context_pack", "contextPack", ("m", ("p", "any")), False),
-        ("guidance", "guidance", ("p", "string"), False),
-        ("recent", "recent", ("n", "ContextResultRecent"), True),
-        ("relevant", "relevant", ("n", "ContextResultRelevant"), True),
-    )
-
-
-@dataclass(frozen=True)
-class ContextResultRecent(_Wire):
-    results: list[MemoryEntry]
-
-    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("results", "results", ("a", ("n", "MemoryEntry")), True),
-    )
-
-
-@dataclass(frozen=True)
-class ContextResultRelevant(_Wire):
-    results: list[MemoryEntry]
-    degraded: bool | None = None
-
-    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("degraded", "degraded", ("p", "bool"), False),
-        ("results", "results", ("a", ("n", "MemoryEntry")), True),
-    )
-
-
-@dataclass(frozen=True)
 class DecayResult(_Wire):
     demoted: float
     expired: float
@@ -565,19 +530,76 @@ class Health(_Wire):
 @dataclass(frozen=True)
 class HygieneReport(_Wire):
     summary: HygieneReportSummary
-    contradiction_candidates: list[Any] | None = None
-    duplicate_clusters: list[Any] | None = None
-    low_value: list[Any] | None = None
-    orphan_candidates: list[Any] | None = None
-    stale: list[Any] | None = None
+    contradiction_candidates: list[HygieneReportContradictionCandidatesItem] | None = None
+    duplicate_clusters: list[HygieneReportDuplicateClustersItem] | None = None
+    low_value: list[HygieneReportLowValueItem] | None = None
+    orphan_candidates: list[HygieneReportOrphanCandidatesItem] | None = None
+    stale: list[HygieneReportStaleItem] | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("contradiction_candidates", "contradictionCandidates", ("a", ("p", "any")), False),
-        ("duplicate_clusters", "duplicateClusters", ("a", ("p", "any")), False),
-        ("low_value", "lowValue", ("a", ("p", "any")), False),
-        ("orphan_candidates", "orphanCandidates", ("a", ("p", "any")), False),
-        ("stale", "stale", ("a", ("p", "any")), False),
+        ("contradiction_candidates", "contradictionCandidates", ("a", ("n", "HygieneReportContradictionCandidatesItem")), False),
+        ("duplicate_clusters", "duplicateClusters", ("a", ("n", "HygieneReportDuplicateClustersItem")), False),
+        ("low_value", "lowValue", ("a", ("n", "HygieneReportLowValueItem")), False),
+        ("orphan_candidates", "orphanCandidates", ("a", ("n", "HygieneReportOrphanCandidatesItem")), False),
+        ("stale", "stale", ("a", ("n", "HygieneReportStaleItem")), False),
         ("summary", "summary", ("n", "HygieneReportSummary"), True),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportContradictionCandidatesItem(_Wire):
+    ids: list[str] | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("ids", "ids", ("a", ("p", "string")), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportDuplicateClustersItem(_Wire):
+    ids: list[str] | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("ids", "ids", ("a", ("p", "string")), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportLowValueItem(_Wire):
+    content: str | None = None
+    id: str | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("content", "content", ("p", "string"), False),
+        ("id", "id", ("p", "string"), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportOrphanCandidatesItem(_Wire):
+    id: str | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("id", "id", ("p", "string"), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportStaleItem(_Wire):
+    id: str | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("id", "id", ("p", "string"), False),
+        ("reason", "reason", ("p", "string"), False),
     )
 
 
@@ -1229,9 +1251,6 @@ __all__ = [
     "ContextRequest",
     "ContextRequestMaxSensitivity",
     "ContextRequestWeights",
-    "ContextResult",
-    "ContextResultRecent",
-    "ContextResultRelevant",
     "DecayResult",
     "EntryList",
     "EvaluateReport",
@@ -1243,6 +1262,11 @@ __all__ = [
     "ForgetResult",
     "Health",
     "HygieneReport",
+    "HygieneReportContradictionCandidatesItem",
+    "HygieneReportDuplicateClustersItem",
+    "HygieneReportLowValueItem",
+    "HygieneReportOrphanCandidatesItem",
+    "HygieneReportStaleItem",
     "HygieneReportSummary",
     "ImportResult",
     "ImportResultFailedItem",

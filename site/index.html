@@ -375,7 +375,6 @@
       <a href="#api">API</a>
       <a class="docs-link" href="docs/">Docs</a>
       <a class="docs-link" href="https://github.com/azrtydxb/novamem">GitHub</a>
-      <a class="pill" href="https://www.npmjs.com/package/@azrtydxb/novamem-init">npm</a>
     </nav>
   </div>
 </header>
@@ -791,12 +790,12 @@ kubectl <span class="k">-n</span> novamem rollout status deploy/novamem</pre>
     <div class="section-kicker">Connect</div>
     <h2 class="section-title">Wire every AI host on your machine. One command.</h2>
     <p class="section-lede">
-      <code>@azrtydxb/novamem-init</code> detects 30+ supported hosts, asks for your server URL + dashboard credentials, mints a fresh bearer, and writes the config each host expects. Idempotent — won't clobber existing entries.
+      Install the Go CLI release binaries and run <code>novamem-init</code> to configure supported hosts. Remote MCP clients connect directly to the server at <code>/mcp</code>.
     </p>
 
     <div class="qs-block" style="max-width: 720px; margin: 0 auto 32px;">
       <div class="qs-head"><span class="dot" style="background: var(--accent)"></span> one command, every host</div>
-<pre class="qs-pre">npx <span class="k">-y</span> @azrtydxb/novamem-init
+<pre class="qs-pre">novamem-init
 
 <span class="c"># detects: Claude Code · Claude Desktop · ChatGPT (via HTTP)</span>
 <span class="c">#          Cursor · OpenCode · Codex CLI · Cline · Continue</span>
@@ -961,7 +960,6 @@ kubectl <span class="k">-n</span> novamem rollout status deploy/novamem</pre>
     <div class="foot-links">
       <a href="https://github.com/azrtydxb/novamem">GitHub</a>
       <a href="https://github.com/azrtydxb/novamem/tree/main/docs">Docs</a>
-      <a href="https://www.npmjs.com/package/@azrtydxb/novamem-init">npm</a>
       <a href="https://github.com/azrtydxb/novamem/blob/main/SECURITY.md">Security</a>
     </div>
   </div>

@@ -1,11 +1,11 @@
 # Connect Cursor
 
-Cursor reads MCP config from `~/.cursor/mcp.json` (global) or `<workspace>/.cursor/mcp.json` (project-local). Recent versions support remote MCP; older versions need the stdio shim.
+Cursor reads MCP config from `~/.cursor/mcp.json` (global) or `<workspace>/.cursor/mcp.json` (project-local). Configure remote MCP at the server’s `/mcp` endpoint.
 
 ## One-shot installer (recommended)
 
 ```bash
-npx @azrtydxb/novamem-init
+novamem-init
 ```
 
 Signs you in, mints a fresh `nm_…` bearer, detects Cursor, and writes `~/.cursor/mcp.json` for you. Idempotent — merges into existing config rather than overwriting.
@@ -29,25 +29,6 @@ The rest of this page is the manual path.
 ```
 
 Open Cursor's settings → MCP and you should see `novamem` connected with the current NovaMem MCP tools listed, including `memory_context`, `memory_capture`, and `memory_adoption`.
-
-## Stdio shim
-
-For older Cursor builds:
-
-```json
-{
-  "mcpServers": {
-    "novamem": {
-      "command": "npx",
-      "args": ["@azrtydxb/novamem-mcp"],
-      "env": {
-        "NOVAMEM_BASE_URL": "http://localhost:7778",
-        "NOVAMEM_TOKEN": "nm_..."
-      }
-    }
-  }
-}
-```
 
 ## Verify
 

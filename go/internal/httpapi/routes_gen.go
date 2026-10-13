@@ -30,6 +30,7 @@ var generatedRoutes = []GeneratedRoute{
 	{Method: "GET", Path: "/v1/admin/service-keys", OperationID: "getV1AdminServiceKeys", Tool: ""},
 	{Method: "POST", Path: "/v1/admin/service-keys", OperationID: "postV1AdminServiceKeys", Tool: ""},
 	{Method: "DELETE", Path: "/v1/admin/service-keys/{id}", OperationID: "deleteV1AdminServiceKeysById", Tool: ""},
+	{Method: "GET", Path: "/v1/admin/telemetry", OperationID: "getV1AdminTelemetry", Tool: ""},
 	{Method: "POST", Path: "/v1/admin/tokens/revoke", OperationID: "postV1AdminTokensRevoke", Tool: ""},
 	{Method: "GET", Path: "/v1/admin/users", OperationID: "getV1AdminUsers", Tool: ""},
 	{Method: "POST", Path: "/v1/admin/users", OperationID: "postV1AdminUsers", Tool: ""},
