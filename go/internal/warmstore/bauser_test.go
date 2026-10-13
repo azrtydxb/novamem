@@ -3,7 +3,6 @@ package warmstore
 import (
 	"context"
 	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,10 +13,7 @@ import (
 //	NOVAMEM_TEST_DATABASE_URL=postgres://…/throwaway go test ./internal/warmstore
 func baUserStore(t *testing.T) *Store {
 	t.Helper()
-	url := os.Getenv("NOVAMEM_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("set NOVAMEM_TEST_DATABASE_URL to a throwaway database to run")
-	}
+	url := testDatabaseURL(t)
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {

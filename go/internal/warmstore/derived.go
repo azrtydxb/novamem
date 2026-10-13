@@ -1,6 +1,10 @@
 package warmstore
 
-import "context"
+import (
+	"context"
+
+	"github.com/azrtydxb/novamem/go/internal/tenant"
+)
 
 // DerivedEntry is a row the fact extractor produced from a source chunk,
 // identified by its metadata.source_chunk_id back-link.
@@ -21,8 +25,14 @@ type DerivedEntry struct {
 // through search, where a derived row frequently outranks its own
 // source.
 //
-// Scoped by user, and by project when one is given, so this can never
-// reach across a scope boundary the caller did not already have.
+// Scope: the project is the boundary when one is given, otherwise the
+// user. Facts are stored under the user who WROTE the source, so a
+// project member forgetting a colleague's entry must still reach the
+// colleague's facts; filtering on the forgetter's user_id there would
+// leave them behind, answering for an entry that no longer exists. The
+// caller's organization always applies, and the back-link is the source
+// entry's id, so a project-wide match can only ever be that entry's
+// own facts.
 func (s *Store) DeleteDerivedFacts(ctx context.Context, userID, sourceID string, projectID *string) ([]DerivedEntry, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -33,12 +43,13 @@ func (s *Store) DeleteDerivedFacts(ctx context.Context, userID, sourceID string,
 	rows, err := tx.Query(ctx, `
 		SELECT id, namespace, project_id
 		  FROM memory_entries
-		 WHERE user_id = $1
+		 WHERE organization_id = $4
 		   AND metadata->>'source_chunk_id' = $2
-		   AND ($3::text IS NULL OR project_id = $3)
+		   AND (($3::text IS NULL AND user_id = $1)
+		     OR ($3::text IS NOT NULL AND project_id = $3))
 		   AND id <> $2
 		   FOR UPDATE`,
-		userID, sourceID, projectID)
+		userID, sourceID, projectID, tenant.OrgOf(userID))
 	if err != nil {
 		return nil, err
 	}

@@ -8,11 +8,77 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/azrtydxb/novamem/go/internal/coldstore"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
+
+// RetentionResult describes one bounded automatic-retention pass.
+type RetentionResult struct {
+	Selected int      `json:"selected"`
+	Deleted  int      `json:"deleted"`
+	DryRun   bool     `json:"dryRun"`
+	EntryIDs []string `json:"entryIds,omitempty"`
+}
+
+// ApplyRetention deletes a bounded oldest-first batch of entries without
+// explicit TTL metadata. updated_at is deliberately the age clock: it is
+// more conservative than created_at because updates (including decay's
+// warm-to-cold demotion) extend retention instead of deleting recently
+// changed memories. Deletion goes through Forget so warm shadows, cold
+// vectors, and derived facts follow the same cleanup path as a user forget.
+func (e *Engine) ApplyRetention(ctx context.Context, maxAge time.Duration, batchSize int, dryRun bool) (RetentionResult, error) {
+	if maxAge <= 0 || batchSize <= 0 {
+		return RetentionResult{}, fmt.Errorf("retention max age and batch size must be positive")
+	}
+	rows, err := e.warm.Pool.Query(ctx, `
+		SELECT id, user_id, project_id
+		  FROM memory_entries
+		 WHERE updated_at <= now() - $1::interval
+		   AND metadata->>'expiresAt' IS NULL
+		 ORDER BY updated_at ASC, id ASC
+		 LIMIT $2`, maxAge.String(), batchSize)
+	if err != nil {
+		return RetentionResult{}, err
+	}
+	type candidate struct {
+		id, userID string
+		projectID  *string
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.userID, &c.projectID); err != nil {
+			rows.Close()
+			return RetentionResult{}, err
+		}
+		candidates = append(candidates, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return RetentionResult{}, err
+	}
+	out := RetentionResult{Selected: len(candidates), DryRun: dryRun}
+	if dryRun {
+		out.EntryIDs = make([]string, 0, len(candidates))
+		for _, c := range candidates {
+			out.EntryIDs = append(out.EntryIDs, c.id)
+		}
+		return out, nil
+	}
+	for _, c := range candidates {
+		result, err := e.Forget(ctx, c.userID, c.id, c.projectID)
+		if err != nil {
+			return out, err
+		}
+		if result.Deleted {
+			out.Deleted++
+		}
+	}
+	return out, nil
+}
 
 // DecayResult — POST /v1/decay's body.
 type DecayResult struct {
@@ -297,10 +363,8 @@ func (e *Engine) ReconcilePendingEmbeddings(ctx context.Context, batchSize int) 
 	for _, row := range rows {
 		if err := e.embedAndUpsert(ctx, row); err != nil {
 			out.Failed++
-			e.recordEmbedFailure(err, "reconcile", row.ID)
 			continue
 		}
-		e.recordEmbedSuccess()
 		out.Done++
 	}
 	pending, err := e.warm.CountPendingEmbedding(ctx)
@@ -312,18 +376,26 @@ func (e *Engine) ReconcilePendingEmbeddings(ctx context.Context, batchSize int) 
 	return out, nil
 }
 
+// embedAndUpsert attributes each failure to the dependency that caused it:
+// the embedder, the cold vector store, or (unsignalled, logged) the warm
+// store. Embedding the text and writing the vector are separate outages.
 func (e *Engine) embedAndUpsert(ctx context.Context, row warmstore.PendingEntry) error {
 	embedding, err := e.embedDocument(ctx, row.Content)
 	if err != nil {
+		e.recordEmbedFailure(err, "reconcile", row.ID)
 		return err
 	}
+	e.recordEmbedSuccess()
 	if err := e.cold.Upsert(ctx, coldstore.UpsertArgs{
 		UserID: row.UserID, ProjectID: row.ProjectID, ID: row.ID, Namespace: row.Namespace,
 		Embedding: embedding, Payload: e.vectorPayload(row.Source, row.AgentName),
 	}); err != nil {
+		e.recordVectorStoreFailure(err, "reconcile", row.ID)
 		return err
 	}
+	e.recordVectorStoreSuccess()
 	if err := e.warm.SetEmbeddedAt(ctx, row.ID, ptrTime(time.Now())); err != nil {
+		e.log.Warn("reconcile: could not stamp embedded_at", "entryId", row.ID, "err", err)
 		return err
 	}
 	// A row that was also parked as a missing-vector orphan is repaired.
@@ -421,7 +493,8 @@ func (e *Engine) DeleteUser(ctx context.Context, userID string) (DeleteUserResul
 
 // Health is /v1/admin/health/deep's per-dependency snapshot. Deliberate
 // asymmetry: a failing embedder and a pending backlog are reported but
-// neither enters `ok` — keyword search still works without the embedder,
+// neither enters `ok` (nor does a cold store that answers pings but fails
+// writes, reported as cold=failing) — keyword search still works without the embedder,
 // so pulling the service out of rotation would turn a partial loss of
 // recall into a total loss of memory.
 func (e *Engine) Health(ctx context.Context) map[string]any {
@@ -436,6 +509,13 @@ func (e *Engine) Health(ctx context.Context) map[string]any {
 	embedder := "ok"
 	if e.embedderFailing() {
 		embedder = "failing"
+	}
+	// Reachable (Ping) but rejecting writes — a wrong collection, a bad
+	// path, a full disk — is the case Ping cannot see. Report it on the
+	// cold dependency, never on the embedder.
+	cold := state(coldOK)
+	if coldOK && e.cold != nil && e.vectorStoreFailing() {
+		cold = "failing"
 	}
 	var pending *int
 	if n := e.pendingEmbeddings.Load(); n >= 0 {
@@ -460,7 +540,7 @@ func (e *Engine) Health(ctx context.Context) map[string]any {
 		"ok": warmOK && coldOK,
 		"deps": map[string]any{
 			"warm":     state(warmOK),
-			"cold":     state(coldOK),
+			"cold":     cold,
 			"embedder": embedder,
 		},
 		// Which vector backend is actually configured. The dashboard had

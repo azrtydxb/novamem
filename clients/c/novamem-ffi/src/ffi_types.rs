@@ -265,6 +265,8 @@ pub struct novamem_capture_request {
     pub project: *mut c_char,
     pub sensitivity: *mut c_char,
     pub source: *mut c_char,
+    pub source_refs: *mut *mut c_char,
+    pub source_refs_len: usize,
     pub source_type: *mut c_char,
 }
 
@@ -283,12 +285,14 @@ impl novamem_capture_request {
             project: c_str(self.project),
             sensitivity: c_enum(self.sensitivity),
             source: c_str(self.source),
+            source_refs: c_str_array(self.source_refs, self.source_refs_len),
             source_type: c_str(self.source_type),
         }
     }
 
     /// Builds a C value that owns copies of everything in `v`.
     pub(crate) fn to_c(v: &types::CaptureRequest) -> Self {
+        let (source_refs_ptr, source_refs_len) = str_array_to_c(v.source_refs.as_deref());
         Self {
             agent_name: str_to_c(v.agent_name.as_deref()),
             captured_from: str_to_c(v.captured_from.as_deref()),
@@ -303,6 +307,8 @@ impl novamem_capture_request {
             project: str_to_c(v.project.as_deref()),
             sensitivity: enum_to_c(v.sensitivity.as_ref()),
             source: str_to_c(v.source.as_deref()),
+            source_refs: source_refs_ptr,
+            source_refs_len,
             source_type: str_to_c(v.source_type.as_deref()),
         }
     }
@@ -320,6 +326,7 @@ impl novamem_capture_request {
         free_str(self.project);
         free_str(self.sensitivity);
         free_str(self.source);
+        free_str_array(self.source_refs, self.source_refs_len);
         free_str(self.source_type);
     }
 }
@@ -552,6 +559,8 @@ pub struct novamem_context_request {
     pub message: *mut c_char,
     pub namespace: *mut c_char,
     pub project: *mut c_char,
+    pub has_rerank: bool,
+    pub rerank: bool,
     pub weights: *mut novamem_context_request_weights,
 }
 
@@ -570,6 +579,7 @@ impl novamem_context_request {
             message: c_str(self.message).unwrap_or_default(),
             namespace: c_str(self.namespace),
             project: c_str(self.project),
+            rerank: if self.has_rerank { Some(self.rerank) } else { None },
             weights: self.weights.as_ref().map(|p| p.to_rust()),
         }
     }
@@ -596,6 +606,8 @@ impl novamem_context_request {
             message: str_to_c(Some(v.message.as_str())),
             namespace: str_to_c(v.namespace.as_deref()),
             project: str_to_c(v.project.as_deref()),
+            has_rerank: v.rerank.is_some(),
+            rerank: v.rerank.unwrap_or_default(),
             weights: v.weights.as_ref().map_or(std::ptr::null_mut(), |x| boxed(novamem_context_request_weights::to_c(x))),
         }
     }
@@ -613,6 +625,7 @@ impl novamem_context_request {
         free_str(self.message);
         free_str(self.namespace);
         free_str(self.project);
+
         novamem_context_request_weights_free(self.weights);
     }
 }
@@ -1033,22 +1046,25 @@ pub unsafe extern "C" fn novamem_exported_entry_free(p: *mut novamem_exported_en
 pub struct novamem_forget_request {
     pub id: *mut c_char,
     pub project: *mut c_char,
+    pub source_ref: *mut c_char,
 }
 
 impl novamem_forget_request {
     /// Reads a C-owned value into the SDK type.
     pub(crate) unsafe fn to_rust(&self) -> types::ForgetRequest {
         types::ForgetRequest {
-            id: c_str(self.id).unwrap_or_default(),
+            id: c_str(self.id),
             project: c_str(self.project),
+            source_ref: c_str(self.source_ref),
         }
     }
 
     /// Builds a C value that owns copies of everything in `v`.
     pub(crate) fn to_c(v: &types::ForgetRequest) -> Self {
         Self {
-            id: str_to_c(Some(v.id.as_str())),
+            id: str_to_c(v.id.as_deref()),
             project: str_to_c(v.project.as_deref()),
+            source_ref: str_to_c(v.source_ref.as_deref()),
         }
     }
 
@@ -1056,6 +1072,7 @@ impl novamem_forget_request {
     pub(crate) unsafe fn free_fields(&mut self) {
         free_str(self.id);
         free_str(self.project);
+        free_str(self.source_ref);
     }
 }
 
@@ -1146,11 +1163,16 @@ pub unsafe extern "C" fn novamem_health_free(p: *mut novamem_health) {
 
 #[repr(C)]
 pub struct novamem_hygiene_report {
-    pub contradiction_candidates: *mut c_char,
-    pub duplicate_clusters: *mut c_char,
-    pub low_value: *mut c_char,
-    pub orphan_candidates: *mut c_char,
-    pub stale: *mut c_char,
+    pub contradiction_candidates: *mut novamem_hygiene_report_contradiction_candidates_item,
+    pub contradiction_candidates_len: usize,
+    pub duplicate_clusters: *mut novamem_hygiene_report_duplicate_clusters_item,
+    pub duplicate_clusters_len: usize,
+    pub low_value: *mut novamem_hygiene_report_low_value_item,
+    pub low_value_len: usize,
+    pub orphan_candidates: *mut novamem_hygiene_report_orphan_candidates_item,
+    pub orphan_candidates_len: usize,
+    pub stale: *mut novamem_hygiene_report_stale_item,
+    pub stale_len: usize,
     pub summary: *mut novamem_hygiene_report_summary,
 }
 
@@ -1158,34 +1180,44 @@ impl novamem_hygiene_report {
     /// Reads a C-owned value into the SDK type.
     pub(crate) unsafe fn to_rust(&self) -> types::HygieneReport {
         types::HygieneReport {
-            contradiction_candidates: c_json(self.contradiction_candidates),
-            duplicate_clusters: c_json(self.duplicate_clusters),
-            low_value: c_json(self.low_value),
-            orphan_candidates: c_json(self.orphan_candidates),
-            stale: c_json(self.stale),
+            contradiction_candidates: c_obj_array(self.contradiction_candidates, self.contradiction_candidates_len, |x| x.to_rust()),
+            duplicate_clusters: c_obj_array(self.duplicate_clusters, self.duplicate_clusters_len, |x| x.to_rust()),
+            low_value: c_obj_array(self.low_value, self.low_value_len, |x| x.to_rust()),
+            orphan_candidates: c_obj_array(self.orphan_candidates, self.orphan_candidates_len, |x| x.to_rust()),
+            stale: c_obj_array(self.stale, self.stale_len, |x| x.to_rust()),
             summary: self.summary.as_ref().map(|p| p.to_rust()).unwrap_or_default(),
         }
     }
 
     /// Builds a C value that owns copies of everything in `v`.
     pub(crate) fn to_c(v: &types::HygieneReport) -> Self {
+        let (contradiction_candidates_ptr, contradiction_candidates_len) = obj_array_to_c(v.contradiction_candidates.as_deref(), novamem_hygiene_report_contradiction_candidates_item::to_c);
+        let (duplicate_clusters_ptr, duplicate_clusters_len) = obj_array_to_c(v.duplicate_clusters.as_deref(), novamem_hygiene_report_duplicate_clusters_item::to_c);
+        let (low_value_ptr, low_value_len) = obj_array_to_c(v.low_value.as_deref(), novamem_hygiene_report_low_value_item::to_c);
+        let (orphan_candidates_ptr, orphan_candidates_len) = obj_array_to_c(v.orphan_candidates.as_deref(), novamem_hygiene_report_orphan_candidates_item::to_c);
+        let (stale_ptr, stale_len) = obj_array_to_c(v.stale.as_deref(), novamem_hygiene_report_stale_item::to_c);
         Self {
-            contradiction_candidates: json_to_c(v.contradiction_candidates.as_ref()),
-            duplicate_clusters: json_to_c(v.duplicate_clusters.as_ref()),
-            low_value: json_to_c(v.low_value.as_ref()),
-            orphan_candidates: json_to_c(v.orphan_candidates.as_ref()),
-            stale: json_to_c(v.stale.as_ref()),
+            contradiction_candidates: contradiction_candidates_ptr,
+            contradiction_candidates_len,
+            duplicate_clusters: duplicate_clusters_ptr,
+            duplicate_clusters_len,
+            low_value: low_value_ptr,
+            low_value_len,
+            orphan_candidates: orphan_candidates_ptr,
+            orphan_candidates_len,
+            stale: stale_ptr,
+            stale_len,
             summary: boxed(novamem_hygiene_report_summary::to_c(&v.summary)),
         }
     }
 
     /// Frees everything this value owns, but not the value itself.
     pub(crate) unsafe fn free_fields(&mut self) {
-        free_str(self.contradiction_candidates);
-        free_str(self.duplicate_clusters);
-        free_str(self.low_value);
-        free_str(self.orphan_candidates);
-        free_str(self.stale);
+        free_obj_array(self.contradiction_candidates, self.contradiction_candidates_len, |x| x.free_fields());
+        free_obj_array(self.duplicate_clusters, self.duplicate_clusters_len, |x| x.free_fields());
+        free_obj_array(self.low_value, self.low_value_len, |x| x.free_fields());
+        free_obj_array(self.orphan_candidates, self.orphan_candidates_len, |x| x.free_fields());
+        free_obj_array(self.stale, self.stale_len, |x| x.free_fields());
         novamem_hygiene_report_summary_free(self.summary);
     }
 }
@@ -1193,6 +1225,211 @@ impl novamem_hygiene_report {
 /// Frees a value returned by this library, and everything inside it.
 #[no_mangle]
 pub unsafe extern "C" fn novamem_hygiene_report_free(p: *mut novamem_hygiene_report) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
+pub struct novamem_hygiene_report_contradiction_candidates_item {
+    pub ids: *mut *mut c_char,
+    pub ids_len: usize,
+    pub reason: *mut c_char,
+}
+
+impl novamem_hygiene_report_contradiction_candidates_item {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::HygieneReportContradictionCandidatesItem {
+        types::HygieneReportContradictionCandidatesItem {
+            ids: c_str_array(self.ids, self.ids_len),
+            reason: c_str(self.reason),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::HygieneReportContradictionCandidatesItem) -> Self {
+        let (ids_ptr, ids_len) = str_array_to_c(v.ids.as_deref());
+        Self {
+            ids: ids_ptr,
+            ids_len,
+            reason: str_to_c(v.reason.as_deref()),
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+        free_str_array(self.ids, self.ids_len);
+        free_str(self.reason);
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_hygiene_report_contradiction_candidates_item_free(p: *mut novamem_hygiene_report_contradiction_candidates_item) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
+pub struct novamem_hygiene_report_duplicate_clusters_item {
+    pub ids: *mut *mut c_char,
+    pub ids_len: usize,
+    pub reason: *mut c_char,
+}
+
+impl novamem_hygiene_report_duplicate_clusters_item {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::HygieneReportDuplicateClustersItem {
+        types::HygieneReportDuplicateClustersItem {
+            ids: c_str_array(self.ids, self.ids_len),
+            reason: c_str(self.reason),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::HygieneReportDuplicateClustersItem) -> Self {
+        let (ids_ptr, ids_len) = str_array_to_c(v.ids.as_deref());
+        Self {
+            ids: ids_ptr,
+            ids_len,
+            reason: str_to_c(v.reason.as_deref()),
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+        free_str_array(self.ids, self.ids_len);
+        free_str(self.reason);
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_hygiene_report_duplicate_clusters_item_free(p: *mut novamem_hygiene_report_duplicate_clusters_item) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
+pub struct novamem_hygiene_report_low_value_item {
+    pub content: *mut c_char,
+    pub id: *mut c_char,
+    pub reason: *mut c_char,
+}
+
+impl novamem_hygiene_report_low_value_item {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::HygieneReportLowValueItem {
+        types::HygieneReportLowValueItem {
+            content: c_str(self.content),
+            id: c_str(self.id),
+            reason: c_str(self.reason),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::HygieneReportLowValueItem) -> Self {
+        Self {
+            content: str_to_c(v.content.as_deref()),
+            id: str_to_c(v.id.as_deref()),
+            reason: str_to_c(v.reason.as_deref()),
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+        free_str(self.content);
+        free_str(self.id);
+        free_str(self.reason);
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_hygiene_report_low_value_item_free(p: *mut novamem_hygiene_report_low_value_item) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
+pub struct novamem_hygiene_report_orphan_candidates_item {
+    pub id: *mut c_char,
+    pub reason: *mut c_char,
+}
+
+impl novamem_hygiene_report_orphan_candidates_item {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::HygieneReportOrphanCandidatesItem {
+        types::HygieneReportOrphanCandidatesItem {
+            id: c_str(self.id),
+            reason: c_str(self.reason),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::HygieneReportOrphanCandidatesItem) -> Self {
+        Self {
+            id: str_to_c(v.id.as_deref()),
+            reason: str_to_c(v.reason.as_deref()),
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+        free_str(self.id);
+        free_str(self.reason);
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_hygiene_report_orphan_candidates_item_free(p: *mut novamem_hygiene_report_orphan_candidates_item) {
+    if !p.is_null() {
+        let mut b = Box::from_raw(p);
+        b.free_fields();
+    }
+}
+
+#[repr(C)]
+pub struct novamem_hygiene_report_stale_item {
+    pub id: *mut c_char,
+    pub reason: *mut c_char,
+}
+
+impl novamem_hygiene_report_stale_item {
+    /// Reads a C-owned value into the SDK type.
+    pub(crate) unsafe fn to_rust(&self) -> types::HygieneReportStaleItem {
+        types::HygieneReportStaleItem {
+            id: c_str(self.id),
+            reason: c_str(self.reason),
+        }
+    }
+
+    /// Builds a C value that owns copies of everything in `v`.
+    pub(crate) fn to_c(v: &types::HygieneReportStaleItem) -> Self {
+        Self {
+            id: str_to_c(v.id.as_deref()),
+            reason: str_to_c(v.reason.as_deref()),
+        }
+    }
+
+    /// Frees everything this value owns, but not the value itself.
+    pub(crate) unsafe fn free_fields(&mut self) {
+        free_str(self.id);
+        free_str(self.reason);
+    }
+}
+
+/// Frees a value returned by this library, and everything inside it.
+#[no_mangle]
+pub unsafe extern "C" fn novamem_hygiene_report_stale_item_free(p: *mut novamem_hygiene_report_stale_item) {
     if !p.is_null() {
         let mut b = Box::from_raw(p);
         b.free_fields();

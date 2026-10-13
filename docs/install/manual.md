@@ -81,6 +81,15 @@ The four you are most likely to set on a manual install:
 | `NOVAMEM_BASE_URL`      | Public origin; **must** match the browser's `Origin` for the trusted-origin check. |
 | `NOVAMEM_AUTH_MODE`     | `user` (default) / `bearer` / `none`; only `user` enforces per-user isolation.     |
 
+For deployments that must never start without authentication, set
+`NOVAMEM_REQUIRE_AUTH=1`; startup then refuses `NOVAMEM_AUTH_MODE=none`.
+Configured data-processing endpoints and the cold-store URL may use HTTP when
+their host resolves only to private or loopback addresses (for example, a LAN
+model server or an in-cluster service). Public HTTP endpoints are refused; use
+HTTPS, or set
+`NOVAMEM_ALLOW_INSECURE_ENDPOINTS=1` only when the public HTTP exception is
+intentional.
+
 ## Verify
 
 ```bash

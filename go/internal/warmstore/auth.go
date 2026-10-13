@@ -166,6 +166,41 @@ type TokenRow struct {
 	Revoked    bool       `json:"revoked"`
 }
 
+// AdminTokenRow is token metadata across the deployment. It never
+// includes the bearer secret, which is not stored in plaintext.
+type AdminTokenRow struct {
+	UserID     string     `json:"userId"`
+	TokenHash  string     `json:"tokenHash"`
+	Label      *string    `json:"label"`
+	Scope      string     `json:"scope"`
+	ProjectID  *string    `json:"projectId"`
+	ExpiresAt  *time.Time `json:"expiresAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt"`
+	Revoked    bool       `json:"revoked"`
+}
+
+func (s *Store) ListAllUserTokens(ctx context.Context) ([]AdminTokenRow, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT user_id, token_hash, label, scope, project_id, expires_at, created_at, last_used_at, revoked_at
+		  FROM user_tokens ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminTokenRow{}
+	for rows.Next() {
+		var t AdminTokenRow
+		var revokedAt *time.Time
+		if err := rows.Scan(&t.UserID, &t.TokenHash, &t.Label, &t.Scope, &t.ProjectID, &t.ExpiresAt, &t.CreatedAt, &t.LastUsedAt, &revokedAt); err != nil {
+			return nil, err
+		}
+		t.Revoked = revokedAt != nil
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // CreateUserToken mints a bearer for a user. Returns the plaintext once;
 // only the sha256 is stored. nil when the user doesn't exist.
 func (s *Store) CreateUserToken(ctx context.Context, userID string, label *string, scope string, projectID *string, expiresAt *time.Time) (token string, createdAt time.Time, err error) {

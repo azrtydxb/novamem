@@ -216,6 +216,11 @@ type Config struct {
 	// Token is the long-lived opaque bearer (`nm_…`). Sent as
 	// "Authorization: Bearer <token>" and never included in an error.
 	Token string
+	// TokenSource, when set, supplies the bearer for every call instead of
+	// Token — for credentials that expire, such as an on-behalf-of JWT
+	// (see [NewOBOTokenSource]). It is called once per request, so it must
+	// be cheap and safe for concurrent use. When set, Token is ignored.
+	TokenSource func(ctx context.Context) (string, error)
 	// Timeout bounds a single call. Zero means DefaultTimeout.
 	Timeout time.Duration
 	// HTTPClient is optional. When nil the client builds its own with a
@@ -233,7 +238,7 @@ type Config struct {
 // connections, so a client per call would forfeit keep-alive.
 type Client struct {
 	baseURL string
-	token   string
+	token   func(ctx context.Context) (string, error)
 	timeout time.Duration
 	http    *http.Client
 }
@@ -253,10 +258,15 @@ func New(cfg Config) (*Client, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("novamem: BaseURL %q is not an absolute http(s) URL", cfg.BaseURL)
 	}
-	if strings.TrimSpace(cfg.Token) == "" {
-		// Says only that it is missing, never what was passed — an error
-		// about a credential must not quote the credential.
-		return nil, errors.New("novamem: Token is required")
+	tokenFn := cfg.TokenSource
+	if tokenFn == nil {
+		if strings.TrimSpace(cfg.Token) == "" {
+			// Says only that it is missing, never what was passed — an error
+			// about a credential must not quote the credential.
+			return nil, errors.New("novamem: Token is required")
+		}
+		static := cfg.Token
+		tokenFn = func(context.Context) (string, error) { return static, nil }
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
@@ -274,7 +284,7 @@ func New(cfg Config) (*Client, error) {
 		}
 		hc = &http.Client{Transport: transport}
 	}
-	return &Client{baseURL: base, token: cfg.Token, timeout: timeout, http: hc}, nil
+	return &Client{baseURL: base, token: tokenFn, timeout: timeout, http: hc}, nil
 }
 
 // ─── Wire types ────────────────────────────────────────────────────────────
@@ -390,6 +400,12 @@ type CaptureRequest struct {
 	// hidden from every read immediately and hard-deleted by the server's
 	// reaper. Zero value = no expiry.
 	ExpiresAt string `json:"expiresAt,omitempty"`
+	// SourceRefs name the external sources this entry derives from (a
+	// document URL, a ticket key). At most 32, each 1-512 characters with
+	// no control characters. When the write dedupes onto or updates an
+	// existing entry the refs are merged into it. ForgetBySource later
+	// removes every entry that carries one.
+	SourceRefs []string `json:"sourceRefs,omitempty"`
 }
 
 // CaptureResult is the outcome of a write.
@@ -522,6 +538,20 @@ type ForgetResult struct {
 	ColdDeleteOk bool `json:"coldDeleteOk"`
 }
 
+// ForgetBySourceResult is the receipt of a forget by source reference.
+type ForgetBySourceResult struct {
+	// SourceRef echoes the reference that was forgotten.
+	SourceRef string `json:"sourceRef"`
+	// IDs are the entries removed. Empty (never nil) when nothing matched.
+	IDs []string `json:"ids"`
+	// Count is len(IDs). 0 on an idempotent repeat.
+	Count int `json:"count"`
+	// ColdDeleteOk is false when at least one vector copy survived; the
+	// server queues those for its reaper. The entries are already
+	// unretrievable either way — retrieval resolves through the primary rows.
+	ColdDeleteOk bool `json:"coldDeleteOk"`
+}
+
 // ─── Operations ────────────────────────────────────────────────────────────
 
 // Capture stores a durable fact, deduplicating and superseding as it goes.
@@ -642,6 +672,31 @@ func (c *Client) Forget(ctx context.Context, req ForgetRequest) (ForgetResult, e
 			return ForgetResult{Deleted: false, ColdDeleteOk: true}, nil
 		}
 		return ForgetResult{}, err
+	}
+	return out, nil
+}
+
+// ForgetBySource permanently deletes every memory stored with sourceRef
+// (see CaptureRequest.SourceRefs): the caller's own entries, inside the
+// caller's organization. Use it when a source document is deleted or access
+// to it is revoked.
+//
+// It is idempotent: forgetting a reference nothing carries — including the
+// second call for the same reference — returns Count 0 and no error. Check
+// ColdDeleteOk as with Forget.
+func (c *Client) ForgetBySource(ctx context.Context, sourceRef string) (ForgetBySourceResult, error) {
+	var out ForgetBySourceResult
+	if strings.TrimSpace(sourceRef) == "" {
+		return out, &Error{Op: "forgetBySource", Message: "sourceRef is required"}
+	}
+	body := struct {
+		SourceRef string `json:"sourceRef"`
+	}{sourceRef}
+	if err := c.do(ctx, "forgetBySource", http.MethodPost, "/v1/forget", body, &out); err != nil {
+		return ForgetBySourceResult{}, err
+	}
+	if out.IDs == nil {
+		out.IDs = []string{}
 	}
 	return out, nil
 }
@@ -857,7 +912,14 @@ func (c *Client) do(ctx context.Context, op, method, path string, body, out any)
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	token, err := c.token(ctx)
+	if err == nil && strings.TrimSpace(token) == "" {
+		err = errors.New("token source returned an empty token")
+	}
+	if err != nil {
+		return &Error{Op: op, Message: "obtain token: " + err.Error(), cause: err}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -882,9 +944,9 @@ func (c *Client) do(ctx context.Context, op, method, path string, body, out any)
 		// echoes the credential back in an error ("bad token nm_…") would
 		// otherwise get it laundered into this client's logs. Cheap, and it
 		// removes the only path by which the token can reach an error string.
-		e.Message = strings.ReplaceAll(e.Message, c.token, "[redacted]")
+		e.Message = strings.ReplaceAll(e.Message, token, "[redacted]")
 		// The code is quoted verbatim too, and Error() prints it.
-		e.Code = strings.ReplaceAll(e.Code, c.token, "[redacted]")
+		e.Code = strings.ReplaceAll(e.Code, token, "[redacted]")
 		return e
 	}
 	if out == nil {

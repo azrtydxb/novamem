@@ -30,6 +30,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/auth"
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/metrics"
+	"github.com/azrtydxb/novamem/go/internal/tracing"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -168,6 +169,7 @@ func newHandler(opts Options) (http.Handler, []string) {
 	s.registerMCP(mux)
 	s.registerAuthRoutes(mux)
 	s.registerAdmin(mux)
+	s.registerServiceKeys(mux)
 	// Unmatched routes answer Fastify's default 404 envelope rather than
 	// net/http's text/plain "404 page not found" — callers (and the
 	// conformance suite) parse `error` off every 4xx body.
@@ -182,7 +184,7 @@ func newHandler(opts Options) (http.Handler, []string) {
 	// routes so its headers land on every answered request, and the JSON
 	// body guard sits where Fastify's content-type parser does — after
 	// routing, before the handler.
-	return requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux.ServeMux))))), mux.patterns
+	return tracing.HTTP(requestLog(opts.Log, paramLengthGuard(s.cors(s.rateLimit(emptyJSONBodyGuard(mux.ServeMux)))))), mux.patterns
 }
 
 // routeMux is http.ServeMux plus the list of patterns registered on it.

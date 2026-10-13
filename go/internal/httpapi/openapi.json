@@ -175,6 +175,7 @@
                   "type": "string"
                 },
                 "seq": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 }
               },
@@ -254,12 +255,15 @@
       "DecayResult": {
         "properties": {
           "demoted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "expired": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "promoted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -273,24 +277,31 @@
       "DreamCycleResult": {
         "properties": {
           "durationMs": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "edgesPromoted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "factClustersJudged": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "factsSuperseded": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "factsWalked": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "merged": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "walked": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -346,12 +357,15 @@
           "summary": {
             "properties": {
               "failed": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "passed": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "total": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               }
             },
@@ -445,6 +459,32 @@
         ],
         "type": "object"
       },
+      "ForgetBySourceResult": {
+        "properties": {
+          "coldDeleteOk": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceRef": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceRef",
+          "ids",
+          "count",
+          "coldDeleteOk"
+        ],
+        "type": "object"
+      },
       "ForgetResult": {
         "properties": {
           "coldDeleteOk": {
@@ -474,43 +514,108 @@
       "HygieneReport": {
         "properties": {
           "contradictionCandidates": {
-            "items": {},
+            "items": {
+              "properties": {
+                "ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "duplicateClusters": {
-            "items": {},
+            "items": {
+              "properties": {
+                "ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "lowValue": {
-            "items": {},
+            "items": {
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "orphanCandidates": {
-            "items": {},
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "stale": {
-            "items": {},
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "summary": {
             "properties": {
               "contradictionCandidates": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "duplicateClusters": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "lowValue": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "orphanCandidates": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "scanned": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "stale": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               }
             },
@@ -634,24 +739,30 @@
             "type": "string"
           },
           "score": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "signals": {
-            "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+            "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
             "properties": {
               "entity": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "graph": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "keyword": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "recency": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "vector": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               }
             },
@@ -677,15 +788,18 @@
       "MetricsHistory": {
         "properties": {
           "hours": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "samples": {
             "items": {
               "properties": {
                 "queries": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 },
                 "remembers": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 },
                 "sampledAt": {
@@ -733,9 +847,11 @@
       "ObserveResult": {
         "properties": {
           "logChars": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "observed": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "reflected": {
@@ -902,18 +1018,23 @@
       "ReapOrphansResult": {
         "properties": {
           "abandoned": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "attempted": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "cleared": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "pending": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "total": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -978,6 +1099,41 @@
         ],
         "type": "object"
       },
+      "ServiceKey": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The `kid` for the JWT header.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "organizationId",
+          "publicKey",
+          "createdAt",
+          "revokedAt"
+        ],
+        "type": "object"
+      },
       "SessionRecapResult": {
         "properties": {
           "results": {
@@ -987,6 +1143,7 @@
             "type": "array"
           },
           "saved": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -1002,9 +1159,11 @@
             "additionalProperties": {
               "properties": {
                 "cold": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 },
                 "warm": {
+                  "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                   "type": "number"
                 }
               },
@@ -1017,12 +1176,15 @@
             "type": "string"
           },
           "totalCold": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "totalWarm": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "uptimeMs": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           }
         },
@@ -1030,6 +1192,22 @@
           "byNamespace",
           "totalWarm",
           "totalCold"
+        ],
+        "type": "object"
+      },
+      "TelemetryGroup": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "count"
         ],
         "type": "object"
       },
@@ -1116,6 +1294,7 @@
       "Usage": {
         "properties": {
           "entries": {
+            "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
             "type": "number"
           },
           "quota": {
@@ -1214,6 +1393,12 @@
       }
     },
     "securitySchemes": {
+      "ServiceBearer": {
+        "bearerFormat": "JWT",
+        "description": "On-behalf-of service token: an EdDSA JWT a registered service signs itself (header alg=EdDSA, kid=service key id; claims sub, org, aud=novamem, iat, exp with exp-iat at most 15 minutes). Acts as user `sub` within the key's one organization on the memory data plane only; projects, accounts, tokens and the admin surface answer 403. Accepted only in user auth mode. See ADR 0011.",
+        "scheme": "bearer",
+        "type": "http"
+      },
       "SessionCookie": {
         "description": "Better Auth session cookie set by /api/auth/sign-in/email. HttpOnly + SameSite=Lax. Browsers attach it automatically.",
         "in": "cookie",
@@ -1235,7 +1420,7 @@
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
     "title": "novamem",
-    "version": "1.1.7"
+    "version": "1.2.0"
   },
   "openapi": "3.0.3",
   "paths": {
@@ -1491,7 +1676,8 @@
                         "cold": {
                           "enum": [
                             "ok",
-                            "unreachable"
+                            "unreachable",
+                            "failing"
                           ],
                           "type": "string"
                         },
@@ -1576,7 +1762,8 @@
                         "cold": {
                           "enum": [
                             "ok",
-                            "unreachable"
+                            "unreachable",
+                            "failing"
                           ],
                           "type": "string"
                         },
@@ -1703,6 +1890,408 @@
           }
         ],
         "summary": "Same metrics in Prometheus exposition format",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/service-keys": {
+      "get": {
+        "description": "Admin only.",
+        "operationId": "getV1AdminServiceKeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "keys": {
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceKey"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "keys"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Every registered key, newest first"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "List service keys, revoked ones included",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Register the public half of a key a service signs on-behalf-of tokens with. NovaMem never holds the private key. Admin only.",
+        "operationId": "postV1AdminServiceKeys",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "organizationId": {
+                    "description": "The one organization this key may act for. \"default\" is refused.",
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                    "type": "string"
+                  },
+                  "publicKey": {
+                    "description": "Raw 32-byte Ed25519 public key, base64url.",
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "organizationId",
+                  "publicKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceKey"
+                }
+              }
+            },
+            "description": "The registered key. Its id is the `kid` the service puts in its JWT header."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid body, or the organization is \"default\""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "Register a service's Ed25519 public key for on-behalf-of tokens",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/service-keys/{id}": {
+      "delete": {
+        "description": "Admin only. Idempotent only in effect; a second revoke answers 404.",
+        "operationId": "deleteV1AdminServiceKeysById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "revoked"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Revoked. Tokens signed by the key stop verifying immediately."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid credentials"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No such active service key"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "Revoke a service key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/telemetry": {
+      "get": {
+        "description": "Admin-only aggregate view. Daily growth and sensitivity distribution are limited to the last 30 days because created_at and metadata sensitivity have no general-purpose index; project values are opaque ids and no memory content or user identifiers are returned.",
+        "operationId": "getV1AdminTelemetry",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "byNamespace": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "byProject": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "bySensitivity": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "byTier": {
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryGroup"
+                      },
+                      "type": "array"
+                    },
+                    "createdPerDay": {
+                      "items": {
+                        "properties": {
+                          "count": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "date": {
+                            "format": "date",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "embeddedEntries": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "health": {
+                      "properties": {
+                        "coldProvider": {
+                          "enum": [
+                            "pgvector",
+                            "qdrant",
+                            "none"
+                          ],
+                          "type": "string"
+                        },
+                        "deps": {
+                          "properties": {
+                            "cold": {
+                              "enum": [
+                                "ok",
+                                "unreachable",
+                                "failing"
+                              ],
+                              "type": "string"
+                            },
+                            "embedder": {
+                              "enum": [
+                                "ok",
+                                "failing"
+                              ],
+                              "type": "string"
+                            },
+                            "warm": {
+                              "enum": [
+                                "ok",
+                                "unreachable"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "warm",
+                            "cold",
+                            "embedder"
+                          ],
+                          "type": "object"
+                        },
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "pendingEmbeddings": {
+                          "nullable": true,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "deps",
+                        "coldProvider",
+                        "pendingEmbeddings"
+                      ],
+                      "type": "object"
+                    },
+                    "lastDecayAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "pendingColdOrphans": {
+                      "type": "integer"
+                    },
+                    "pendingEmbeddings": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "pendingExtractions": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "topAgents": {
+                      "items": {
+                        "properties": {
+                          "count": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "totalEntries": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "totalEntries",
+                    "embeddedEntries",
+                    "pendingEmbeddings",
+                    "pendingExtractions",
+                    "pendingColdOrphans",
+                    "byNamespace",
+                    "byProject",
+                    "bySensitivity",
+                    "byTier",
+                    "createdPerDay",
+                    "topAgents",
+                    "lastDecayAt",
+                    "health"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Aggregate-only memory volume, distribution, growth and operational health. Memory content and user identifiers are never returned. Sensitivity distribution and daily growth are limited to 30 days because there is no general created-at/sensitivity index."
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "description": "Authenticated user is not an admin"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "UserBearer": []
+          }
+        ],
+        "summary": "Aggregate memory telemetry",
         "tags": [
           "admin"
         ]
@@ -2099,6 +2688,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -2208,6 +2800,16 @@
                     "maxLength": 128,
                     "type": "string"
                   },
+                  "sourceRefs": {
+                    "description": "External sources this entry derives from (document URL, ticket key, ...). Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.",
+                    "items": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  },
                   "sourceType": {
                     "maxLength": 64,
                     "type": "string"
@@ -2247,6 +2849,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -2334,6 +2939,10 @@
                     "nullable": true,
                     "type": "string"
                   },
+                  "rerank": {
+                    "description": "Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.",
+                    "type": "boolean"
+                  },
                   "weights": {
                     "properties": {
                       "entity": {
@@ -2391,6 +3000,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -2441,6 +3053,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -2591,11 +3206,24 @@
               }
             },
             "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Token is confined to a project and this evaluation is account-wide"
           }
         },
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -2609,7 +3237,7 @@
     },
     "/v1/forget": {
       "post": {
-        "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.",
+        "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly. With `sourceRef`, every memory stored with that source reference is deleted; with an active project and no `project` argument that covers only the active project, not user-wide entries.",
         "operationId": "postV1Forget",
         "requestBody": {
           "content": {
@@ -2626,11 +3254,14 @@
                     "minLength": 1,
                     "nullable": true,
                     "type": "string"
+                  },
+                  "sourceRef": {
+                    "description": "Forget every entry carrying this source reference, in the caller's organization and scope. Mutually exclusive with `id`; exactly one is required (400 otherwise). Idempotent — a repeat answers count 0.",
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
                   }
                 },
-                "required": [
-                  "id"
-                ],
                 "type": "object"
               }
             }
@@ -2642,11 +3273,19 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ForgetResult"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ForgetResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ForgetBySourceResult"
+                    }
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "ForgetResult"
+            "description": "ForgetResult for `id`, ForgetBySourceResult for `sourceRef`"
           },
           "401": {
             "content": {
@@ -2664,10 +3303,13 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
-        "summary": "Delete a memory entry by id",
+        "summary": "Delete a memory entry by id, or every entry from a source reference",
         "tags": [
           "memory"
         ]
@@ -2716,11 +3358,24 @@
               }
             },
             "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Token is confined to a project and this report is account-wide"
           }
         },
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -3920,6 +4575,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -4024,6 +4682,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -4238,6 +4899,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -4310,6 +4974,16 @@
                     "maxLength": 128,
                     "type": "string"
                   },
+                  "sourceRefs": {
+                    "description": "External sources this entry derives from (document URL, ticket key, ...). Merged into the entry on a dedupe or update. Forget them all with POST /v1/forget {sourceRef}. Exact, case-sensitive match; scoped to the caller's organization.",
+                    "items": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  },
                   "sourceType": {
                     "maxLength": 64,
                     "type": "string"
@@ -4349,6 +5023,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -4455,6 +5132,7 @@
                     "type": "string"
                   },
                   "rerank": {
+                    "description": "Cross-encoder rerank of the fused candidates. Omitted, the server reranks whenever a reranker is configured (NOVAMEM_RERANK_ENABLED); pass false to skip it for this request and keep the fused order. Ignored when no reranker is configured; a reranker failure falls back to the fused order.",
                     "type": "boolean"
                   },
                   "weights": {
@@ -4512,6 +5190,9 @@
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -4675,6 +5356,9 @@
             "UserBearer": []
           },
           {
+            "ServiceBearer": []
+          },
+          {
             "SessionCookie": []
           }
         ],
@@ -4708,11 +5392,24 @@
               }
             },
             "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Token is confined to a project and these stats are account-wide"
           }
         },
         "security": [
           {
             "UserBearer": []
+          },
+          {
+            "ServiceBearer": []
           },
           {
             "SessionCookie": []
@@ -4771,6 +5468,296 @@
     {
       "description": "Health checks",
       "name": "liveness"
+    }
+  ],
+  "x-mcp-tools": [
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List users"
+      },
+      "description": "Read-only deployment-wide user inventory and entry/token counts. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_list_users",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "users": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "type": "object"
+      },
+      "x-order": 22
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List projects"
+      },
+      "description": "Read-only deployment-wide project inventory. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_list_projects",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "projects": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ownerUserId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "ownerUserId",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "x-order": 23
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List token metadata"
+      },
+      "description": "Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_list_tokens",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "x-order": 24
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Service health"
+      },
+      "description": "Read-only dependency and service health snapshot. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_health",
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "x-order": 25
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Service statistics"
+      },
+      "description": "Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_stats",
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "x-order": 26
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Recent audit entries"
+      },
+      "description": "Read-only recent administrative audit entries, newest first. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Maximum number of entries; defaults to 100.",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "admin_audit_recent",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "x-order": 27
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Operations job status"
+      },
+      "description": "Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "admin_ops_status",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "jobs": {
+            "additionalProperties": false,
+            "properties": {
+              "decay": {
+                "additionalProperties": false,
+                "properties": {
+                  "lastRunAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "runs": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "lastRunAt",
+                  "runs"
+                ],
+                "type": "object"
+              },
+              "dream": {
+                "additionalProperties": false,
+                "properties": {
+                  "lastRunAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "lastRunAt"
+                ],
+                "type": "object"
+              },
+              "reaper": {
+                "additionalProperties": false,
+                "properties": {
+                  "lastRunAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "runs": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "lastRunAt",
+                  "runs"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "decay",
+              "dream",
+              "reaper"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "x-order": 28
     }
   ]
 }

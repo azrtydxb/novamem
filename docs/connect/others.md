@@ -2,20 +2,16 @@
 
 Two routes for hosts not covered by a dedicated guide:
 
-1. **MCP** — the same SSE / stdio shim works for any MCP-compliant client
+1. **MCP** — connect to the server’s `/mcp` endpoint from any remote MCP client
 2. **Agent Skills** — a markdown bundle compatible with [agentskills.io](https://agentskills.io), for clients that prefer skills over MCP (or want both)
 
-## One-shot installer (try this first)
+## Configure a host
 
-```bash
-npx @azrtydxb/novamem-init
-```
-
-Detects 30+ AI hosts (Claude Code/Desktop, Cursor, Kilo Code, OpenCode, Codex CLI, Gemini CLI, Copilot, Cline, RooCode, Continue, Factory, Windsurf, Amazon Q, plus 16 skill-only hosts) and wires up whatever it finds — MCP config, skill bundle, slash commands. Idempotent. Skip ahead only if your host isn't in that list or you want to script it.
+Install the Go CLI binaries using the [release installer](../contribute/releases.md#installing) and run `novamem-init` to detect and configure supported hosts. For a manual setup, add the endpoint and bearer shown below.
 
 ## MCP — generic config
 
-### Direct SSE (recommended)
+### Remote MCP (recommended)
 
 For any host that supports remote MCP over SSE:
 
@@ -33,26 +29,7 @@ For any host that supports remote MCP over SSE:
 
 Confirmed working with: Claude Code, Claude Desktop, Cursor, Kilo Code, Goose, OpenCode, Continue (recent builds), Cline, Roo Code.
 
-### Stdio shim (legacy)
-
-For hosts that only speak stdio MCP, the [@azrtydxb/novamem-mcp](https://www.npmjs.com/package/@azrtydxb/novamem-mcp) shim bridges stdio↔HTTP:
-
-```json
-{
-  "mcpServers": {
-    "novamem": {
-      "command": "npx",
-      "args": ["@azrtydxb/novamem-mcp"],
-      "env": {
-        "NOVAMEM_BASE_URL": "http://localhost:7778",
-        "NOVAMEM_TOKEN": "nm_..."
-      }
-    }
-  }
-}
-```
-
-Same current NovaMem MCP tool surface (`memory_*` + `project_*`).
+The Go installer configures hosts that require stdio with the `novamem-mcp` binary shipped alongside `novamem-init`. For hosts that support remote MCP, use `/mcp` directly as above.
 
 ## Agent Skills add-on
 
@@ -103,8 +80,7 @@ This checks the SKILL.md frontmatter and naming conventions.
 For a host without dedicated docs:
 
 1. Mint a `nm_…` bearer from the dashboard's API Tokens page.
-2. Try the SSE config first — that works for any modern MCP host.
-3. Fall back to the stdio shim if SSE isn't supported.
+2. Configure the host to use the server’s `/mcp` endpoint. The Go installer handles hosts that require stdio.
 4. Optionally drop the Skills bundle in the client's skills directory for richer behaviour rules.
 5. If your client speaks neither MCP nor Skills, use the [HTTP API](../api/index.md) directly — the OpenAPI spec covers every operation.
 

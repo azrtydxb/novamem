@@ -318,16 +318,34 @@ func TestMeFullLifecycle(t *testing.T) {
 	}
 
 	// ── 10. Export: keyset-paged dump includes our entry ────────────
-	exp := API(t, "/v1/me/export?limit=1000", Opts{})
-	if exp.Status != 200 {
-		t.Fatalf("export status = %d, want 200", exp.Status)
-	}
-	expBody := exp.MustValidate(t, ExportResponse)
+	// The export pages oldest-first, so on an account with more than one
+	// page of history the new entry is on a later page: follow
+	// nextAfterId (the `afterId` query param) until the entry turns up or
+	// the pages run out. Bounded so a cursor that never advances cannot
+	// spin forever.
 	sawExported := false
-	for _, en := range expBody["entries"].([]any) {
-		if en.(map[string]any)["id"] == entryID {
-			sawExported = true
+	afterID := ""
+	for page := 0; page < 200 && !sawExported; page++ {
+		path := "/v1/me/export?limit=1000"
+		if afterID != "" {
+			path += "&afterId=" + url.QueryEscape(afterID)
 		}
+		exp := API(t, path, Opts{})
+		if exp.Status != 200 {
+			t.Fatalf("export status = %d, want 200", exp.Status)
+		}
+		expBody := exp.MustValidate(t, ExportResponse)
+		entries := expBody["entries"].([]any)
+		for _, en := range entries {
+			if en.(map[string]any)["id"] == entryID {
+				sawExported = true
+			}
+		}
+		next, _ := expBody["nextAfterId"].(string)
+		if len(entries) == 0 || next == "" || next == afterID {
+			break
+		}
+		afterID = next
 	}
 	if !sawExported {
 		t.Fatalf("export did not include entry %s", entryID)

@@ -1,4 +1,5 @@
 {
+  "$schema": "https://docs.anthropic.com/claude/schemas/mcp.json",
   "mcpServers": {
     "novamem": {
       "type": "http",

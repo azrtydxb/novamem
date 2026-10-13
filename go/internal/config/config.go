@@ -19,6 +19,7 @@ package config
 import (
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -30,12 +31,15 @@ import (
 type Config struct {
 	Host     string // NOVAMEM_HOST
 	Port     int    // NOVAMEM_PORT
+	TLSCert  string // NOVAMEM_TLS_CERT
+	TLSKey   string // NOVAMEM_TLS_KEY
 	WarmURL  string // NOVAMEM_WARM_URL (Postgres DSN) — required
 	LogLevel string // LOG_LEVEL
 
 	// Auth.
-	AuthMode  string // NOVAMEM_AUTH_MODE: none | bearer | user
-	AuthToken string // NOVAMEM_AUTH_TOKEN — required when mode=bearer
+	AuthMode    string // NOVAMEM_AUTH_MODE: none | bearer | user
+	AuthToken   string // NOVAMEM_AUTH_TOKEN — required when mode=bearer
+	RequireAuth bool   // NOVAMEM_REQUIRE_AUTH — refuse auth.mode=none when enabled
 	// CookieSecret signs session cookies (NOVAMEM_COOKIE_SECRET).
 	// Required whenever mode != none — an ephemeral fallback would let a
 	// forgotten env var silently invalidate every session on restart.
@@ -95,10 +99,15 @@ type Config struct {
 	GraphLinkFanout int     // NOVAMEM_GRAPH_LINK_FANOUT (0 disables)
 
 	// Background jobs (main.ts timers).
-	DecayIntervalMs     int     // NOVAMEM_DECAY_INTERVAL_MS
-	DecayEffectiveDays  float64 // NOVAMEM_DECAY_DAYS
-	ReconcileIntervalMs int     // NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS
-	ReconcileBatch      int     // NOVAMEM_EMBEDDINGS_RECONCILE_BATCH
+	DecayIntervalMs          int     // NOVAMEM_DECAY_INTERVAL_MS
+	DecayEffectiveDays       float64 // NOVAMEM_DECAY_DAYS
+	ReconcileIntervalMs      int     // NOVAMEM_EMBEDDINGS_RECONCILE_INTERVAL_MS
+	ReconcileBatch           int     // NOVAMEM_EMBEDDINGS_RECONCILE_BATCH
+	RetentionEnabled         bool    // NOVAMEM_RETENTION_ENABLED
+	RetentionMaxAgeDays      int     // NOVAMEM_RETENTION_MAX_AGE_DAYS
+	RetentionBatch           int     // NOVAMEM_RETENTION_BATCH
+	RetentionIntervalMinutes int     // NOVAMEM_RETENTION_INTERVAL_MINUTES
+	RetentionDryRun          bool    // NOVAMEM_RETENTION_DRY_RUN
 	// RateLimitPerMinute — global per-IP request cap
 	// (NOVAMEM_RATE_LIMIT_PER_MINUTE).
 	RateLimitPerMinute int
@@ -110,7 +119,8 @@ type Config struct {
 	// (NOVAMEM_ADMIN_DASHBOARD; "0"/"false"/"no"/"off" disable it).
 	AdminDashboard bool
 
-	// Phase 5 cross-encoder rerank (opt-in per request; off unless enabled).
+	// Phase 5 cross-encoder rerank (off unless enabled; once enabled it is
+	// the default for every search, opt-out per request with rerank:false).
 	RerankEnabled   bool   // NOVAMEM_RERANK_ENABLED
 	RerankEndpoint  string // NOVAMEM_RERANK_ENDPOINT (full URL)
 	RerankModel     string // NOVAMEM_RERANK_MODEL
@@ -127,6 +137,10 @@ type Config struct {
 	ExtractionMaxFacts      int    // NOVAMEM_EXTRACTION_MAX_FACTS
 	ExtractionTimeoutMs     int    // NOVAMEM_EXTRACTION_TIMEOUT_MS
 	ExtractionMaxConcurrent int    // NOVAMEM_EXTRACTION_MAX_CONCURRENT
+	// ExtractionRedact gates the PII pass over the extraction payload
+	// (engine/redact.go). Default ON; the disableBool spellings turn it
+	// off. Stored content is never rewritten either way.
+	ExtractionRedact bool // NOVAMEM_EXTRACTION_REDACT
 
 	// Phase 4 query decomposition + coherence rerank (opt-in per request
 	// via SearchRequest.decompose).
@@ -147,6 +161,7 @@ type Config struct {
 	ObserverObserveThreshold int    // NOVAMEM_OBSERVER_OBSERVE_THRESHOLD
 	ObserverReflectThreshold int    // NOVAMEM_OBSERVER_REFLECT_THRESHOLD
 	ObserverTimeoutMs        int    // NOVAMEM_OBSERVER_TIMEOUT_MS
+	AllowInsecureEndpoints   bool   // NOVAMEM_ALLOW_INSECURE_ENDPOINTS — permit public HTTP endpoints
 
 	// PprofAddr enables net/http/pprof on its own listener when set
 	// (NOVAMEM_PPROF_ADDR, e.g. "127.0.0.1:6060"). Deliberately a
@@ -154,7 +169,16 @@ type Config struct {
 	// stays reachable in every auth mode (a dashboard-gated route is
 	// unreachable under auth.mode=bearer) and never rides an exposed
 	// port by accident. Default off.
-	PprofAddr string
+	PprofAddr          string
+	OTELEnabled        bool
+	OTELEndpoint       string
+	OTELTracesEndpoint string
+	OTELServiceName    string
+}
+
+// TracingEnabled accepts either documented activation switch.
+func (c Config) TracingEnabled() bool {
+	return c.OTELEnabled || c.OTELEndpoint != "" || c.OTELTracesEndpoint != ""
 }
 
 // Load reads and validates the environment, returning the first problem
@@ -165,6 +189,8 @@ func Load() (Config, error) {
 	var err error
 	c := Config{
 		Host:      strEnv("NOVAMEM_HOST"),
+		TLSCert:   strEnv("NOVAMEM_TLS_CERT"),
+		TLSKey:    strEnv("NOVAMEM_TLS_KEY"),
 		WarmURL:   strEnv("NOVAMEM_WARM_URL"),
 		LogLevel:  strEnv("LOG_LEVEL"),
 		AuthToken: strEnv("NOVAMEM_AUTH_TOKEN"),
@@ -177,8 +203,15 @@ func Load() (Config, error) {
 		// warm store would 503 every request; refuse to start instead.
 		return c, fmt.Errorf("NOVAMEM_WARM_URL is required")
 	}
+	if (c.TLSCert == "") != (c.TLSKey == "") {
+		return c, fmt.Errorf("NOVAMEM_TLS_CERT and NOVAMEM_TLS_KEY must be set together")
+	}
 	if c.AuthMode, err = enumEnv("NOVAMEM_AUTH_MODE"); err != nil {
 		return c, err
+	}
+	c.RequireAuth = boolEnv("NOVAMEM_REQUIRE_AUTH")
+	if c.AuthMode == "none" && c.RequireAuth {
+		return c, fmt.Errorf("NOVAMEM_AUTH_MODE=none is refused because NOVAMEM_REQUIRE_AUTH=1; configure an authenticated mode or disable the guard only for a trusted development environment")
 	}
 	if c.AuthMode == "bearer" && c.AuthToken == "" {
 		// Exact fail-fast from http.ts buildHttpServer.
@@ -192,7 +225,11 @@ func Load() (Config, error) {
 	c.InsecureCookies = boolEnv("NOVAMEM_INSECURE_COOKIES")
 	c.BaseURL = strEnv("NOVAMEM_BASE_URL")
 	if c.BaseURL == "" {
-		c.BaseURL = fmt.Sprintf("http://%s:%d", c.Host, c.Port)
+		scheme := "http"
+		if c.TLSCert != "" {
+			scheme = "https"
+		}
+		c.BaseURL = fmt.Sprintf("%s://%s:%d", scheme, c.Host, c.Port)
 	}
 	if c.QuotaMaxEntries, err = intEnv("NOVAMEM_QUOTA_MAX_ENTRIES"); err != nil {
 		return c, err
@@ -292,7 +329,7 @@ func Load() (Config, error) {
 	// spelling; the TS name wins when both are set.
 	decayKey := "NOVAMEM_DECAY_DAYS"
 	if !hasValue(decayKey, KindPosFloat) && hasValue("NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS", KindPosFloat) {
-		decayKey = "NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS"
+		return c, fmt.Errorf("NOVAMEM_DECAY_DEFAULT_EFFECTIVE_DAYS is deprecated; set NOVAMEM_DECAY_DAYS instead")
 	}
 	if c.DecayEffectiveDays, err = posFloatEnv(decayKey); err != nil {
 		return c, err
@@ -303,6 +340,17 @@ func Load() (Config, error) {
 	if c.ReconcileBatch, err = intEnv("NOVAMEM_EMBEDDINGS_RECONCILE_BATCH"); err != nil {
 		return c, err
 	}
+	c.RetentionEnabled = boolEnv("NOVAMEM_RETENTION_ENABLED")
+	if c.RetentionMaxAgeDays, err = posIntEnv("NOVAMEM_RETENTION_MAX_AGE_DAYS"); err != nil {
+		return c, err
+	}
+	if c.RetentionBatch, err = posIntEnv("NOVAMEM_RETENTION_BATCH"); err != nil {
+		return c, err
+	}
+	if c.RetentionIntervalMinutes, err = posIntEnv("NOVAMEM_RETENTION_INTERVAL_MINUTES"); err != nil {
+		return c, err
+	}
+	c.RetentionDryRun = boolEnv("NOVAMEM_RETENTION_DRY_RUN")
 	if c.RateLimitPerMinute, err = intEnv("NOVAMEM_RATE_LIMIT_PER_MINUTE"); err != nil {
 		return c, err
 	}
@@ -364,6 +412,11 @@ func Load() (Config, error) {
 	if c.ExtractionMaxConcurrent, err = posIntEnv("NOVAMEM_EXTRACTION_MAX_CONCURRENT"); err != nil {
 		return c, err
 	}
+	// Default on: what leaves the process to the extraction model is
+	// redacted unless the operator says otherwise. disableBool, not
+	// boolEnv — an explicit value is an opt-OUT, and anything but the
+	// falsy spellings keeps the redaction.
+	c.ExtractionRedact = disableBool("NOVAMEM_EXTRACTION_REDACT")
 	if c.ExtractionEnabled && (c.ExtractionEndpoint == "" || c.ExtractionModel == "") {
 		return c, fmt.Errorf("extraction.enabled = true requires endpoint + model (NOVAMEM_EXTRACTION_ENDPOINT / NOVAMEM_EXTRACTION_MODEL)")
 	}
@@ -403,6 +456,23 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("observer.enabled = true requires endpoint + model (NOVAMEM_OBSERVER_ENDPOINT / NOVAMEM_OBSERVER_MODEL)")
 	}
 	c.PprofAddr = strEnv("NOVAMEM_PPROF_ADDR")
+	c.OTELEnabled = boolEnv("OTEL_ENABLED")
+	c.OTELEndpoint = strEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	c.OTELTracesEndpoint = strEnv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	c.OTELServiceName = strEnv("OTEL_SERVICE_NAME")
+	c.AllowInsecureEndpoints = boolEnv("NOVAMEM_ALLOW_INSECURE_ENDPOINTS")
+	for _, endpoint := range []struct{ key, value string }{
+		{"NOVAMEM_COLD_URL", c.ColdURL},
+		{"NOVAMEM_EMBEDDINGS_ENDPOINT", c.EmbeddingsEndpoint},
+		{"NOVAMEM_EXTRACTION_ENDPOINT", c.ExtractionEndpoint},
+		{"NOVAMEM_RERANK_ENDPOINT", c.RerankEndpoint},
+		{"NOVAMEM_QUERY_DECOMP_ENDPOINT", c.QueryDecompEndpoint},
+		{"NOVAMEM_OBSERVER_ENDPOINT", c.ObserverEndpoint},
+	} {
+		if err := validateEndpointURL(endpoint.key, endpoint.value, c.AllowInsecureEndpoints, net.DefaultResolver); err != nil {
+			return c, err
+		}
+	}
 	return c, nil
 }
 

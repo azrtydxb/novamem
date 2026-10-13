@@ -6,7 +6,7 @@ title: MCP tools
 
 <!-- tool-catalogue:start -->
 
-_21 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](https://github.com/azrtydxb/novamem/blob/main/go/internal/mcp/tooldefs.json) by `go run ./cmd/gen-tool-docs` — the descriptions below are the ones the server sends on `tools/list`, not a paraphrase of them. Edit [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and re-run `go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs` — not this table, and not tooldefs.json, which is itself generated._
+_28 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](https://github.com/azrtydxb/novamem/blob/main/go/internal/mcp/tooldefs.json) by `go run ./cmd/gen-tool-docs` — the descriptions below are the ones the server sends on `tools/list`, not a paraphrase of them. Edit [`api/openapi.yaml`](https://github.com/azrtydxb/novamem/blob/main/api/openapi.yaml) and re-run `go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs` — not this table, and not tooldefs.json, which is itself generated._
 
 ## Memory tools
 
@@ -14,34 +14,36 @@ _21 tools. This section is generated from [`go/internal/mcp/tooldefs.json`](http
 
 Mandatory first-pass grounding tool. CALL THIS before answering any substantive user request. Returns relevant hybrid search results plus recent memory in one response so agents stop ignoring memory unless explicitly told.
 
-| Argument            | Type   | Required | Description                                                                   |
-| ------------------- | ------ | -------- | ----------------------------------------------------------------------------- |
-| `includeNamespaces` | array  | —        | Union results across these shelves. Takes precedence over `namespace`.        |
-| `includeProjects`   | array  | —        | Active-project mode: union user-global with each listed project (id or name). |
-| `k`                 | number | —        | Top-K relevant/recent entries to return.                                      |
-| `maxSensitivity`    | string | —        | Maximum sensitivity to return; defaults to private, excluding sensitive.      |
-| `message`           | string | yes      | The user's current message or task.                                           |
-| `namespace`         | string | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf. |
-| `project`           | string | —        | Project id or human name.                                                     |
-| `weights`           | object | —        | Per-signal weight overrides. Omit to use defaults.                            |
+| Argument            | Type    | Required | Description                                                                                                                                                           |
+| ------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `includeNamespaces` | array   | —        | Union results across these shelves. Takes precedence over `namespace`.                                                                                                |
+| `includeProjects`   | array   | —        | Active-project mode: union user-global with each listed project (id or name).                                                                                         |
+| `k`                 | number  | —        | Top-K relevant/recent entries to return.                                                                                                                              |
+| `maxSensitivity`    | string  | —        | Maximum sensitivity to return; defaults to private, excluding sensitive.                                                                                              |
+| `message`           | string  | yes      | The user's current message or task.                                                                                                                                   |
+| `namespace`         | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                         |
+| `project`           | string  | —        | Project id or human name.                                                                                                                                             |
+| `rerank`            | boolean | —        | Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order. |
+| `weights`           | object  | —        | Per-signal weight overrides. Omit to use defaults.                                                                                                                    |
 
 ### `memory_capture`
 
 Low-friction durable write path. CALL THIS after meaningful work to save durable outcomes, decisions, changed preferences, verified setup facts, and root-cause lessons. Do not save secrets or transient task chatter.
 
-| Argument       | Type    | Required | Description                                                                                                                                                                |
-| -------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `capturedFrom` | string  | —        | Agent name, conversation id, or other channel ref.                                                                                                                         |
-| `confidence`   | number  | —        | 0..1, default 1.0                                                                                                                                                          |
-| `content`      | string  | yes      | The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.                                                            |
-| `expiresAt`    | string  | —        | Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted. |
-| `force`        | boolean | —        | Bypass the worthiness gate. Default false.                                                                                                                                 |
-| `metadata`     | object  | —        | Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.                                                                                    |
-| `namespace`    | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                              |
-| `project`      | string  | —        | Optional project (sub-brain) to scope to.                                                                                                                                  |
-| `sensitivity`  | string  | —        | public \| internal \| private \| sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise.                                                   |
-| `source`       | string  | —        | Free-text origin label stored with the entry (e.g. an app or surface name).                                                                                                |
-| `sourceType`   | string  | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                                                                        |
+| Argument       | Type    | Required | Description                                                                                                                                                                                                                                                                   |
+| -------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capturedFrom` | string  | —        | Agent name, conversation id, or other channel ref.                                                                                                                                                                                                                            |
+| `confidence`   | number  | —        | 0..1, default 1.0                                                                                                                                                                                                                                                             |
+| `content`      | string  | yes      | The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.                                                                                                                                                               |
+| `expiresAt`    | string  | —        | Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted.                                                                                                    |
+| `force`        | boolean | —        | Bypass the worthiness gate. Default false.                                                                                                                                                                                                                                    |
+| `metadata`     | object  | —        | Arbitrary JSON stored alongside the entry and returned with it. Not indexed for search.                                                                                                                                                                                       |
+| `namespace`    | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                                                                                                                                 |
+| `project`      | string  | —        | Optional project (sub-brain) to scope to.                                                                                                                                                                                                                                     |
+| `sensitivity`  | string  | —        | public \| internal \| private \| sensitive. Omitted, novamem infers sensitive for obvious secrets and private otherwise.                                                                                                                                                      |
+| `source`       | string  | —        | Free-text origin label stored with the entry (e.g. an app or surface name).                                                                                                                                                                                                   |
+| `sourceRefs`   | array   | —        | External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry that carries one. |
+| `sourceType`   | string  | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                                                                                                                                                                           |
 
 ### `memory_session_recap`
 
@@ -96,32 +98,34 @@ Read-only client adoption report. Use this to verify the current MCP tool surfac
 
 Search the user's persistent memory store for facts about them. CALL THIS PROACTIVELY at the start of any conversation where personal context might matter — preferences, project context, biographical details, prior decisions. Do not wait for the user to remind you they've stored something. If the user references "my project", "what I told you", "as we discussed", "the same as before", or any personal context that isn't already in this conversation, search here FIRST before asking them to repeat. This store contains facts the user has explicitly chosen to persist, so its contents are higher-confidence than inferences from your built-in conversation memory or `memory_user_edits`. Hybrid keyword (FTS) + vector (cosine) + graph (neighbours) fused via weighted scoring (defaults keyword 0.3, vector 0.6, graph 0.1). Override `weights` only with a specific reason — e.g. `{ keyword: 1, vector: 0 }` for exact-id / symbol lookup, or `{ vector: 1, keyword: 0 }` to ignore literal overlap and lean fully on semantic similarity.
 
-| Argument            | Type   | Required | Description                                                                                                                                                                                                        |
-| ------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contentMode`       | string | —        | "snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids" omits content and metadata (rank first, hydrate later). Default "full".                                                             |
-| `includeNamespaces` | array  | —        | Cross-namespace search: union results across these shelves. Takes precedence over `namespace`. Use to _restrict_ the default fanout to a specific subset; if you want everything, omit both fields.                |
-| `includeProjects`   | array  | —        | Active-project mode: union user-global with each listed project (id or name).                                                                                                                                      |
-| `k`                 | number | —        | Top-K to return (default 10)                                                                                                                                                                                       |
-| `namespace`         | string | —        | Single namespace shelf to search. Overridden by `includeNamespaces` when both are set. Omit both to fan out across every namespace with entries visible in the current scope (user-global and/or active projects). |
-| `project`           | string | —        | Project to scope to. Accepts id (ULID) or human name. Omit for user-wide entries.                                                                                                                                  |
-| `query`             | string | yes      | What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.                                                                                        |
-| `weights`           | object | —        | Per-signal weight overrides. Omit to use defaults.                                                                                                                                                                 |
+| Argument            | Type    | Required | Description                                                                                                                                                                                                        |
+| ------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `contentMode`       | string  | —        | "snippet" truncates content to ~240 chars (truncated: true on cut rows); "ids" omits content and metadata (rank first, hydrate later). Default "full".                                                             |
+| `includeNamespaces` | array   | —        | Cross-namespace search: union results across these shelves. Takes precedence over `namespace`. Use to _restrict_ the default fanout to a specific subset; if you want everything, omit both fields.                |
+| `includeProjects`   | array   | —        | Active-project mode: union user-global with each listed project (id or name).                                                                                                                                      |
+| `k`                 | number  | —        | Top-K to return (default 10)                                                                                                                                                                                       |
+| `namespace`         | string  | —        | Single namespace shelf to search. Overridden by `includeNamespaces` when both are set. Omit both to fan out across every namespace with entries visible in the current scope (user-global and/or active projects). |
+| `project`           | string  | —        | Project to scope to. Accepts id (ULID) or human name. Omit for user-wide entries.                                                                                                                                  |
+| `query`             | string  | yes      | What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.                                                                                        |
+| `rerank`            | boolean | —        | Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.                                              |
+| `weights`           | object  | —        | Per-signal weight overrides. Omit to use defaults.                                                                                                                                                                 |
 
 ### `memory_remember`
 
 Store a personal fact about the user in their persistent memory store. USE THIS FOR ALL personal facts the user asks you to remember: preferences (favourite tools, foods, response style), biographical info (location, role, family), project context (what they're building, what stack they use), recurring tasks, communication preferences, and anything the user says with phrases like "remember", "don't forget", "save this", "please remember that", "for future reference", "keep this in mind", or "note that". This is the user's primary memory system and TAKES PRECEDENCE OVER `memory_user_edits` for any user-specific content. Use `memory_user_edits` only for routing rules about your own behaviour (e.g. "always respond in French") — not for facts about the user. When in doubt between the two, use this tool. Pass `project` to scope the fact to a sub-brain; omit for user-wide facts that should apply across all contexts. The worthiness gate rejects content under 12 chars or filler ("ok", "thanks"); pass `force: true` only when the short content is a deliberate anchor (id, version pin, phone number).
 
-| Argument       | Type    | Required | Description                                                                                                                                                                |
-| -------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `capturedFrom` | string  | —        | Agent name, conversation id, or other channel ref.                                                                                                                         |
-| `confidence`   | number  | —        | 0..1, default 1.0                                                                                                                                                          |
-| `content`      | string  | yes      | The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.                                                            |
-| `expiresAt`    | string  | —        | Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted. |
-| `force`        | boolean | —        | Bypass the worthiness gate. Default false.                                                                                                                                 |
-| `namespace`    | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                              |
-| `project`      | string  | —        | Optional project (sub-brain) to scope to.                                                                                                                                  |
-| `source`       | string  | —        | Free-text origin label stored with the entry (e.g. an app or surface name).                                                                                                |
-| `sourceType`   | string  | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                                                                        |
+| Argument       | Type    | Required | Description                                                                                                                                                                                                                                                                   |
+| -------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capturedFrom` | string  | —        | Agent name, conversation id, or other channel ref.                                                                                                                                                                                                                            |
+| `confidence`   | number  | —        | 0..1, default 1.0                                                                                                                                                                                                                                                             |
+| `content`      | string  | yes      | The text to store. One self-contained fact — an entry that needs its conversation to make sense is not durable.                                                                                                                                                               |
+| `expiresAt`    | string  | —        | Explicit TTL — ISO-8601 WITH timezone offset (e.g. 2026-08-14T12:00:00Z); offset-less strings are rejected. Past it the entry is hidden from reads and later hard-deleted.                                                                                                    |
+| `force`        | boolean | —        | Bypass the worthiness gate. Default false.                                                                                                                                                                                                                                    |
+| `namespace`    | string  | —        | Namespace shelf to write to / read from. Omit for the caller's default shelf.                                                                                                                                                                                                 |
+| `project`      | string  | —        | Optional project (sub-brain) to scope to.                                                                                                                                                                                                                                     |
+| `source`       | string  | —        | Free-text origin label stored with the entry (e.g. an app or surface name).                                                                                                                                                                                                   |
+| `sourceRefs`   | array   | —        | External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry that carries one. |
+| `sourceType`   | string  | —        | chat \| email \| code-review \| doc \| inference \| observation \| system \| manual                                                                                                                                                                                           |
 
 ### `memory_today`
 
@@ -165,12 +169,13 @@ Walk graph edges from a known memory id to its strongly-linked neighbours. CALL 
 
 ### `memory_forget`
 
-Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like "forget that", "delete the entry about X", "remove what I said about Y", "that's wrong, drop it". Do NOT call this proactively or as a way to "clean up" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.
+Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like "forget that", "delete the entry about X", "remove what I said about Y", "that's wrong, drop it". Do NOT call this proactively or as a way to "clean up" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly. With `sourceRef`, every memory stored with that source reference is deleted; with an active project and no `project` argument that covers only the active project, not user-wide entries.
 
-| Argument  | Type   | Required | Description                                                                                                |
-| --------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `id`      | string | yes      | Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200. |
-| `project` | string | —        | Project id or name (scope check).                                                                          |
+| Argument    | Type   | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`        | string | —        | Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200. Give exactly one of `id` or `sourceRef`.                                                                                                                                                                                                                                                                                                                 |
+| `project`   | string | —        | Project id or name (scope check).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `sourceRef` | string | —        | Delete every memory that was stored with this source reference (see `sourceRefs` on `memory_remember` / `memory_capture`), for example when the source document is deleted or access to it is revoked. Replies `{ids, count}`; count 0 when nothing matched. Scope: with an active project and no `project` argument, only that project's entries are removed (not your user-wide ones); pass `project` to choose another. Give exactly one of `id` or `sourceRef`. |
 
 ### `memory_update`
 
@@ -250,6 +255,52 @@ Revoke a member's access to a project. CALL THIS when the user says "remove bob 
 | `project`  | string | yes      | Project id or human name.                  |
 | `username` | string | yes      | Exact email address of the user to remove. |
 
+## Admin and operations tools
+
+### `admin_list_users`
+
+Read-only deployment-wide user inventory and entry/token counts. Admin callers only.
+
+Takes no arguments.
+
+### `admin_list_projects`
+
+Read-only deployment-wide project inventory. Admin callers only.
+
+Takes no arguments.
+
+### `admin_list_tokens`
+
+Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.
+
+Takes no arguments.
+
+### `admin_health`
+
+Read-only dependency and service health snapshot. Admin callers only.
+
+Takes no arguments.
+
+### `admin_stats`
+
+Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.
+
+Takes no arguments.
+
+### `admin_audit_recent`
+
+Read-only recent administrative audit entries, newest first. Admin callers only.
+
+| Argument | Type    | Required | Description                                 |
+| -------- | ------- | -------- | ------------------------------------------- |
+| `limit`  | integer | —        | Maximum number of entries; defaults to 100. |
+
+### `admin_ops_status`
+
+Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.
+
+Takes no arguments.
+
 <!-- tool-catalogue:end -->
 
 ## Transports
@@ -276,17 +327,9 @@ What clients speak this transport: OpenAI Codex CLI, recent Cursor / Kilo Code (
 
 Everything it served is served by `/mcp`, which speaks both protocol eras. A client still configured for the old pair needs its `url` changed to `/mcp` and its `type` to `http`; `novamem-init` writes that shape now.
 
-### stdio shim
+### Local stdio bridge
 
-`novamem-mcp` proxies stdio JSON-RPC ↔ Streamable HTTP. Used by hosts that don't support remote MCP at all (Claude Desktop) or whose remote-MCP implementation is broken.
-
-```bash
-NOVAMEM_BASE_URL=https://novamem.example.com \
-NOVAMEM_TOKEN=nm_... \
-  npx -y @azrtydxb/novamem-mcp
-```
-
-Pin the version (`@1.2.0`) for reproducibility.
+Hosts that require stdio can use the Go `novamem-mcp` binary, distributed with `novamem-init` in the release archives. Set `NOVAMEM_BASE_URL` and `NOVAMEM_TOKEN` for the server and bearer. For remote MCP clients, connect directly to `/mcp`.
 
 ## Conventions
 
@@ -299,4 +342,4 @@ Pin the version (`@1.2.0`) for reproducibility.
 
 - [Mental model](../concepts/mental-model.md)
 - [Hybrid search internals](../architecture/hybrid-search.md)
-- [novamem-init CLI](../connect/init-cli.md) — wires the SSE/stdio config for you
+- [novamem-init CLI](../connect/init-cli.md) — configures supported hosts for you

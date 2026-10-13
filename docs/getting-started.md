@@ -38,13 +38,13 @@ In the dashboard, switch to **API Tokens** and click **New token**. Copy the pla
 
 ## 4. Connect your AI tool
 
-**Easiest** — let the installer do it for you. From your project root:
+**Easiest** — install the Go CLI binaries using the [release installer](./contribute/releases.md#installing), then run the installer from your project root:
 
 ```bash
-npx @azrtydxb/novamem-init
+novamem-init
 ```
 
-It asks for the server URL, your dashboard email + password, mints a fresh bearer, detects every AI tool you have installed, and writes the right MCP config + skill bundle + slash commands per host. See [`@azrtydxb/novamem-init`](./connect/init-cli.md) for the full flag reference.
+It asks for the server URL, your dashboard email + password, mints a fresh bearer, detects every AI tool you have installed, and writes the right MCP config + skill bundle + slash commands per host. See [`novamem-init`](./connect/init-cli.md) for the full flag reference.
 
 **Manual** — pick your host:
 

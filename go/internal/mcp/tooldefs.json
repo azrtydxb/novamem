@@ -49,6 +49,10 @@
           "description": "Project id or human name.",
           "type": "string"
         },
+        "rerank": {
+          "description": "Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.",
+          "type": "boolean"
+        },
         "weights": {
           "description": "Per-signal weight overrides. Omit to use defaults.",
           "properties": {
@@ -106,24 +110,30 @@
                     ]
                   },
                   "score": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "signals": {
-                    "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                    "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
                     "properties": {
                       "entity": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "graph": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "keyword": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "recency": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "vector": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       }
                     },
@@ -182,24 +192,30 @@
                     ]
                   },
                   "score": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "signals": {
-                    "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                    "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
                     "properties": {
                       "entity": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "graph": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "keyword": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "recency": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       },
                       "vector": {
+                        "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                         "type": "number"
                       }
                     },
@@ -295,6 +311,13 @@
           "description": "Free-text origin label stored with the entry (e.g. an app or surface name).",
           "type": "string"
         },
+        "sourceRefs": {
+          "description": "External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry that carries one.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "sourceType": {
           "description": "chat | email | code-review | doc | inference | observation | system | manual",
           "type": "string"
@@ -345,6 +368,7 @@
           "type": "array"
         },
         "saved": {
+          "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
           "type": "number"
         }
       },
@@ -499,6 +523,7 @@
           "type": "array"
         },
         "saved": {
+          "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
           "type": "number"
         }
       },
@@ -530,43 +555,108 @@
     "outputSchema": {
       "properties": {
         "contradictionCandidates": {
-          "items": {},
+          "items": {
+            "properties": {
+              "ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "type": "array"
         },
         "duplicateClusters": {
-          "items": {},
+          "items": {
+            "properties": {
+              "ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "type": "array"
         },
         "lowValue": {
-          "items": {},
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "type": "array"
         },
         "orphanCandidates": {
-          "items": {},
+          "items": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "type": "array"
         },
         "stale": {
-          "items": {},
+          "items": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "type": "array"
         },
         "summary": {
           "properties": {
             "contradictionCandidates": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             },
             "duplicateClusters": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             },
             "lowValue": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             },
             "orphanCandidates": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             },
             "scanned": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             },
             "stale": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             }
           },
@@ -622,12 +712,15 @@
         "summary": {
           "properties": {
             "failed": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             },
             "passed": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             },
             "total": {
+              "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
               "type": "number"
             }
           },
@@ -765,6 +858,10 @@
           "description": "What to search for, in natural language. Hybrid retrieval fuses keyword, vector, graph, recency and entity signals over it.",
           "type": "string"
         },
+        "rerank": {
+          "description": "Rerank candidates with the cross-encoder. Omit to rerank whenever the server has a reranker configured (the default); pass false to skip it and keep the fused order.",
+          "type": "boolean"
+        },
         "weights": {
           "description": "Per-signal weight overrides. Omit to use defaults.",
           "properties": {
@@ -819,24 +916,30 @@
                 ]
               },
               "score": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "signals": {
-                "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
                 "properties": {
                   "entity": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "graph": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "keyword": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "recency": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "vector": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   }
                 },
@@ -910,6 +1013,13 @@
         "source": {
           "description": "Free-text origin label stored with the entry (e.g. an app or surface name).",
           "type": "string"
+        },
+        "sourceRefs": {
+          "description": "External sources this entry derives from (document URL, ticket key, thread id), at most 32, each up to 512 characters. Merged into the entry when the write dedupes or updates an existing one. Later, `memory_forget` with `sourceRef` removes every entry that carries one.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "sourceType": {
           "description": "chat | email | code-review | doc | inference | observation | system | manual",
@@ -1040,24 +1150,30 @@
                 ]
               },
               "score": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "signals": {
-                "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
                 "properties": {
                   "entity": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "graph": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "keyword": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "recency": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "vector": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   }
                 },
@@ -1167,24 +1283,30 @@
                 ]
               },
               "score": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "signals": {
-                "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
                 "properties": {
                   "entity": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "graph": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "keyword": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "recency": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "vector": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   }
                 },
@@ -1285,24 +1407,30 @@
                 ]
               },
               "score": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "signals": {
-                "description": "Per-signal contributions behind `score`, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
+                "description": "Per-signal contributions to the fused search score, present on the ranked responses (/v1/search, /v1/context, /v1/neighbors) and absent on /v1/recent, which orders by recency and ranks nothing. Every key is optional because the set varies by route: fusion returns all five, /v1/neighbors returns `graph` alone.",
                 "properties": {
                   "entity": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "graph": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "keyword": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "recency": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   },
                   "vector": {
+                    "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                     "type": "number"
                   }
                 },
@@ -1342,35 +1470,67 @@
       "readOnlyHint": false,
       "title": "Forget a memory"
     },
-    "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly.",
+    "description": "Permanently delete a memory entry. USE THIS ONLY when the user explicitly asks to forget, delete, remove, or scrub something — phrases like \"forget that\", \"delete the entry about X\", \"remove what I said about Y\", \"that's wrong, drop it\". Do NOT call this proactively or as a way to \"clean up\" the store; the synaptic-decay sweep handles natural-aging. If a fact CHANGED rather than became wrong, call `memory_update` instead — preserves id, hit count, and graph edges. Idempotent: a second call on a deleted id returns `deleted: false` cleanly. With `sourceRef`, every memory stored with that source reference is deleted; with an active project and no `project` argument that covers only the active project, not user-wide entries.",
     "inputSchema": {
       "properties": {
         "id": {
-          "description": "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200.",
+          "description": "Memory id (ULID) to delete permanently. Idempotent: deleting an id that is already gone still answers 200. Give exactly one of `id` or `sourceRef`.",
           "type": "string"
         },
         "project": {
           "description": "Project id or name (scope check).",
           "type": "string"
+        },
+        "sourceRef": {
+          "description": "Delete every memory that was stored with this source reference (see `sourceRefs` on `memory_remember` / `memory_capture`), for example when the source document is deleted or access to it is revoked. Replies `{ids, count}`; count 0 when nothing matched. Scope: with an active project and no `project` argument, only that project's entries are removed (not your user-wide ones); pass `project` to choose another. Give exactly one of `id` or `sourceRef`.",
+          "type": "string"
         }
       },
-      "required": [
-        "id"
-      ],
       "type": "object"
     },
     "name": "memory_forget",
     "outputSchema": {
-      "properties": {
-        "coldDeleteOk": {
-          "type": "boolean"
+      "oneOf": [
+        {
+          "properties": {
+            "coldDeleteOk": {
+              "type": "boolean"
+            },
+            "deleted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "deleted"
+          ],
+          "type": "object"
         },
-        "deleted": {
-          "type": "boolean"
+        {
+          "properties": {
+            "coldDeleteOk": {
+              "type": "boolean"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sourceRef": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sourceRef",
+            "ids",
+            "count",
+            "coldDeleteOk"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "deleted"
       ],
       "type": "object"
     }
@@ -1475,9 +1635,11 @@
           "additionalProperties": {
             "properties": {
               "cold": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               },
               "warm": {
+                "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
                 "type": "number"
               }
             },
@@ -1492,12 +1654,15 @@
           ]
         },
         "totalCold": {
+          "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
           "type": "number"
         },
         "totalWarm": {
+          "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
           "type": "number"
         },
         "uptimeMs": {
+          "description": "Ranking score for this result. Ranked search results are returned in non-increasing score order. When cross-encoder reranking succeeds, this is the reranker relevance score; otherwise it is the fused search score. Per-signal fusion contributions remain in `signals`.",
           "type": "number"
         }
       },
@@ -1814,6 +1979,287 @@
       },
       "required": [
         "removed"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List users"
+    },
+    "description": "Read-only deployment-wide user inventory and entry/token counts. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_list_users",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "users": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "users"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List projects"
+    },
+    "description": "Read-only deployment-wide project inventory. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_list_projects",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "projects": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ownerUserId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "ownerUserId",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List token metadata"
+    },
+    "description": "Read-only deployment-wide token metadata. Returns no bearer secrets. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_list_tokens",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tokens"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Service health"
+    },
+    "description": "Read-only dependency and service health snapshot. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_health",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Service statistics"
+    },
+    "description": "Read-only global counters, gauges, rates, uptime, and instance statistics. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_stats",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Recent audit entries"
+    },
+    "description": "Read-only recent administrative audit entries, newest first. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "Maximum number of entries; defaults to 100.",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "admin_audit_recent",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Operations job status"
+    },
+    "description": "Read-only decay, dream-cycle, and orphan-reaper last-run status. Timestamps are null until each job completes successfully once. Admin callers only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "admin_ops_status",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "additionalProperties": false,
+          "properties": {
+            "decay": {
+              "additionalProperties": false,
+              "properties": {
+                "lastRunAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "runs": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lastRunAt",
+                "runs"
+              ],
+              "type": "object"
+            },
+            "dream": {
+              "additionalProperties": false,
+              "properties": {
+                "lastRunAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "lastRunAt"
+              ],
+              "type": "object"
+            },
+            "reaper": {
+              "additionalProperties": false,
+              "properties": {
+                "lastRunAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "runs": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lastRunAt",
+                "runs"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "decay",
+            "dream",
+            "reaper"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "jobs"
       ],
       "type": "object"
     }

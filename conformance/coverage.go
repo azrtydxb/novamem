@@ -106,11 +106,17 @@ var Coverage = map[string]string{
 	"GET /v1/admin/health/deep":      "60-admin",
 	"GET /v1/admin/metrics":          "60-admin",
 	"GET /v1/admin/metrics/prom":     "60-admin",
+	"GET /v1/admin/telemetry":        "60-admin",
 	"POST /v1/admin/tokens/revoke":   "60-admin",
 	"POST /v1/admin/users":           "60-admin",
 	"GET /v1/admin/users":            "60-admin",
 	"DELETE /v1/admin/users/{id}":    "60-admin",
 	"PUT /v1/admin/users/{id}/quota": "60-admin",
+
+	// 61-service-keys — Ed25519 keys for on-behalf-of tokens (ADR 0011)
+	"POST /v1/admin/service-keys":        "61-service-keys",
+	"GET /v1/admin/service-keys":         "61-service-keys",
+	"DELETE /v1/admin/service-keys/{id}": "61-service-keys",
 
 	// 72-oauth-metadata — RFC 9728 discovery, the start of the MCP
 	// authorization flow
@@ -120,6 +126,18 @@ var Coverage = map[string]string{
 	"GET /mcp":    "70-mcp-streamable",
 	"POST /mcp":   "70-mcp-streamable",
 	"DELETE /mcp": "70-mcp-streamable",
+}
+
+// MCPToolCoverage tracks tools outside OpenAPI's HTTP endpoint inventory.
+// TestMCPToolResultsMatchOutputSchemas exercises each advertised output.
+var MCPToolCoverage = map[string]string{
+	"admin_audit_recent":  "60-admin",
+	"admin_health":        "60-admin",
+	"admin_list_projects": "60-admin",
+	"admin_list_tokens":   "60-admin",
+	"admin_list_users":    "60-admin",
+	"admin_ops_status":    "60-admin",
+	"admin_stats":         "60-admin",
 }
 
 // Exempt lists endpoints deliberately not conformance-tested; each

@@ -12,12 +12,16 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/azrtydxb/novamem/go/internal/engine"
 	"github.com/azrtydxb/novamem/go/internal/mcp"
+	"github.com/azrtydxb/novamem/go/internal/tenant"
+	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
 func (s *server) registerMCP(mux *routeMux) *mcp.Server {
@@ -55,6 +59,40 @@ func firstIssue(c *v) error {
 	return fmt.Errorf("invalid argument '%s': %s", i.Path, i.Message)
 }
 
+const errTokenConfined = "token is confined to its project"
+
+// ctxToken is the bearer-token record of the request that carries this
+// tool call, nil for sessions, bearer-mode and on-behalf-of callers.
+func ctxToken(ctx context.Context) *warmstore.TokenInfo {
+	if c, ok := ctx.Value(callerKey{}).(*caller); ok {
+		return c.token
+	}
+	return nil
+}
+
+// requireAdminMCP mirrors the role check used by /v1/admin/* without
+// going through HTTP. Restricted credentials and OBO identities do not
+// inherit an administrator role through their subject.
+func (s *server) requireAdminMCP(ctx context.Context, userID string) error {
+	if tenant.IsOBO(userID) {
+		return errors.New("admin only")
+	}
+	if tok := ctxToken(ctx); tok != nil && tok.Restricted() {
+		return errors.New("admin only")
+	}
+	if userID == "" || userID == warmstore.SystemUser {
+		return errors.New("admin only")
+	}
+	u, err := s.warm.FindUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if u == nil || u.Role != "admin" {
+		return errors.New("admin only")
+	}
+	return nil
+}
+
 // resolveScopeMCP — mcp-tools.ts resolveScope: canonicalize project +
 // includeProjects refs (id or name) with membership checks, falling
 // back to the caller's active project when no scope was supplied.
@@ -62,6 +100,26 @@ func firstIssue(c *v) error {
 // includeProjects so reads union with user-global; false (writes)
 // targets the active project directly.
 func (s *server) resolveScopeMCP(ctx context.Context, userID string, project *string, includeProjects []string, unionWithActive bool) (*string, []string, error) {
+	if tenant.IsOBO(userID) {
+		if project != nil || len(includeProjects) > 0 {
+			return nil, nil, errors.New(errOBOProjects)
+		}
+		return nil, nil, nil
+	}
+	if tok := ctxToken(ctx); tok != nil && tok.ProjectID != nil {
+		// Same rule as HTTP's checkProjectAccess: a project-confined
+		// token is held to its project, never widened by an active-project
+		// default, and an explicit other project is refused.
+		scope := projectScope{Project: project, IncludeProjects: includeProjects}
+		denial, err := s.confineScope(ctx, userID, *tok.ProjectID, &scope)
+		if err != nil {
+			return nil, nil, err
+		}
+		if denial != "" {
+			return nil, nil, errors.New(denial)
+		}
+		return scope.Project, scope.IncludeProjects, nil
+	}
 	if project == nil && len(includeProjects) == 0 {
 		active, err := s.warm.GetActiveProject(ctx, userID)
 		if err != nil {
@@ -123,7 +181,112 @@ func jsTime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000
 
 func (s *server) callTool(ctx context.Context, userID, name string, args map[string]any) (any, error) {
 	c := &v{m: args}
+	if tenant.IsOBO(userID) && strings.HasPrefix(name, "project_") {
+		return nil, errors.New(errOBOProjects)
+	}
+	if strings.HasPrefix(name, "admin_") {
+		if err := s.requireAdminMCP(ctx, userID); err != nil {
+			return nil, err
+		}
+	}
+	// A project-confined token is held to its project on every tool that
+	// takes a scope (resolveScopeMCP). The rest either manage projects or
+	// read across the user's whole store, so they are refused outright.
+	if tok := ctxToken(ctx); tok != nil && tok.ProjectID != nil {
+		switch {
+		case strings.HasPrefix(name, "project_"):
+			return nil, errors.New(errTokenConfined)
+		case name == "memory_stats", name == "memory_hygiene", name == "memory_evaluate":
+			return nil, errors.New(errTokenConfined)
+		}
+	}
 	switch name {
+	case "admin_list_users":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		rows, err := s.warm.ListUsers(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"users": rows}, nil
+	case "admin_list_projects":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		rows, err := s.warm.ListAllProjects(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"projects": rows}, nil
+	case "admin_list_tokens":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		rows, err := s.warm.ListAllUserTokens(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"tokens": rows}, nil
+	case "admin_health":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		return s.engine.Health(ctx), nil
+	case "admin_stats":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		return orderedMetrics(s.metrics.Snapshot(ctx)), nil
+	case "admin_audit_recent":
+		limit, set := c.positiveInt("limit", 200)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		if !set {
+			limit = 100
+		}
+		if limit > 500 {
+			return nil, errors.New("invalid argument 'limit': must be at most 500")
+		}
+		rows, err := s.warm.ListAuditLog(ctx, limit)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"entries": rows}, nil
+	case "admin_ops_status":
+		checkStrict(c)
+		if err := firstIssue(c); err != nil {
+			return nil, err
+		}
+		metrics := s.metrics.Snapshot(ctx)
+		gauges, _ := metrics["gauges"].(map[string]any)
+		counters, _ := metrics["counters"].(map[string]any)
+		dreamAt, err := s.warm.GetEngineState(ctx, warmstore.EngineStateLastDreamRun)
+		if err != nil {
+			return nil, err
+		}
+		reaperAt, err := s.warm.GetEngineState(ctx, warmstore.EngineStateLastReaperRun)
+		if err != nil {
+			return nil, err
+		}
+		var dreamLastRun, reaperLastRun any
+		if dreamAt != "" {
+			dreamLastRun = dreamAt
+		}
+		if reaperAt != "" {
+			reaperLastRun = reaperAt
+		}
+		return map[string]any{"jobs": map[string]any{
+			"decay":  map[string]any{"lastRunAt": gauges["last_decay_run_iso"], "runs": counters["decay_runs_total"]},
+			"dream":  map[string]any{"lastRunAt": dreamLastRun},
+			"reaper": map[string]any{"lastRunAt": reaperLastRun, "runs": counters["orphans_reaped_total"]},
+		}}, nil
 
 	case "memory_context":
 		message, _ := c.str("message", true, 1, 8*1024)
@@ -135,6 +298,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		includeProjects, _ := c.strArray("includeProjects", 16, 1, 128, validProjectRefItem, "project ref contains control characters")
 		weights := c.parseWeights()
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
+		rerank := c.boolPtr("rerank")
 		if err := firstIssue(c); err != nil {
 			return nil, err
 		}
@@ -148,6 +312,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		relevant, err := s.engine.Search(ctx, userID, engine.SearchArgs{
 			Query: message, K: k, Namespace: namespace, IncludeNamespaces: includeNamespaces,
 			Project: project, IncludeProjects: includeProjects, Weights: weights, MaxSensitivity: maxSensitivity,
+			Rerank: rerank,
 		})
 		if err != nil {
 			return nil, err
@@ -340,6 +505,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		weights := c.parseWeights()
 		maxSensitivity, _ := c.enum("maxSensitivity", "public", "internal", "private", "sensitive")
 		contentMode, _ := c.enum("contentMode", "full", "snippet", "ids")
+		rerank := c.boolPtr("rerank")
 		if err := firstIssue(c); err != nil {
 			return nil, err
 		}
@@ -350,6 +516,7 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		outcome, err := s.engine.Search(ctx, userID, engine.SearchArgs{
 			Query: query, K: k, Namespace: namespace, IncludeNamespaces: includeNamespaces,
 			Project: project, IncludeProjects: includeProjects, Weights: weights, MaxSensitivity: maxSensitivity,
+			Rerank: rerank,
 		})
 		if err != nil {
 			return nil, err
@@ -440,14 +607,24 @@ func (s *server) callTool(ctx context.Context, userID, name string, args map[str
 		return obj{{"results", orderedItems(outcome.Results)}, {"degraded", outcome.Degraded}}, nil
 
 	case "memory_forget":
-		id, _ := c.str("id", true, 1, 128)
+		id, hasID := c.str("id", false, 1, 128)
+		sourceRef, hasRef := c.str("sourceRef", false, 1, MaxSourceRefLen)
+		if hasRef && !validSourceRef(sourceRef) {
+			c.add("sourceRef", sourceRefMessage, "invalid_format")
+		}
 		project, _ := c.projectRef("project")
+		if len(c.issues) == 0 && hasID == hasRef {
+			c.add("id", "Provide exactly one of id or sourceRef", "custom")
+		}
 		if err := firstIssue(c); err != nil {
 			return nil, err
 		}
 		project, _, err := s.resolveScopeMCP(ctx, userID, project, nil, false)
 		if err != nil {
 			return nil, err
+		}
+		if hasRef {
+			return s.engine.ForgetBySource(ctx, userID, project, sourceRef)
 		}
 		return s.engine.Forget(ctx, userID, id, project)
 

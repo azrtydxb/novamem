@@ -104,6 +104,7 @@ func parseWriteBody(c *v) engine.RememberRequest {
 	}
 	req.Force, _ = c.boolean("force")
 	req.ExpiresAt, _ = c.datetime("expiresAt", "")
+	req.SourceRefs, _ = c.strArray("sourceRefs", MaxSourceRefs, 1, MaxSourceRefLen, validSourceRef, sourceRefMessage)
 	return req
 }
 
@@ -119,6 +120,15 @@ type projectScope struct {
 // false when it already sent the response.
 func (s *server) checkProjectAccess(w http.ResponseWriter, r *http.Request, userID string, body *projectScope, unionWithActive bool) bool {
 	ctx := r.Context()
+	if callerOf(r).obo != nil {
+		// No projects for a service identity: not by name, not by id, and
+		// not through an active-project default (it has none).
+		if body.Project != nil || len(body.IncludeProjects) > 0 {
+			s.sendError(w, http.StatusForbidden, errOBOProjects)
+			return false
+		}
+		return true
+	}
 	if tok := callerOf(r).token; tok != nil && tok.ProjectID != nil {
 		return s.confineToTokenProject(w, r, userID, *tok.ProjectID, body)
 	}
@@ -203,7 +213,23 @@ func (s *server) resolveProjectRef(ctx context.Context, userID, ref string) (str
 // reads and writes. `body.project` alone is the engine's "this project
 // only" read scope, so confinement also excludes the user-global store.
 func (s *server) confineToTokenProject(w http.ResponseWriter, r *http.Request, userID, tokenProject string, body *projectScope) bool {
-	ctx := r.Context()
+	denial, err := s.confineScope(r.Context(), userID, tokenProject, body)
+	if err != nil {
+		s.sendEngineErr(w, r, err)
+		return false
+	}
+	if denial != "" {
+		s.sendError(w, http.StatusForbidden, denial)
+		return false
+	}
+	return true
+}
+
+// confineScope is the transport-free core of confineToTokenProject,
+// shared with /mcp so the two doors cannot drift. It rewrites body to the
+// token's project and returns a non-empty denial (the 403 message) when
+// the request must be refused; err is an infrastructure failure.
+func (s *server) confineScope(ctx context.Context, userID, tokenProject string, body *projectScope) (denial string, err error) {
 	explicit := body.IncludeProjects
 	if body.Project != nil {
 		explicit = append([]string{*body.Project}, explicit...)
@@ -211,12 +237,10 @@ func (s *server) confineToTokenProject(w http.ResponseWriter, r *http.Request, u
 	for _, ref := range explicit {
 		id, found, err := s.resolveProjectRef(ctx, userID, ref)
 		if err != nil {
-			s.sendEngineErr(w, r, err)
-			return false
+			return "", err
 		}
 		if !found || id != tokenProject {
-			s.sendError(w, http.StatusForbidden, "token is confined to its project")
-			return false
+			return "token is confined to its project", nil
 		}
 	}
 	body.Project = &tokenProject
@@ -224,14 +248,12 @@ func (s *server) confineToTokenProject(w http.ResponseWriter, r *http.Request, u
 	// A token whose user was since removed from the project must not pass.
 	member, err := s.warm.GetProjectMembership(ctx, tokenProject, userID)
 	if err != nil {
-		s.sendEngineErr(w, r, err)
-		return false
+		return "", err
 	}
 	if !member {
-		s.sendError(w, http.StatusForbidden, "not a member of the token's project")
-		return false
+		return "not a member of the token's project", nil
 	}
-	return true
+	return "", nil
 }
 
 // ─── Content shaping (routes/context.ts shapeContent) ──────────────────
@@ -395,8 +417,15 @@ func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := &v{m: m}
-	id, _ := c.str("id", true, 1, 128)
+	id, hasID := c.str("id", false, 1, 128)
+	sourceRef, hasRef := c.str("sourceRef", false, 1, MaxSourceRefLen)
+	if hasRef && !validSourceRef(sourceRef) {
+		c.add("sourceRef", sourceRefMessage, "invalid_format")
+	}
 	project, _ := c.projectRef("project")
+	if len(c.issues) == 0 && hasID == hasRef {
+		c.add("id", "Provide exactly one of id or sourceRef", "custom")
+	}
 	if len(c.issues) > 0 {
 		s.sendIssues(w, c.issues)
 		return
@@ -404,6 +433,18 @@ func (s *server) handleForget(w http.ResponseWriter, r *http.Request) {
 	userID := s.userID(r)
 	scope := projectScope{Project: project}
 	if !s.checkProjectAccess(w, r, userID, &scope, false) {
+		return
+	}
+	if hasRef {
+		// Same scope rules as forget-by-id: the caller's own user-wide
+		// entries, or, with a project (explicit or active-defaulted and
+		// membership-checked above), that project's entries.
+		receipt, err := s.engine.ForgetBySource(r.Context(), userID, scope.Project, sourceRef)
+		if err != nil {
+			s.sendEngineErr(w, r, err)
+			return
+		}
+		writeJSONValue(w, http.StatusOK, receipt)
 		return
 	}
 	// Defence in depth (routes/data-plane.ts /v1/forget): resolve the
@@ -501,6 +542,9 @@ func (s *server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if s.projectConfinedDenied(w, r) {
+		return
+	}
 	stats, err := s.engine.GetStats(r.Context(), s.userID(r))
 	if err != nil {
 		s.sendEngineErr(w, r, err)

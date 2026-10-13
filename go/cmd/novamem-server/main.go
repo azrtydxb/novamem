@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,6 +24,7 @@ import (
 	"github.com/azrtydxb/novamem/go/internal/jobs"
 	"github.com/azrtydxb/novamem/go/internal/llm"
 	"github.com/azrtydxb/novamem/go/internal/metrics"
+	"github.com/azrtydxb/novamem/go/internal/tracing"
 	"github.com/azrtydxb/novamem/go/internal/warmstore"
 )
 
@@ -176,6 +178,12 @@ func run() error {
 			APIKey:    cfg.RerankAPIKey,
 			TimeoutMs: cfg.RerankTimeoutMs,
 		})
+		rerankHost := cfg.RerankEndpoint
+		if u, perr := url.Parse(cfg.RerankEndpoint); perr == nil && u.Host != "" {
+			rerankHost = u.Host
+		}
+		log.Info("reranker configured", "model", cfg.RerankModel,
+			"endpointHost", rerankHost, "rerankByDefault", true)
 	}
 
 	// The three LLM subsystems, each constructed iff its enable flag AND
@@ -194,7 +202,8 @@ func run() error {
 			MaxConcurrent:    cfg.ExtractionMaxConcurrent,
 		})
 		log.Info("fact extraction configured", "model", cfg.ExtractionModel,
-			"maxFacts", cfg.ExtractionMaxFacts, "maxConcurrent", cfg.ExtractionMaxConcurrent)
+			"maxFacts", cfg.ExtractionMaxFacts, "maxConcurrent", cfg.ExtractionMaxConcurrent,
+			"piiRedaction", cfg.ExtractionRedact)
 	}
 	var decomposer *llm.QueryDecomposer
 	if cfg.QueryDecompEnabled && cfg.QueryDecompEndpoint != "" && cfg.QueryDecompModel != "" {
@@ -263,6 +272,7 @@ func run() error {
 		Extractor:          extractor,
 		ExtractorMaxFacts:  cfg.ExtractionMaxFacts,
 		ExtractorTimeoutMs: cfg.ExtractionTimeoutMs,
+		ExtractorRedact:    &cfg.ExtractionRedact,
 		Decomposer:         decomposer,
 		Observer:           observer,
 		Log:                log,
@@ -290,7 +300,23 @@ func run() error {
 			DecayInterval:     time.Duration(cfg.DecayIntervalMs) * time.Millisecond,
 			ReconcileInterval: time.Duration(cfg.ReconcileIntervalMs) * time.Millisecond,
 			ReconcileBatch:    cfg.ReconcileBatch,
+			RetentionEnabled: cfg.RetentionEnabled,
+			RetentionMaxAge: time.Duration(cfg.RetentionMaxAgeDays) * 24 * time.Hour,
+			RetentionBatch: cfg.RetentionBatch,
+			RetentionInterval: time.Duration(cfg.RetentionIntervalMinutes) * time.Minute,
+			RetentionDryRun: cfg.RetentionDryRun,
 		})
+	}()
+	shutdownTracing, traceErr := tracing.Start(ctx, tracing.Config{Enabled: cfg.TracingEnabled(), Endpoint: cfg.OTELEndpoint, TracesEndpoint: cfg.OTELTracesEndpoint, ServiceName: cfg.OTELServiceName}, log)
+	if traceErr != nil {
+		log.Error("OTLP tracing disabled; server will continue", "err", traceErr)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(flush); err != nil {
+			log.Warn("OTLP tracing shutdown", "err", err)
+		}
 	}()
 
 	if cfg.PprofAddr != "" {
@@ -344,8 +370,15 @@ func run() error {
 	}()
 
 	log.Info("novamem-go listening", "addr", srv.Addr, "latestMigration", warmstore.LatestMigration())
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+	var serveErr error
+	if cfg.TLSCert != "" {
+		log.Info("native TLS enabled", "cert", cfg.TLSCert)
+		serveErr = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+	} else {
+		serveErr = srv.ListenAndServe()
+	}
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		return serveErr
 	}
 	<-jobsDone
 	return nil

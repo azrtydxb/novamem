@@ -290,9 +290,9 @@ site builds from it, and the duplicated pages under
 
 ## The commit gate blocks on a vuln in a gitignored agent install
 
-Every commit in this repo currently fails:
-
-    BLOCKING toml 4.1.1 has 2 known vulnerability(s), max severity 8.2 — upgrade it (security)
+Every commit in this repo currently fails on a blocking security finding:
+toml 4.1.1 has 2 known vulnerabilities, max severity 8.2. (Paraphrased on
+2026-10-09: the gate read the verbatim quote back as a live finding.)
 
 Tracked down 2026-09-11: the package is
 `.kilocode/node_modules/toml@4.1.1` — a Kilo Code install sitting in the
@@ -709,3 +709,116 @@ Since #284 every MCP tool declares an `outputSchema`, but tool results carry onl
 - Leave it for now
 
 **Decision (2026-09-30, owner):** add structuredContent, with a test covering every tool that declares an outputSchema.
+
+## On-behalf-of token format (#337)
+
+Atlas (multi-tenant) must act for a user inside an org. The Go server already hand-rolls EdDSA JWTs (bajwt.go, stdlib ed25519); go.mod has no JWT library.
+
+- Service-signed EdDSA JWT: an admin registers the service's Ed25519 public key bound to one org; the service mints short-lived JWTs (sub=user, org, exp ≤ 15m, aud=novamem) itself; NovaMem holds no service secret (recommended)
+- NovaMem-minted JWT: admin issues an opaque `nm_svc_` key bound to an org; the service exchanges it per user at a token endpoint for a short-lived NovaMem-signed JWT
+- Opaque `nm_svc_` key bound to an org plus an `X-Novamem-On-Behalf-Of: <user>` header; user is not a signed claim and has no per-call expiry
+
+**Decision (2026-10-09, owner):** service-signed EdDSA JWT.
+
+## Who the on-behalf-of user is (#337)
+
+- Free-form subject scoped by org: the claim's user id is Atlas's own id, NovaMem stores it as-is with organization_id; no NovaMem user row needed (recommended)
+- Must be an existing NovaMem user: Atlas provisions each user through POST /v1/admin/users first; tokens for unknown users are rejected
+
+**Decision (2026-10-09, owner):** free-form subject scoped by org.
+
+## MCP ignores project-confined tokens (found reviewing #338)
+
+`resolveScopeMCP` (go/internal/httpapi/mcp.go) never checks the token's `ProjectID`, so a full-scope project-confined `nm_` token can read or forget the user's user-wide entries and other projects' entries over `/mcp`. HTTP enforces it (`confineToTokenProject`). Pre-existing on main.
+
+- File an issue and fix it in its own PR right after #339/#338 (recommended)
+- Fix it inside #338
+- File the issue only
+
+**Decision (2026-10-09, owner):** file an issue and fix it in its own PR after #339/#338.
+
+## CI "generated" job: api.adoptium.net sinkholed by nexora-dns (2026-10-09)
+
+setup-java (temurin) fails on the ARC runners: the LAN DNS (nexora-dns, .136/.139) answers api.adoptium.net with 0.0.0.0/::; 1.1.1.1 resolves it. The policy can't be inspected or changed: nexora-mgmt is 0/2 ready because its database nexora-db is down — primary nexora-db-2 is in CrashLoopBackOff with "Not enough disk space" (10Gi Longhorn PVC; replica nexora-db-1 is at 9%), so nexora-db-rw has no endpoints. Engines keep serving their last policy.
+
+- Recover nexora-db first (find what filled the primary's volume, likely WAL; expand the PVC or fail over to nexora-db-1), then allowlist api.adoptium.net in nexora (recommended)
+- Workaround in novamem CI only: run google-java-format inside the maven:3.9-eclipse-temurin-21 image the java job already pulls, so the generated job no longer downloads a JDK
+- Both
+
+**Decision (2026-10-09, owner):** recover nexora-db first, then allowlist api.adoptium.net.
+
+## Committing a regenerated clients/php/src/Types.php (2026-10-09)
+
+The gate runs phpstan on the staged Types.php alone. phpstan.neon excludes that generated file (it has 244 level-6 errors by design), so phpstan answers "No files found to analyse" and the gate blocks. procoder does not honor phpstan's excludePaths. Blocks the #338 commit that regenerates every SDK's wire types.
+
+- File a procoder issue, and commit this one regeneration from your own terminal (the gate is a Claude hook, so a terminal commit is not gated) (recommended)
+- File a procoder issue and wait for the fix before #338 can merge
+- Remove Types.php from the phpstan exclusion and fix the 244 findings in the PHP template
+
+**Decision (2026-10-09, owner):** file a procoder issue; the owner commits this regeneration from a terminal.
+
+## Merging #339 and #341 (2026-10-10)
+
+Both are green on the full rollup with no review comments. Merging to main is the kw deploy (GitOps): it runs migrations 0012 (organization_id on memory_entries, service_keys) and 0013 (memory_entry_source_refs) against the kw database and ships on-behalf-of tokens and forget-by-source. #341 is stacked on #339. Both issues also ask for a tagged release of the server and clients/go.
+
+- Merge #339, retarget #341 to main and merge it once its CI reruns green, let GitOps deploy, run conformance against kw; release tag decided separately (recommended)
+- Merge both and also cut the release tag
+- Hold the merges
+
+**Decision (2026-10-10, owner):** merge and deploy both, no release tag yet.
+
+## Embedding redundancy for novamem (2026-10-10)
+
+novamem already calls fastllm's pooled `bge-m3` frontend (pool `cacheaffinity-bge-m3`), but the pool has one member: a single Kuvryn-placed vLLM workload on gx10-48f4 (:8890). The reranker (`bge-reranker-v2-m3`, :8891) is also only on gx10-48f4. gx10-9c17 runs Qwen3.6-35B-A3B and an audio engine.
+
+- Deploy a second bge-m3 on gx10-9c17 through Kuvryn and add it to the pool (recommended; owner confirms GPU headroom / how Kuvryn places it)
+- Also add a second reranker the same way
+- Leave one instance
+
+## Reranking is never used (2026-10-10)
+
+Reranking is opt-in per request (`rerank: true` on POST /v1/search, engine/search.go:435). MCP memory_search / memory_context have no such parameter, so no agent search has ever been reranked; fastllm shows 0 rerank requests. Config, endpoint and auth are correct (direct call returns 200). The benchmark docs credit reranking with +21pp at ~+500 ms p95.
+
+- Rerank by default when a reranker is configured, with a per-request `rerank: false` opt-out on HTTP and MCP (recommended)
+- Keep it opt-in, but expose `rerank` on the MCP search/context tools
+- Leave as is
+
+**Decision (2026-10-10, owner):** rerank by default when a reranker is configured, with a per-request rerank:false opt-out on HTTP and MCP.
+
+## Bump the Rust MSRV to 1.85 to land reqwest 0.13 (PR #330, 2026-10-10)
+
+reqwest 0.13.5 requires Rust >= 1.85; the crate declares rust-version = "1.80" and CI's rust (1.80) job enforces it. The feature rename is already pushed on #330; the bump alone cannot go green.
+
+- Bump MSRV to 1.85 (rust-version + CI matrix job), land #330 on top (recommended if nothing needs 1.80)
+- Close #330 as wontfix until MSRV moves for another reason
+- Hold #330 open, unmerged
+
+**Decision (2026-10-10, owner):** bump MSRV to 1.85 and land #330 on top.
+
+## CI runner capacity after today's queue saturation (2026-10-10)
+
+Individual CI jobs run 1-5 min (ci.yml wall ~5 min, sdk.yml ~6 min). Today's 40-min waits were queue time: dozens of concurrent runs from the PR waves competed for the small self-hosted ARC runner pool on kw.
+
+- Increase ARC runner replicas for arc-azrtydxb-amd64 (and/or add a scale set for SDK jobs) (recommended)
+- Keep the pool as is; waves are rare
+- Move some jobs back to GitHub-hosted runners
+
+**Correction (2026-10-10, owner):** the amd64 runners are not on kw (kw hosts only arm64), and amd64 capacity is plentiful. Keep as is; no capacity change.
+
+## manifest (multi-arch) job cannot run on the ARC runners (2026-10-10)
+
+#342 moved it to ARC; its first main run failed: `docker login ghcr.io` fails TLS because the runners' docker mirror intercepts ghcr.io and serves the kw-internal Nexus certificate. The docker _build_ jobs work on ARC because their buildx config marks the Nexus registries insecure; the manifest job's plain docker login cannot do that.
+
+- Pin manifest back to ubuntu-24.04 with a comment (it only stitches manifests + records the deploy; it does not need to run in-cluster) (recommended)
+- Keep it on ARC and hand-craft ghcr.io auth + buildx insecure config for ghcr.io
+
+**Decision (2026-10-10, owner):** fix the manifest job for ARC (no GitHub runners): client-side ghcr.io auth + buildx builder with ghcr.io insecure, verified live on a runner before merge.
+
+## Orphan rows on kw flagged by the FK validation (2026-10-13)
+
+Migration 0014's post-commit validation logged pre-existing orphan rows on kw (rows referencing deleted users/projects, created before FKs existed). Deploy is healthy; the orphans are inert but unclean.
+
+- Dispatch a cleanup pass: inventory the orphans, delete the safely-derived ones, document the rest (recommended)
+- Leave them; FKs are NOT VALID-style tolerated for old rows
+
+**Decision (2026-10-13, owner):** clean them up — inventory, backup first, delete the safely-derived ones, document the rest.

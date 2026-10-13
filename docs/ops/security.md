@@ -27,7 +27,8 @@ Email the maintainers privately rather than opening a public issue. We aim to ac
 3. Removing a project member must also revoke their project-related access. `WarmStore.removeProjectMember` deletes the membership row in a single transaction.
 4. Data-plane routes (`/v1/search`, `/v1/recent`, `/v1/neighbors`, `/v1/remember`, `/v1/capture`, `/v1/forget`, `PUT /v1/memories/:id`) enforce project membership via `checkProjectAccess`. Forget/update paths re-fetch the entry's real scope and re-check membership before mutating (defence in depth against `project: null` laundering).
 5. The Better Auth passthrough refuses operations that would leave zero admins: pre-handler intercepts `/api/auth/admin/remove-user` and `/api/auth/admin/set-role` (when the new role is non-admin) and returns `400 LAST_ADMIN_PROTECTED` if the target is the only admin.
-6. Audit-log every admin action. Read it at `GET /v1/admin/audit-log`.
+6. On-behalf-of callers (ADR 0011) act as the composite user id `org:<org>/<sub>`; `memory_entries.organization_id` is checked as well. A real user id must never start with `org:`, and a service key must never be bound to org `default`. Do not give an on-behalf-of identity project access.
+7. Audit-log every admin action. Read it at `GET /v1/admin/audit-log`.
 
 ## Production hardening checklist
 
@@ -41,7 +42,13 @@ If you're running novamem with real data:
 - [ ] Set `NOVAMEM_AUTH_MODE=user` (the default).
 - [ ] Unset `NOVAMEM_INSECURE_COOKIES` (or set to `0`). Cookies are then `Secure` and require HTTPS.
 - [ ] Restrict CORS via `NOVAMEM_CORS_ORIGINS` (comma-separated allowlist; default is same-origin only). `*` re-enables permissive behaviour — don't use it in production.
-- [ ] Run the server behind a TLS-terminating reverse proxy or LoadBalancer with a real cert. `Authorization: Bearer …` and the session cookie over plain HTTP are plaintext.
+- [ ] Choose one HTTPS deployment tier below. `Authorization: Bearer …` and session cookies sent over plain HTTP are plaintext.
+
+### HTTPS deployment tiers
+
+1. **Kubernetes kw overlay:** cert-manager provisions the Ingress certificate and ingress-nginx terminates TLS before forwarding HTTP to the novamem Service. The overlay explicitly enables HTTP-to-HTTPS redirects and HSTS. Keep the Service private to the cluster and set `NOVAMEM_BASE_URL` to the public `https://` origin.
+2. **Native TLS:** for a bare server, set both `NOVAMEM_TLS_CERT` and `NOVAMEM_TLS_KEY` to PEM file paths. The Go server serves HTTPS on `NOVAMEM_HOST:NOVAMEM_PORT`; clients must connect with `https://`. It does not start a second HTTP listener or redirect HTTP on the same port.
+3. **Loopback and development:** with both TLS variables unset, the server retains its existing plain HTTP listener. Use this for local development or behind a trusted TLS-terminating proxy. For a proxy, keep the server on a private network or bind `NOVAMEM_HOST=127.0.0.1` when it shares the host. `X-Forwarded-Proto: https` is used for externally generated URL metadata; it does not enable native TLS.
 - [ ] Do **not** expose Postgres / Qdrant on host ports in production. The bundled `docker-compose.yaml` does this for local dev convenience; remove the `ports:` blocks for those services in production compose files.
 - [ ] Change the Postgres password (the bundled `docker-compose.yaml` uses `novamem` as the default — fine for dev, dangerous in prod).
 - [ ] Configure log shipping. Pino emits JSON to stdout; `Authorization`, `password`, and created token values are redacted via `redact:` config.

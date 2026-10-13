@@ -33,10 +33,12 @@ env:
 jobs:
   gitops:
     name: GitOps deployment checks
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # The ARC runner image has no kubectl (GitHub's hosted image did).
+      - uses: azure/setup-kubectl@v5
       - run: python3 scripts/test-record-kw-image.py
       - name: Keep credentials and namespace outside application sync
         run: |
@@ -101,8 +103,31 @@ jobs:
   # ── Go modules (server rewrite + shared client) ───────────────────────
   go:
     name: go (build + vet + test)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    runs-on: arc-azrtydxb-amd64
+    timeout-minutes: 15
+    # A real Postgres for the tests that skip without one — above all
+    # TestOnBehalfOfToken, which proves organization isolation (#337, ADR
+    # 0011) and must not be a test that quietly skips in CI. The pgvector
+    # image is the one the pgvector cold store runs on; the tag is pinned.
+    # The test fails (rather than skips) when CI is set and this is unset.
+    # Pulled through the in-cluster Nexus (it proxies docker.io): a direct
+    # Docker Hub pull hits the anonymous rate limit.
+    services:
+      postgres:
+        image: 192.168.10.131/pgvector/pgvector:0.8.1-pg16
+        env:
+          POSTGRES_USER: novamem
+          POSTGRES_PASSWORD: novamem
+          POSTGRES_DB: novamem_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novamem"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NOVAMEM_TEST_DATABASE_URL: postgres://novamem:novamem@localhost:5432/novamem_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -147,12 +172,12 @@ jobs:
       # hand-written table until then, and it had drifted far enough to
       # be undeployable.
       - run: cd go && go run ./cmd/gen-contract && go run ./cmd/gen-tool-docs && go run ./cmd/gen-env-docs
-      - run: git diff --exit-code api/ docs/api/ docs/install/env-reference.md .env.example conformance/reference/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go go/internal/agentskill/skill go/internal/initcli/assets plugins/novamem
+      - run: git diff --exit-code api/ docs/api/ docs/install/env-reference.md .env.example conformance/reference/ go/internal/mcp/tooldefs.json go/internal/httpapi/openapi.json go/internal/httpapi/routes_gen.go go/internal/httpapi/ba_allowlist_gen.go go/internal/agentskill/skill go/internal/initcli/assets plugins/novamem
 
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
     name: audit
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -176,10 +201,14 @@ jobs:
   package:
     name: package (npm)
     needs: [test]
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # The ARC runner image has no node (GitHub's hosted image did).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - name: Confirm nothing is publishable
         run: node scripts/assert-nothing-publishable.mjs
 
@@ -327,6 +356,8 @@ jobs:
           context: .
           file: go/Dockerfile
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-${{ matrix.arch }}
             ${{ github.ref == 'refs/heads/main' && format('{0}:main-{1}', env.REGISTRY_IMAGE, matrix.arch) || '' }}
@@ -371,7 +402,7 @@ jobs:
       contents: write # record the verified image for Kuvryn Sync on main
       packages: write # push the multi-arch manifest to ghcr.io
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-24.04
+    runs-on: arc-azrtydxb-amd64
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -380,13 +411,60 @@ jobs:
           # Existing Scout credential, stored separately as a repository secret.
           # Main uses it for CI's deployment commit; tags need only read access.
           token: ${{ github.ref == 'refs/heads/main' && secrets.KW_GITOPS_TOKEN || github.token }}
-      - uses: docker/setup-buildx-action@v4
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # regctl needs direct GHCR access; the ARC pod's hosts alias points
+      # ghcr.io at the LAN Nexus mirror, which cannot authenticate pushes.
+      # Install the pinned regctl binary used by the manifest steps below.
+      - name: Install regctl
+        run: |
+          case "$(uname -m)" in
+            x86_64) ARCH=amd64; SHA256=8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd ;;
+            aarch64|arm64) ARCH=arm64; SHA256=a9b71a3ee79b2d1dbbd7d51fd5e8fa214722c192864235d3d8764463c751a1ff ;;
+            *) echo "Unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          curl --fail --silent --show-error --location --insecure \
+            "https://github.com/regclient/regclient/releases/download/v0.11.6/regctl-linux-${ARCH}" \
+            --output "$RUNNER_TEMP/regctl"
+          echo "${SHA256}  ${RUNNER_TEMP}/regctl" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/regctl"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      # Resolve outside LAN DNS, then replace the pod's GHCR HostAlias so
+      # clients still connect with hostname/SNI ghcr.io and verify its cert.
+      - name: Route ghcr.io to its public address
+        run: |
+          real_ip=""
+          if command -v dig >/dev/null 2>&1; then
+            real_ip=$(dig +short ghcr.io @1.1.1.1 | head -n1 || true)
+          fi
+          if [ -z "$real_ip" ]; then
+            real_ip=$(curl --fail --silent --show-error \
+              'https://one.one.one.one/dns-query?name=ghcr.io&type=A' \
+              -H 'accept: application/dns-json' \
+              | jq -r '.Answer[] | select(.type==1) | .data' \
+              | shuf -n1) || true
+          fi
+          if [ -z "$real_ip" ]; then
+            for candidate in 20.233.83.147; do
+              real_ip="$candidate"
+              break
+            done
+          fi
+          test -n "$real_ip"
+          echo "Using public ghcr.io address: $real_ip"
+          awk -v ip="$real_ip" '
+            $NF == "ghcr.io" { print ip "\tghcr.io"; found=1; next }
+            { print }
+            END { if (!found) print ip "\tghcr.io" }
+          ' /etc/hosts > "$RUNNER_TEMP/hosts"
+          sudo sh -c 'cat "$1" > /etc/hosts' sh "$RUNNER_TEMP/hosts"
+          getent hosts ghcr.io | awk -v ip="$real_ip" '$1 == ip { found=1 } END { exit !found }'
+      # regctl uses its own client-side auth config; it does not read Docker's
+      # config.json. Keep normal TLS verification enabled for real GHCR.
+      - name: Login to ghcr.io with regctl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          regctl registry set ghcr.io --tls enabled --skip-check
+          regctl registry login ghcr.io --user x-access-token --pass "$GITHUB_TOKEN"
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -401,35 +479,46 @@ jobs:
       # can pin reproducibly regardless of whether they're following
       # `:main` or a release tag.
       - name: Create + push :sha-<short> multi-arch manifest
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
+          SHORT_SHA: ${{ steps.sha.outputs.short }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }} \
-            ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}-arm64
+          regctl index create "$IMAGE:sha-$SHORT_SHA" \
+            --ref "$IMAGE:sha-$SHORT_SHA-amd64" \
+            --ref "$IMAGE:sha-$SHORT_SHA-arm64"
       - name: Create + push :main multi-arch manifest
         if: github.ref == 'refs/heads/main'
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:main \
-            ${{ env.REGISTRY_IMAGE }}:main-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:main-arm64
+          regctl index create "$IMAGE:main" \
+            --ref "$IMAGE:main-amd64" \
+            --ref "$IMAGE:main-arm64"
       - name: Create + push :v<X.Y.Z> multi-arch manifest
         if: steps.semver.outputs.v
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
+          VERSION: ${{ steps.semver.outputs.v }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }} \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.v }}-arm64
+          regctl index create "$IMAGE:$VERSION" \
+            --ref "$IMAGE:$VERSION-amd64" \
+            --ref "$IMAGE:$VERSION-arm64"
       - name: Create + push :<X.Y.Z> multi-arch manifest
         if: steps.semver.outputs.bare
+        env:
+          IMAGE: ${{ env.REGISTRY_IMAGE }}
+          VERSION: ${{ steps.semver.outputs.bare }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }} \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:${{ steps.semver.outputs.bare }}-arm64
+          regctl index create "$IMAGE:$VERSION" \
+            --ref "$IMAGE:$VERSION-amd64" \
+            --ref "$IMAGE:$VERSION-arm64"
       - name: Verify the kw image resolves for both architectures
         if: github.ref == 'refs/heads/main'
         env:
           IMAGE: ${{ env.REGISTRY_IMAGE }}:sha-${{ steps.sha.outputs.short }}
         run: |
           for attempt in $(seq 1 12); do
-            if docker buildx imagetools inspect "$IMAGE" --raw | jq -e '
+            if regctl manifest get "$IMAGE" --format raw-body | jq -e '
               [.manifests[].platform | select(.os == "linux") | .architecture]
               | (index("amd64") != null and index("arm64") != null)
             ' >/dev/null; then

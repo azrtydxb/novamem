@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/azrtydxb/novamem/go/internal/tenant"
 )
 
 type FtsArgs struct {
@@ -143,6 +145,9 @@ func (s *Store) GetEntries(ctx context.Context, userID string, ids []string, pro
 		e, err := scanEntry(rows)
 		if err != nil {
 			return nil, err
+		}
+		if e.OrganizationID != tenant.OrgOf(userID) {
+			continue
 		}
 		switch {
 		case len(includeProjects) > 0:

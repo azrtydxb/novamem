@@ -11,8 +11,7 @@ novamem's `/v1/*` API is stable — no breaking changes within a major release. 
 | Tag                            | Meaning                                                                                   |
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
 | `vX.Y.Z`                       | Server release. The repo's GitHub release. Image at `ghcr.io/azrtydxb/novamem:sha-<...>`. |
-| `@azrtydxb/novamem-mcp@X.Y.Z`  | Stdio shim release. Pin in your MCP host config.                                          |
-| `@azrtydxb/novamem-init@X.Y.Z` | CLI release. `npx -y` always pulls latest.                                                |
+| CLI binaries (`novamem-init`, `novamem-mcp`) | Attached to each GitHub release for supported platforms. Update with the release installer. |
 | `:main`                        | Always current. Useful for staging; pin a sha for production.                             |
 | `:sha-<7chars>`                | Deterministic. Reproducible deploys.                                                      |
 

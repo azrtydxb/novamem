@@ -34,8 +34,8 @@ func TestToolDefsMatchConformanceSnapshot(t *testing.T) {
 	if err := json.Unmarshal(ToolDefinitions(), &defs); err != nil {
 		t.Fatal(err)
 	}
-	if len(defs) != 21 {
-		t.Fatalf("expected 21 tools, got %d", len(defs))
+	if len(defs) != 28 {
+		t.Fatalf("expected 28 tools, got %d", len(defs))
 	}
 
 	names := make([]string, 0, len(defs))
@@ -79,7 +79,7 @@ func TestToolDefsMatchConformanceSnapshot(t *testing.T) {
 // flows from api/openapi.yaml through cmd/gen-contract, and the first
 // version of that generator decoded each tool into a struct of
 // name/description/inputSchema — which silently dropped annotations from
-// all 21 tools and regenerated a file that looked fine. Nothing in the
+// all 28 tools and regenerated a file that looked fine. Nothing in the
 // suite noticed, because nothing pinned them.
 //
 // This pins them. A future regression to field-by-field decoding fails
@@ -112,6 +112,38 @@ func TestEveryToolKeepsItsAnnotations(t *testing.T) {
 		}
 		if d.Annotations.OpenWorldHint == nil {
 			t.Errorf("%s has no annotations.openWorldHint", d.Name)
+		}
+	}
+}
+
+// MCP requires every tool's inputSchema and outputSchema to be a JSON
+// Schema whose root is `"type": "object"`; a strict client rejects the
+// whole tools/list response when one is missing (a bare `oneOf` on
+// memory_forget did exactly that).
+//
+// proved by: deleting `type: object` from the /v1/forget 200 response
+// in api/openapi.yaml (and regenerating) fails this test for memory_forget.
+func TestEveryToolSchemaHasObjectRoot(t *testing.T) {
+	var defs []struct {
+		Name         string         `json:"name"`
+		InputSchema  map[string]any `json:"inputSchema"`
+		OutputSchema map[string]any `json:"outputSchema"`
+	}
+	if err := json.Unmarshal(ToolDefinitions(), &defs); err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) == 0 {
+		t.Fatal("no tools")
+	}
+	for _, d := range defs {
+		for kind, sch := range map[string]map[string]any{"inputSchema": d.InputSchema, "outputSchema": d.OutputSchema} {
+			if sch == nil {
+				t.Errorf("%s: no %s", d.Name, kind)
+				continue
+			}
+			if sch["type"] != "object" {
+				t.Errorf("%s: %s root type = %v, want \"object\"", d.Name, kind, sch["type"])
+			}
 		}
 	}
 }

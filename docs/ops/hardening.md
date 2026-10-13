@@ -15,7 +15,7 @@ Production checklist for self-hosted novamem. Walk this top-to-bottom before exp
 
 ## Network
 
-- [ ] Reverse proxy (nginx / Traefik / cloudflared) terminating TLS in front of novamem. The server itself doesn't do TLS.
+- [ ] Use HTTPS for any public deployment: the kw Kubernetes overlay terminates TLS at ingress-nginx, or a bare server can use `NOVAMEM_TLS_CERT` + `NOVAMEM_TLS_KEY` for native HTTPS. Native TLS serves HTTPS on the configured port and does not provide a same-port HTTP redirect; behind a proxy, keep the HTTP upstream private.
 - [ ] `NOVAMEM_INSECURE_COOKIES=0` (default). Anything else drops `Secure` flag — only safe behind a guaranteed-TLS proxy on localhost.
 - [ ] `NOVAMEM_CORS_ORIGINS` is a tight allowlist if you're running browser-based SDK clients on different origins. `*` is accepted but disables credentialed CORS — sessions from a browser need explicit origins.
 - [ ] `NOVAMEM_HOST=127.0.0.1` if your reverse proxy is on the same host — avoids accidental direct exposure.
@@ -55,7 +55,7 @@ and emits no traces. Tracked in [#277](https://github.com/azrtydxb/novamem/issue
 
 ## Headers
 
-novamem sets these by default; verify none are stripped by your reverse proxy:
+The kw ingress-nginx overlay emits HSTS on HTTPS responses. Verify these headers are present at the public endpoint and are not stripped by any additional proxy:
 
 - `Strict-Transport-Security: max-age=31536000; includeSubDomains` (when behind TLS)
 - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'`

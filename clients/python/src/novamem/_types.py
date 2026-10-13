@@ -263,6 +263,7 @@ class CaptureRequest(_Wire):
     project: str | None = None
     sensitivity: CaptureRequestSensitivity | None = None
     source: str | None = None
+    source_refs: list[str] | None = None
     source_type: str | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
@@ -277,6 +278,7 @@ class CaptureRequest(_Wire):
         ("project", "project", ("p", "string"), False),
         ("sensitivity", "sensitivity", ("n", "CaptureRequestSensitivity"), False),
         ("source", "source", ("p", "string"), False),
+        ("source_refs", "sourceRefs", ("a", ("p", "string")), False),
         ("source_type", "sourceType", ("p", "string"), False),
     )
 
@@ -352,6 +354,7 @@ class ContextRequest(_Wire):
     max_tokens: int | None = None
     namespace: str | None = None
     project: str | None = None
+    rerank: bool | None = None
     weights: ContextRequestWeights | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
@@ -366,6 +369,7 @@ class ContextRequest(_Wire):
         ("message", "message", ("p", "string"), True),
         ("namespace", "namespace", ("p", "string"), False),
         ("project", "project", ("p", "string"), False),
+        ("rerank", "rerank", ("p", "bool"), False),
         ("weights", "weights", ("n", "ContextRequestWeights"), False),
     )
 
@@ -492,12 +496,14 @@ class ExportedEntry(_Wire):
 
 @dataclass(frozen=True)
 class ForgetRequest(_Wire):
-    id: str
+    id: str | None = None
     project: str | None = None
+    source_ref: str | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("id", "id", ("p", "string"), True),
+        ("id", "id", ("p", "string"), False),
         ("project", "project", ("p", "string"), False),
+        ("source_ref", "sourceRef", ("p", "string"), False),
     )
 
 
@@ -524,19 +530,76 @@ class Health(_Wire):
 @dataclass(frozen=True)
 class HygieneReport(_Wire):
     summary: HygieneReportSummary
-    contradiction_candidates: list[Any] | None = None
-    duplicate_clusters: list[Any] | None = None
-    low_value: list[Any] | None = None
-    orphan_candidates: list[Any] | None = None
-    stale: list[Any] | None = None
+    contradiction_candidates: list[HygieneReportContradictionCandidatesItem] | None = None
+    duplicate_clusters: list[HygieneReportDuplicateClustersItem] | None = None
+    low_value: list[HygieneReportLowValueItem] | None = None
+    orphan_candidates: list[HygieneReportOrphanCandidatesItem] | None = None
+    stale: list[HygieneReportStaleItem] | None = None
 
     _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
-        ("contradiction_candidates", "contradictionCandidates", ("a", ("p", "any")), False),
-        ("duplicate_clusters", "duplicateClusters", ("a", ("p", "any")), False),
-        ("low_value", "lowValue", ("a", ("p", "any")), False),
-        ("orphan_candidates", "orphanCandidates", ("a", ("p", "any")), False),
-        ("stale", "stale", ("a", ("p", "any")), False),
+        ("contradiction_candidates", "contradictionCandidates", ("a", ("n", "HygieneReportContradictionCandidatesItem")), False),
+        ("duplicate_clusters", "duplicateClusters", ("a", ("n", "HygieneReportDuplicateClustersItem")), False),
+        ("low_value", "lowValue", ("a", ("n", "HygieneReportLowValueItem")), False),
+        ("orphan_candidates", "orphanCandidates", ("a", ("n", "HygieneReportOrphanCandidatesItem")), False),
+        ("stale", "stale", ("a", ("n", "HygieneReportStaleItem")), False),
         ("summary", "summary", ("n", "HygieneReportSummary"), True),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportContradictionCandidatesItem(_Wire):
+    ids: list[str] | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("ids", "ids", ("a", ("p", "string")), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportDuplicateClustersItem(_Wire):
+    ids: list[str] | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("ids", "ids", ("a", ("p", "string")), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportLowValueItem(_Wire):
+    content: str | None = None
+    id: str | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("content", "content", ("p", "string"), False),
+        ("id", "id", ("p", "string"), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportOrphanCandidatesItem(_Wire):
+    id: str | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("id", "id", ("p", "string"), False),
+        ("reason", "reason", ("p", "string"), False),
+    )
+
+
+@dataclass(frozen=True)
+class HygieneReportStaleItem(_Wire):
+    id: str | None = None
+    reason: str | None = None
+
+    _FIELDS: ClassVar[tuple[tuple[str, str, tuple[str, Any], bool], ...]] = (
+        ("id", "id", ("p", "string"), False),
+        ("reason", "reason", ("p", "string"), False),
     )
 
 
@@ -1199,6 +1262,11 @@ __all__ = [
     "ForgetResult",
     "Health",
     "HygieneReport",
+    "HygieneReportContradictionCandidatesItem",
+    "HygieneReportDuplicateClustersItem",
+    "HygieneReportLowValueItem",
+    "HygieneReportOrphanCandidatesItem",
+    "HygieneReportStaleItem",
     "HygieneReportSummary",
     "ImportResult",
     "ImportResultFailedItem",

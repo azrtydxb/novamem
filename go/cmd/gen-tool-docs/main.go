@@ -93,6 +93,7 @@ func render(tools []tool) string {
 	for _, family := range []struct{ prefix, heading string }{
 		{"memory_", "Memory tools"},
 		{"project_", "Project tools"},
+		{"admin_", "Admin and operations tools"},
 	} {
 		fmt.Fprintf(&b, "\n## %s\n\n", family.heading)
 		for _, t := range tools {

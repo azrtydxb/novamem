@@ -34,6 +34,7 @@ func (s *server) registerAdmin(mux *routeMux) {
 	mux.HandleFunc("DELETE /v1/admin/users/{id}", s.withAuth(s.handleAdminUserDelete))
 	mux.HandleFunc("PUT /v1/admin/users/{id}/quota", s.withAuth(s.handleAdminQuota))
 	mux.HandleFunc("GET /v1/admin/audit-log", s.withAuth(s.handleAdminAuditLog))
+	mux.HandleFunc("GET /v1/admin/telemetry", s.withAuth(s.handleAdminTelemetry))
 	mux.HandleFunc("GET /v1/admin/metrics", s.withAuth(s.handleAdminMetrics))
 	mux.HandleFunc("GET /v1/admin/metrics/prom", s.withAuth(s.handleAdminMetricsProm))
 	mux.HandleFunc("GET /v1/admin/health/deep", s.withAuth(s.handleAdminHealthDeep))

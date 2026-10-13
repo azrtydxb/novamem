@@ -181,7 +181,7 @@ module Novamem
     end
   end
 
-  CaptureRequest = Struct.new(:agent_name, :captured_from, :confidence, :content, :expires_at, :force, :metadata, :namespace, :project, :sensitivity, :source, :source_type, keyword_init: true)
+  CaptureRequest = Struct.new(:agent_name, :captured_from, :confidence, :content, :expires_at, :force, :metadata, :namespace, :project, :sensitivity, :source, :source_refs, :source_type, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a
   # Struct.new block it would land on the enclosing module, shared by all).
@@ -198,6 +198,7 @@ module Novamem
       [:project, "project", [:p, "string"], false],
       [:sensitivity, "sensitivity", [:n, "CaptureRequestSensitivity"], false],
       [:source, "source", [:p, "string"], false],
+      [:source_refs, "sourceRefs", [:a, [:p, "string"]], false],
       [:source_type, "sourceType", [:p, "string"], false],
     ].freeze
 
@@ -335,7 +336,7 @@ module Novamem
     end
   end
 
-  ContextRequest = Struct.new(:as_of, :decompose, :expand_source_chunks, :include_namespaces, :include_projects, :k, :max_sensitivity, :max_tokens, :message, :namespace, :project, :weights, keyword_init: true)
+  ContextRequest = Struct.new(:as_of, :decompose, :expand_source_chunks, :include_namespaces, :include_projects, :k, :max_sensitivity, :max_tokens, :message, :namespace, :project, :rerank, :weights, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a
   # Struct.new block it would land on the enclosing module, shared by all).
@@ -352,6 +353,7 @@ module Novamem
       [:message, "message", [:p, "string"], true],
       [:namespace, "namespace", [:p, "string"], false],
       [:project, "project", [:p, "string"], false],
+      [:rerank, "rerank", [:p, "bool"], false],
       [:weights, "weights", [:n, "ContextRequestWeights"], false],
     ].freeze
 
@@ -585,14 +587,15 @@ module Novamem
     end
   end
 
-  ForgetRequest = Struct.new(:id, :project, keyword_init: true)
+  ForgetRequest = Struct.new(:id, :project, :source_ref, keyword_init: true)
 
   # Reopened as a class so FIELDS is its own constant (inside a
   # Struct.new block it would land on the enclosing module, shared by all).
   class ForgetRequest
     FIELDS = [
-      [:id, "id", [:p, "string"], true],
+      [:id, "id", [:p, "string"], false],
       [:project, "project", [:p, "string"], false],
+      [:source_ref, "sourceRef", [:p, "string"], false],
     ].freeze
 
     def self.from_h(h)
@@ -662,12 +665,133 @@ module Novamem
   # Struct.new block it would land on the enclosing module, shared by all).
   class HygieneReport
     FIELDS = [
-      [:contradiction_candidates, "contradictionCandidates", [:a, [:p, "any"]], false],
-      [:duplicate_clusters, "duplicateClusters", [:a, [:p, "any"]], false],
-      [:low_value, "lowValue", [:a, [:p, "any"]], false],
-      [:orphan_candidates, "orphanCandidates", [:a, [:p, "any"]], false],
-      [:stale, "stale", [:a, [:p, "any"]], false],
+      [:contradiction_candidates, "contradictionCandidates", [:a, [:n, "HygieneReportContradictionCandidatesItem"]], false],
+      [:duplicate_clusters, "duplicateClusters", [:a, [:n, "HygieneReportDuplicateClustersItem"]], false],
+      [:low_value, "lowValue", [:a, [:n, "HygieneReportLowValueItem"]], false],
+      [:orphan_candidates, "orphanCandidates", [:a, [:n, "HygieneReportOrphanCandidatesItem"]], false],
+      [:stale, "stale", [:a, [:n, "HygieneReportStaleItem"]], false],
       [:summary, "summary", [:n, "HygieneReportSummary"], true],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
+  HygieneReportContradictionCandidatesItem = Struct.new(:ids, :reason, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class HygieneReportContradictionCandidatesItem
+    FIELDS = [
+      [:ids, "ids", [:a, [:p, "string"]], false],
+      [:reason, "reason", [:p, "string"], false],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
+  HygieneReportDuplicateClustersItem = Struct.new(:ids, :reason, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class HygieneReportDuplicateClustersItem
+    FIELDS = [
+      [:ids, "ids", [:a, [:p, "string"]], false],
+      [:reason, "reason", [:p, "string"], false],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
+  HygieneReportLowValueItem = Struct.new(:content, :id, :reason, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class HygieneReportLowValueItem
+    FIELDS = [
+      [:content, "content", [:p, "string"], false],
+      [:id, "id", [:p, "string"], false],
+      [:reason, "reason", [:p, "string"], false],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
+  HygieneReportOrphanCandidatesItem = Struct.new(:id, :reason, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class HygieneReportOrphanCandidatesItem
+    FIELDS = [
+      [:id, "id", [:p, "string"], false],
+      [:reason, "reason", [:p, "string"], false],
+    ].freeze
+
+    def self.from_h(h)
+      new(**FIELDS.to_h { |name, wire, spec, _| [name, Wire.from_wire(h[wire], spec)] })
+    end
+
+    def to_h_wire
+      FIELDS.each_with_object({}) do |(name, wire, spec, required), out|
+        v = self[name]
+        next if !required && (v.nil? || v == "")
+
+        out[wire] = Wire.to_wire(v, spec)
+      end
+    end
+  end
+
+  HygieneReportStaleItem = Struct.new(:id, :reason, keyword_init: true)
+
+  # Reopened as a class so FIELDS is its own constant (inside a
+  # Struct.new block it would land on the enclosing module, shared by all).
+  class HygieneReportStaleItem
+    FIELDS = [
+      [:id, "id", [:p, "string"], false],
+      [:reason, "reason", [:p, "string"], false],
     ].freeze
 
     def self.from_h(h)
