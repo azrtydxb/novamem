@@ -429,11 +429,23 @@ jobs:
       # clients still connect with hostname/SNI ghcr.io and verify its cert.
       - name: Route ghcr.io to its public address
         run: |
-          real_ip=$(curl --fail --silent --show-error \
-            'https://one.one.one.one/dns-query?name=ghcr.io&type=A' \
-            -H 'accept: application/dns-json' \
-            | jq -r '.Answer[] | select(.type==1) | .data' \
-            | shuf -n1)
+          real_ip=""
+          if command -v dig >/dev/null 2>&1; then
+            real_ip=$(dig +short ghcr.io @1.1.1.1 | head -n1 || true)
+          fi
+          if [ -z "$real_ip" ]; then
+            real_ip=$(curl --fail --silent --show-error \
+              'https://one.one.one.one/dns-query?name=ghcr.io&type=A' \
+              -H 'accept: application/dns-json' \
+              | jq -r '.Answer[] | select(.type==1) | .data' \
+              | shuf -n1) || true
+          fi
+          if [ -z "$real_ip" ]; then
+            for candidate in 20.233.83.147; do
+              real_ip="$candidate"
+              break
+            done
+          fi
           test -n "$real_ip"
           echo "Using public ghcr.io address: $real_ip"
           awk -v ip="$real_ip" '
