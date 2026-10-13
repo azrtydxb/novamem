@@ -1,0 +1,29 @@
+{
+  "name": "novamem",
+  "version": "1.0.0",
+  "description": "Persistent long-term memory for Claude Code, backed by a NovaMem server: hybrid search, capture, time-windowed recall, graph traversal and project sub-brains.",
+  "author": {
+    "name": "novamem",
+    "url": "https://github.com/azrtydxb/novamem"
+  },
+  "homepage": "https://github.com/azrtydxb/novamem",
+  "repository": "https://github.com/azrtydxb/novamem",
+  "license": "Apache-2.0",
+  "keywords": ["memory", "mcp", "long-term-memory", "rag", "novamem"],
+  "userConfig": {
+    "base_url": {
+      "type": "string",
+      "title": "NovaMem server URL",
+      "description": "Base URL of your NovaMem server, without the /mcp suffix.",
+      "default": "http://localhost:7778",
+      "required": true
+    },
+    "token": {
+      "type": "string",
+      "title": "NovaMem API token",
+      "description": "Your nm_… bearer token. Mint one in the dashboard at <server>/admin → API Tokens.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}
