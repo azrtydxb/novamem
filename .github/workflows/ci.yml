@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # The ARC runner image has no kubectl (GitHub's hosted image did).
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v5
       - run: python3 scripts/test-record-kw-image.py
       - name: Keep credentials and namespace outside application sync
         run: |
