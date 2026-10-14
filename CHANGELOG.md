@@ -9,6 +9,7 @@ _A focused patch release that closes the Scalar bundle and docs version split, c
 ### Fixed
 
 - **Scalar lockstep release ([#405](https://github.com/azrtydxb/novamem/pull/405)).** Bumped the server-embedded Scalar bundle and docs site together to 1.73.1, fixing the recurring version hold-backs at their source.
+- **Java 17 oversized response handling.** Preserve the non-retryable response-size error when canceling an oversized HTTP response.
 - **ARC container publishing ([#390](https://github.com/azrtydxb/novamem/pull/390)–[#400](https://github.com/azrtydxb/novamem/pull/400)).** Rebuilt the CI publish path around regctl with hosts-pinned access to real `ghcr.io` (including DoH/dig fallback), regctl GHCR authentication, flat per-architecture indexes without provenance/SBOM attestations, and architecture verification.
 
 ### Changed

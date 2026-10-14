@@ -331,8 +331,8 @@ final class Transport {
       }
       for (ByteBuffer b : items) {
         if (buf.size() + b.remaining() > MAX_RESPONSE_BYTES) {
-          sub.cancel();
           body.completeExceptionally(new Oversize(status));
+          sub.cancel();
           return;
         }
         byte[] chunk = new byte[b.remaining()];
