@@ -2,6 +2,20 @@
 
 All notable changes to novamem are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.2.1 - 2026-10-13
+
+_A focused patch release that closes the Scalar bundle and docs version split, corrects the TypeScript SDK's Node.js floor, and makes the ARC image publish path reliable._
+
+### Fixed
+
+- **Scalar lockstep release ([#405](https://github.com/azrtydxb/novamem/pull/405)).** Bumped the server-embedded Scalar bundle and docs site together to 1.73.1, fixing the recurring version hold-backs at their source.
+- **ARC container publishing ([#390](https://github.com/azrtydxb/novamem/pull/390)–[#400](https://github.com/azrtydxb/novamem/pull/400)).** Rebuilt the CI publish path around regctl with hosts-pinned access to real `ghcr.io` (including DoH/dig fallback), regctl GHCR authentication, flat per-architecture indexes without provenance/SBOM attestations, and architecture verification.
+
+### Changed
+
+- **TypeScript SDK Node.js support ([#404](https://github.com/azrtydxb/novamem/pull/404), fixes [#372](https://github.com/azrtydxb/novamem/issues/372)).** Set `engines.node` to `>=22`.
+- **Admin surface conformance coverage ([#401](https://github.com/azrtydxb/novamem/pull/401)).** Added conformance tests for the admin MCP tools and telemetry endpoint.
+
 ## 1.2.0 - 2026-10-13
 
 _First release built and shipped entirely through the Go pipeline: novamem is a single Go binary, agents can now reach the admin surface, services get organization-scoped identity, and the operational guardrails (foreign keys, TLS, auth, PII redaction, retention) are in._
