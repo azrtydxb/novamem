@@ -822,3 +822,21 @@ Migration 0014's post-commit validation logged pre-existing orphan rows on kw (r
 - Leave them; FKs are NOT VALID-style tolerated for old rows
 
 **Decision (2026-10-13, owner):** clean them up — inventory, backup first, delete the safely-derived ones, document the rest.
+
+## SDK releases: never cut (2026-10-13)
+
+Per-language release workflows exist (tags `clients/<lang>/v*` → publish pipelines for c, dotnet, java, php, python, ruby, rust, swift, typescript) but zero such tags were ever pushed; the Swift/PHP mirror repos (ADR 0010) don't exist yet. The Go client resolves via pseudo-version only.
+
+- Cut first SDK releases now alongside v1.2.1: pick per-language versions (e.g. all 0.1.0 or Go 1.0.0), verify each pipeline's registry secrets exist, dispatch the tag pushes (recommended)
+- Leave SDKs unreleased; consumers track main
+- Only release the Go client (the one with a real consumer)
+
+## First SDK releases: only C is fully unblocked (2026-10-13)
+
+Audit: C is READY (GitHub Release assets, github.token). Python needs one-time PyPI trusted-publisher config (owner, on pypi.org). TypeScript/.NET/Ruby/Rust/Java are MISSING-SECRET (NPM_TOKEN, NUGET_API_KEY, RUBYGEMS_API_KEY, CARGO_REGISTRY_TOKEN, MAVEN_GPG_PRIVATE_KEY+MAVEN_CENTRAL_USERNAME/PASSWORD+MAVEN_GPG_PASSPHRASE). PHP/Swift also need mirror repos novamem-php/novamem-swift + SDK_MIRROR_TOKEN.
+
+- Tag C now, create both mirror repos + SDK_MIRROR_TOKEN, hand the owner a per-registry checklist; tag each remaining SDK as its credential lands (recommended)
+- Tag C only; defer the rest entirely
+- Hold all SDK releases
+
+**Decision (2026-10-13, owner):** release only the Go SDK (clients/go/v1.0.0) — that is what Atlas needs. The other 8 languages stay unreleased until their registry accounts exist.
