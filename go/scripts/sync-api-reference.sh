@@ -19,7 +19,7 @@
 #
 # Usage:
 #   go/scripts/sync-api-reference.sh            # latest
-#   go/scripts/sync-api-reference.sh 1.68.0     # a specific version
+#   go/scripts/sync-api-reference.sh 1.73.1     # a specific version
 #
 # Commit VERSION, SHA256, standalone.js.gz and the docs-site dependency
 # bump together: the version is in the bundle's URL and its ETag, and
