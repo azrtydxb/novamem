@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: novamem
-  version: 1.2.0
+  version: 1.2.1
   description:
     "Tiered memory service with hybrid search (keyword + vector + graph), per-user isolation,
     and project-scoped sub-brains.
