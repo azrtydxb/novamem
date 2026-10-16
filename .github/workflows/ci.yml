@@ -103,7 +103,11 @@ jobs:
   # ── Go modules (server rewrite + shared client) ───────────────────────
   go:
     name: go (build + vet + test)
-    runs-on: arc-azrtydxb-amd64
+    # novanas-amd64 is a label only the novanas ARC scale set carries; the
+    # devbox runners share arc-azrtydxb-amd64 but cannot run this job: their
+    # job steps do not share a network namespace with service containers, so
+    # the Postgres service is not reachable on localhost:5432.
+    runs-on: novanas-amd64
     timeout-minutes: 15
     # A real Postgres for the tests that skip without one — above all
     # TestOnBehalfOfToken, which proves organization isolation (#337, ADR
