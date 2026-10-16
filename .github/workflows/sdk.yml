@@ -62,6 +62,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: pip install -q pyyaml==6.0.2 && sh scripts/check-sdk-tag-triggers.sh
+      # Every README's Operations table lists all routes.json methods. Was
+      # the `readmes (tables)` leg; it needs nothing but python3, which this
+      # image already has, so it rides here instead of queueing a job.
+      - name: README operations tables
+        run: sh scripts/check-sdk-readmes.sh tables
 
   # The generator's own tests. Every SDK's wire types are generated from
   # docs/api/openapi.json and clients/contract/routes.json and checked in.
@@ -103,7 +108,11 @@ jobs:
   # the oldest and newest supported Pythons. Go builds the scenario server.
   python:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    # novanas-amd64 is a label only the novanas ARC scale set carries; the
+    # devbox runners share arc-azrtydxb-amd64 but cannot run this job: they keep
+    # their tool cache between jobs, and creating the venv fails there about
+    # half the time (ensurepip exits 127).
+    runs-on: novanas-amd64
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -127,6 +136,11 @@ jobs:
           "$RUNNER_TEMP/nm/bin/pip" install -q ./clients/python
           extra=$("$RUNNER_TEMP/nm/bin/pip" list --format=freeze | grep -v -E '^(pip|setuptools|novamem)==' || true)
           if [ -n "$extra" ]; then echo "unexpected runtime dependencies: $extra"; exit 1; fi
+      # README Quickstart compiles. Folded in from the readmes matrix (one
+      # job fewer to queue); runs on the leg matching that matrix's image.
+      - name: README quickstart
+        if: matrix.python == '3.13'
+        run: sh scripts/check-sdk-readmes.sh python
 
   # TypeScript SDK (plan Task 8): the shared scenario suite on the oldest
   # and newest supported Node, and a package with no runtime dependencies.
@@ -147,6 +161,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
+          # The npm download cache (~/.npm), keyed on the lockfile; npm ci
+          # still installs exactly what the lockfile says.
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
       - name: Scenario suite
         working-directory: clients/typescript
         run: npm ci && npm test
@@ -156,6 +174,9 @@ jobs:
           npm run build
           node -e 'process.exit(require("./package.json").dependencies ? 1 : 0)'
           npm pack --dry-run --json | node -e 'const p=JSON.parse(require("fs").readFileSync(0))[0]; const bad=p.files.filter(f=>!(f.path.startsWith("dist/")||["package.json","README.md"].includes(f.path))); if (bad.length) { console.error("unexpected files:", bad.map(f=>f.path)); process.exit(1) }'
+      - name: README quickstart
+        if: matrix.node == 24
+        run: sh scripts/check-sdk-readmes.sh typescript
 
   # Rust SDK (plan Task 11): the shared scenario suite on the MSRV and on
   # stable, from the committed lockfile. The C/C++ SDK builds on this crate.
@@ -189,6 +210,9 @@ jobs:
           got=$(cargo tree --locked --depth 1 -e normal --prefix none | sed 1d | awk '{print $1}' | sort -u | tr '\n' ' ')
           want="reqwest serde serde_json thiserror tokio "
           [ "$got" = "$want" ] || { echo "runtime dependencies: $got (want $want)"; exit 1; }
+      - name: README quickstart
+        if: matrix.rust == '1'
+        run: sh scripts/check-sdk-readmes.sh rust
 
   # C and C++ SDK (plan Task 12): both scenario runners over the Rust
   # crate's C ABI, then the C runner again under valgrind. In a container so
@@ -199,6 +223,9 @@ jobs:
     timeout-minutes: 30
     container:
       image: rust:1-bookworm
+      # valgrind aborts (vgPlain_safe_fd assertion) when the open-file hard
+      # limit is as high as some Docker daemons set it; pin it.
+      options: --ulimit nofile=65536:65536
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -212,6 +239,8 @@ jobs:
       - name: No leaks (valgrind)
         working-directory: clients/c
         run: make memcheck
+      - name: README quickstart
+        run: sh scripts/check-sdk-readmes.sh c
 
   # Ruby SDK (plan Task 13): the shared scenario suite on the oldest
   # supported Ruby, with warnings on; the gem loads with no gems installed.
@@ -235,6 +264,8 @@ jobs:
       - name: Loads with no gems installed
         working-directory: clients/ruby
         run: GEM_HOME="$RUNNER_TEMP/nogems" GEM_PATH="$RUNNER_TEMP/nogems" ruby -Ilib -e 'require "novamem"'
+      - name: README quickstart
+        run: sh scripts/check-sdk-readmes.sh ruby
 
   # PHP SDK (plan Task 14): the shared scenario suite on the oldest and a
   # current PHP; nothing but platform extensions outside require-dev.
@@ -257,6 +288,17 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: curl, json
           tools: composer
+      # Composer's download cache, keyed on composer.json (there is no
+      # composer.lock to key on). Fewer packagist fetches also means fewer
+      # chances to hit the flaky egress the retry loop below works around.
+      - name: Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config --global cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php${{ matrix.php }}-${{ hashFiles('clients/php/composer.json') }}
+          restore-keys: composer-${{ runner.os }}-php${{ matrix.php }}-
       - name: Scenario suite
         working-directory: clients/php
         # The ARC runners' egress to repo.packagist.org drops the odd
@@ -284,6 +326,9 @@ jobs:
         run: |
           rm -rf vendor && composer install --no-dev --no-interaction --no-progress
           [ -z "$(composer show --no-dev)" ] || { composer show --no-dev; exit 1; }
+      - name: README quickstart
+        if: matrix.php == '8.4'
+        run: sh scripts/check-sdk-readmes.sh php
 
   # Swift SDK (plan Task 15): the shared scenario suite on Linux, on the
   # floor and a current Swift, in the official images (Linux only, by
@@ -310,6 +355,9 @@ jobs:
       - name: No dependencies
         working-directory: clients/swift
         run: swift package show-dependencies | tee /dev/stderr | grep -q "No external dependencies found"
+      - name: README quickstart
+        if: matrix.swift == '6.3-noble'
+        run: sh scripts/check-sdk-readmes.sh swift
 
   # .NET SDK (plan Task 9): the shared scenario suite on .NET 8, in the
   # official SDK image (no toolchain install on the ARC runner).
@@ -340,6 +388,8 @@ jobs:
       - name: Smoke program builds
         working-directory: clients/dotnet
         run: dotnet build smoke
+      - name: README quickstart
+        run: sh scripts/check-sdk-readmes.sh dotnet
 
   # Java SDK (plan Task 10): the shared scenario suite plus the transport
   # tests on the Java 17 floor and the current LTS. The maven images carry
@@ -356,6 +406,14 @@ jobs:
       image: maven:3.9-eclipse-temurin-${{ matrix.java }}
     steps:
       - uses: actions/checkout@v7
+      # The local Maven repository. The job runs as root in the maven image,
+      # and Maven resolves user.home from passwd (/root), not from the
+      # /github/home that HOME points at, so the path is spelled out.
+      - uses: actions/cache@v6
+        with:
+          path: /root/.m2/repository
+          key: maven-java${{ matrix.java }}-${{ hashFiles('clients/java/pom.xml') }}
+          restore-keys: maven-java${{ matrix.java }}-
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -375,6 +433,9 @@ jobs:
           mvn -B -q dependency:build-classpath -Dmdep.outputFile=cp.txt
           NOVAMEM_SMOKE_URL=http://127.0.0.1:1 NOVAMEM_SMOKE_TOKEN=nm_x \
             java -cp "$(cat cp.txt):target/classes:target/test-classes" com.azrtydxb.novamem.Smoke down
+      - name: README quickstart
+        if: matrix.java == '17'
+        run: sh scripts/check-sdk-readmes.sh java
 
   # Live smoke (plan Task 16): every SDK against a server built from this
   # PR. The server, the token minter and the embeddings stand-in are built
@@ -504,36 +565,3 @@ jobs:
       - name: Server log
         if: failure()
         run: tail -n 200 "$RUNNER_TEMP/server.log" "$RUNNER_TEMP/embed.log"
-
-  # The SDK READMEs (plan Task 18): every Operations table lists all 41
-  # routes.json methods, and every Quickstart compiles with its own
-  # toolchain, in the image that SDK's smoke leg uses.
-  readmes:
-    needs: [generated]
-    runs-on: arc-azrtydxb-amd64
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { lang: tables, image: "python:3.13-bookworm" }
-          - { lang: python, image: "python:3.13-bookworm" }
-          - { lang: typescript, image: "node:24-bookworm" }
-          - { lang: dotnet, image: "mcr.microsoft.com/dotnet/sdk:8.0" }
-          - { lang: java, image: "maven:3.9-eclipse-temurin-17" }
-          - { lang: rust, image: "rust:1-bookworm" }
-          - { lang: c, image: "rust:1-bookworm" }
-          - { lang: ruby, image: "ruby:3.2-bookworm" }
-          - { lang: php, image: "composer:2" }
-          - { lang: swift, image: "swift:6.3-noble" }
-    container:
-      image: ${{ matrix.image }}
-    env:
-      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
-      DOTNET_NOLOGO: "1"
-    steps:
-      - uses: actions/checkout@v7
-      - name: Prepare the SDK
-        if: matrix.lang != 'tables'
-        run: sh clients/smoke/run.sh ${{ matrix.lang }} build
-      - run: sh scripts/check-sdk-readmes.sh ${{ matrix.lang }}
