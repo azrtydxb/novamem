@@ -110,11 +110,11 @@ jobs:
     # 0011) and must not be a test that quietly skips in CI. The pgvector
     # image is the one the pgvector cold store runs on; the tag is pinned.
     # The test fails (rather than skips) when CI is set and this is unset.
-    # Pulled through the in-cluster Nexus (it proxies docker.io): a direct
-    # Docker Hub pull hits the anonymous rate limit.
+    # Pulled through the Kuvryn Ant Docker Hub mirror: a direct Docker Hub
+    # pull hits the anonymous rate limit.
     services:
       postgres:
-        image: 192.168.10.131/pgvector/pgvector:0.8.1-pg16
+        image: ant.azrty.com/dockerhub/pgvector/pgvector:0.8.1-pg16
         env:
           POSTGRES_USER: novamem
           POSTGRES_PASSWORD: novamem
@@ -241,9 +241,9 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: arc-azrtydxb-amd64-publish
+            runner: arc-azrtydxb-amd64
           - arch: arm64
-            runner: arc-azrtydxb-publish
+            runner: arc-azrtydxb
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -270,9 +270,9 @@ jobs:
             # straight from the internet even though Nexus proxies all three.
             # Keeps the pulls on the LAN and off Docker Hub's rate limits.
             [registry."docker.io"]
-              mirrors = ["192.168.10.131"]
+              mirrors = ["ant.azrty.com"]
             [registry."gcr.io"]
-              mirrors = ["192.168.10.131"]
+              mirrors = ["ant.azrty.com"]
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"

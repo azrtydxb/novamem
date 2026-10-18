@@ -40,7 +40,7 @@ jobs:
       matrix:
         include:
           - { triplet: linux-x86_64, runner: arc-azrtydxb-amd64 }
-          - { triplet: linux-aarch64, runner: arc-azrtydxb-publish }
+          - { triplet: linux-aarch64, runner: arc-azrtydxb }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     container:
