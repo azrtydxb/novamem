@@ -7,7 +7,7 @@
 # ─── Admin dashboard (packages/admin-ui → dist/) ─────────────────────
 FROM node:26-bookworm AS ui
 WORKDIR /repo
-RUN corepack enable
+RUN npm install -g corepack@0.36.0 && corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/admin-ui/package.json packages/admin-ui/
 RUN pnpm install --filter @azrtydxb/novamem-admin-ui --frozen-lockfile
