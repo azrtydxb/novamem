@@ -5,7 +5,7 @@
 # go/scripts/sync-admin-ui.sh before `go build` runs.
 
 # ─── Admin dashboard (packages/admin-ui → dist/) ─────────────────────
-FROM node:22-bookworm AS ui
+FROM node:26-bookworm AS ui
 WORKDIR /repo
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
