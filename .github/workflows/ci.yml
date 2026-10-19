@@ -293,7 +293,7 @@ jobs:
       # fork PRs (no OIDC) simply build cold.
       - name: Log in to Kuvryn Ant (GitHub OIDC, build cache)
         continue-on-error: true
-        uses: azrtydxb/ant-setup-action@543d780ae8e4ff1fe0473a4778f18edceb995768 # v1
+        uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
         with:
           docker-login: "true"
           go: "false"
