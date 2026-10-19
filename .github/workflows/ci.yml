@@ -191,7 +191,9 @@ jobs:
           node-version: 22
       # `pnpm audit` reads pnpm-lock.yaml directly — no install needed.
       # `--prod` so dev-only CVEs (e.g. in build tooling) don't block PRs.
-      - run: pnpm audit --prod --audit-level=high
+      # Advisories come from the public registry: Kuvryn Ant (the install
+      # registry) has no audit endpoint.
+      - run: pnpm audit --prod --audit-level=high --registry=https://registry.npmjs.org/
 
   # ── Package build (npm) ───────────────────────────────────────────────
   # npm publishing is retired: the three publishable packages (client,
