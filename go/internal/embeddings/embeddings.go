@@ -175,6 +175,7 @@ type Client struct {
 	modelID       string
 	log           *slog.Logger
 	http          *http.Client
+	queries       *queryCache // query-side vectors; see querycache.go
 }
 
 func New(cfg Config) (*Client, error) {
@@ -208,6 +209,7 @@ func New(cfg Config) (*Client, error) {
 		modelID:       "openai-compatible:" + cfg.Model,
 		log:           log,
 		http:          &http.Client{},
+		queries:       newQueryCache(defaultQueryCacheSize, defaultQueryCacheTTL),
 	}, nil
 }
 
@@ -227,6 +229,13 @@ func (c *Client) Prefixes() Prefixes { return c.prefixes }
 // 250ms·2^(attempt-1), per-attempt timeout; 4xx other than 429 is
 // non-retryable and fails fast.
 func (c *Client) Embed(ctx context.Context, input []string, kind Kind) ([][]float64, error) {
+	if kind == KindQuery && c.queries != nil {
+		return c.queries.get(ctx, queryKey(input), func() ([][]float64, error) { return c.embed(ctx, input, kind) })
+	}
+	return c.embed(ctx, input, kind)
+}
+
+func (c *Client) embed(ctx context.Context, input []string, kind Kind) ([][]float64, error) {
 	prefix := c.prefixes.Document
 	if kind == KindQuery {
 		prefix = c.prefixes.Query
