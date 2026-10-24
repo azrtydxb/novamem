@@ -8,8 +8,10 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/azrtydxb/novamem/go/internal/engine"
 )
@@ -207,12 +209,15 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	args.Project = scope.Project
 	args.IncludeProjects = scope.IncludeProjects
 
+	began := time.Now()
 	outcome, err := s.engine.Search(r.Context(), userID, args)
 	if err != nil {
 		s.sendEngineErr(w, r, err)
 		return
 	}
 	shapeContent(outcome.Results, contentMode)
+	// Server-Timing lets a caller tell the server's own time from the network.
+	w.Header().Set("Server-Timing", fmt.Sprintf("search;dur=%d", time.Since(began).Milliseconds()))
 	s.sendSearchResult(w, outcome)
 }
 
