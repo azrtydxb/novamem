@@ -281,7 +281,7 @@ jobs:
       # docker CLI's credentials (the Ant and GHCR logins below).
       - name: Set up buildx (runner pod's BuildKit sidecar)
         id: builder
-        uses: azrtydxb/.github/actions/setup-builder@d021f2ca9fa3d6682085a7d069b7c8b1dc7b9b80 # main
+        uses: azrtydxb/.github/actions/setup-builder@a6fb8e66bd50b411a1f20b826567ef320aec469b # main
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
