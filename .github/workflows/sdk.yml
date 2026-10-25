@@ -456,11 +456,10 @@ jobs:
           POSTGRES_USER: novamem
           POSTGRES_PASSWORD: novamem
           POSTGRES_DB: novamem
-        options: >-
-          --health-cmd "pg_isready -U novamem"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
+    # Kubernetes container mode: the service runs in the job's pod and is
+    # reached on localhost (service hostnames do not resolve), and service
+    # `options:` are ignored. No explicit wait is needed: the SDK builds
+    # first, and novamem-server retries its migrations for 60 s.
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
@@ -478,7 +477,7 @@ jobs:
         run: sh clients/smoke/run.sh ${{ matrix.lang }} build
       - name: Start embed and the server
         env:
-          NOVAMEM_WARM_URL: postgres://novamem:novamem@postgres:5432/novamem?sslmode=disable
+          NOVAMEM_WARM_URL: postgres://novamem:novamem@localhost:5432/novamem?sslmode=disable
           NOVAMEM_COLD_PROVIDER: pgvector
           NOVAMEM_EMBEDDINGS_PROVIDER: openai-compatible
           NOVAMEM_EMBEDDINGS_ENDPOINT: http://127.0.0.1:7779/v1
