@@ -275,32 +275,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-        with:
-          # The in-cluster Nexus cache registry serves a cert from the
-          # kw-cluster-internal CA; BuildKit runs in its own container and
-          # doesn't inherit the host's trust store, so cache-from/cache-to
-          # need this or they die with "x509: certificate signed by
-          # unknown authority".
-          buildkitd-config-inline: |
-            # Two entries, because Nexus fronts two things on two ports
-            # and both need the CA exemption: :443 is the read-only group
-            # repository the mirrors below pull through, and :5000 is the
-            # hosted repository, the only one that accepts a cache write.
-            [registry."192.168.10.131"]
-              insecure = true
-            [registry."192.168.10.131:5000"]
-              insecure = true
-            # Base image pulls, not just the cache. BuildKit's
-            # docker-container driver runs in its own container and ignores
-            # the node's containerd registries.yaml, so without these the
-            # Dockerfile's node:, golang: and gcr.io/distroless images come
-            # straight from the internet even though Nexus proxies all three.
-            # Keeps the pulls on the LAN and off Docker Hub's rate limits.
-            [registry."docker.io"]
-              mirrors = ["ant.azrty.com"]
-            [registry."gcr.io"]
-              mirrors = ["ant.azrty.com"]
+      # The runner pod's rootless BuildKit sidecar, native to the runner
+      # (arc-azrtydxb = arm64, arc-azrtydxb-amd64 = amd64). Its config pulls
+      # Docker Hub base images through Kuvryn Ant; BuildKit pushes with the
+      # docker CLI's credentials (the Ant and GHCR logins below).
+      - name: Set up buildx (runner pod's BuildKit sidecar)
+        id: builder
+        uses: azrtydxb/.github/actions/setup-builder@d021f2ca9fa3d6682085a7d069b7c8b1dc7b9b80 # main
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -325,13 +306,16 @@ jobs:
         with:
           build-cache: "true"
           cache-name: novamem
+          arch-suffix: ${{ matrix.arch }}
           cache-write: ${{ github.event_name == 'push' }}
           docker-login: "true"
           go: "false"
           cargo: "false"
           pip: "false"
-      # PRs build + scan locally without publishing. Push/tag events build
-      # and publish exactly once, then scan the pushed arch image. This avoids
+      # PRs build + scan locally without publishing: the image is exported as
+      # a docker-archive tarball and Trivy reads it directly (no Docker
+      # daemon). Push/tag events build and publish exactly once, then scan
+      # the pushed arch image. This avoids
       # the previous duplicate ARM64 BuildKit run that could exceed the ARC
       # job window after a successful native build.
       - name: Build runtime image for PR scan (native ${{ matrix.arch }})
@@ -340,9 +324,11 @@ jobs:
         with:
           context: .
           file: go/Dockerfile
+          builder: ${{ steps.builder.outputs.name }}
+          platforms: linux/${{ matrix.arch }}
           push: false
-          load: true
           tags: novamem:ci-${{ matrix.arch }}
+          outputs: type=docker,dest=${{ runner.temp }}/novamem-${{ matrix.arch }}.tar
           # Registry cache on Kuvryn Ant (ant.azrty.com/buildcache): the gha
           # cache backend evicts at 10GB.
           # Read-only for PR builds: no cache-to here, so an untrusted
@@ -363,7 +349,7 @@ jobs:
           TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
           TRIVY_JAVA_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1
         with:
-          image-ref: novamem:ci-${{ matrix.arch }}
+          input: ${{ runner.temp }}/novamem-${{ matrix.arch }}.tar
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
@@ -380,6 +366,8 @@ jobs:
         with:
           context: .
           file: go/Dockerfile
+          builder: ${{ steps.builder.outputs.name }}
+          platforms: linux/${{ matrix.arch }}
           push: true
           provenance: false
           sbom: false
