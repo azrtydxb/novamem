@@ -106,7 +106,10 @@ jobs:
   go:
     name: go (build + vet + test)
     runs-on: arc-azrtydxb-amd64
-    timeout-minutes: 15
+    # The steps take ~8 minutes; in the kubernetes container mode a fresh
+    # node first pulls the golang and pgvector images into the job pod,
+    # which has taken over 6 minutes on its own.
+    timeout-minutes: 30
     # A real Postgres for the tests that skip without one — above all
     # TestOnBehalfOfToken, which proves organization isolation (#337, ADR
     # 0011) and must not be a test that quietly skips in CI. The pgvector
