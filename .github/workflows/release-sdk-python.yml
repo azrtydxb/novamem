@@ -3,9 +3,23 @@ name: Release SDK (Python)
 # Publishes clients/python when a clients/python/vX.Y.Z tag is pushed
 # (ADR 0009: independent semver per SDK). verify runs the whole SDK
 # workflow at the tag, live smoke included; publish needs it and the version check.
+#
+# A manual dispatch is a dry run of the publish path against TestPyPI only
+# (real PyPI releases come from a tag, never from a dispatch): it skips
+# verify and the tag check, stamps a unique X.Y.Z.devRUNIDATTEMPT version and
+# uploads to test.pypi.org with the same attestations and trusted
+# publishing. It needs a TestPyPI trusted publisher for this repository and
+# workflow file (no environment).
 on:
   push:
     tags: ["clients/python/v*"]
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Upload target (only TestPyPI can be dispatched)"
+        type: choice
+        options: [testpypi]
+        default: testpypi
 
 permissions:
   contents: read
@@ -16,9 +30,11 @@ concurrency:
 
 jobs:
   verify:
+    if: github.event_name == 'push'
     uses: ./.github/workflows/sdk.yml
 
   version-matches-tag:
+    if: github.event_name == 'push'
     runs-on: arc-azrtydxb-amd64
     timeout-minutes: 5
     steps:
@@ -31,6 +47,11 @@ jobs:
 
   publish:
     needs: [verify, version-matches-tag]
+    # A tag push publishes only when both gates passed; a dispatch skips them
+    # (they are tag-only) and goes to TestPyPI.
+    if: >-
+      !cancelled() && (github.event_name == 'workflow_dispatch' ||
+      (needs.verify.result == 'success' && needs.version-matches-tag.result == 'success'))
     runs-on: arc-azrtydxb-amd64
     timeout-minutes: 15
     # PyPI trusted publishing: no token; PyPI trusts this workflow file.
@@ -42,13 +63,26 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+      - name: Unique dev version (TestPyPI dry run)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          base=$(sh scripts/sdk-version.sh python)
+          dev="$base.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          sed -i "s/^version = \"$base\"$/version = \"$dev\"/" clients/python/pyproject.toml
+          [ "$(sh scripts/sdk-version.sh python)" = "$dev" ]
+          echo "publishing $dev to TestPyPI"
       - run: python -m pip install -q build==1.3.0 && python -m build clients/python
       # What pypa/gh-action-pypi-publish does, without its Docker container
       # action (container actions do not work in the ARC kubernetes
       # container mode): sign PEP 740 attestations with the workflow's OIDC
       # identity, then upload with twine, which mints the PyPI token through
       # trusted publishing (no password is set).
+      # twine derives the trusted-publishing audience and token-mint
+      # endpoints from the upload URL, so TWINE_REPOSITORY=testpypi switches
+      # all three to test.pypi.org.
       - name: Publish to PyPI (trusted publishing)
+        env:
+          TWINE_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && 'testpypi' || 'pypi' }}
         run: |
           python -m pip install -q twine==7.0.0 pypi-attestations==0.0.30
           python -m pypi_attestations sign clients/python/dist/*.whl clients/python/dist/*.tar.gz
