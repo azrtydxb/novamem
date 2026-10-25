@@ -31,6 +31,12 @@ concurrency:
 jobs:
   verify:
     if: github.event_name == 'push'
+    # sdk.yml asks for id-token: write (Kuvryn Ant OIDC); a called workflow
+    # cannot get more than its caller grants, so without this every run of
+    # this file is a startup failure.
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/sdk.yml
 
   version-matches-tag:
