@@ -132,6 +132,11 @@ jobs:
       NOVAMEM_TEST_DATABASE_URL: postgres://novamem:novamem@localhost:5432/novamem_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
+      # The checkout belongs to the runner's user and the job container runs
+      # as root, so git refuses the repository as dubious ownership: go
+      # build's VCS stamping exits 128 and the final git diff would too.
+      - name: Trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
