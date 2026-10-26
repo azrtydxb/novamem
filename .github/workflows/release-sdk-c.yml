@@ -48,7 +48,7 @@ jobs:
       image: rust:1-bookworm
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       # Without test-dispatch: the release library carries only the public API.
       - name: Build and archive
         env:

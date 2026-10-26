@@ -71,7 +71,7 @@ jobs:
       image: python:3.13-bookworm
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - run: pip install -q pyyaml==6.0.2 && sh scripts/check-sdk-tag-triggers.sh
 
   # The generator's own tests. Every SDK's wire types are generated from
@@ -81,7 +81,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -123,7 +123,7 @@ jobs:
         python: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -153,7 +153,7 @@ jobs:
         node: [20, 24]
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -186,7 +186,7 @@ jobs:
       image: rust:${{ matrix.rust }}-bookworm
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -216,7 +216,7 @@ jobs:
       image: rust:1-bookworm
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -241,7 +241,7 @@ jobs:
       image: ruby:3.2-bookworm
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -265,7 +265,7 @@ jobs:
         php: ["8.2", "8.4"]
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -318,7 +318,7 @@ jobs:
       image: swift:${{ matrix.swift }}
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -343,7 +343,7 @@ jobs:
       DOTNET_NOLOGO: "1"
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -376,7 +376,7 @@ jobs:
       image: maven:3.9-eclipse-temurin-${{ matrix.java }}
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -407,7 +407,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -466,7 +466,7 @@ jobs:
       NOVAMEM_SMOKE_URL: http://127.0.0.1:7778
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - uses: actions/download-artifact@v8
         with:
           name: smoke-bin
@@ -557,7 +557,7 @@ jobs:
       DOTNET_NOLOGO: "1"
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@7c6f1b8ca34a0a127b43040f4e16bbafdbd83791 # v1
+      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
       - name: Prepare the SDK
         if: matrix.lang != 'tables'
         run: sh clients/smoke/run.sh ${{ matrix.lang }} build

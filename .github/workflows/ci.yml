@@ -76,7 +76,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
+      - uses: azrtydxb/ant-setup-action@37005b6568d80864a713c00ceafef6cda19fcde4 # v1
       # PINNED TO v4 DELIBERATELY — do not take dependabot's v6 bump.
       # v6 installs pnpm as a native binary (@pnpm/exe) which needs
       # libatomic.so.1; the self-hosted arc-azrtydxb-amd64 runner image does
@@ -140,7 +140,7 @@ jobs:
       # build's VCS stamping exits 128 and the final git diff would too.
       - name: Trust the workspace for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
+      - uses: azrtydxb/ant-setup-action@37005b6568d80864a713c00ceafef6cda19fcde4 # v1
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
@@ -204,7 +204,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
+      - uses: azrtydxb/ant-setup-action@37005b6568d80864a713c00ceafef6cda19fcde4 # v1
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
@@ -231,7 +231,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
+      - uses: azrtydxb/ant-setup-action@37005b6568d80864a713c00ceafef6cda19fcde4 # v1
       # The ARC runner image has no node (GitHub's hosted image did).
       - uses: actions/setup-node@v7
         with:
@@ -302,7 +302,7 @@ jobs:
       - name: Log in to Kuvryn Ant (GitHub OIDC, build cache)
         id: ant
         continue-on-error: true
-        uses: azrtydxb/ant-setup-action@549f7472cf26b0885441ed9f9a7fab0277545000 # v1
+        uses: azrtydxb/ant-setup-action@37005b6568d80864a713c00ceafef6cda19fcde4 # v1
         with:
           build-cache: "true"
           cache-name: novamem
