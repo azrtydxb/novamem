@@ -24,7 +24,7 @@ jobs:
     uses: ./.github/workflows/sdk.yml
 
   version-matches-tag:
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -40,15 +40,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { triplet: linux-x86_64, runner: arc-azrtydxb-amd64 }
-          - { triplet: linux-aarch64, runner: arc-azrtydxb }
+          - { triplet: linux-x86_64, runner: ubuntu-latest }
+          - { triplet: linux-aarch64, runner: ubuntu-latest }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     container:
       image: rust:1-bookworm
     steps:
       - uses: actions/checkout@v7
-      - uses: azrtydxb/ant-setup-action@37005b6568d80864a713c00ceafef6cda19fcde4 # v1
+      - uses: azrtydxb/ant-setup-action@v1
       # Without test-dispatch: the release library carries only the public API.
       - name: Build and archive
         env:
@@ -69,7 +69,7 @@ jobs:
 
   release:
     needs: [archive]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write # the GitHub release and the pin branch
