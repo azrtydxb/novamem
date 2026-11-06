@@ -65,7 +65,7 @@ jobs:
   # Only clients/<lang>/v* tags may fire a release-sdk workflow, and no SDK
   # tag may fire the server's tag-triggered workflows.
   triggers:
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     container:
       image: python:3.13-bookworm
@@ -77,7 +77,7 @@ jobs:
   # The generator's own tests. Every SDK's wire types are generated from
   # docs/api/openapi.json and clients/contract/routes.json and checked in.
   generated:
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -115,7 +115,7 @@ jobs:
   # the oldest and newest supported Pythons. Go builds the scenario server.
   python:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -145,7 +145,7 @@ jobs:
   # and newest supported Node, and a package with no runtime dependencies.
   typescript:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -175,7 +175,7 @@ jobs:
   # stable, from the committed lockfile. The C/C++ SDK builds on this crate.
   rust:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -210,7 +210,7 @@ jobs:
   # valgrind installs without sudo (the ARC runners run containers: #306).
   c:
     needs: [rust]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
       image: rust:1-bookworm
@@ -233,7 +233,7 @@ jobs:
   # supported Ruby, with warnings on; the gem loads with no gems installed.
   ruby:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # ruby/setup-ruby needs /opt/hostedtoolcache, which the ARC runner does
     # not let it create; the official image brings Ruby, rake and minitest.
@@ -257,7 +257,7 @@ jobs:
   # current PHP; nothing but platform extensions outside require-dev.
   php:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -308,7 +308,7 @@ jobs:
   # decision: Apple platforms are not exercised in CI).
   swift:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -334,7 +334,7 @@ jobs:
   # official SDK image (no toolchain install on the ARC runner).
   dotnet:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
       image: mcr.microsoft.com/dotnet/sdk:8.0
@@ -366,7 +366,7 @@ jobs:
   # both toolchains; the runner has no Maven.
   java:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -403,7 +403,7 @@ jobs:
   sdk-smoke-build:
     needs: [python, typescript, dotnet, java, rust, c, ruby, php, swift]
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -431,7 +431,7 @@ jobs:
   sdk-smoke:
     needs: [sdk-smoke-build]
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -456,10 +456,9 @@ jobs:
           POSTGRES_USER: novamem
           POSTGRES_PASSWORD: novamem
           POSTGRES_DB: novamem
-    # Kubernetes container mode: the service runs in the job's pod and is
-    # reached on localhost (service hostnames do not resolve), and service
-    # `options:` are ignored. No explicit wait is needed: the SDK builds
-    # first, and novamem-server retries its migrations for 60 s.
+    # The service is reached from the job container by its name (postgres).
+    # No explicit wait is needed: the SDK builds first, and novamem-server
+    # retries its migrations for 60 s.
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
@@ -477,7 +476,7 @@ jobs:
         run: sh clients/smoke/run.sh ${{ matrix.lang }} build
       - name: Start embed and the server
         env:
-          NOVAMEM_WARM_URL: postgres://novamem:novamem@localhost:5432/novamem?sslmode=disable
+          NOVAMEM_WARM_URL: postgres://novamem:novamem@postgres:5432/novamem?sslmode=disable
           NOVAMEM_COLD_PROVIDER: pgvector
           NOVAMEM_EMBEDDINGS_PROVIDER: openai-compatible
           NOVAMEM_EMBEDDINGS_ENDPOINT: http://127.0.0.1:7779/v1
@@ -534,7 +533,7 @@ jobs:
   # toolchain, in the image that SDK's smoke leg uses.
   readmes:
     needs: [generated]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false

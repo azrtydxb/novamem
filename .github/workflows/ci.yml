@@ -34,11 +34,10 @@ env:
 jobs:
   gitops:
     name: GitOps deployment checks
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      # The ARC runner image has no kubectl (GitHub's hosted image did).
       - uses: azure/setup-kubectl@v5
       - run: python3 scripts/test-record-kw-image.py
       - name: Keep credentials and namespace outside application sync
@@ -49,9 +48,8 @@ jobs:
             exit 1
           fi
   # ── Native test matrix ────────────────────────────────────────────────
-  # CI tests run once on the amd64 ARC scale set (novanas). ARM64
-  # validation happens in the Docker build job below on KW ARC, where the
-  # native ARM64 image is built without QEMU/cross-compile.
+  # CI tests run on GitHub-hosted amd64. The arm64 image is cross-compiled
+  # in the Docker build job below (no emulation).
   # Node versions: 20 is the `engines` floor declared in package.json; 24
   # is what release.yml publishes from and what the runtime image is
   # closest to. Testing only on 20 left a skew where code could pass CI
@@ -68,10 +66,10 @@ jobs:
           # bundles) declares engines.node >= 22. The repo's own floor moved
           # with it.
           - arch: amd64
-            runner: arc-azrtydxb-amd64
+            runner: ubuntu-latest
             node: 22
           - arch: amd64
-            runner: arc-azrtydxb-amd64
+            runner: ubuntu-latest
             node: 24
     runs-on: ${{ matrix.runner }}
     steps:
@@ -79,10 +77,8 @@ jobs:
       - uses: azrtydxb/ant-setup-action@v1
       # PINNED TO v4 DELIBERATELY — do not take dependabot's v6 bump.
       # v6 installs pnpm as a native binary (@pnpm/exe) which needs
-      # libatomic.so.1; the self-hosted arc-azrtydxb-amd64 runner image does
-      # not have it, so every job dies with "error while loading shared
-      # libraries ... exits with code 127". v4 uses the JS distribution and
-      # works on both hosted and self-hosted runners.
+      # libatomic.so.1, which the runner image may lack ("error while loading
+      # shared libraries ... exits with code 127"). v4 uses the JS distribution.
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
@@ -105,10 +101,7 @@ jobs:
   # ── Go modules (server rewrite + shared client) ───────────────────────
   go:
     name: go (build + vet + test)
-    runs-on: arc-azrtydxb-amd64
-    # The steps take ~8 minutes; in the kubernetes container mode a fresh
-    # node first pulls the golang and pgvector images into the job pod,
-    # which has taken over 6 minutes on its own.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     # A real Postgres for the tests that skip without one — above all
     # TestOnBehalfOfToken, which proves organization isolation (#337, ADR
@@ -118,21 +111,18 @@ jobs:
     # Pulled through the Kuvryn Ant Docker Hub mirror: a direct Docker Hub
     # pull hits the anonymous rate limit.
     #
-    # The ARC runners use the kubernetes container mode: services only run
-    # beside a job container (same pod, reached on localhost), and service
-    # `options:` (the health check) are ignored, so the job waits for the
-    # port itself before the tests run.
+    # The job container reaches the service by its name (postgres).
     container:
       image: golang:1.26-bookworm
     services:
       postgres:
-        image: ant.azrty.com/dockerhub/pgvector/pgvector:0.8.1-pg16
+        image: pgvector/pgvector:0.8.1-pg16
         env:
           POSTGRES_USER: novamem
           POSTGRES_PASSWORD: novamem
           POSTGRES_DB: novamem_test
     env:
-      NOVAMEM_TEST_DATABASE_URL: postgres://novamem:novamem@localhost:5432/novamem_test?sslmode=disable
+      NOVAMEM_TEST_DATABASE_URL: postgres://novamem:novamem@postgres:5432/novamem_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       # The checkout belongs to the runner's user and the job container runs
@@ -154,10 +144,10 @@ jobs:
         shell: bash
         run: |
           for _ in $(seq 1 90); do
-            (exec 3<>/dev/tcp/127.0.0.1/5432) 2>/dev/null && exit 0
+            (exec 3<>/dev/tcp/postgres/5432) 2>/dev/null && exit 0
             sleep 2
           done
-          echo "postgres did not open localhost:5432"
+          echo "postgres did not open postgres:5432"
           exit 1
       - run: cd go && go build ./... && go vet ./... && go test ./...
       # -count=1 on the client and contract modules: their drift guards read
@@ -200,7 +190,7 @@ jobs:
   # ── Dependency audit (arch-agnostic, runs once) ───────────────────────
   audit:
     name: audit
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -227,21 +217,20 @@ jobs:
   package:
     name: package (npm)
     needs: [test]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: azrtydxb/ant-setup-action@v1
-      # The ARC runner image has no node (GitHub's hosted image did).
       - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Confirm nothing is publishable
         run: node scripts/assert-nothing-publishable.mjs
 
-  # ── Docker image (native per arch) ────────────────────────────────────
-  # Each arch builds on its own native runner — amd64 on novanas ARC,
-  # arm64 on KW ARC. No buildx --platform with QEMU. Trivy gates the build before it gets pushed; only main-branch
+  # ── Docker image (per arch, cross-compiled) ───────────────────────────
+  # Each arch builds on a GitHub-hosted runner; arm64 is cross-compiled
+  # (go/Dockerfile), never emulated. Trivy gates the build before it gets pushed; only main-branch
   # pushes (not PRs) end up in ghcr.io. fail-fast:false so the two arches
   # fail independently. needs:[go, test] gates on BOTH suites: the binary
   # is Go, but the admin dashboard it embeds is built from
@@ -269,19 +258,15 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: arc-azrtydxb-amd64
+            runner: ubuntu-latest
           - arch: arm64
-            runner: arc-azrtydxb
+            runner: ubuntu-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-      # The runner pod's rootless BuildKit sidecar, native to the runner
-      # (arc-azrtydxb = arm64, arc-azrtydxb-amd64 = amd64). Its config pulls
-      # Docker Hub base images through Kuvryn Ant; BuildKit pushes with the
-      # docker CLI's credentials (the Ant and GHCR logins below).
-      - name: Set up buildx (runner pod's BuildKit sidecar)
-        id: builder
-        uses: azrtydxb/.github/actions/setup-builder@main
+      # Both arches build on GitHub-hosted amd64; arm64 is cross-compiled in
+      # go/Dockerfile (no emulation).
+      - uses: docker/setup-buildx-action@v4
       - name: Compute short SHA
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -324,7 +309,6 @@ jobs:
         with:
           context: .
           file: go/Dockerfile
-          builder: ${{ steps.builder.outputs.name }}
           platforms: linux/${{ matrix.arch }}
           push: false
           tags: novamem:ci-${{ matrix.arch }}
@@ -366,7 +350,6 @@ jobs:
         with:
           context: .
           file: go/Dockerfile
-          builder: ${{ steps.builder.outputs.name }}
           platforms: linux/${{ matrix.arch }}
           push: true
           provenance: false
@@ -410,7 +393,7 @@ jobs:
       contents: write # record the verified image for Kuvryn Sync on main
       packages: write # push the multi-arch manifest to ghcr.io
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -419,8 +402,6 @@ jobs:
           # Existing Scout credential, stored separately as a repository secret.
           # Main uses it for CI's deployment commit; tags need only read access.
           token: ${{ github.ref == 'refs/heads/main' && secrets.KW_GITOPS_TOKEN || github.token }}
-      # regctl needs direct GHCR access; the ARC pod's hosts alias points
-      # ghcr.io at the LAN Nexus mirror, which cannot authenticate pushes.
       # Install the pinned regctl binary used by the manifest steps below.
       - name: Install regctl
         run: |

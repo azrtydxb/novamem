@@ -21,7 +21,7 @@ jobs:
   version-matches-tag:
     # Swift has no manifest version: the mirror's tag is the version, so
     # this only insists the tag is X.Y.Z.
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: The tag is X.Y.Z
@@ -31,7 +31,7 @@ jobs:
 
   publish:
     needs: [verify, version-matches-tag]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
       image: swift:6.3-noble

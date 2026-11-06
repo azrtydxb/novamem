@@ -19,7 +19,7 @@ jobs:
     uses: ./.github/workflows/sdk.yml
 
   version-matches-tag:
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -31,7 +31,7 @@ jobs:
 
   publish:
     needs: [verify, version-matches-tag]
-    runs-on: arc-azrtydxb-amd64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
       image: mcr.microsoft.com/dotnet/sdk:8.0

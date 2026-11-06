@@ -1,5 +1,0 @@
-self-hosted-runner:
-  # ARC runner scale sets on the kw k3s cluster (arc-azrtydxb).
-  labels:
-    - arc-azrtydxb-amd64
-    - arc-azrtydxb
