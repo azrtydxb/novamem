@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -34,8 +35,19 @@ func TestMigrateAppliesAndIsIdempotent(t *testing.T) {
 		'memory_changes_entry_fk', 'metrics_samples_user_fk', 'user_quotas_user_fk')`).Scan(&foreignKeys, &unvalidated); err != nil {
 		t.Fatal(err)
 	}
-	if foreignKeys != 14 || unvalidated != 0 {
-		t.Fatalf("foreign keys = %d, unvalidated = %d; want 14 validated constraints", foreignKeys, unvalidated)
+	// 0017 dropped metrics_samples_user_fk: OBO identities have no user row.
+	if foreignKeys != 13 || unvalidated != 0 {
+		t.Fatalf("foreign keys = %d, unvalidated = %d; want 13 validated constraints", foreignKeys, unvalidated)
+	}
+	// An on-behalf-of identity (no user row) must be able to record samples,
+	// alongside a real-looking id, in the same batch.
+	if err := (&Store{Pool: pool}).RecordMetricsSamples(ctx,
+		[]string{"org:atlas/svc-sub", "obo-test-2"}, time.Now().Truncate(time.Minute), []int{2, 1}, []int{0, 3}); err != nil {
+		t.Fatalf("RecordMetricsSamples with ids that have no user row: %v", err)
+	}
+	var stored int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM metrics_samples WHERE user_id IN ('org:atlas/svc-sub', 'obo-test-2')`).Scan(&stored); err != nil || stored != 2 {
+		t.Fatalf("stored samples = %d (err %v), want 2", stored, err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO user_tokens (token_hash, user_id) VALUES ('fk-test-token', 'missing-fk-test-user')`); err == nil {
 		t.Fatal("user_tokens accepted a row with a missing user")

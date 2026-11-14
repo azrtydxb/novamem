@@ -101,6 +101,7 @@ var pinnedMigrationHashes = map[string]string{
 	"0013_entry_source_refs.sql":              "882ea0403579fa19d04504f054051e469c314de4e26ba7aa13c86fd2bae1f9f9",
 	"0016_referential_integrity.sql":          "d51450cd1c65605b8c55c1c5d713cb65d5c07cc4af43f7a8654654f1d31f9233",
 	"0015_preserve_float64_precision.sql":     "cb7a7702b3f086c29ced528bac41476fac62471eb9c464e763111708bebee729",
+	"0017_metrics_samples_no_user_fk.sql":     "6061583d34be533b0d07f93b204c048ac8141b9bcb076e65c7f78abd4fae2131",
 }
 
 func TestMigrationHashesArePinned(t *testing.T) {

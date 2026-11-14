@@ -113,6 +113,13 @@
       "when": 1791628172300,
       "tag": "0016_referential_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0017_metrics_samples_no_user_fk",
+      "breakpoints": true
     }
   ]
 }
