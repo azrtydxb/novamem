@@ -1,0 +1,12 @@
+-- metrics_samples is per-identity telemetry, and the identities that
+-- produce it are not all rows in "user": an on-behalf-of service caller
+-- (ADR 0011) is the composite id org:<org>/<sub> and has no user row by
+-- design. With the 0016 foreign key in place every flush that contained
+-- one such identity failed as a whole (SQLSTATE 23503), so no sample from
+-- any caller was ever stored and the jobs loop retried the same batch
+-- every minute for ever.
+--
+-- Telemetry rows must not gate on the user table. A real user's rows are
+-- still removed explicitly when the user is deleted (admin.go
+-- DeleteUser), and the 25 hour prune bounds the table.
+ALTER TABLE metrics_samples DROP CONSTRAINT IF EXISTS metrics_samples_user_fk;
