@@ -1,0 +1,22 @@
+# Pushes that change only deploy/** build no image (ci.yml paths-ignore), so ci.yml's
+# deploy-ref job never runs for them. This moves deploy/kw (what kw Kuvryn Sync tracks)
+# across such commits, and only while no commit between deploy/kw and main still waits
+# for its image (Kuvryn-Orbit#370).
+name: deploy-ref
+
+on:
+  push:
+    branches: [main]
+    paths: ["deploy/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-ref:
+    permissions:
+      contents: write
+    uses: azrtydxb/.github/.github/workflows/reusable-deploy-ref.yml@main
+    with:
+      ref: deploy/kw
+      deploy-only-paths: deploy

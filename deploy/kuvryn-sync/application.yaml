@@ -8,7 +8,7 @@ spec:
   source:
     repositoryRef:
       name: novamem
-    revision: main
+    revision: deploy/kw
     path: deploy/overlays/kw
     render:
       type: kustomize

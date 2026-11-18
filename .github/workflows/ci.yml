@@ -395,6 +395,9 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The tag recorded on main for kw; empty when a newer build was already recorded.
+    outputs:
+      pin: ${{ steps.record.outputs.pin }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -519,9 +522,25 @@ jobs:
           echo "Published image $IMAGE does not resolve for both architectures" >&2
           exit 1
       - name: Record the verified image for Kuvryn Sync
+        id: record
         if: github.ref == 'refs/heads/main'
         env:
           IMAGE_TAG: sha-${{ steps.sha.outputs.short }}
         run: |
           cp scripts/record-kw-image.sh "$RUNNER_TEMP/record-kw-image.sh"
           bash "$RUNNER_TEMP/record-kw-image.sh"
+
+  # kw Kuvryn Sync tracks deploy/kw, not main (Kuvryn-Orbit#370): this moves deploy/kw
+  # along main once the image recorded above is on main, never past a commit whose image
+  # is not recorded yet, so the overlay and the image that reads it sync together.
+  # deploy-ref.yml does the same for pushes that build nothing (deploy/** only).
+  deploy-ref:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: manifest
+    permissions:
+      contents: write
+    uses: azrtydxb/.github/.github/workflows/reusable-deploy-ref.yml@main
+    with:
+      ref: deploy/kw
+      pins: ${{ needs.manifest.outputs.pin }}
+      deploy-only-paths: deploy

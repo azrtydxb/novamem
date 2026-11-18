@@ -2,8 +2,12 @@
 
 This follows Scout's deployment flow: CI builds and publishes an immutable
 `sha-<commit>` image, verifies that the registry serves both architectures,
-commits that image to Git with `[skip ci]`, and Kuvryn Sync reconciles `main`
-every minute. Older builds cannot overwrite a newer recorded image. Sync
+commits that image to Git with `[skip ci]`, and Kuvryn Sync reconciles the
+branch `deploy/kw` every minute. `deploy/kw` follows `main`: the `deploy-ref` job
+(azrtydxb/.github `reusable-deploy-ref.yml`) fast-forwards it once the recorded
+image is on `main`, never past a commit whose image is not recorded yet, so a
+change to `deploy/` and the image that reads it reach kw together
+(Kuvryn-Orbit#370). Older builds cannot overwrite a newer recorded image. Sync
 needs only read access and uses the existing Scout credential, provisioned
 out of band as `novamem/novamem-git` (keys `username` and `token`, labelled
 `sync.kuvryn.io/git-credentials: "true"`). CI uses that same authorized credential
@@ -114,9 +118,10 @@ public GHCR image.
 
 ## Day to day
 
-Merge to main. CI publishes and records the verified image, then Kuvryn Sync
-applies it and observes health. Deployment-only pushes are excluded from image
-builds, and CI's recording commit uses `[skip ci]`, matching Scout.
+Merge to main. CI publishes and records the verified image, moves `deploy/kw`
+to it, then Kuvryn Sync applies it and observes health. Deployment-only pushes
+are excluded from image builds; `.github/workflows/deploy-ref.yml` moves
+`deploy/kw` across them. CI's recording commit uses `[skip ci]`, matching Scout.
 Configuration changes go through Git; self-healing reverses direct cluster
 edits. The bootstrap objects are maintained separately from the rendered app.
 
